@@ -1,12 +1,15 @@
 :root {
-  --bg: #090b10;
-  --card: #13171d;
-  --card-border: #2b313b;
+  --bg: #06080c;
+  --device-body: #12161d;
+  --screen-bg: #0d1218;
+  --card: #141a22;
+  --card-border: #2a3340;
   --text: #e9edf4;
   --muted: #9ea7b5;
-  --accent: #5aa8ff;
+  --accent: #67b1ff;
   --danger: #d35959;
   --success: #5dc37a;
+  --neon-edge: #1b232f;
 }
 
 * { box-sizing: border-box; }
@@ -14,15 +17,17 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: radial-gradient(circle at top, #1a202a 0%, var(--bg) 48%);
+  background:
+    radial-gradient(circle at top, #1a2430 0%, #0b1018 35%, #05070c 70%),
+    linear-gradient(180deg, #080a0e, var(--bg));
   color: var(--text);
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-family: "Rajdhani", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
 }
 
 .app {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 14px;
+  max-width: 1260px;
+  margin: 10px auto;
+  padding: 18px;
 }
 
 .screen { display: grid; gap: 12px; }
@@ -63,7 +68,32 @@ input {
 .btn.ghost { background: transparent; }
 .btn.danger { background: #65272a; border-color: #8a3338; }
 
-.hud-shell { gap: 10px; }
+.hud-shell {
+  gap: 10px;
+  padding: 16px;
+  border: 2px solid #293443;
+  border-radius: 24px;
+  background:
+    linear-gradient(145deg, #1a212b 0%, #0e1319 55%, #0a0f14 100%);
+  box-shadow:
+    inset 0 0 0 2px #1a212c,
+    inset 0 0 0 8px #0b0f16,
+    0 14px 40px rgba(0, 0, 0, 0.55);
+  position: relative;
+}
+
+.hud-shell::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 8px;
+  border-radius: 999px;
+  background: #070a0f;
+  border: 1px solid #202733;
+}
 
 .hud-bar {
   display: grid;
@@ -102,6 +132,11 @@ input {
   cursor: pointer;
 }
 
+.nav-btn:disabled, .submenu-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .nav-btn.active, .submenu-btn.active {
   background: #1d324a;
   border-color: var(--accent);
@@ -114,10 +149,27 @@ input {
 }
 
 .scene-panel {
-  min-height: 130px;
+  min-height: 270px;
   background:
     linear-gradient(180deg, rgba(7, 10, 15, 0.8), rgba(11, 15, 22, 0.94)),
     radial-gradient(circle at 75% 20%, rgba(255, 228, 173, 0.14), transparent 32%);
+}
+
+.scene-art-frame {
+  margin: 0 0 10px;
+  border-radius: 10px;
+  border: 1px solid #36404d;
+  background: #0b1118;
+  overflow: hidden;
+  height: 220px;
+}
+
+.scene-art-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  image-rendering: pixelated;
 }
 
 .scene-copy {
@@ -147,6 +199,11 @@ input {
   text-align: center;
   background: #1b2a3a;
   border-color: #456586;
+}
+
+.choice-btn.continue-btn {
+  background: #214462;
+  border-color: #5c95ca;
 }
 
 .system-panel { min-height: 160px; }

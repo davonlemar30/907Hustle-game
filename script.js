@@ -54,7 +54,6 @@ function createOpeningState() {
       mina_trust: 0,
     },
     flags: {
-      openingComplete: false,
       met_mina: false,
     },
     metrics: {
@@ -126,21 +125,51 @@ const V01_EVENTS = [
     title: "House Rules",
     text: "Dre lays out house rules: stay disciplined, stay reachable, and build clean before you build loud.",
     location: "cousins_apt",
+    repeatable: false,
     cooldownDays: 0,
+    requirements: {
+      day_eq: 1,
+      time_in: ["Morning"],
+      event_not_seen: true,
+    },
     choices: [
       {
-        id: "agree",
-        label: "Agree and listen",
-        outcomeText: "Dre clocks your discipline and opens a lane to North Star.",
+        id: "listen_agree",
+        label: "Listen and agree",
+        outcomeText: "You listen close. Dre nods and opens the lane to North Star.",
         outcome: {
+          reputation: 1,
           relationships: { dre_trust: 1 },
-          flags: { openingComplete: true },
+          flags: { dre_rules_heard: true, dre_safe_tip_unlocked: true },
           unlocks: [
             { type: "unlock_location", target: "north_star_lot" },
-            { type: "unlock_event", target: "first_purchase" },
           ],
           timeAdvance: 1,
         },
+        meta: { isRiskyAction: false },
+      },
+      {
+        id: "push_back",
+        label: "Push back a little",
+        outcomeText: "You push a little, but hear him out enough to get the lane.",
+        outcome: {
+          flags: { dre_rules_heard: true },
+          unlocks: [{ type: "unlock_location", target: "north_star_lot" }],
+          timeAdvance: 1,
+        },
+        meta: { isRiskyAction: false },
+      },
+      {
+        id: "brush_off",
+        label: "Brush him off and leave",
+        outcomeText: "You brush him off and walk. Word spreads fast.",
+        outcome: {
+          reputation: -1,
+          flags: { dre_rules_heard: true },
+          unlocks: [{ type: "unlock_location", target: "north_star_lot" }],
+          timeAdvance: 1,
+        },
+        meta: { isRiskyAction: false },
       },
     ],
   },
@@ -149,20 +178,21 @@ const V01_EVENTS = [
     title: "First Purchase",
     text: "Mina gives you two starter options. Pick one and show you're serious.",
     location: "north_star_lot",
-    requiresUnlock: true,
+    repeatable: false,
     cooldownDays: 0,
     requirements: {
-      locations: ["north_star_lot"],
-      completedEvents: ["house_rules"],
+      unlock_location: "north_star_lot",
+      time_in: ["Morning", "Afternoon", "Evening"],
+      event_not_seen: true,
     },
     choices: [
       {
         id: "buy_snacks",
-        label: "Buy snacks ($15)",
-        requirements: { minMoney: 15 },
-        outcomeText: "You buy snacks and keep your head clear while posted.",
+        label: "Buy snacks for $10",
+        requirements: { money_gte: 10 },
+        outcomeText: "You buy snacks and Mina starts treating you like a regular.",
         outcome: {
-          money: -15,
+          money: -10,
           inventory: { snacks: 1 },
           relationships: { mina_trust: 1 },
           flags: { met_mina: true },
@@ -172,16 +202,16 @@ const V01_EVENTS = [
           ],
           timeAdvance: 1,
         },
+        meta: { isRiskyAction: false },
       },
       {
-        id: "buy_basic_meds",
-        label: "Buy basic meds ($25)",
-        requirements: { minMoney: 25 },
-        outcomeText: "You buy basic meds and Mina starts treating you like a real regular.",
+        id: "buy_meds",
+        label: "Buy basic meds for $15",
+        requirements: { money_gte: 15 },
+        outcomeText: "You buy basic meds and Mina clocks you as prepared.",
         outcome: {
-          money: -25,
+          money: -15,
           inventory: { basic_meds: 1 },
-          health: 3,
           relationships: { mina_trust: 1 },
           flags: { met_mina: true },
           unlocks: [
@@ -190,6 +220,28 @@ const V01_EVENTS = [
           ],
           timeAdvance: 1,
         },
+        meta: { isRiskyAction: false },
+      },
+      {
+        id: "ask_off_menu",
+        label: "Ask what she has off-menu",
+        outcomeText: "Mina gives you a look and files your name away.",
+        outcome: {
+          flags: { met_mina: true },
+          unlocks: [
+            { type: "unlock_vendor", target: "mina" },
+            { type: "unlock_event", target: "burner_line" },
+          ],
+          timeAdvance: 1,
+        },
+        meta: { isRiskyAction: false },
+      },
+      {
+        id: "observe_leave",
+        label: "Observe and leave",
+        outcomeText: "You observe the lot and dip without buying.",
+        outcome: { timeAdvance: 1 },
+        meta: { isRiskyAction: false },
       },
     ],
   },
@@ -198,35 +250,46 @@ const V01_EVENTS = [
     title: "Burner Line",
     text: "Mina asks if you're ready to run a clean communication line.",
     location: "north_star_lot",
-    requiresUnlock: true,
-    cooldownDays: 1,
+    repeatable: false,
+    cooldownDays: 0,
     requirements: {
-      unlockedVendors: ["mina"],
-      completedEvents: ["first_purchase"],
+      unlock_event: "burner_line",
+      time_in: ["Afternoon", "Evening"],
+      flag_false: "mina_refuses_service",
+      event_not_seen: true,
     },
     choices: [
       {
-        id: "buy_burner_phone",
-        label: "Buy burner phone ($60)",
-        requirements: { minMoney: 60 },
-        outcomeText: "You pay for a burner and Mina trusts you with quieter opportunities.",
+        id: "buy_burner",
+        label: "Buy the burner for $35",
+        requirements: { money_gte: 35 },
+        outcomeText: "You buy a clean burner and Mina lowers her voice.",
         outcome: {
-          money: -60,
+          money: -35,
           inventory: { burner_phone: 1 },
-          relationships: { mina_trust: 1 },
+          flags: { has_burner_phone: true },
           unlocks: [{ type: "unlock_event", target: "minas_quiet_suggestion" }],
           timeAdvance: 1,
         },
+        meta: { isRiskyAction: false },
       },
       {
-        id: "borrow_line",
-        label: "Borrow a risky line",
-        outcomeText: "You get through, but your sloppiness raises local heat.",
+        id: "hold_one",
+        label: "Ask Mina to hold one for later",
+        outcomeText: "Mina agrees to hold one and tells you to come quiet.",
         outcome: {
-          heat: 6,
-          relationships: { mina_trust: -1 },
+          flags: { mina_holds_burner: true },
+          unlocks: [{ type: "unlock_event", target: "minas_quiet_suggestion" }],
           timeAdvance: 1,
         },
+        meta: { isRiskyAction: false },
+      },
+      {
+        id: "skip",
+        label: "Skip it",
+        outcomeText: "You pass on the burner for now.",
+        outcome: { timeAdvance: 1 },
+        meta: { isRiskyAction: false },
       },
     ],
   },
@@ -235,35 +298,56 @@ const V01_EVENTS = [
     title: "Mina's Quiet Suggestion",
     text: "Mina offers a short route that only works if you stay patient.",
     location: "north_star_lot",
-    requiresUnlock: true,
-    cooldownDays: 1,
+    repeatable: false,
+    cooldownDays: 0,
     requirements: {
-      completedEvents: ["burner_line"],
-      minRelationship: { mina_trust: 1 },
-      maxHeat: 70,
+      unlock_event: "minas_quiet_suggestion",
+      time_in: ["Evening", "LateNight"],
+      flag_true: "met_mina",
+      flag_false: "mina_refuses_service",
+      any_of: [{ relationship_gte: { mina_trust: 1 } }, { money_gte: 20 }],
     },
     choices: [
       {
-        id: "take_quiet_route",
-        label: "Take Mina's route",
-        outcomeText: "You move quiet, bank a little trust, and unlock a faster run.",
+        id: "pay_for_lead",
+        label: "Pay $20 for the lead",
+        requirements: { money_gte: 20 },
+        outcomeText: "You pay Mina and she hands over a quick job lead.",
         outcome: {
-          money: 55,
-          reputation: 1,
-          relationships: { mina_trust: 1 },
+          money: -20,
+          flags: { mina_quick_job_hint_unlocked: true },
           unlocks: [{ type: "unlock_event", target: "quick_lot_run" }],
           timeAdvance: 1,
         },
+        meta: { isRiskyAction: false },
       },
       {
-        id: "ignore_route",
-        label: "Ignore and freestyle",
-        outcomeText: "You push loud and pick up both money and attention.",
+        id: "ask_good_faith",
+        label: "Ask for the lead on good faith",
+        outcomeText: "You ask Mina to trust you on this one.",
         outcome: {
-          money: 80,
-          heat: 8,
+          conditional: [
+            {
+              if: { relationship_gte: { mina_trust: 1 } },
+              then: {
+                flags: { mina_quick_job_hint_unlocked: true },
+                unlocks: [{ type: "unlock_event", target: "quick_lot_run" }],
+              },
+              else: {
+                reputation: -1,
+              },
+            },
+          ],
           timeAdvance: 1,
         },
+        meta: { isRiskyAction: false },
+      },
+      {
+        id: "decline",
+        label: "Decline",
+        outcomeText: "You decline and keep your options open.",
+        outcome: { timeAdvance: 1 },
+        meta: { isRiskyAction: false },
       },
     ],
   },
@@ -272,38 +356,64 @@ const V01_EVENTS = [
     title: "Quick Lot Run",
     text: "A fast lot window opens for ten minutes. Move now or miss it.",
     location: "north_star_lot",
-    requiresUnlock: true,
+    repeatable: true,
     cooldownDays: 1,
     requirements: {
-      completedEvents: ["minas_quiet_suggestion"],
-      inventory: { burner_phone: 1 },
+      unlock_event: "quick_lot_run",
+      time_in: ["Evening", "LateNight"],
+      item_gte: { burner_phone: 1 },
+      heat_lte: 5,
     },
     choices: [
       {
         id: "run_clean",
         label: "Run it clean",
-        outcomeText: "You finish clean: money up, profile up, no extra bruising.",
+        outcomeText: "You keep it clean and get out with cash.",
         outcome: {
-          money: 140,
-          reputation: 2,
-          heat: 3,
-          health: -2,
+          moneyRange: { min: 60, max: 90 },
+          reputation: 1,
+          heat: 1,
+          conditional: [
+            {
+              if: { flag_true: "rook_hostile" },
+              then: {
+                heat: 1,
+                health: -5,
+              },
+            },
+          ],
           timeAdvance: 1,
         },
         meta: { isRiskyAction: true },
       },
       {
-        id: "push_double",
-        label: "Double back for extra",
-        outcomeText: "You squeeze extra money, but it costs blood and heat.",
+        id: "rush_it",
+        label: "Rush it for extra cash",
+        outcomeText: "You rush for extra cash and take on extra pressure.",
         outcome: {
-          money: 210,
+          moneyRange: { min: 90, max: 120 },
           reputation: 1,
-          heat: 10,
-          health: -10,
+          heat: 2,
+          conditional: [
+            {
+              if: { flag_true: "rook_hostile" },
+              then: {
+                heat: 1,
+                health: -5,
+                flags: { rook_humiliated: true },
+              },
+            },
+          ],
           timeAdvance: 1,
         },
         meta: { isRiskyAction: true },
+      },
+      {
+        id: "pass_for_now",
+        label: "Pass for now",
+        outcomeText: "You pass and wait for a cleaner window.",
+        outcome: { timeAdvance: 1 },
+        meta: { isRiskyAction: false },
       },
     ],
   },
@@ -312,32 +422,59 @@ const V01_EVENTS = [
     title: "Rook Sizes You Up",
     text: "Rook catches your eye at the lot fence and tests whether you're pressure-ready.",
     location: "north_star_lot",
-    cooldownDays: 1,
+    repeatable: false,
+    cooldownDays: 0,
     requirements: {
-      completedEvents: ["quick_lot_run"],
-      metrics: { risky_actions_on_lot: { min: 1, max: 2 } },
+      metric_between: { risky_actions_on_lot: { min: 1, max: 2 } },
+      flag_false: "met_rook",
     },
     choices: [
       {
-        id: "stand_firm",
-        label: "Hold eye contact",
-        outcomeText: "Rook reads confidence and lets the pressure pass.",
+        id: "respectful",
+        label: "Keep it respectful",
+        outcomeText: "You keep it respectful and Rook gives a warning, not a problem.",
         outcome: {
-          reputation: 2,
-          relationships: { dre_trust: 1 },
-          unlocks: [{ type: "unlock_event", target: "dre_checks_your_face" }],
+          flags: { met_rook: true, rook_warned_player: true },
           timeAdvance: 1,
         },
+        meta: { isRiskyAction: true },
       },
       {
-        id: "look_away",
-        label: "Look away",
-        outcomeText: "Rook marks you as uncertain and keeps watching.",
+        id: "offer_snacks",
+        label: "Offer him snacks and smooth it over",
+        requirements: { item_gte: { snacks: 1 } },
+        outcomeText: "You hand him snacks and smooth it over.",
         outcome: {
-          reputation: -1,
-          heat: 4,
+          inventory: { snacks: -1 },
+          reputation: 1,
+          flags: { met_rook: true, rook_warned_player: true },
           timeAdvance: 1,
         },
+        meta: { isRiskyAction: true },
+      },
+      {
+        id: "stand_ground",
+        label: "Stand your ground",
+        outcomeText: "You stand your ground and the whole lot feels it.",
+        outcome: {
+          reputation: 1,
+          heat: 1,
+          flags: { met_rook: true, rook_warned_player: true },
+          timeAdvance: 1,
+        },
+        meta: { isRiskyAction: true },
+      },
+      {
+        id: "mouth_off",
+        label: "Mouth off",
+        outcomeText: "You mouth off and make an enemy.",
+        outcome: {
+          heat: 2,
+          health: -5,
+          flags: { met_rook: true, rook_hostile: true },
+          timeAdvance: 1,
+        },
+        meta: { isRiskyAction: true },
       },
     ],
   },
@@ -346,35 +483,58 @@ const V01_EVENTS = [
     title: "Dre Checks Your Face",
     text: "Back at the apartment, Dre checks your condition and how hot you've become.",
     location: "cousins_apt",
-    requiresUnlock: true,
+    repeatable: true,
     cooldownDays: 1,
     requirements: {
-      unlockedEvents: ["dre_checks_your_face"],
-      anyOf: [{ minHeat: 25 }, { maxHealth: 80 }],
-      completedEvents: ["rook_sizes_you_up"],
+      flag_true: "dre_rules_heard",
+      any_of: [{ heat_gte: 3 }, { health_lt: 95 }],
     },
     choices: [
       {
-        id: "be_honest",
-        label: "Be honest about the pressure",
-        outcomeText: "Dre respects honesty, helps you reset, and keeps you in play.",
+        id: "tell_truth",
+        label: "Tell Dre straight up",
+        outcomeText: "You tell Dre the truth.",
         outcome: {
-          reputation: 2,
-          heat: -8,
-          health: 8,
-          relationships: { dre_trust: 1 },
+          conditional: [
+            {
+              if: { heat_lt: 5 },
+              then: { relationships: { dre_trust: 1 } },
+            },
+          ],
+          flags: { dre_safe_tip_unlocked: true, told_dre_truth_once: true },
           timeAdvance: 1,
         },
+        meta: { isRiskyAction: false },
       },
       {
-        id: "front_like_its_fine",
-        label: "Pretend you're fine",
-        outcomeText: "Dre hears the cap and trust stalls.",
+        id: "downplay",
+        label: "Downplay it",
+        outcomeText: "You downplay what happened.",
         outcome: {
-          reputation: -2,
-          relationships: { dre_trust: -1 },
+          conditional: [
+            {
+              if: { any_of: [{ heat_gte: 5 }, { health_lt: 95 }] },
+              then: {
+                relationships: { dre_trust: -1 },
+                flags: { dre_disappointed: true },
+              },
+            },
+          ],
           timeAdvance: 1,
         },
+        meta: { isRiskyAction: false },
+      },
+      {
+        id: "patch_up_first",
+        label: "Patch yourself up first",
+        requirements: { item_gte: { basic_meds: 1 } },
+        outcomeText: "You patch yourself up first.",
+        outcome: {
+          inventory: { basic_meds: -1 },
+          health: 10,
+          timeAdvance: 1,
+        },
+        meta: { isRiskyAction: false },
       },
     ],
   },
@@ -437,48 +597,41 @@ function evaluateAnyOf(anyOf = []) {
 }
 
 function evaluateRequirements(requirements = {}) {
-  if (requirements.minDay && state.day < requirements.minDay) return false;
-  if (requirements.minMoney && state.money < requirements.minMoney) return false;
-  if (requirements.minHeat && state.heat < requirements.minHeat) return false;
-  if (requirements.maxHeat !== undefined && state.heat > requirements.maxHeat) return false;
-  if (requirements.maxHealth !== undefined && state.health > requirements.maxHealth) return false;
+  if (requirements.day_eq !== undefined && state.day !== requirements.day_eq) return false;
+  if (requirements.time_in && !requirements.time_in.includes(state.timeOfDay)) return false;
+  if (requirements.money_gte !== undefined && state.money < requirements.money_gte) return false;
+  if (requirements.heat_lte !== undefined && state.heat > requirements.heat_lte) return false;
+  if (requirements.heat_gte !== undefined && state.heat < requirements.heat_gte) return false;
+  if (requirements.heat_lt !== undefined && state.heat >= requirements.heat_lt) return false;
+  if (requirements.health_lt !== undefined && state.health >= requirements.health_lt) return false;
 
-  if (requirements.inventory) {
-    const hasInventory = Object.entries(requirements.inventory).every(
-      ([item, needed]) => (state.inventory[item] || 0) >= needed,
-    );
-    if (!hasInventory) return false;
+  if (requirements.event_not_seen && (state.eventState.seen[requirements.event_not_seen] || 0) > 0) {
+    return false;
   }
 
-  if (requirements.minRelationship) {
-    const ok = Object.entries(requirements.minRelationship).every(
+  if (requirements.item_gte) {
+    const hasItems = Object.entries(requirements.item_gte).every(
+      ([item, needed]) => (state.inventory[item] || 0) >= needed,
+    );
+    if (!hasItems) return false;
+  }
+
+  if (requirements.relationship_gte) {
+    const ok = Object.entries(requirements.relationship_gte).every(
       ([person, needed]) => (state.relationships[person] || 0) >= needed,
     );
     if (!ok) return false;
   }
 
-  if (requirements.completedEvents) {
-    const ok = requirements.completedEvents.every((eventId) => state.eventState.completed[eventId]);
-    if (!ok) return false;
-  }
+  if (requirements.unlock_event && !state.unlocks.events[requirements.unlock_event]) return false;
+  if (requirements.unlock_location && !state.unlocks.locations[requirements.unlock_location]) return false;
+  if (requirements.unlock_vendor && !state.unlocks.vendors[requirements.unlock_vendor]) return false;
 
-  if (requirements.unlockedEvents) {
-    const ok = requirements.unlockedEvents.every((eventId) => state.unlocks.events[eventId]);
-    if (!ok) return false;
-  }
+  if (requirements.flag_true && state.flags[requirements.flag_true] !== true) return false;
+  if (requirements.flag_false && state.flags[requirements.flag_false] === true) return false;
 
-  if (requirements.unlockedVendors) {
-    const ok = requirements.unlockedVendors.every((vendorId) => state.unlocks.vendors[vendorId]);
-    if (!ok) return false;
-  }
-
-  if (requirements.locations) {
-    const ok = requirements.locations.every((locationId) => state.unlocks.locations[locationId]);
-    if (!ok) return false;
-  }
-
-  if (requirements.metrics) {
-    const ok = Object.entries(requirements.metrics).every(([metricId, range]) => {
+  if (requirements.metric_between) {
+    const ok = Object.entries(requirements.metric_between).every(([metricId, range]) => {
       const value = state.metrics[metricId] || 0;
       if (range.min !== undefined && value < range.min) return false;
       if (range.max !== undefined && value > range.max) return false;
@@ -487,7 +640,7 @@ function evaluateRequirements(requirements = {}) {
     if (!ok) return false;
   }
 
-  if (requirements.anyOf && !evaluateAnyOf(requirements.anyOf)) return false;
+  if (requirements.any_of && !evaluateAnyOf(requirements.any_of)) return false;
 
   return true;
 }
@@ -497,15 +650,18 @@ function isEventOnCooldown(eventId) {
 }
 
 function getEligibleEvent() {
-  if (!state.flags.openingComplete || uiState.gameOver || uiState.awaitingContinue) return null;
+  if (uiState.gameOver || uiState.awaitingContinue) return null;
 
   return V01_EVENTS.find((event) => {
     if (!event) return false;
-    if (state.eventState.completed[event.id]) return false;
+    if (!event.repeatable && state.eventState.completed[event.id]) return false;
     if (event.location && event.location !== state.location) return false;
     if (event.requiresUnlock && !state.unlocks.events[event.id]) return false;
     if (isEventOnCooldown(event.id)) return false;
-    return evaluateRequirements(event.requirements || {});
+    return evaluateRequirements({
+      ...(event.requirements || {}),
+      ...(event.requirements?.event_not_seen ? { event_not_seen: event.id } : {}),
+    });
   });
 }
 
@@ -545,37 +701,46 @@ function resolveAction(text, tone = "", options = {}) {
 }
 
 function applyOutcomeInOrder(event, choice) {
+  const applyOutcomeChunk = (outcome = {}) => {
+    if (outcome.money) state.money += outcome.money;
+    if (outcome.moneyRange) state.money += randomInt(outcome.moneyRange.min, outcome.moneyRange.max);
+    if (outcome.health) state.health += outcome.health;
+    if (outcome.reputation) state.reputation += outcome.reputation;
+    if (outcome.heat) state.heat += outcome.heat;
+
+    if (outcome.inventory) {
+      Object.entries(outcome.inventory).forEach(([itemId, delta]) => {
+        state.inventory[itemId] = (state.inventory[itemId] || 0) + delta;
+        if (state.inventory[itemId] < 0) state.inventory[itemId] = 0;
+      });
+    }
+
+    if (outcome.relationships) {
+      Object.entries(outcome.relationships).forEach(([person, delta]) => {
+        state.relationships[person] = (state.relationships[person] || 0) + delta;
+      });
+    }
+
+    if (outcome.flags) {
+      Object.entries(outcome.flags).forEach(([flag, value]) => {
+        state.flags[flag] = value;
+      });
+    }
+
+    (outcome.unlocks || []).forEach(applyUnlock);
+  };
+
   const outcome = choice.outcome || {};
 
   // 1) stat/item changes
-  if (outcome.money) state.money += outcome.money;
-  if (outcome.health) state.health += outcome.health;
-  if (outcome.reputation) state.reputation += outcome.reputation;
-  if (outcome.heat) state.heat += outcome.heat;
-
-  if (outcome.inventory) {
-    Object.entries(outcome.inventory).forEach(([itemId, delta]) => {
-      state.inventory[itemId] = (state.inventory[itemId] || 0) + delta;
-      if (state.inventory[itemId] < 0) state.inventory[itemId] = 0;
-    });
-  }
-
-  // 2) relationship changes
-  if (outcome.relationships) {
-    Object.entries(outcome.relationships).forEach(([person, delta]) => {
-      state.relationships[person] = (state.relationships[person] || 0) + delta;
-    });
-  }
-
-  // 3) flags
-  if (outcome.flags) {
-    Object.entries(outcome.flags).forEach(([flag, value]) => {
-      state.flags[flag] = value;
-    });
-  }
-
-  // 4) unlocks
-  (outcome.unlocks || []).forEach(applyUnlock);
+  applyOutcomeChunk(outcome);
+  (outcome.conditional || []).forEach((entry) => {
+    if (evaluateRequirements(entry.if || {})) {
+      applyOutcomeChunk(entry.then || {});
+    } else if (entry.else) {
+      applyOutcomeChunk(entry.else || {});
+    }
+  });
 
   // 5) time advancement
   advanceTimeBy(outcome.timeAdvance || 0);
@@ -588,7 +753,7 @@ function applyOutcomeInOrder(event, choice) {
   // 7) clamp bounded stats
   clampBoundedStats();
 
-  state.eventState.completed[event.id] = true;
+  if (!event.repeatable) state.eventState.completed[event.id] = true;
   state.eventState.cooldowns[event.id] = state.day + (event.cooldownDays || 0);
   state.eventState.activeEventId = null;
 }
@@ -681,20 +846,6 @@ function renderSubmenu() {
 }
 
 function renderStory() {
-  if (!state.flags.openingComplete) {
-    el.storyTitle.textContent = "Opening";
-    el.storyText.textContent =
-      "You wake up stiff on the couch. Dre is in the kitchen. The first conversation decides whether you get a lane at all.";
-
-    el.choiceButtons.innerHTML = "";
-    const button = document.createElement("button");
-    button.className = "choice-btn";
-    button.textContent = "Talk to Dre";
-    button.addEventListener("click", () => openingChoice());
-    el.choiceButtons.appendChild(button);
-    return;
-  }
-
   if (uiState.awaitingContinue && uiState.pendingResult) {
     el.storyTitle.textContent = uiState.pendingEvent?.awaitingChoice ? uiState.pendingEvent.title : "Action Result";
     el.storyText.textContent = uiState.pendingResult.text;
@@ -727,7 +878,7 @@ function renderStory() {
 }
 
 function renderDetailPanel() {
-  el.detailTitle.textContent = state.flags.openingComplete ? "Journal" : "Opening Notes";
+  el.detailTitle.textContent = "Journal";
   el.detailPanel.innerHTML = "";
 
   if (!uiState.log.length) {
@@ -755,18 +906,6 @@ function render() {
   renderDetailPanel();
 }
 
-function openingChoice() {
-  state.flags.openingComplete = true;
-  addLog("You sit down with Dre and hear the first rules.");
-  const event = getEligibleEvent();
-  if (event) {
-    presentEvent(event);
-    render();
-    return;
-  }
-  resolveAction("Dre nods, but you still need your first real move.");
-}
-
 function moveToLocation(locationId, text) {
   if (!state.unlocks.locations[locationId]) {
     resolveAction(`${locationName(locationId)} is still locked.`, "bad", { skipAdvanceTime: true });
@@ -779,12 +918,6 @@ function moveToLocation(locationId, text) {
 
 function handleSubmenuAction(action) {
   if (uiState.awaitingContinue) return;
-
-  if (!state.flags.openingComplete) {
-    addLog("Handle your opening moment first.");
-    render();
-    return;
-  }
 
   switch (action) {
     case "Step Outside": {
@@ -914,6 +1047,8 @@ function startGame(name) {
   el.startScreen.classList.add("hidden");
   el.endScreen.classList.add("hidden");
   el.gameScreen.classList.remove("hidden");
+  const event = getEligibleEvent();
+  if (event) presentEvent(event);
   render();
 }
 
@@ -968,6 +1103,8 @@ function loadGame() {
     el.gameScreen.classList.remove("hidden");
 
     addLog("Loaded saved game.", "good");
+    const event = getEligibleEvent();
+    if (event) presentEvent(event);
     render();
   } catch {
     addLog("Save data was corrupted.", "bad");

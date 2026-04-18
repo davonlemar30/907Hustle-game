@@ -40,6 +40,8 @@ const state = {
   openingComplete: false,
   inventory: {},
   log: [],
+  awaitingContinue: false,
+  pendingResult: null,
   gameOver: false,
 };
 
@@ -54,6 +56,7 @@ const el = {
   navRail: document.getElementById("navRail"),
   submenuTitle: document.getElementById("submenuTitle"),
   submenuPanel: document.getElementById("submenuPanel"),
+  sceneArt: document.getElementById("sceneArt"),
   sceneText: document.getElementById("sceneText"),
   storyTitle: document.getElementById("storyTitle"),
   storyText: document.getElementById("storyText"),
@@ -66,6 +69,39 @@ const el = {
   outcomeSummary: document.getElementById("outcomeSummary"),
   finalStats: document.getElementById("finalStats"),
   playAgainBtn: document.getElementById("playAgainBtn"),
+};
+
+const sceneByLocation = {
+  "Cousin's Apt": {
+    art: "assets/cousins-apt-placeholder.svg",
+    alt: "Gritty pixel-style view of cousin's apartment with thin blinds and a worn couch.",
+    text: "Cousin's apartment feels cramped and temporary. A duffel bag sits by the couch, cheap blinds leak cold light, and city noise pushes through thin windows.",
+  },
+  "Downtown Anchorage": {
+    art: "assets/cousins-apt-placeholder.svg",
+    alt: "Dark city block in Anchorage at street level.",
+    text: "Downtown traffic and foot movement never fully settle. You can feel hustle, pressure, and cameras on every block.",
+  },
+  Spenard: {
+    art: "assets/cousins-apt-placeholder.svg",
+    alt: "Street corner in Spenard with low light and parked cars.",
+    text: "Spenard moves on side conversations and favors. If you listen more than you talk, people show you where motion is.",
+  },
+  "Mountain View": {
+    art: "assets/cousins-apt-placeholder.svg",
+    alt: "Anchorage neighborhood view at dusk.",
+    text: "Mountain View carries tension and community at the same time. Outsiders get sized up quickly.",
+  },
+  Muldoon: {
+    art: "assets/cousins-apt-placeholder.svg",
+    alt: "Muted neighborhood street with apartments and overhead wires.",
+    text: "Muldoon feels spread out and watchful. Good for laying low, bad for sloppy moves.",
+  },
+  "South Addition": {
+    art: "assets/cousins-apt-placeholder.svg",
+    alt: "Older buildings in South Addition with moody evening light.",
+    text: "South Addition has money close by but pressure too. One wrong read can bring heat fast.",
+  },
 };
 
 function randomInt(min, max) {
@@ -97,8 +133,10 @@ function renderHud() {
 }
 
 function renderScene() {
-  el.sceneText.textContent =
-    "Cousin's apartment feels cramped and temporary. A duffel bag sits by the couch, cheap blinds leak morning light, and city noise leaks through thin windows.";
+  const scene = sceneByLocation[state.location] || sceneByLocation["Cousin's Apt"];
+  el.sceneArt.src = scene.art;
+  el.sceneArt.alt = scene.alt;
+  el.sceneText.textContent = scene.text;
 }
 
 function renderNav() {
@@ -107,7 +145,9 @@ function renderNav() {
     const btn = document.createElement("button");
     btn.className = `nav-btn ${category.key === state.activeCategory ? "active" : ""}`;
     btn.innerHTML = `<span class="nav-icon">${category.icon}</span>${category.label}`;
+    btn.disabled = state.awaitingContinue;
     btn.addEventListener("click", () => {
+      if (state.awaitingContinue) return;
       state.activeCategory = category.key;
       state.activeSubmenu = submenuByCategory[category.key][0];
       render();
@@ -125,7 +165,9 @@ function renderSubmenu() {
     const btn = document.createElement("button");
     btn.className = `submenu-btn ${entry === state.activeSubmenu ? "active" : ""}`;
     btn.textContent = entry;
+    btn.disabled = state.awaitingContinue;
     btn.addEventListener("click", () => {
+      if (state.awaitingContinue) return;
       state.activeSubmenu = entry;
       handleSubmenuAction(entry);
     });
@@ -150,9 +192,21 @@ function renderStory() {
     return;
   }
 
+  if (state.awaitingContinue && state.pendingResult) {
+    el.storyTitle.textContent = "Action Result";
+    el.storyText.textContent = state.pendingResult.text;
+    el.choiceButtons.innerHTML = "";
+    const continueBtn = document.createElement("button");
+    continueBtn.className = "choice-btn continue-btn";
+    continueBtn.textContent = "Continue to Hub";
+    continueBtn.addEventListener("click", clearResultAndReturnToHub);
+    el.choiceButtons.appendChild(continueBtn);
+    return;
+  }
+
   el.storyTitle.textContent = "Street Feed";
   const recent = state.log[0]?.text || "Pick an option on the left to make your next move.";
-  el.storyText.textContent = recent;
+  el.storyText.textContent = `${recent}\n\nChoose from Navigation and Options for your next move.`;
   el.choiceButtons.innerHTML = "";
 }
 
@@ -187,29 +241,33 @@ function render() {
 
 function openingChoice(choice) {
   state.openingComplete = true;
+  let resultText = "";
+  let tone = "";
 
   if (choice === "Talk to Cousin") {
     state.activeCategory = "people";
     state.activeSubmenu = "Cousin";
     state.reputation = clamp(state.reputation + 1, 0, 100);
-    addLog("Your cousin lays out the rules: thirty days, no excuses, make something move.", "good");
+    resultText = "Your cousin lays out the rules: thirty days, no excuses, make something move.";
+    tone = "good";
   } else if (choice === "Wash Up") {
     state.activeCategory = "rest";
     state.activeSubmenu = "Recover";
     state.health = clamp(state.health + 4, 0, 100);
-    addLog("Cold water wakes you up. You breathe, focus, and plan your first day.");
+    resultText = "Cold water wakes you up. You breathe, focus, and plan your first day.";
   } else {
     state.activeCategory = "move";
     state.activeSubmenu = "Step Outside";
     state.heat = clamp(state.heat + 1, 0, 100);
-    addLog("You step outside and scan the block. The city already feels expensive.");
+    resultText = "You step outside and scan the block. The city already feels expensive.";
   }
 
-  advanceTime();
-  endOfActionCheck();
+  resolveAction(resultText, tone);
 }
 
 function handleSubmenuAction(action) {
+  if (state.awaitingContinue) return;
+
   if (!state.openingComplete) {
     addLog("Handle your opening moment first.");
     render();
@@ -220,7 +278,7 @@ function handleSubmenuAction(action) {
     case "Step Outside": {
       state.location = "Downtown Anchorage";
       state.heat = clamp(state.heat + randomInt(0, 2), 0, 100);
-      addLog("You step into the city and take stock of who is posted where.");
+      resolveAction("You step into the city and take stock of who is posted where.");
       break;
     }
     case "Check Area": {
@@ -232,7 +290,7 @@ function handleSubmenuAction(action) {
       const [text, tone] = outcomes[randomInt(0, outcomes.length - 1)];
       if (tone === "good") state.reputation = clamp(state.reputation + 1, 0, 100);
       if (tone === "bad") state.heat = clamp(state.heat + 2, 0, 100);
-      addLog(text, tone);
+      resolveAction(text, tone);
       break;
     }
     case "Travel": {
@@ -240,67 +298,64 @@ function handleSubmenuAction(action) {
       state.location = destination;
       state.day += 1;
       state.heat = clamp(state.heat - randomInt(0, 2), 0, 100);
-      addLog(`You relocate to ${destination}. A full day burns getting settled.`);
+      resolveAction(`You relocate to ${destination}. A full day burns getting settled.`);
       break;
     }
     case "Cousin":
       state.reputation = clamp(state.reputation + 1, 0, 100);
-      addLog("Your cousin gives you local names and warns you not to get sloppy.", "good");
+      resolveAction("Your cousin gives you local names and warns you not to get sloppy.", "good");
       break;
     case "Contacts":
-      addLog("You still have a thin contact list. One number might be worth calling.");
+      resolveAction("You still have a thin contact list. One number might be worth calling.");
       break;
     case "Messages":
-      addLog("No real motion in your inbox yet. You're still a stranger here.");
+      resolveAction("No real motion in your inbox yet. You're still a stranger here.");
       break;
     case "Look for Work": {
       const payout = randomInt(45, 140);
       state.money += payout;
       state.reputation = clamp(state.reputation + randomInt(1, 3), 0, 100);
       state.heat = clamp(state.heat + randomInt(0, 3), 0, 100);
-      addLog(`You catch a quick job and clear $${payout}.`, "good");
+      resolveAction(`You catch a quick job and clear $${payout}.`, "good");
       break;
     }
     case "Ask Around": {
       state.heat = clamp(state.heat + randomInt(0, 2), 0, 100);
-      addLog("You ask around for movement. People clock your face but stay guarded.");
+      resolveAction("You ask around for movement. People clock your face but stay guarded.");
       break;
     }
     case "Scope a Spot": {
       const injury = randomInt(0, 6);
       state.health = clamp(state.health - injury, 0, 100);
-      addLog(injury ? `You scope a spot and catch minor trouble (-${injury} health).` : "You scope a spot and slip out unseen.");
+      resolveAction(injury ? `You scope a spot and catch minor trouble (-${injury} health).` : "You scope a spot and slip out unseen.");
       break;
     }
     case "Inventory":
-      addLog(`Inventory check: ${inventoryCount()} total items stashed.`);
+      resolveAction(`Inventory check: ${inventoryCount()} total items stashed.`);
       break;
     case "Stats":
-      addLog(`Current stats — Cash $${state.money}, Health ${state.health}, Rep ${state.reputation}, Heat ${state.heat}.`);
+      resolveAction(`Current stats — Cash $${state.money}, Health ${state.health}, Rep ${state.reputation}, Heat ${state.heat}.`);
       break;
     case "Journal":
-      addLog("You review your journal and tighten your next steps.");
+      resolveAction("You review your journal and tighten your next steps.");
       break;
     case "Sleep":
       state.day += 1;
       state.time = "Morning";
       state.health = clamp(state.health + 12, 0, 100);
-      addLog("You sleep hard and recover for the next push.", "good");
+      resolveAction("You sleep hard and recover for the next push.", "good", { skipAdvanceTime: true });
       break;
     case "Wait":
-      addLog("You keep your head down and let the block reset.");
+      resolveAction("You keep your head down and let the block reset.");
       break;
     case "Recover":
       state.health = clamp(state.health + 7, 0, 100);
       state.money = Math.max(0, state.money - 10);
-      addLog("You spend $10 on food and supplies, then reset your body.");
+      resolveAction("You spend $10 on food and supplies, then reset your body.");
       break;
     default:
-      addLog("No action tied to that option yet.");
+      resolveAction("No action tied to that option yet.");
   }
-
-  advanceTime();
-  endOfActionCheck();
 }
 
 function endOfActionCheck() {
@@ -314,6 +369,21 @@ function endOfActionCheck() {
     return endGame(buildOutcome());
   }
 
+  render();
+}
+
+function resolveAction(text, tone = "", options = {}) {
+  const { skipAdvanceTime = false } = options;
+  addLog(text, tone);
+  state.pendingResult = { text, tone };
+  state.awaitingContinue = true;
+  if (!skipAdvanceTime) advanceTime();
+  endOfActionCheck();
+}
+
+function clearResultAndReturnToHub() {
+  state.awaitingContinue = false;
+  state.pendingResult = null;
   render();
 }
 
@@ -362,6 +432,8 @@ function startGame(name) {
   state.openingComplete = false;
   state.inventory = {};
   state.log = [];
+  state.awaitingContinue = false;
+  state.pendingResult = null;
   state.gameOver = false;
 
   el.startScreen.classList.add("hidden");
@@ -387,6 +459,8 @@ function loadGame() {
   try {
     const loaded = JSON.parse(raw);
     Object.assign(state, loaded);
+    state.awaitingContinue = Boolean(state.awaitingContinue);
+    state.pendingResult = state.pendingResult || null;
     el.startScreen.classList.add("hidden");
     el.endScreen.classList.add("hidden");
     el.gameScreen.classList.remove("hidden");

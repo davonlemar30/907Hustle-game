@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>907 Underworld</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section id="startScreen" class="screen card">
+        <h1>907 Underworld</h1>
+        <p class="subtitle">A gritty Alaska crime-life simulator</p>
+        <label for="playerName">Your name</label>
+        <input id="playerName" type="text" maxlength="20" placeholder="Enter a street name" />
+        <button id="startGameBtn" class="btn primary">Start Hustle</button>
+      </section>
+
+      <section id="gameScreen" class="screen hidden">
+        <header class="card">
+          <div class="header-row">
+            <h2 id="welcomeName">Welcome,</h2>
+            <div class="header-actions">
+              <button id="saveBtn" class="btn ghost">Save</button>
+              <button id="loadBtn" class="btn ghost">Load</button>
+              <button id="restartBtn" class="btn danger">Restart</button>
+            </div>
+          </div>
+          <div id="dayLocation" class="day-location"></div>
+        </header>
+
+        <section class="card">
+          <h3>Player Stats</h3>
+          <div id="statsGrid" class="stats-grid"></div>
+        </section>
+
+        <section class="card">
+          <h3>Black Market Prices</h3>
+          <div id="marketList" class="list"></div>
+          <div class="market-controls">
+            <label>
+              Item
+              <select id="itemSelect"></select>
+            </label>
+            <label>
+              Quantity
+              <input id="qtyInput" type="number" min="1" value="1" />
+            </label>
+          </div>
+          <div class="action-row">
+            <button id="buyBtn" class="btn">Buy</button>
+            <button id="sellBtn" class="btn">Sell</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h3>Inventory</h3>
+          <div id="inventoryList" class="list"></div>
+          <div id="capacityText" class="muted"></div>
+        </section>
+
+        <section class="card">
+          <h3>Actions</h3>
+          <div class="action-grid">
+            <label>
+              Travel to
+              <select id="locationSelect"></select>
+            </label>
+            <button id="travelBtn" class="btn">Travel (Advance Day)</button>
+            <button id="robBtn" class="btn danger">Attempt Robbery</button>
+            <button id="nightlifeBtn" class="btn">Nightlife</button>
+            <button id="checkRelationshipBtn" class="btn ghost">Check Relationship</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h3>Event Log</h3>
+          <div id="eventLog" class="event-log"></div>
+        </section>
+      </section>
+
+      <section id="endScreen" class="screen hidden card">
+        <h2>30 Days Complete</h2>
+        <p id="outcomeSummary"></p>
+        <div id="finalStats" class="list"></div>
+        <button id="playAgainBtn" class="btn primary">Play Again</button>
+      </section>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>

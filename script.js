@@ -1,8 +1,8 @@
 const GAME_DAYS = 30;
-const INVENTORY_CAPACITY = 30;
-const SAVE_KEY = "underworld907_save";
+const SAVE_KEY = "hustle907_save";
 
 const locations = [
+  "Cousin's Apt",
   "Downtown Anchorage",
   "Spenard",
   "Mountain View",
@@ -10,52 +10,35 @@ const locations = [
   "South Addition",
 ];
 
-const items = {
-  drugs: ["Ice", "Powder", "Shrooms"],
-  "stolen goods": ["Bike", "Copper", "Tools"],
-  "fake IDs": ["State ID", "Work Permit", "Passport"],
-  weapons: ["Knife", "Pistol", "Shotgun"],
-  pills: ["Painkillers", "Xanax", "Adderall"],
-  electronics: ["Phone", "Tablet", "Laptop"],
-};
+const navCategories = [
+  { key: "move", label: "Move", icon: "🧭" },
+  { key: "people", label: "People", icon: "👥" },
+  { key: "hustle", label: "Hustle", icon: "💼" },
+  { key: "info", label: "Info", icon: "📓" },
+  { key: "rest", label: "Rest", icon: "🛌" },
+];
 
-const basePrices = {
-  Ice: 120,
-  Powder: 180,
-  Shrooms: 90,
-  Bike: 140,
-  Copper: 85,
-  Tools: 110,
-  "State ID": 200,
-  "Work Permit": 260,
-  Passport: 320,
-  Knife: 90,
-  Pistol: 260,
-  Shotgun: 380,
-  Painkillers: 70,
-  Xanax: 95,
-  Adderall: 130,
-  Phone: 230,
-  Tablet: 280,
-  Laptop: 420,
+const submenuByCategory = {
+  move: ["Step Outside", "Check Area", "Travel"],
+  people: ["Cousin", "Contacts", "Messages"],
+  hustle: ["Look for Work", "Ask Around", "Scope a Spot"],
+  info: ["Inventory", "Stats", "Journal"],
+  rest: ["Sleep", "Wait", "Recover"],
 };
 
 const state = {
   playerName: "",
   day: 1,
-  money: 100,
+  time: "Morning",
+  money: 200,
   health: 100,
   reputation: 0,
   heat: 0,
-  location: locations[0],
+  location: "Cousin's Apt",
+  activeCategory: "people",
+  activeSubmenu: "Cousin",
+  openingComplete: false,
   inventory: {},
-  relationship: {
-    met: false,
-    name: "Nina",
-    attraction: 0,
-    trust: 0,
-  },
-  pricesByLocation: {},
   log: [],
   gameOver: false,
 };
@@ -66,22 +49,17 @@ const el = {
   endScreen: document.getElementById("endScreen"),
   playerName: document.getElementById("playerName"),
   startGameBtn: document.getElementById("startGameBtn"),
-  welcomeName: document.getElementById("welcomeName"),
-  dayLocation: document.getElementById("dayLocation"),
-  statsGrid: document.getElementById("statsGrid"),
-  marketList: document.getElementById("marketList"),
-  itemSelect: document.getElementById("itemSelect"),
-  qtyInput: document.getElementById("qtyInput"),
-  buyBtn: document.getElementById("buyBtn"),
-  sellBtn: document.getElementById("sellBtn"),
-  inventoryList: document.getElementById("inventoryList"),
-  capacityText: document.getElementById("capacityText"),
-  locationSelect: document.getElementById("locationSelect"),
-  travelBtn: document.getElementById("travelBtn"),
-  robBtn: document.getElementById("robBtn"),
-  nightlifeBtn: document.getElementById("nightlifeBtn"),
-  checkRelationshipBtn: document.getElementById("checkRelationshipBtn"),
-  eventLog: document.getElementById("eventLog"),
+  hudPrimary: document.getElementById("hudPrimary"),
+  hudStats: document.getElementById("hudStats"),
+  navRail: document.getElementById("navRail"),
+  submenuTitle: document.getElementById("submenuTitle"),
+  submenuPanel: document.getElementById("submenuPanel"),
+  sceneText: document.getElementById("sceneText"),
+  storyTitle: document.getElementById("storyTitle"),
+  storyText: document.getElementById("storyText"),
+  choiceButtons: document.getElementById("choiceButtons"),
+  detailTitle: document.getElementById("detailTitle"),
+  detailPanel: document.getElementById("detailPanel"),
   saveBtn: document.getElementById("saveBtn"),
   loadBtn: document.getElementById("loadBtn"),
   restartBtn: document.getElementById("restartBtn"),
@@ -89,14 +67,6 @@ const el = {
   finalStats: document.getElementById("finalStats"),
   playAgainBtn: document.getElementById("playAgainBtn"),
 };
-
-function allItemNames() {
-  return Object.values(items).flat();
-}
-
-function currentPrices() {
-  return state.pricesByLocation[state.location] || {};
-}
 
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -110,319 +80,233 @@ function inventoryCount() {
   return Object.values(state.inventory).reduce((sum, qty) => sum + qty, 0);
 }
 
-function canCarry(qty) {
-  return inventoryCount() + qty <= INVENTORY_CAPACITY;
-}
-
-function generatePrices() {
-  const names = allItemNames();
-  locations.forEach((loc) => {
-    state.pricesByLocation[loc] = {};
-    names.forEach((name) => {
-      const volatility = randomInt(65, 150) / 100;
-      state.pricesByLocation[loc][name] = Math.max(25, Math.floor(basePrices[name] * volatility));
-    });
-  });
-}
-
-function populateSelectors() {
-  el.itemSelect.innerHTML = "";
-  allItemNames().forEach((name) => {
-    const opt = document.createElement("option");
-    opt.value = name;
-    opt.textContent = name;
-    el.itemSelect.appendChild(opt);
-  });
-
-  el.locationSelect.innerHTML = "";
-  locations.forEach((loc) => {
-    const opt = document.createElement("option");
-    opt.value = loc;
-    opt.textContent = loc;
-    el.locationSelect.appendChild(opt);
-  });
-}
-
 function addLog(text, tone = "") {
-  state.log.unshift({ text, tone, day: state.day });
+  state.log.unshift({ day: state.day, text, tone });
   state.log = state.log.slice(0, 80);
 }
 
-function renderLog() {
-  el.eventLog.innerHTML = "";
-  state.log.forEach((entry) => {
+function advanceTime() {
+  const cycle = ["Morning", "Afternoon", "Evening", "Late Night"];
+  const idx = cycle.indexOf(state.time);
+  state.time = cycle[(idx + 1) % cycle.length];
+}
+
+function renderHud() {
+  el.hudPrimary.textContent = `907 HUSTLE | Day ${state.day} | ${state.time} | ${state.location}`;
+  el.hudStats.textContent = `Cash: $${state.money} | Health: ${state.health} | Rep: ${state.reputation} | Heat: ${state.heat}`;
+}
+
+function renderScene() {
+  el.sceneText.textContent =
+    "Cousin's apartment feels cramped and temporary. A duffel bag sits by the couch, cheap blinds leak morning light, and city noise leaks through thin windows.";
+}
+
+function renderNav() {
+  el.navRail.innerHTML = "";
+  navCategories.forEach((category) => {
+    const btn = document.createElement("button");
+    btn.className = `nav-btn ${category.key === state.activeCategory ? "active" : ""}`;
+    btn.innerHTML = `<span class="nav-icon">${category.icon}</span>${category.label}`;
+    btn.addEventListener("click", () => {
+      state.activeCategory = category.key;
+      state.activeSubmenu = submenuByCategory[category.key][0];
+      render();
+    });
+    el.navRail.appendChild(btn);
+  });
+}
+
+function renderSubmenu() {
+  const category = navCategories.find((entry) => entry.key === state.activeCategory);
+  el.submenuTitle.textContent = category ? `${category.label} Options` : "Options";
+  el.submenuPanel.innerHTML = "";
+
+  submenuByCategory[state.activeCategory].forEach((entry) => {
+    const btn = document.createElement("button");
+    btn.className = `submenu-btn ${entry === state.activeSubmenu ? "active" : ""}`;
+    btn.textContent = entry;
+    btn.addEventListener("click", () => {
+      state.activeSubmenu = entry;
+      handleSubmenuAction(entry);
+    });
+    el.submenuPanel.appendChild(btn);
+  });
+}
+
+function renderStory() {
+  if (!state.openingComplete) {
+    el.storyTitle.textContent = "Opening";
+    el.storyText.textContent =
+      "You wake up stiff on the couch.\nYour cousin gave you thirty days.\nYou got two hundred dollars, no motion, and no one in this city really checking for you yet.\nYou hear movement in the kitchen.\nWhat do you do first?";
+
+    el.choiceButtons.innerHTML = "";
+    ["Talk to Cousin", "Wash Up", "Step Outside"].forEach((choice) => {
+      const button = document.createElement("button");
+      button.className = "choice-btn";
+      button.textContent = choice;
+      button.addEventListener("click", () => openingChoice(choice));
+      el.choiceButtons.appendChild(button);
+    });
+    return;
+  }
+
+  el.storyTitle.textContent = "Street Feed";
+  const recent = state.log[0]?.text || "Pick an option on the left to make your next move.";
+  el.storyText.textContent = recent;
+  el.choiceButtons.innerHTML = "";
+}
+
+function renderDetailPanel() {
+  el.detailTitle.textContent = state.openingComplete ? "Journal" : "Opening Notes";
+  el.detailPanel.innerHTML = "";
+
+  if (!state.log.length) {
+    const row = document.createElement("div");
+    row.className = "log-item";
+    row.textContent = "No events yet. Your first move will set the tone.";
+    el.detailPanel.appendChild(row);
+    return;
+  }
+
+  state.log.slice(0, 10).forEach((entry) => {
     const row = document.createElement("div");
     row.className = `log-item ${entry.tone}`;
     row.textContent = `Day ${entry.day}: ${entry.text}`;
-    el.eventLog.appendChild(row);
+    el.detailPanel.appendChild(row);
   });
-}
-
-function renderStats() {
-  const stats = [
-    ["Cash", `$${state.money}`],
-    ["Health", state.health],
-    ["Reputation", state.reputation],
-    ["Heat", state.heat],
-    ["Day", `${state.day}/${GAME_DAYS}`],
-    ["Location", state.location],
-  ];
-
-  el.statsGrid.innerHTML = "";
-  stats.forEach(([label, value]) => {
-    const box = document.createElement("div");
-    box.className = "stat";
-    box.innerHTML = `<small>${label}</small><strong>${value}</strong>`;
-    el.statsGrid.appendChild(box);
-  });
-}
-
-function renderMarket() {
-  const prices = currentPrices();
-  el.marketList.innerHTML = "";
-
-  Object.entries(items).forEach(([category, names]) => {
-    names.forEach((name) => {
-      const row = document.createElement("div");
-      row.className = "list-row";
-      row.innerHTML = `<span>${name} <small class="muted">(${category})</small></span><strong>$${prices[name]}</strong>`;
-      el.marketList.appendChild(row);
-    });
-  });
-}
-
-function renderInventory() {
-  el.inventoryList.innerHTML = "";
-  const entries = Object.entries(state.inventory).filter(([, qty]) => qty > 0);
-
-  if (!entries.length) {
-    const row = document.createElement("div");
-    row.className = "list-row";
-    row.textContent = "No inventory yet.";
-    el.inventoryList.appendChild(row);
-  } else {
-    entries.forEach(([name, qty]) => {
-      const row = document.createElement("div");
-      row.className = "list-row";
-      row.innerHTML = `<span>${name}</span><strong>x${qty}</strong>`;
-      el.inventoryList.appendChild(row);
-    });
-  }
-
-  el.capacityText.textContent = `Capacity: ${inventoryCount()} / ${INVENTORY_CAPACITY}`;
-}
-
-function renderHeader() {
-  el.welcomeName.textContent = `Welcome, ${state.playerName}`;
-  el.dayLocation.textContent = `Day ${state.day} • ${state.location}`;
-  el.locationSelect.value = state.location;
 }
 
 function render() {
-  renderHeader();
-  renderStats();
-  renderMarket();
-  renderInventory();
-  renderLog();
+  renderHud();
+  renderScene();
+  renderNav();
+  renderSubmenu();
+  renderStory();
+  renderDetailPanel();
 }
 
-function policePressureCheck() {
-  const pressureChance = Math.min(55, 8 + state.heat);
-  if (randomInt(1, 100) <= pressureChance) {
-    const cashLoss = randomInt(20, 80);
-    const healthLoss = randomInt(0, 12);
-    state.money = Math.max(0, state.money - cashLoss);
-    state.health = clamp(state.health - healthLoss, 0, 100);
-    addLog(`Police pressure is heavy. You lost $${cashLoss}${healthLoss ? ` and ${healthLoss} health` : ""}.`, "bad");
+function openingChoice(choice) {
+  state.openingComplete = true;
+
+  if (choice === "Talk to Cousin") {
+    state.activeCategory = "people";
+    state.activeSubmenu = "Cousin";
+    state.reputation = clamp(state.reputation + 1, 0, 100);
+    addLog("Your cousin lays out the rules: thirty days, no excuses, make something move.", "good");
+  } else if (choice === "Wash Up") {
+    state.activeCategory = "rest";
+    state.activeSubmenu = "Recover";
+    state.health = clamp(state.health + 4, 0, 100);
+    addLog("Cold water wakes you up. You breathe, focus, and plan your first day.");
+  } else {
+    state.activeCategory = "move";
+    state.activeSubmenu = "Step Outside";
+    state.heat = clamp(state.heat + 1, 0, 100);
+    addLog("You step outside and scan the block. The city already feels expensive.");
   }
+
+  advanceTime();
+  endOfActionCheck();
 }
 
-function randomEvent() {
-  const roll = randomInt(1, 100);
-
-  if (roll <= 20) {
-    state.heat = clamp(state.heat + randomInt(4, 9), 0, 100);
-    addLog("Street checkpoints tighten. Heat climbs.", "bad");
-  } else if (roll <= 35) {
-    const repLoss = randomInt(1, 4);
-    state.reputation = Math.max(0, state.reputation - repLoss);
-    addLog("A rival crew undercuts your deal. Reputation slips.", "bad");
-  } else if (roll <= 50) {
-    const bonus = randomInt(40, 130);
-    state.money += bonus;
-    addLog(`Lucky deal from a dock contact earns you $${bonus}.`, "good");
-  } else if (roll <= 65) {
-    const healthLoss = randomInt(5, 17);
-    state.health = clamp(state.health - healthLoss, 0, 100);
-    addLog(`Things turned violent. You took ${healthLoss} damage.`, "bad");
-  } else if (roll <= 80) {
-    const item = allItemNames()[randomInt(0, allItemNames().length - 1)];
-    const discount = Math.floor(currentPrices()[item] * 0.7);
-    state.pricesByLocation[state.location][item] = discount;
-    addLog(`Special offer: ${item} is running hot at only $${discount} today.`, "good");
-  }
-}
-
-function relationshipEncounter() {
-  if (!state.relationship.met && randomInt(1, 100) <= 28) {
-    state.relationship.met = true;
-    state.relationship.attraction = randomInt(8, 18);
-    state.relationship.trust = randomInt(4, 12);
-    addLog("You meet Nina at a late-night lounge in Spenard. She remembers your face.", "good");
+function handleSubmenuAction(action) {
+  if (!state.openingComplete) {
+    addLog("Handle your opening moment first.");
+    render();
     return;
   }
 
-  if (!state.relationship.met) {
-    addLog("Nightlife was loud but empty for you tonight.");
-    return;
-  }
-
-  const roll = randomInt(1, 100);
-  if (roll <= 35) {
-    state.relationship.attraction = clamp(state.relationship.attraction + randomInt(2, 7), 0, 100);
-    state.relationship.trust = clamp(state.relationship.trust + randomInt(1, 4), 0, 100);
-    addLog("You and Nina hit it off. Attraction and trust rise.", "good");
-  } else if (roll <= 65) {
-    const giftCost = randomInt(20, 60);
-    if (state.money >= giftCost) {
-      state.money -= giftCost;
-      state.relationship.trust = clamp(state.relationship.trust + randomInt(3, 8), 0, 100);
-      addLog(`You spend $${giftCost} on a night out with Nina. Trust grows.`, "good");
-    } else {
-      state.relationship.trust = clamp(state.relationship.trust - 2, 0, 100);
-      addLog("You couldn't cover the night tab. Trust dips.", "bad");
+  switch (action) {
+    case "Step Outside": {
+      state.location = "Downtown Anchorage";
+      state.heat = clamp(state.heat + randomInt(0, 2), 0, 100);
+      addLog("You step into the city and take stock of who is posted where.");
+      break;
     }
-  } else if (roll <= 82) {
-    const tip = randomInt(35, 120);
-    state.money += tip;
-    state.relationship.trust = clamp(state.relationship.trust + 2, 0, 100);
-    addLog(`Nina tips you off to a quick score worth $${tip}.`, "good");
-  } else {
-    state.heat = clamp(state.heat + randomInt(4, 10), 0, 100);
-    state.relationship.trust = clamp(state.relationship.trust - randomInt(2, 6), 0, 100);
-    addLog("Nina gets spooked by your heat. Things get complicated.", "bad");
-  }
-}
-
-function attemptRobbery() {
-  const risk = 45 + Math.floor(state.heat * 0.35) - Math.floor(state.reputation * 0.15);
-  const successChance = clamp(60 - risk + 40, 10, 85);
-
-  if (randomInt(1, 100) <= successChance) {
-    const gain = randomInt(70, 210) + Math.floor(state.reputation * 0.8);
-    state.money += gain;
-    state.reputation = clamp(state.reputation + randomInt(2, 7), 0, 100);
-    state.heat = clamp(state.heat + randomInt(8, 15), 0, 100);
-    addLog(`Robbery successful. You scored $${gain}, but heat rose.`, "good");
-  } else {
-    const injury = randomInt(8, 22);
-    const loss = randomInt(25, 90);
-    state.health = clamp(state.health - injury, 0, 100);
-    state.money = Math.max(0, state.money - loss);
-    state.heat = clamp(state.heat + randomInt(10, 18), 0, 100);
-    addLog(`Robbery failed. You lost $${loss} and took ${injury} damage.`, "bad");
-  }
-
-  if (state.reputation >= 45 && randomInt(1, 100) <= 25) {
-    const bonus = randomInt(90, 220);
-    state.money += bonus;
-    addLog(`Your name carries weight now. A bigger opportunity pays $${bonus}.`, "good");
-  }
-
-  endOfActionCheck();
-}
-
-function buySelected() {
-  const item = el.itemSelect.value;
-  const qty = parseInt(el.qtyInput.value, 10);
-  if (!item || Number.isNaN(qty) || qty <= 0) {
-    addLog("Pick a valid item and quantity.", "bad");
-    return;
-  }
-
-  if (!canCarry(qty)) {
-    addLog("Not enough inventory space.", "bad");
-    return;
-  }
-
-  const price = currentPrices()[item] * qty;
-  if (state.money < price) {
-    addLog("You don't have enough cash.", "bad");
-    return;
-  }
-
-  state.money -= price;
-  state.inventory[item] = (state.inventory[item] || 0) + qty;
-  state.heat = clamp(state.heat + randomInt(0, 2), 0, 100);
-  addLog(`Bought ${qty} ${item} for $${price}.`);
-  endOfActionCheck();
-}
-
-function sellSelected() {
-  const item = el.itemSelect.value;
-  const qty = parseInt(el.qtyInput.value, 10);
-  if (!item || Number.isNaN(qty) || qty <= 0) {
-    addLog("Pick a valid item and quantity.", "bad");
-    return;
-  }
-
-  const owned = state.inventory[item] || 0;
-  if (owned < qty) {
-    addLog("Not enough stock to sell.", "bad");
-    return;
+    case "Check Area": {
+      const outcomes = [
+        ["A corner runner points you toward a low-profile block.", "good"],
+        ["Cops drift through and everyone goes quiet.", "bad"],
+        ["You learn who is taxing this area and who to avoid.", ""],
+      ];
+      const [text, tone] = outcomes[randomInt(0, outcomes.length - 1)];
+      if (tone === "good") state.reputation = clamp(state.reputation + 1, 0, 100);
+      if (tone === "bad") state.heat = clamp(state.heat + 2, 0, 100);
+      addLog(text, tone);
+      break;
+    }
+    case "Travel": {
+      const destination = locations[randomInt(1, locations.length - 1)];
+      state.location = destination;
+      state.day += 1;
+      state.heat = clamp(state.heat - randomInt(0, 2), 0, 100);
+      addLog(`You relocate to ${destination}. A full day burns getting settled.`);
+      break;
+    }
+    case "Cousin":
+      state.reputation = clamp(state.reputation + 1, 0, 100);
+      addLog("Your cousin gives you local names and warns you not to get sloppy.", "good");
+      break;
+    case "Contacts":
+      addLog("You still have a thin contact list. One number might be worth calling.");
+      break;
+    case "Messages":
+      addLog("No real motion in your inbox yet. You're still a stranger here.");
+      break;
+    case "Look for Work": {
+      const payout = randomInt(45, 140);
+      state.money += payout;
+      state.reputation = clamp(state.reputation + randomInt(1, 3), 0, 100);
+      state.heat = clamp(state.heat + randomInt(0, 3), 0, 100);
+      addLog(`You catch a quick job and clear $${payout}.`, "good");
+      break;
+    }
+    case "Ask Around": {
+      state.heat = clamp(state.heat + randomInt(0, 2), 0, 100);
+      addLog("You ask around for movement. People clock your face but stay guarded.");
+      break;
+    }
+    case "Scope a Spot": {
+      const injury = randomInt(0, 6);
+      state.health = clamp(state.health - injury, 0, 100);
+      addLog(injury ? `You scope a spot and catch minor trouble (-${injury} health).` : "You scope a spot and slip out unseen.");
+      break;
+    }
+    case "Inventory":
+      addLog(`Inventory check: ${inventoryCount()} total items stashed.`);
+      break;
+    case "Stats":
+      addLog(`Current stats — Cash $${state.money}, Health ${state.health}, Rep ${state.reputation}, Heat ${state.heat}.`);
+      break;
+    case "Journal":
+      addLog("You review your journal and tighten your next steps.");
+      break;
+    case "Sleep":
+      state.day += 1;
+      state.time = "Morning";
+      state.health = clamp(state.health + 12, 0, 100);
+      addLog("You sleep hard and recover for the next push.", "good");
+      break;
+    case "Wait":
+      addLog("You keep your head down and let the block reset.");
+      break;
+    case "Recover":
+      state.health = clamp(state.health + 7, 0, 100);
+      state.money = Math.max(0, state.money - 10);
+      addLog("You spend $10 on food and supplies, then reset your body.");
+      break;
+    default:
+      addLog("No action tied to that option yet.");
   }
 
-  const value = currentPrices()[item] * qty;
-  state.inventory[item] -= qty;
-  state.money += value;
-  state.reputation = clamp(state.reputation + randomInt(0, 2), 0, 100);
-  addLog(`Sold ${qty} ${item} for $${value}.`, "good");
-  endOfActionCheck();
-}
-
-function travel() {
-  const destination = el.locationSelect.value;
-  if (!destination || destination === state.location) {
-    addLog("You're already there. Pick another district.");
-    return;
-  }
-
-  state.location = destination;
-  state.day += 1;
-  generatePrices();
-  state.heat = clamp(state.heat - randomInt(1, 4), 0, 100);
-  addLog(`You moved to ${destination}. A day passes and markets reset.`);
-
-  randomEvent();
-  policePressureCheck();
-  endOfActionCheck();
-}
-
-function checkRelationship() {
-  if (!state.relationship.met) {
-    addLog("No active relationship. Hit nightlife and meet someone.");
-    return;
-  }
-
-  addLog(
-    `Relationship with ${state.relationship.name}: Attraction ${state.relationship.attraction}, Trust ${state.relationship.trust}.`
-  );
-}
-
-function nightlife() {
-  state.day += 1;
-  state.heat = clamp(state.heat + randomInt(0, 3), 0, 100);
-  generatePrices();
-  relationshipEncounter();
-  randomEvent();
-  policePressureCheck();
+  advanceTime();
   endOfActionCheck();
 }
 
 function endOfActionCheck() {
   if (state.health <= 0) {
     state.gameOver = true;
-    return endGame("You couldn't survive the streets. Your run ends in an icy alley.");
+    return endGame("You couldn't survive the streets. Your run ends cold.");
   }
 
   if (state.day > GAME_DAYS) {
@@ -439,11 +323,7 @@ function buildOutcome() {
   if (state.money >= 4500 || state.reputation >= 60) tier = "A rising underworld name";
   if (state.money >= 8000 && state.reputation >= 75) tier = "An Anchorage kingpin";
 
-  const rel = state.relationship.met
-    ? `Nina status — Attraction ${state.relationship.attraction}, Trust ${state.relationship.trust}.`
-    : "You stayed solo the whole run.";
-
-  return `${state.playerName}, after 30 days you became: ${tier}. Final heat: ${state.heat}. ${rel}`;
+  return `${state.playerName}, after 30 days you became: ${tier}. Final heat: ${state.heat}.`;
 }
 
 function endGame(summaryText) {
@@ -456,7 +336,7 @@ function endGame(summaryText) {
     ["Health", state.health],
     ["Reputation", state.reputation],
     ["Heat", state.heat],
-    ["Inventory Slots Used", `${inventoryCount()} / ${INVENTORY_CAPACITY}`],
+    ["Location", state.location],
   ];
 
   el.finalStats.innerHTML = "";
@@ -471,19 +351,18 @@ function endGame(summaryText) {
 function startGame(name) {
   state.playerName = name || "Rookie";
   state.day = 1;
-  state.money = 100;
+  state.time = "Morning";
+  state.money = 200;
   state.health = 100;
   state.reputation = 0;
   state.heat = 0;
-  state.location = locations[0];
+  state.location = "Cousin's Apt";
+  state.activeCategory = "people";
+  state.activeSubmenu = "Cousin";
+  state.openingComplete = false;
   state.inventory = {};
-  state.relationship = { met: false, name: "Nina", attraction: 0, trust: 0 };
   state.log = [];
   state.gameOver = false;
-
-  generatePrices();
-  populateSelectors();
-  addLog("You arrived in Anchorage with $100 and no allies.");
 
   el.startScreen.classList.add("hidden");
   el.endScreen.classList.add("hidden");
@@ -508,7 +387,6 @@ function loadGame() {
   try {
     const loaded = JSON.parse(raw);
     Object.assign(state, loaded);
-    populateSelectors();
     el.startScreen.classList.add("hidden");
     el.endScreen.classList.add("hidden");
     el.gameScreen.classList.remove("hidden");
@@ -525,19 +403,11 @@ el.startGameBtn.addEventListener("click", () => {
   startGame(name);
 });
 
-el.buyBtn.addEventListener("click", buySelected);
-el.sellBtn.addEventListener("click", sellSelected);
-el.travelBtn.addEventListener("click", travel);
-el.robBtn.addEventListener("click", attemptRobbery);
-el.nightlifeBtn.addEventListener("click", nightlife);
-el.checkRelationshipBtn.addEventListener("click", checkRelationship);
 el.saveBtn.addEventListener("click", saveGame);
 el.loadBtn.addEventListener("click", loadGame);
 el.restartBtn.addEventListener("click", () => startGame(state.playerName || "Rookie"));
 el.playAgainBtn.addEventListener("click", () => startGame(state.playerName || "Rookie"));
 
 el.playerName.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    el.startGameBtn.click();
-  }
+  if (event.key === "Enter") el.startGameBtn.click();
 });

@@ -16,60 +16,83 @@
         <button id="startGameBtn" class="btn primary">Start Hustle</button>
       </section>
 
-      <section id="gameScreen" class="screen hidden hud-shell">
+      <section id="gameScreen" class="screen hidden game-shell">
         <header class="hud-bar card">
           <div id="hudPrimary" class="hud-primary"></div>
-          <div id="hudStats" class="hud-stats"></div>
-          <div class="hud-actions">
-            <button id="saveBtn" class="btn ghost">Save</button>
-            <button id="loadBtn" class="btn ghost">Load</button>
-            <button id="restartBtn" class="btn danger">Restart</button>
-          </div>
+          <div id="hudStats" class="hud-chips"></div>
+          <button id="menuToggleBtn" class="btn ghost menu-toggle" type="button">Menu</button>
         </header>
 
-        <div class="hud-grid">
-          <aside class="left-stack">
-            <div class="mobile-pane-switch" role="tablist" aria-label="Control panels">
-              <button id="mobileNavTab" class="btn ghost mobile-pane-btn active" type="button">Navigation</button>
-              <button id="mobileOptionsTab" class="btn ghost mobile-pane-btn" type="button">Options</button>
-            </div>
+        <section class="card story-panel">
+          <h3 id="storyTitle">Opening</h3>
+          <p id="storyText" class="story-text"></p>
+          <div id="choiceButtons" class="choice-row"></div>
+        </section>
 
-            <section id="navSection" class="card left-panel">
-              <h3>Navigation</h3>
-              <div id="navRail" class="nav-rail"></div>
-            </section>
-            <section id="optionsSection" class="card left-panel">
-              <h3 id="submenuTitle">Options</h3>
-              <div id="submenuPanel" class="submenu-list"></div>
-            </section>
-          </aside>
+        <nav class="quick-bar card" aria-label="Quick actions">
+          <button id="openActionsBtn" class="btn primary" type="button">Actions</button>
+          <button id="openJournalBtn" class="btn" type="button">Journal</button>
+          <button id="openSceneBtn" class="btn" type="button">Scene</button>
+        </nav>
 
-          <section class="right-stack">
-            <section class="card scene-panel">
+        <section id="actionsSheet" class="overlay hidden" aria-hidden="true">
+          <div class="overlay-backdrop" data-close-overlay="actions"></div>
+          <div class="overlay-panel sheet-panel">
+            <header class="overlay-header">
+              <h3 id="actionsTitle">Actions</h3>
+              <div class="overlay-header-actions">
+                <button id="actionsBackBtn" class="btn ghost" type="button">Back</button>
+                <button id="closeActionsBtn" class="btn ghost" type="button">Close</button>
+              </div>
+            </header>
+            <div id="actionsPanel" class="overlay-list"></div>
+          </div>
+        </section>
+
+        <section id="journalOverlay" class="overlay hidden" aria-hidden="true">
+          <div class="overlay-backdrop" data-close-overlay="journal"></div>
+          <div class="overlay-panel">
+            <header class="overlay-header">
+              <h3 id="detailTitle">Journal</h3>
+              <button id="closeJournalBtn" class="btn ghost" type="button">Close</button>
+            </header>
+            <div id="detailPanel" class="event-log"></div>
+          </div>
+        </section>
+
+        <section id="sceneOverlay" class="overlay hidden" aria-hidden="true">
+          <div class="overlay-backdrop" data-close-overlay="scene"></div>
+          <div class="overlay-panel">
+            <header class="overlay-header">
               <h3>Scene</h3>
-              <figure class="scene-art-frame">
-                <img
-                  id="sceneArt"
-                  class="scene-art-image"
-                  src="assets/cousins-apt-placeholder.svg"
-                  alt="Gritty pixel-style view of cousin's apartment in Anchorage."
-                />
-              </figure>
-              <p id="sceneText" class="scene-copy"></p>
-            </section>
+              <button id="closeSceneBtn" class="btn ghost" type="button">Close</button>
+            </header>
+            <figure class="scene-art-frame">
+              <img
+                id="sceneArt"
+                class="scene-art-image"
+                src="assets/cousins-apt-placeholder.svg"
+                alt="Gritty pixel-style view of cousin's apartment in Anchorage."
+              />
+            </figure>
+            <p id="sceneText" class="scene-copy"></p>
+          </div>
+        </section>
 
-            <section class="card story-panel">
-              <h3 id="storyTitle">Opening</h3>
-              <p id="storyText" class="story-text"></p>
-              <div id="choiceButtons" class="choice-row"></div>
-            </section>
-
-            <section class="card system-panel">
-              <h3 id="detailTitle">Current Focus</h3>
-              <div id="detailPanel" class="event-log"></div>
-            </section>
-          </section>
-        </div>
+        <section id="menuOverlay" class="overlay hidden" aria-hidden="true">
+          <div class="overlay-backdrop" data-close-overlay="menu"></div>
+          <div class="overlay-panel menu-panel">
+            <header class="overlay-header">
+              <h3>Game Menu</h3>
+              <button id="closeMenuBtn" class="btn ghost" type="button">Close</button>
+            </header>
+            <div class="menu-actions">
+              <button id="saveBtn" class="btn">Save</button>
+              <button id="loadBtn" class="btn">Load</button>
+              <button id="restartBtn" class="btn danger">Restart</button>
+            </div>
+          </div>
+        </section>
       </section>
 
       <section id="endScreen" class="screen hidden card">

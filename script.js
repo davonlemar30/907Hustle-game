@@ -18,20 +18,16 @@ const LOCATION_DEFS = {
   },
 };
 
-const navCategories = [
-  { key: "move", label: "Move", icon: "🧭" },
-  { key: "people", label: "People", icon: "👥" },
-  { key: "hustle", label: "Hustle", icon: "💼" },
-  { key: "info", label: "Info", icon: "📓" },
-  { key: "rest", label: "Rest", icon: "🛌" },
-];
-
-const submenuByCategory = {
-  move: ["Step Outside", "Travel Home", "Check Area"],
-  people: ["Cousin", "Contacts", "Messages"],
-  hustle: ["Look for Work", "Ask Around", "Scope a Spot"],
-  info: ["Inventory", "Stats", "Journal"],
-  rest: ["Sleep", "Wait", "Recover"],
+const actionMenuTree = {
+  Travel: ["Step Outside", "Travel Home", "Check Area"],
+  People: ["Cousin", "Contacts", "Messages"],
+  Hustle: ["Look for Work", "Ask Around", "Scope a Spot"],
+  Info: {
+    Stats: ["Overview", "Street Pressure"],
+    Inventory: ["Inventory", "Stash Count"],
+    "Journal Notes": ["Journal"],
+  },
+  Rest: ["Sleep", "Wait", "Recover"],
 };
 
 function createOpeningState() {
@@ -80,9 +76,13 @@ function createOpeningState() {
 
 function createUiState() {
   return {
-    activeCategory: "people",
-    activeSubmenu: "Cousin",
-    mobileLeftPane: "nav",
+    actionPath: [],
+    overlays: {
+      actions: false,
+      journal: false,
+      scene: false,
+      menu: false,
+    },
     log: [],
     awaitingContinue: false,
     pendingResult: null,
@@ -102,12 +102,21 @@ const el = {
   startGameBtn: document.getElementById("startGameBtn"),
   hudPrimary: document.getElementById("hudPrimary"),
   hudStats: document.getElementById("hudStats"),
-  navRail: document.getElementById("navRail"),
-  submenuTitle: document.getElementById("submenuTitle"),
-  submenuPanel: document.getElementById("submenuPanel"),
-  leftStack: document.querySelector(".left-stack"),
-  mobileNavTab: document.getElementById("mobileNavTab"),
-  mobileOptionsTab: document.getElementById("mobileOptionsTab"),
+  menuToggleBtn: document.getElementById("menuToggleBtn"),
+  openActionsBtn: document.getElementById("openActionsBtn"),
+  openJournalBtn: document.getElementById("openJournalBtn"),
+  openSceneBtn: document.getElementById("openSceneBtn"),
+  actionsSheet: document.getElementById("actionsSheet"),
+  actionsTitle: document.getElementById("actionsTitle"),
+  actionsPanel: document.getElementById("actionsPanel"),
+  actionsBackBtn: document.getElementById("actionsBackBtn"),
+  closeActionsBtn: document.getElementById("closeActionsBtn"),
+  journalOverlay: document.getElementById("journalOverlay"),
+  closeJournalBtn: document.getElementById("closeJournalBtn"),
+  sceneOverlay: document.getElementById("sceneOverlay"),
+  closeSceneBtn: document.getElementById("closeSceneBtn"),
+  menuOverlay: document.getElementById("menuOverlay"),
+  closeMenuBtn: document.getElementById("closeMenuBtn"),
   sceneArt: document.getElementById("sceneArt"),
   sceneText: document.getElementById("sceneText"),
   storyTitle: document.getElementById("storyTitle"),
@@ -801,9 +810,35 @@ function clearResultAndReturnToHub() {
   render();
 }
 
+function closeAllOverlays() {
+  uiState.overlays.actions = false;
+  uiState.overlays.journal = false;
+  uiState.overlays.scene = false;
+  uiState.overlays.menu = false;
+}
+
+function openOverlay(name) {
+  closeAllOverlays();
+  if (uiState.overlays[name] !== undefined) uiState.overlays[name] = true;
+  if (name === "actions") uiState.actionPath = [];
+  render();
+}
+
+function closeOverlay(name) {
+  if (uiState.overlays[name] !== undefined) uiState.overlays[name] = false;
+  render();
+}
+
 function renderHud() {
-  el.hudPrimary.textContent = `907 HUSTLE | Day ${state.day} | ${state.timeOfDay} | ${locationName(state.location)}`;
-  el.hudStats.textContent = `Cash: $${state.money} | Health: ${state.health} | Rep: ${state.reputation} | Heat: ${state.heat}`;
+  el.hudPrimary.textContent = `Day ${state.day} · ${state.timeOfDay} · ${locationName(state.location)}`;
+  el.hudStats.innerHTML = [
+    `Cash $${state.money}`,
+    `Health ${state.health}`,
+    `Rep ${state.reputation}`,
+    `Heat ${state.heat}`,
+  ]
+    .map((chip) => `<span class="hud-chip">${chip}</span>`)
+    .join("");
 }
 
 function renderScene() {
@@ -813,42 +848,51 @@ function renderScene() {
   el.sceneText.textContent = scene.text;
 }
 
-function renderNav() {
-  el.navRail.innerHTML = "";
-  navCategories.forEach((category) => {
-    const btn = document.createElement("button");
-    btn.className = `nav-btn ${category.key === uiState.activeCategory ? "active" : ""}`;
-    btn.innerHTML = `<span class="nav-icon">${category.icon}</span>${category.label}`;
-    btn.disabled = uiState.awaitingContinue;
-    btn.addEventListener("click", () => {
-      if (uiState.awaitingContinue) return;
-      uiState.activeCategory = category.key;
-      uiState.activeSubmenu = submenuByCategory[category.key][0];
-      if (window.matchMedia("(max-width: 880px)").matches) {
-        uiState.mobileLeftPane = "options";
-      }
-      render();
-    });
-    el.navRail.appendChild(btn);
-  });
+function getActionNode() {
+  let node = actionMenuTree;
+  for (const step of uiState.actionPath) {
+    if (node && typeof node === "object" && !Array.isArray(node) && step in node) {
+      node = node[step];
+    } else {
+      return actionMenuTree;
+    }
+  }
+  return node;
 }
 
-function renderSubmenu() {
-  const category = navCategories.find((entry) => entry.key === uiState.activeCategory);
-  el.submenuTitle.textContent = category ? `${category.label} Options` : "Options";
-  el.submenuPanel.innerHTML = "";
+function renderActionsMenu() {
+  const node = getActionNode();
+  const atRoot = uiState.actionPath.length === 0;
+  el.actionsTitle.textContent = atRoot ? "Actions" : uiState.actionPath.join(" › ");
+  el.actionsBackBtn.disabled = atRoot;
+  el.actionsPanel.innerHTML = "";
 
-  submenuByCategory[uiState.activeCategory].forEach((entry) => {
+  const entries = Array.isArray(node) ? node : Object.keys(node);
+  entries.forEach((entry) => {
     const btn = document.createElement("button");
-    btn.className = `submenu-btn ${entry === uiState.activeSubmenu ? "active" : ""}`;
+    btn.className = "menu-btn";
     btn.textContent = entry;
     btn.disabled = uiState.awaitingContinue;
     btn.addEventListener("click", () => {
       if (uiState.awaitingContinue) return;
-      uiState.activeSubmenu = entry;
-      handleSubmenuAction(entry);
+      const current = getActionNode();
+      const nextNode = Array.isArray(current) ? entry : current[entry];
+      if (Array.isArray(nextNode)) {
+        if (nextNode.length === 1) {
+          handleSubmenuAction(nextNode[0]);
+          closeOverlay("actions");
+          return;
+        }
+        uiState.actionPath = [...uiState.actionPath, entry];
+        renderActionsMenu();
+        return;
+      }
+      if (typeof nextNode === "object") {
+        uiState.actionPath = [...uiState.actionPath, entry];
+        renderActionsMenu();
+      }
     });
-    el.submenuPanel.appendChild(btn);
+    el.actionsPanel.appendChild(btn);
   });
 }
 
@@ -879,8 +923,8 @@ function renderStory() {
   }
 
   el.storyTitle.textContent = "Street Feed";
-  const recent = uiState.log[0]?.text || "Pick an option on the left to make your next move.";
-  el.storyText.textContent = `${recent}\n\nChoose from Navigation and Options for your next move.`;
+  const recent = uiState.log[0]?.text || "Tap Actions to make your first move.";
+  el.storyText.textContent = `${recent}\n\nUse the quick bar for Actions, Journal, and Scene.`;
   el.choiceButtons.innerHTML = "";
 }
 
@@ -904,24 +948,29 @@ function renderDetailPanel() {
   });
 }
 
-function renderMobileControls() {
-  if (!el.leftStack || !el.mobileNavTab || !el.mobileOptionsTab) return;
+function renderOverlays() {
+  const overlays = {
+    actions: el.actionsSheet,
+    journal: el.journalOverlay,
+    scene: el.sceneOverlay,
+    menu: el.menuOverlay,
+  };
 
-  const activePane = uiState.mobileLeftPane === "options" ? "options" : "nav";
-  el.leftStack.classList.toggle("mobile-options", activePane === "options");
-  el.leftStack.classList.toggle("mobile-nav", activePane === "nav");
-  el.mobileNavTab.classList.toggle("active", activePane === "nav");
-  el.mobileOptionsTab.classList.toggle("active", activePane === "options");
+  Object.entries(overlays).forEach(([key, node]) => {
+    if (!node) return;
+    const visible = !!uiState.overlays[key];
+    node.classList.toggle("hidden", !visible);
+    node.setAttribute("aria-hidden", String(!visible));
+  });
 }
 
 function render() {
   renderHud();
   renderScene();
-  renderNav();
-  renderSubmenu();
+  renderActionsMenu();
   renderStory();
   renderDetailPanel();
-  renderMobileControls();
+  renderOverlays();
 }
 
 function moveToLocation(locationId, text) {
@@ -986,10 +1035,15 @@ function handleSubmenuAction(action) {
       break;
     }
     case "Inventory":
+    case "Stash Count":
       resolveAction(`Inventory check: ${inventoryCount()} total items stashed.`, "", { skipAdvanceTime: true });
       break;
     case "Stats":
+    case "Overview":
       resolveAction(`Stats — Cash $${state.money}, Health ${state.health}, Rep ${state.reputation}, Heat ${state.heat}.`, "", { skipAdvanceTime: true });
+      break;
+    case "Street Pressure":
+      resolveAction(`Street pressure reads at Heat ${state.heat} with Rep ${state.reputation}. Move accordingly.`, "", { skipAdvanceTime: true });
       break;
     case "Journal":
       resolveAction("You review today's choices and tighten your next move.", "", { skipAdvanceTime: true });
@@ -1099,6 +1153,7 @@ function sanitizeLoadedState(loaded) {
 function saveGame() {
   localStorage.setItem(SAVE_KEY, JSON.stringify(state));
   addLog("Game saved to local device.", "good");
+  closeOverlay("menu");
   render();
 }
 
@@ -1106,6 +1161,7 @@ function loadGame() {
   const raw = localStorage.getItem(SAVE_KEY);
   if (!raw) {
     addLog("No saved game found.", "bad");
+    closeOverlay("menu");
     render();
     return;
   }
@@ -1121,11 +1177,13 @@ function loadGame() {
     el.gameScreen.classList.remove("hidden");
 
     addLog("Loaded saved game.", "good");
+    closeAllOverlays();
     const event = getEligibleEvent();
     if (event) presentEvent(event);
     render();
   } catch {
     addLog("Save data was corrupted.", "bad");
+    closeOverlay("menu");
     render();
   }
 }
@@ -1135,19 +1193,32 @@ el.startGameBtn.addEventListener("click", () => {
   startGame(name);
 });
 
+el.menuToggleBtn?.addEventListener("click", () => openOverlay("menu"));
+el.openActionsBtn?.addEventListener("click", () => openOverlay("actions"));
+el.openJournalBtn?.addEventListener("click", () => openOverlay("journal"));
+el.openSceneBtn?.addEventListener("click", () => openOverlay("scene"));
+el.actionsBackBtn?.addEventListener("click", () => {
+  if (!uiState.actionPath.length) return;
+  uiState.actionPath = uiState.actionPath.slice(0, -1);
+  renderActionsMenu();
+});
+el.closeActionsBtn?.addEventListener("click", () => closeOverlay("actions"));
+el.closeJournalBtn?.addEventListener("click", () => closeOverlay("journal"));
+el.closeSceneBtn?.addEventListener("click", () => closeOverlay("scene"));
+el.closeMenuBtn?.addEventListener("click", () => closeOverlay("menu"));
+
 el.saveBtn.addEventListener("click", saveGame);
 el.loadBtn.addEventListener("click", loadGame);
 el.restartBtn.addEventListener("click", () => startGame(state.playerName || "Rookie"));
 el.playAgainBtn.addEventListener("click", () => startGame(state.playerName || "Rookie"));
-el.mobileNavTab?.addEventListener("click", () => {
-  uiState.mobileLeftPane = "nav";
-  renderMobileControls();
-});
-el.mobileOptionsTab?.addEventListener("click", () => {
-  uiState.mobileLeftPane = "options";
-  renderMobileControls();
-});
 
 el.playerName.addEventListener("keydown", (event) => {
   if (event.key === "Enter") el.startGameBtn.click();
+});
+
+document.querySelectorAll("[data-close-overlay]").forEach((node) => {
+  node.addEventListener("click", () => {
+    const overlayName = node.getAttribute("data-close-overlay");
+    if (overlayName) closeOverlay(overlayName);
+  });
 });

@@ -163,6 +163,21 @@ input {
 .menu-btn { text-align: left; }
 .menu-btn.active { border-color: var(--accent); background: #1d324a; }
 .menu-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.destination-btn strong { font-size: 0.95rem; }
+.travel-note {
+  border: 1px solid #35506e;
+  background: #132336;
+  border-radius: 10px;
+  padding: 9px 10px;
+  line-height: 1.35;
+}
+.travel-group {
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9db2cc;
+  padding: 2px 2px 0;
+}
 
 .quick-bar {
   display: grid;

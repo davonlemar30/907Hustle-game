@@ -5,21 +5,94 @@ const TIME_SLOTS = ["Morning", "Afternoon", "Evening", "LateNight"];
 
 const LOCATION_DEFS = {
   cousins_apt: {
-    name: "Cousin's Apt",
+    name: "Cousin's Apartment",
+    district: "Home Block",
     art: "assets/cousins-apt-placeholder.svg",
     alt: "Gritty pixel-style view of cousin's apartment with thin blinds and a worn couch.",
     text: "Cousin's apartment feels cramped and temporary. A duffel bag sits by the couch, cheap blinds leak cold light, and city noise pushes through thin windows.",
+    description: "Safe enough to reset. Dre watches discipline and tracks how you move.",
+    lockHint: "You're already home.",
+    startsUnlocked: true,
+  },
+  apt_exterior: {
+    name: "Apartment Exterior",
+    district: "Home Block",
+    art: "assets/cousins-apt-placeholder.svg",
+    alt: "Worn apartment exterior with a half-lit parking lot and old snow piles.",
+    text: "The apartment exterior is a pressure valve between indoors and the street. Engines idle, people smoke, and news moves faster than text.",
+    description: "Good place to listen without committing.",
+    lockHint: "Step outside from home to unlock.",
+    startsUnlocked: true,
+  },
+  corner_store: {
+    name: "Corner Store",
+    district: "Home Block",
+    art: "assets/cousins-apt-placeholder.svg",
+    alt: "Small Anchorage corner store with bright signs and tired security glass.",
+    text: "The corner store is bright, cramped, and overstocked with cheap food. Everyone stops here at least once a day.",
+    description: "Low risk supply stop and rumor hub.",
+    lockHint: "Talk to locals near the apartment first.",
+    startsUnlocked: true,
+  },
+  bus_stop: {
+    name: "Bus Stop",
+    district: "Home Block",
+    art: "assets/cousins-apt-placeholder.svg",
+    alt: "A cold bus stop with route signs and frozen slush.",
+    text: "The bus stop sits under buzzing lights. Shift workers, students, and hustlers all cross paths here.",
+    description: "Cheap movement and overheard leads.",
+    lockHint: "It's already on your local route.",
+    startsUnlocked: true,
+  },
+  side_street: {
+    name: "Side Street / Alley",
+    district: "Home Block",
+    art: "assets/cousins-apt-placeholder.svg",
+    alt: "Narrow side street with alley cut-through and chain-link fences.",
+    text: "The side street and alley feel quiet until they don't. Escape lanes matter here.",
+    description: "Useful cut-through; medium risk after dark.",
+    lockHint: "Check the area near home to learn safe entry times.",
+    startsUnlocked: false,
+  },
+  gas_station: {
+    name: "Gas Station",
+    district: "Home Block",
+    art: "assets/cousins-apt-placeholder.svg",
+    alt: "24-hour gas station under cold lights on a windy night.",
+    text: "The gas station runs all night and attracts every type. Quick buys, quick talks, quick trouble.",
+    description: "Night traffic, useful intel, watch for cameras.",
+    lockHint: "Unlock by scouting routes around the block.",
+    startsUnlocked: false,
   },
   north_star_lot: {
     name: "North Star Lot",
+    district: "North Star Edge",
     art: "assets/cousins-apt-placeholder.svg",
     alt: "Cold parking lot near North Star with cars idling in the dark.",
     text: "North Star Lot is quick money and quick pressure. Eyes on fences, engines running, everyone measuring everyone.",
+    description: "First serious lane with better money and higher heat.",
+    lockHint: "Dre must open your lane first.",
+    startsUnlocked: false,
+  },
+  north_star_edge: {
+    name: "North Star Entrance",
+    district: "North Star Edge",
+    art: "assets/cousins-apt-placeholder.svg",
+    alt: "Mall edge entrance with shuttered storefront lights.",
+    text: "The mall edge stays half-alive after dark. Security patterns matter as much as people.",
+    description: "Advanced starter-zone node for info and cleaner routes.",
+    lockHint: "Earn trust at North Star Lot to unlock this edge.",
+    startsUnlocked: false,
   },
 };
 
 const actionMenuTree = {
-  Travel: ["Step Outside", "Travel Home", "Check Area"],
+  Travel: {
+    "Local Map": [],
+    Destinations: [],
+    "Return Home": ["Travel Home"],
+    "Check Area": ["Check Area"],
+  },
   People: ["Cousin", "Contacts", "Messages"],
   Hustle: ["Look for Work", "Ask Around", "Scope a Spot"],
   Info: {
@@ -61,6 +134,9 @@ function createOpeningState() {
       },
       locations: {
         cousins_apt: true,
+        apt_exterior: true,
+        corner_store: true,
+        bus_stop: true,
       },
       vendors: {},
     },
@@ -212,6 +288,7 @@ const V01_EVENTS = [
           unlocks: [
             { type: "unlock_vendor", target: "mina" },
             { type: "unlock_event", target: "burner_line" },
+            { type: "unlock_location", target: "north_star_edge" },
           ],
           timeAdvance: 1,
         },
@@ -230,6 +307,7 @@ const V01_EVENTS = [
           unlocks: [
             { type: "unlock_vendor", target: "mina" },
             { type: "unlock_event", target: "burner_line" },
+            { type: "unlock_location", target: "north_star_edge" },
           ],
           timeAdvance: 1,
         },
@@ -244,6 +322,7 @@ const V01_EVENTS = [
           unlocks: [
             { type: "unlock_vendor", target: "mina" },
             { type: "unlock_event", target: "burner_line" },
+            { type: "unlock_location", target: "north_star_edge" },
           ],
           timeAdvance: 1,
         },
@@ -567,6 +646,14 @@ function locationName(locationId) {
   return LOCATION_DEFS[locationId]?.name || locationId;
 }
 
+function allLocationIds() {
+  return Object.keys(LOCATION_DEFS);
+}
+
+function unlockedLocationIds() {
+  return allLocationIds().filter((locationId) => !!state.unlocks.locations[locationId]);
+}
+
 function inventoryCount() {
   return Object.values(state.inventory).reduce((sum, qty) => sum + qty, 0);
 }
@@ -656,6 +743,20 @@ function evaluateRequirements(requirements = {}) {
   if (requirements.any_of && !evaluateAnyOf(requirements.any_of)) return false;
 
   return true;
+}
+
+function requirementHint(requirements = {}) {
+  if (!requirements || Object.keys(requirements).length === 0) return "Unavailable right now.";
+  if (requirements.money_gte !== undefined) return `Need $${requirements.money_gte}.`;
+  if (requirements.item_gte) {
+    const [item, qty] = Object.entries(requirements.item_gte)[0];
+    return `Need ${qty} ${item.replaceAll("_", " ")}.`;
+  }
+  if (requirements.relationship_gte) {
+    const [person, qty] = Object.entries(requirements.relationship_gte)[0];
+    return `Need ${person.replaceAll("_", " ")} trust ${qty}+`;
+  }
+  return "Progress further to unlock this choice.";
 }
 
 function isEventOnCooldown(eventId) {
@@ -863,9 +964,42 @@ function getActionNode() {
 function renderActionsMenu() {
   const node = getActionNode();
   const atRoot = uiState.actionPath.length === 0;
+  const pathKey = uiState.actionPath.join(">");
   el.actionsTitle.textContent = atRoot ? "Actions" : uiState.actionPath.join(" › ");
   el.actionsBackBtn.disabled = atRoot;
   el.actionsPanel.innerHTML = "";
+
+  if (pathKey === "Travel>Local Map" || pathKey === "Travel>Destinations") {
+    const mapNote = document.createElement("div");
+    mapNote.className = "travel-note";
+    const current = LOCATION_DEFS[state.location];
+    mapNote.innerHTML = `<strong>Current:</strong> ${current?.name || state.location} · <span class="muted">${current?.district || "Anchorage"}</span>`;
+    el.actionsPanel.appendChild(mapNote);
+
+    if (pathKey === "Travel>Local Map") {
+      const districtGroups = {};
+      allLocationIds().forEach((locationId) => {
+        const district = LOCATION_DEFS[locationId].district || "Anchorage";
+        if (!districtGroups[district]) districtGroups[district] = [];
+        districtGroups[district].push(locationId);
+      });
+      Object.entries(districtGroups).forEach(([district, locationIds]) => {
+        const header = document.createElement("div");
+        header.className = "travel-group";
+        header.textContent = district;
+        el.actionsPanel.appendChild(header);
+        locationIds.forEach((locationId) => {
+          el.actionsPanel.appendChild(buildDestinationButton(locationId));
+        });
+      });
+      return;
+    }
+
+    allLocationIds().forEach((locationId) => {
+      el.actionsPanel.appendChild(buildDestinationButton(locationId));
+    });
+    return;
+  }
 
   const entries = Array.isArray(node) ? node : Object.keys(node);
   entries.forEach((entry) => {
@@ -875,9 +1009,20 @@ function renderActionsMenu() {
     btn.disabled = uiState.awaitingContinue;
     btn.addEventListener("click", () => {
       if (uiState.awaitingContinue) return;
-      const current = getActionNode();
-      const nextNode = Array.isArray(current) ? entry : current[entry];
+      const currentNode = getActionNode();
+      if (Array.isArray(currentNode)) {
+        handleSubmenuAction(entry);
+        closeOverlay("actions");
+        return;
+      }
+
+      const nextNode = currentNode[entry];
       if (Array.isArray(nextNode)) {
+        if (nextNode.length === 0) {
+          uiState.actionPath = [...uiState.actionPath, entry];
+          renderActionsMenu();
+          return;
+        }
         if (nextNode.length === 1) {
           handleSubmenuAction(nextNode[0]);
           closeOverlay("actions");
@@ -896,6 +1041,36 @@ function renderActionsMenu() {
   });
 }
 
+function buildDestinationButton(locationId) {
+  const def = LOCATION_DEFS[locationId];
+  const unlocked = !!state.unlocks.locations[locationId];
+  const isCurrent = state.location === locationId;
+  const btn = document.createElement("button");
+  btn.className = "menu-btn destination-btn";
+  btn.disabled = uiState.awaitingContinue;
+
+  const status = isCurrent ? "Here now" : unlocked ? "Unlocked" : "Locked";
+  const details = unlocked ? def.description : `Locked: ${def.lockHint}`;
+  btn.innerHTML = `<strong>${def.name}</strong><br><span class="muted">${status} · ${details}</span>`;
+
+  btn.addEventListener("click", () => {
+    if (uiState.awaitingContinue) return;
+    if (isCurrent) {
+      resolveAction(`You're already at ${def.name}.`, "", { skipAdvanceTime: true });
+      closeOverlay("actions");
+      return;
+    }
+    if (!unlocked) {
+      resolveAction(`${def.name} is locked. Hint: ${def.lockHint}`, "bad", { skipAdvanceTime: true });
+      closeOverlay("actions");
+      return;
+    }
+    moveToLocation(locationId, `You travel to ${def.name}. ${def.description}`);
+    closeOverlay("actions");
+  });
+  return btn;
+}
+
 function renderStory() {
   if (uiState.awaitingContinue && uiState.pendingResult) {
     el.storyTitle.textContent = uiState.pendingEvent?.awaitingChoice ? uiState.pendingEvent.title : "Action Result";
@@ -907,7 +1082,7 @@ function renderStory() {
         const choiceBtn = document.createElement("button");
         const unlocked = evaluateRequirements(choice.requirements || {});
         choiceBtn.className = "choice-btn";
-        choiceBtn.textContent = unlocked ? choice.label : `${choice.label} (Locked)`;
+        choiceBtn.textContent = unlocked ? choice.label : `${choice.label} (Locked: ${requirementHint(choice.requirements || {})})`;
         choiceBtn.disabled = !unlocked;
         choiceBtn.addEventListener("click", () => resolveEventChoice(uiState.pendingEvent.id, choice.id));
         el.choiceButtons.appendChild(choiceBtn);
@@ -987,51 +1162,74 @@ function handleSubmenuAction(action) {
   if (uiState.awaitingContinue) return;
 
   switch (action) {
-    case "Step Outside": {
-      const target = state.unlocks.locations.north_star_lot ? "north_star_lot" : "cousins_apt";
-      moveToLocation(target, target === "north_star_lot" ? "You step into North Star Lot and read the motion." : "You stay near the apartment and keep your profile low.");
-      break;
-    }
     case "Travel Home":
       moveToLocation("cousins_apt", "You head back to your cousin's apartment.");
       break;
     case "Check Area": {
-      const outcomes = [
-        ["You map cameras and exits before moving.", ""],
-        ["A patrol slows nearby and everyone gets quiet.", "bad"],
-        ["A corner regular recognizes you from Mina's lane.", "good"],
-      ];
-      const [text, tone] = outcomes[randomInt(0, outcomes.length - 1)];
-      if (tone === "good") state.reputation += 1;
-      if (tone === "bad") state.heat += 2;
-      resolveAction(text, tone);
+      const localChecks = {
+        cousins_apt: {
+          text: "From the apartment window, you map who comes and goes. Dre points out the safer route to the parking lot.",
+          unlock: "apt_exterior",
+          tone: "",
+        },
+        apt_exterior: {
+          text: "You walk the parking lot and side fences, learning blind spots and who hangs around after dark.",
+          unlock: "side_street",
+          tone: "good",
+        },
+        side_street: {
+          text: "The alley connects you to the gas station lane. You can now move that way without guessing.",
+          unlock: "gas_station",
+          tone: "good",
+        },
+        north_star_lot: {
+          text: "You trace the foot traffic around the lot and spot the cleaner mall-edge entrance.",
+          unlock: "north_star_edge",
+          tone: "good",
+        },
+      };
+      const result = localChecks[state.location] || {
+        text: "You check the area and note exits, cameras, and faces.",
+        tone: "",
+      };
+      if (result.unlock && !state.unlocks.locations[result.unlock]) {
+        applyUnlock({ type: "unlock_location", target: result.unlock });
+        resolveAction(`${result.text} New destination unlocked: ${locationName(result.unlock)}.`, result.tone);
+        break;
+      }
+      if (result.tone === "good") state.reputation += 1;
+      resolveAction(result.text, result.tone);
       break;
     }
     case "Cousin":
-      resolveAction("Dre reminds you to come home clean and not burn trust.", "good");
+      resolveAction("Dre gives you local pointers: keep heat low near home and check routes before chasing money.", "good", { skipAdvanceTime: true });
       break;
     case "Contacts":
-      resolveAction("You keep your contact list tight and low-noise.");
+      resolveAction(`Contacts tracked: Dre (${state.relationships.dre_trust}/5 trust), Mina (${state.relationships.mina_trust}/5 trust).`, "", { skipAdvanceTime: true });
       break;
     case "Messages":
-      resolveAction("No open invitations. Earn your way into better messages.");
+      resolveAction(state.flags.has_burner_phone ? "Burner line is active. A few low-noise pings are waiting tonight." : "No secure line yet. Mina hinted a burner phone opens better messages.");
       break;
     case "Look for Work": {
-      const payout = randomInt(35, 85);
+      const payout = randomInt(30, state.location === "north_star_lot" ? 95 : 70);
       state.money += payout;
-      state.reputation += 1;
-      state.heat += randomInt(0, 2);
-      resolveAction(`You pick up side work and clear $${payout}.`, "good");
+      state.reputation += state.location === "north_star_lot" ? 1 : 0;
+      state.heat += randomInt(0, state.location === "north_star_lot" ? 2 : 1);
+      resolveAction(`You pick up side work around ${locationName(state.location)} and clear $${payout}.`, "good");
       break;
     }
-    case "Ask Around":
+    case "Ask Around": {
       state.heat += randomInt(0, 2);
-      resolveAction("You ask around carefully and test the temperature.");
+      if (state.location === "corner_store" && !state.unlocks.locations.bus_stop) {
+        applyUnlock({ type: "unlock_location", target: "bus_stop" });
+      }
+      resolveAction(`You ask around near ${locationName(state.location)} and test the temperature.`);
       break;
+    }
     case "Scope a Spot": {
       const damage = randomInt(0, 5);
       state.health -= damage;
-      resolveAction(damage ? `You scope a spot and catch light damage (-${damage} health).` : "You scope a spot and slip out untouched.");
+      resolveAction(damage ? `You scope ${locationName(state.location)} and catch light damage (-${damage} health).` : `You scope ${locationName(state.location)} and slip out untouched.`);
       break;
     }
     case "Inventory":
@@ -1046,7 +1244,7 @@ function handleSubmenuAction(action) {
       resolveAction(`Street pressure reads at Heat ${state.heat} with Rep ${state.reputation}. Move accordingly.`, "", { skipAdvanceTime: true });
       break;
     case "Journal":
-      resolveAction("You review today's choices and tighten your next move.", "", { skipAdvanceTime: true });
+      openOverlay("journal");
       break;
     case "Sleep":
       state.health += 12;

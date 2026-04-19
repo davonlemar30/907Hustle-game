@@ -93,14 +93,153 @@ const actionMenuTree = {
     "Return Home": ["Travel Home"],
     "Check Area": ["Check Area"],
   },
-  People: ["Cousin", "Contacts", "Messages"],
-  Hustle: ["Look for Work", "Ask Around", "Scope a Spot"],
+  People: [],
+  Hustle: [],
+  Market: [],
   Info: {
     Stats: ["Overview", "Street Pressure"],
     Inventory: ["Inventory", "Stash Count"],
     "Journal Notes": ["Journal"],
   },
-  Rest: ["Sleep", "Wait", "Recover"],
+  Rest: [],
+};
+
+const TREND_LABELS = {
+  up: "More expensive than yesterday",
+  down: "Cheaper than yesterday",
+  stable: "Stable",
+};
+
+const LOCATION_ACTIONS = {
+  cousins_apt: {
+    identity: "Reset, stash, recover, and check in with Dre.",
+    risk: "Low",
+    categories: {
+      People: ["Talk to Dre", "Check Messages", "Review Contacts"],
+      Hustle: ["Plan a Route", "Find Cash", "Scope the Area"],
+      Rest: ["Rest Up", "Recover", "Lay Low"],
+      Market: ["Check Market Board"],
+    },
+  },
+  apt_exterior: {
+    identity: "Listen and move without drawing heat.",
+    risk: "Low-Medium",
+    categories: {
+      People: ["Ask Around", "Check Messages"],
+      Hustle: ["Find Cash", "Scope the Area", "Work a Shift"],
+      Rest: ["Lay Low", "Wait"],
+      Market: ["Check Market Board"],
+    },
+  },
+  corner_store: {
+    identity: "Legal supplies and low-noise rumors.",
+    risk: "Low",
+    categories: {
+      People: ["Ask Around", "Check Messages"],
+      Hustle: ["Work a Shift", "Find Cash"],
+      Rest: ["Wait"],
+      Market: ["Check Market Board", "Buy Store Snacks", "Buy Basic Meds"],
+    },
+  },
+  bus_stop: {
+    identity: "Transit chatter and low-paying shifts.",
+    risk: "Low",
+    categories: {
+      People: ["Ask Around", "Check Messages"],
+      Hustle: ["Work a Shift", "Find Cash", "Scope the Area"],
+      Rest: ["Wait", "Lay Low"],
+      Market: ["Check Market Board"],
+    },
+  },
+  side_street: {
+    identity: "Cut-through routes and quiet movement.",
+    risk: "Medium",
+    categories: {
+      People: ["Ask Around"],
+      Hustle: ["Run a Quick Move", "Scope the Area", "Find Cash"],
+      Rest: ["Lay Low", "Wait"],
+      Market: ["Check Market Board"],
+    },
+  },
+  gas_station: {
+    identity: "24-hour traffic, cameras, and shift cash.",
+    risk: "Medium",
+    categories: {
+      People: ["Ask Around", "Check Messages"],
+      Hustle: ["Work a Shift", "Find Cash", "Scope the Area"],
+      Rest: ["Wait", "Lay Low"],
+      Market: ["Check Market Board"],
+    },
+  },
+  north_star_lot: {
+    identity: "Street pressure, Mina access, and risky opportunities.",
+    risk: "High",
+    categories: {
+      People: ["Check with Mina", "Ask Around", "Check Messages"],
+      Hustle: ["Run a Quick Move", "Scope the Area", "Find Cash", "Lay Low"],
+      Rest: ["Lay Low", "Wait"],
+      Market: ["Check Market Board", "Ask Off-Menu Stock"],
+    },
+  },
+  north_star_edge: {
+    identity: "Cleaner approach lane near mall security patterns.",
+    risk: "Medium",
+    categories: {
+      People: ["Ask Around", "Check Messages"],
+      Hustle: ["Scope the Area", "Work a Shift", "Find Cash"],
+      Rest: ["Lay Low", "Wait"],
+      Market: ["Check Market Board"],
+    },
+  },
+};
+
+const MARKET_CATALOG = {
+  store_snacks: {
+    name: "Snacks",
+    itemId: "snacks",
+    price: 10,
+    source: "corner_store",
+    lane: "legal",
+    trend: "stable",
+  },
+  store_meds: {
+    name: "Basic Meds",
+    itemId: "basic_meds",
+    price: 15,
+    source: "corner_store",
+    lane: "legal",
+    trend: "up",
+  },
+  mina_burner: {
+    name: "Burner Phone",
+    itemId: "burner_phone",
+    price: 35,
+    source: "mina",
+    lane: "street",
+    trend: "stable",
+    requirements: { unlock_vendor: "mina" },
+  },
+  unknown_supply_1: {
+    name: "Unknown Supply",
+    source: "mina",
+    lane: "off_menu",
+    trend: "down",
+    lockedLabel: "Unknown supply slot — need burner line",
+    requirements: { unlock_product: "unknown_supply_1", flag_true: "has_burner_phone" },
+  },
+  hot_goods: {
+    name: "Hot Goods (small electronics)",
+    itemId: "hot_goods",
+    price: 60,
+    source: "mina",
+    lane: "off_menu",
+    trend: "up",
+    requirements: {
+      unlock_product: "hot_goods",
+      flag_true: "hot_goods_lane_unlocked",
+      relationship_gte: { mina_trust: 1 },
+    },
+  },
 };
 
 function createOpeningState() {
@@ -117,6 +256,7 @@ function createOpeningState() {
       snacks: 0,
       basic_meds: 0,
       burner_phone: 0,
+      hot_goods: 0,
     },
     relationships: {
       dre_trust: 0,
@@ -124,6 +264,7 @@ function createOpeningState() {
     },
     flags: {
       met_mina: false,
+      hot_goods_lane_unlocked: false,
     },
     metrics: {
       risky_actions_on_lot: 0,
@@ -139,6 +280,7 @@ function createOpeningState() {
         bus_stop: true,
       },
       vendors: {},
+      products: {},
     },
     eventState: {
       seen: {},
@@ -360,7 +502,10 @@ const V01_EVENTS = [
           money: -35,
           inventory: { burner_phone: 1 },
           flags: { has_burner_phone: true },
-          unlocks: [{ type: "unlock_event", target: "minas_quiet_suggestion" }],
+          unlocks: [
+            { type: "unlock_event", target: "minas_quiet_suggestion" },
+            { type: "unlock_product", target: "unknown_supply_1" },
+          ],
           timeAdvance: 1,
         },
         meta: { isRiskyAction: false },
@@ -690,6 +835,7 @@ function applyUnlock(unlock) {
   if (unlock.type === "unlock_event") state.unlocks.events[unlock.target] = true;
   if (unlock.type === "unlock_location") state.unlocks.locations[unlock.target] = true;
   if (unlock.type === "unlock_vendor") state.unlocks.vendors[unlock.target] = true;
+  if (unlock.type === "unlock_product") state.unlocks.products[unlock.target] = true;
 }
 
 function evaluateAnyOf(anyOf = []) {
@@ -726,6 +872,7 @@ function evaluateRequirements(requirements = {}) {
   if (requirements.unlock_event && !state.unlocks.events[requirements.unlock_event]) return false;
   if (requirements.unlock_location && !state.unlocks.locations[requirements.unlock_location]) return false;
   if (requirements.unlock_vendor && !state.unlocks.vendors[requirements.unlock_vendor]) return false;
+  if (requirements.unlock_product && !state.unlocks.products[requirements.unlock_product]) return false;
 
   if (requirements.flag_true && state.flags[requirements.flag_true] !== true) return false;
   if (requirements.flag_false && state.flags[requirements.flag_false] === true) return false;
@@ -944,9 +1091,10 @@ function renderHud() {
 
 function renderScene() {
   const scene = LOCATION_DEFS[state.location] || LOCATION_DEFS.cousins_apt;
+  const profile = locationProfile(state.location);
   el.sceneArt.src = scene.art;
   el.sceneArt.alt = scene.alt;
-  el.sceneText.textContent = scene.text;
+  el.sceneText.textContent = `${scene.text}\n\nRole: ${profile.identity}\nRisk profile: ${profile.risk}`;
 }
 
 function getActionNode() {
@@ -959,6 +1107,76 @@ function getActionNode() {
     }
   }
   return node;
+}
+
+function locationProfile(locationId = state.location) {
+  return LOCATION_ACTIONS[locationId] || {
+    identity: "Keep moving and read the room.",
+    risk: "Unknown",
+    categories: { People: [], Hustle: [], Rest: [], Market: ["Check Market Board"] },
+  };
+}
+
+function buildDynamicActionEntries(category) {
+  const profile = locationProfile(state.location);
+  const actionIds = profile.categories[category] || [];
+  return actionIds.map((actionId) => {
+    if (actionId === "Review Contacts") {
+      const hasContacts = state.flags.met_mina || state.relationships.mina_trust > 0;
+      return {
+        id: actionId,
+        label: hasContacts ? actionId : "Review Contacts (locked)",
+        disabled: !hasContacts,
+        hint: hasContacts ? "" : "Locked until you build street contacts.",
+      };
+    }
+
+    if (actionId === "Run a Quick Move") {
+      const unlocked = !!state.unlocks.events.quick_lot_run || !!state.flags.mina_quick_job_hint_unlocked;
+      return {
+        id: actionId,
+        label: unlocked ? actionId : "Run a Quick Move (locked)",
+        disabled: !unlocked,
+        hint: unlocked ? "" : "Need Mina's quiet route first.",
+      };
+    }
+
+    return { id: actionId, label: actionId, disabled: false, hint: "" };
+  });
+}
+
+function getMarketBoardEntries() {
+  const entries = [];
+  const atCornerStore = state.location === "corner_store";
+  const aroundNorthStar = state.location === "north_star_lot" || state.location === "north_star_edge";
+
+  Object.entries(MARKET_CATALOG).forEach(([stockId, stock]) => {
+    const visible =
+      (atCornerStore && stock.source === "corner_store") ||
+      (aroundNorthStar && stock.source === "mina");
+    if (!visible) return;
+
+    const unlocked = evaluateRequirements(stock.requirements || {});
+    entries.push({
+      stockId,
+      unlocked,
+      line: unlocked
+        ? `${stock.name} · $${stock.price || "?"} · ${TREND_LABELS[stock.trend] || "Stable"}`
+        : `${stock.lockedLabel || `${stock.name} (locked)`}`,
+      lane: stock.lane,
+    });
+  });
+
+  if (!entries.length) {
+    entries.push({
+      stockId: "none",
+      unlocked: false,
+      line: "No known stock at this location yet.",
+      lane: "info",
+    });
+  }
+
+  return entries;
 }
 
 function renderActionsMenu() {
@@ -1001,25 +1219,39 @@ function renderActionsMenu() {
     return;
   }
 
-  const entries = Array.isArray(node) ? node : Object.keys(node);
+  const isDynamicCategory = ["People", "Hustle", "Rest", "Market"].includes(pathKey);
+  const entries = isDynamicCategory
+    ? buildDynamicActionEntries(pathKey)
+    : Array.isArray(node)
+      ? node.map((entry) => ({ id: entry, label: entry, disabled: false, hint: "" }))
+      : Object.keys(node).map((entry) => ({ id: entry, label: entry, disabled: false, hint: "" }));
+
+  if (isDynamicCategory) {
+    const profile = locationProfile(state.location);
+    const blurb = document.createElement("div");
+    blurb.className = "travel-note";
+    blurb.innerHTML = `<strong>${locationName(state.location)} · Risk ${profile.risk}</strong><br><span class="muted">${profile.identity}</span>`;
+    el.actionsPanel.appendChild(blurb);
+  }
+
   entries.forEach((entry) => {
     const btn = document.createElement("button");
     btn.className = "menu-btn";
-    btn.textContent = entry;
-    btn.disabled = uiState.awaitingContinue;
+    btn.textContent = entry.label;
+    btn.disabled = uiState.awaitingContinue || !!entry.disabled;
     btn.addEventListener("click", () => {
-      if (uiState.awaitingContinue) return;
+      if (uiState.awaitingContinue || entry.disabled) return;
       const currentNode = getActionNode();
       if (Array.isArray(currentNode)) {
-        handleSubmenuAction(entry);
+        handleSubmenuAction(entry.id);
         closeOverlay("actions");
         return;
       }
 
-      const nextNode = currentNode[entry];
+      const nextNode = currentNode[entry.id];
       if (Array.isArray(nextNode)) {
         if (nextNode.length === 0) {
-          uiState.actionPath = [...uiState.actionPath, entry];
+          uiState.actionPath = [...uiState.actionPath, entry.id];
           renderActionsMenu();
           return;
         }
@@ -1028,16 +1260,27 @@ function renderActionsMenu() {
           closeOverlay("actions");
           return;
         }
-        uiState.actionPath = [...uiState.actionPath, entry];
+        uiState.actionPath = [...uiState.actionPath, entry.id];
         renderActionsMenu();
         return;
       }
       if (typeof nextNode === "object") {
-        uiState.actionPath = [...uiState.actionPath, entry];
+        uiState.actionPath = [...uiState.actionPath, entry.id];
         renderActionsMenu();
+        return;
       }
+      handleSubmenuAction(entry.id);
+      closeOverlay("actions");
     });
     el.actionsPanel.appendChild(btn);
+    if (entry.hint) {
+      const hint = document.createElement("div");
+      hint.className = "muted";
+      hint.style.fontSize = "0.82rem";
+      hint.style.padding = "0 2px 4px";
+      hint.textContent = entry.hint;
+      el.actionsPanel.appendChild(hint);
+    }
   });
 }
 
@@ -1201,37 +1444,156 @@ function handleSubmenuAction(action) {
       resolveAction(result.text, result.tone);
       break;
     }
-    case "Cousin":
-      resolveAction("Dre gives you local pointers: keep heat low near home and check routes before chasing money.", "good", { skipAdvanceTime: true });
+    case "Talk to Dre":
+      if (state.location !== "cousins_apt") {
+        resolveAction("Dre isn't here. You'll need to head back to the apartment.", "", { skipAdvanceTime: true });
+        break;
+      }
+      resolveAction(
+        "Dre clocks your face before you talk. He says keep your lane clean, don't linger where cameras can read your pattern.",
+        "good",
+      );
       break;
-    case "Contacts":
+    case "Review Contacts":
       resolveAction(`Contacts tracked: Dre (${state.relationships.dre_trust}/5 trust), Mina (${state.relationships.mina_trust}/5 trust).`, "", { skipAdvanceTime: true });
       break;
-    case "Messages":
-      resolveAction(state.flags.has_burner_phone ? "Burner line is active. A few low-noise pings are waiting tonight." : "No secure line yet. Mina hinted a burner phone opens better messages.");
+    case "Check Messages":
+      resolveAction(
+        state.flags.has_burner_phone
+          ? "Burner line is active. One ping mentions a small electronics lane getting warmer near North Star."
+          : "No secure line yet. Mina hinted a burner phone unlocks better intel and cleaner work windows.",
+      );
       break;
-    case "Look for Work": {
-      const payout = randomInt(30, state.location === "north_star_lot" ? 95 : 70);
+    case "Find Cash": {
+      const riskySpot = ["north_star_lot", "side_street"].includes(state.location);
+      const payout = randomInt(riskySpot ? 45 : 20, riskySpot ? 95 : 55);
       state.money += payout;
-      state.reputation += state.location === "north_star_lot" ? 1 : 0;
-      state.heat += randomInt(0, state.location === "north_star_lot" ? 2 : 1);
-      resolveAction(`You pick up side work around ${locationName(state.location)} and clear $${payout}.`, "good");
+      state.heat += randomInt(0, riskySpot ? 2 : 1);
+      if (riskySpot) state.reputation += 1;
+      resolveAction(
+        riskySpot
+          ? `You move quick and clear $${payout}. The lot feels tense—everybody notices who lingers too long.`
+          : `You hustle small errands and pocket $${payout}. It's not loud money, but it keeps you moving.`,
+        "good",
+      );
+      break;
+    }
+    case "Work a Shift": {
+      const payout = randomInt(18, 40);
+      state.money += payout;
+      state.heat += randomInt(0, 1);
+      state.health -= randomInt(0, 2);
+      resolveAction(`You grind a legal shift and make $${payout}. Lower reward, lower noise, steady progress.`, "good");
       break;
     }
     case "Ask Around": {
-      state.heat += randomInt(0, 2);
+      const highRisk = state.location === "north_star_lot";
+      state.heat += randomInt(0, highRisk ? 2 : 1);
       if (state.location === "corner_store" && !state.unlocks.locations.bus_stop) {
         applyUnlock({ type: "unlock_location", target: "bus_stop" });
       }
-      resolveAction(`You ask around near ${locationName(state.location)} and test the temperature.`);
+      if (state.location === "north_star_lot" && !state.flags.hot_goods_lane_unlocked && state.flags.has_burner_phone) {
+        state.flags.hot_goods_lane_unlocked = true;
+        state.unlocks.products.hot_goods = true;
+        resolveAction(
+          "You ask around near North Star Lot. Mina watches you like she's deciding if you're worth the trouble. A quiet hot-goods lane just opened.",
+          "good",
+        );
+        break;
+      }
+      resolveAction(
+        highRisk
+          ? "You ask around at the lot. Faces stay neutral, but word is moving faster tonight."
+          : `You ask around near ${locationName(state.location)} and pick up small leads without drawing too much attention.`,
+      );
       break;
     }
-    case "Scope a Spot": {
+    case "Scope the Area": {
       const damage = randomInt(0, 5);
       state.health -= damage;
-      resolveAction(damage ? `You scope ${locationName(state.location)} and catch light damage (-${damage} health).` : `You scope ${locationName(state.location)} and slip out untouched.`);
+      resolveAction(
+        damage
+          ? `You scope ${locationName(state.location)} and catch light damage (-${damage} health). You still map exits and blind spots.`
+          : `You scope ${locationName(state.location)} and slip out untouched. The route feels cleaner next time.`,
+      );
       break;
     }
+    case "Plan a Route":
+      resolveAction("You sketch the day in your head: bus lines, cameras, and where to disappear if pressure spikes.", "good");
+      break;
+    case "Run a Quick Move":
+      if (!state.unlocks.events.quick_lot_run && !state.flags.mina_quick_job_hint_unlocked) {
+        resolveAction("You don't have a clean move lined up yet. Mina might open one if trust stays solid.", "bad", { skipAdvanceTime: true });
+        break;
+      }
+      state.money += randomInt(50, 105);
+      state.heat += randomInt(1, 3);
+      state.reputation += 1;
+      state.metrics.risky_actions_on_lot = (state.metrics.risky_actions_on_lot || 0) + 1;
+      resolveAction("You run a quick move and clear cash before the window closes. Fast money, real exposure.", "good");
+      break;
+    case "Check with Mina":
+      if (state.location !== "north_star_lot") {
+        resolveAction("Mina works the North Star lot. She's not taking random calls right now.", "", { skipAdvanceTime: true });
+        break;
+      }
+      resolveAction(
+        state.unlocks.vendors.mina
+          ? "Mina keeps it short: stay patient, stay reachable, and don't ask for off-menu if your heat is sloppy."
+          : "Mina spots you but keeps distance. Build one clean interaction before she opens up.",
+      );
+      break;
+    case "Check Market Board": {
+      const entries = getMarketBoardEntries();
+      const lines = entries.map((entry) => `• [${entry.lane}] ${entry.line}`).join("\n");
+      resolveAction(`Current supply board:\n${lines}`, "", { skipAdvanceTime: true });
+      break;
+    }
+    case "Ask Off-Menu Stock":
+      if (state.location !== "north_star_lot") {
+        resolveAction("No one discusses off-menu stock out here.", "", { skipAdvanceTime: true });
+        break;
+      }
+      if (!state.flags.has_burner_phone) {
+        resolveAction("Mina shuts it down: no burner, no off-menu conversation.", "bad");
+        break;
+      }
+      if (state.heat >= 6) {
+        state.flags.mina_refuses_service = true;
+        resolveAction("Mina reads your heat and refuses service for now. Lay low before asking again.", "bad");
+        break;
+      }
+      state.flags.mina_refuses_service = false;
+      state.flags.hot_goods_lane_unlocked = true;
+      state.unlocks.products.hot_goods = true;
+      resolveAction("Mina finally mentions off-menu stock. Small electronics, quick flips, no sloppy movement.", "good");
+      break;
+    case "Buy Store Snacks":
+      if (state.location !== "corner_store") {
+        resolveAction("You need to be at the corner store for that buy.", "", { skipAdvanceTime: true });
+        break;
+      }
+      if (state.money < 10) {
+        resolveAction("Not enough cash for snacks.", "bad", { skipAdvanceTime: true });
+        break;
+      }
+      state.money -= 10;
+      state.inventory.snacks += 1;
+      resolveAction("You grab snacks and keep the receipt. Cheap supplies, no extra heat.", "good");
+      break;
+    case "Buy Basic Meds":
+      if (state.location !== "corner_store") {
+        resolveAction("You need to be at the corner store for meds.", "", { skipAdvanceTime: true });
+        break;
+      }
+      if (state.money < 15) {
+        resolveAction("Not enough cash for basic meds.", "bad", { skipAdvanceTime: true });
+        break;
+      }
+      state.money -= 15;
+      state.inventory.basic_meds += 1;
+      resolveAction("You buy basic meds and stash them before heading back out.", "good");
+      break;
     case "Inventory":
     case "Stash Count":
       resolveAction(`Inventory check: ${inventoryCount()} total items stashed.`, "", { skipAdvanceTime: true });
@@ -1246,7 +1608,7 @@ function handleSubmenuAction(action) {
     case "Journal":
       openOverlay("journal");
       break;
-    case "Sleep":
+    case "Rest Up":
       state.health += 12;
       resolveAction("You sleep hard and reset.", "good", { skipAdvanceTime: true });
       advanceTimeBy(1);
@@ -1259,6 +1621,10 @@ function handleSubmenuAction(action) {
       state.health += 7;
       state.money -= 10;
       resolveAction("You spend $10 on recovery and steady out.");
+      break;
+    case "Lay Low":
+      state.heat -= 1;
+      resolveAction("You keep your head down and don't make noise. Smart.");
       break;
     default:
       resolveAction("No action tied to that option yet.");
@@ -1334,6 +1700,7 @@ function sanitizeLoadedState(loaded) {
     events: Object.assign({}, base.unlocks.events, loaded?.unlocks?.events || {}),
     locations: Object.assign({}, base.unlocks.locations, loaded?.unlocks?.locations || {}),
     vendors: Object.assign({}, base.unlocks.vendors, loaded?.unlocks?.vendors || {}),
+    products: Object.assign({}, base.unlocks.products, loaded?.unlocks?.products || {}),
   };
   normalized.eventState = Object.assign({}, base.eventState, loaded?.eventState || {});
   normalized.eventState.seen = Object.assign({}, base.eventState.seen, loaded?.eventState?.seen || {});

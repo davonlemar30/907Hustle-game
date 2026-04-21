@@ -45,6 +45,7 @@ const GAME = {
   tick: 1,
   locationId: "north_star_lot",
   cash: 200,
+  bank: 0,
   heat: 0,
   rep: 0,
   health: 100,
@@ -61,18 +62,42 @@ const GAME = {
 
 const el = {
   hudStats: document.getElementById("hudStats"),
-  marketTable: document.getElementById("marketTable"),
-  travelList: document.getElementById("travelList"),
-  holdings: document.getElementById("holdings"),
-  riskPreview: document.getElementById("riskPreview"),
+  screenTitle: document.getElementById("screenTitle"),
+  primaryNav: document.getElementById("primaryNav"),
+  secondaryNav: document.getElementById("secondaryNav"),
+  mainPanel: document.getElementById("mainPanel"),
   eventFeed: document.getElementById("eventFeed"),
-  assetsPanel: document.getElementById("assetsPanel"),
-  upgrades: document.getElementById("upgrades"),
-  robBtn: document.getElementById("robBtn"),
-  loanBtn: document.getElementById("loanBtn"),
-  repayBtn: document.getElementById("repayBtn"),
-  rerollBtn: document.getElementById("rerollBtn"),
+  stayBtn: document.getElementById("stayBtn"),
+  travelModalBtn: document.getElementById("travelModalBtn"),
   clearFeedBtn: document.getElementById("clearFeedBtn"),
+  modalBackdrop: document.getElementById("modalBackdrop"),
+  modalTitle: document.getElementById("modalTitle"),
+  modalBody: document.getElementById("modalBody"),
+  modalCloseBtn: document.getElementById("modalCloseBtn"),
+};
+
+const UI = {
+  primary: "places",
+  secondary: "drug_market",
+};
+
+const NAV = {
+  places: [
+    { id: "drug_market", label: "Drug Market", title: "Drug Market" },
+    { id: "finances", label: "Finances", title: "Street Finances" },
+    { id: "hospital", label: "Hospital", title: "Hospital" },
+    { id: "shopping", label: "Shopping", title: "Shopping" },
+    { id: "shipping", label: "Shipping", title: "Shipping" },
+  ],
+  info: [
+    { id: "player_stats", label: "Player Stats", title: "Player Stats" },
+    { id: "rumors", label: "Rumors", title: "Street Rumors" },
+  ],
+  inventory: [
+    { id: "inventory_drugs", label: "Drugs", title: "Inventory: Drugs" },
+    { id: "inventory_equipment", label: "Equipment", title: "Inventory: Equipment" },
+    { id: "inventory_consumables", label: "Consumables", title: "Inventory: Consumables" },
+  ],
 };
 
 function rng(min, max) {
@@ -159,6 +184,11 @@ function incrementTick() {
   if (GAME.tick > 4) {
     GAME.tick = 1;
     GAME.day += 1;
+    if (GAME.bank > 0) {
+      const interest = Math.max(1, Math.floor(GAME.bank * 0.02));
+      GAME.bank += interest;
+      addFeed(`Bank kicked in +$${interest} interest.`, "good");
+    }
   }
 }
 
@@ -475,22 +505,51 @@ function marketSignals() {
   return { bestMarginId, cheapestId, bestFlipId };
 }
 
+function currentRank() {
+  if (GAME.rep >= 60) return "Boss";
+  if (GAME.rep >= 35) return "Shot Caller";
+  if (GAME.rep >= 18) return "Runner";
+  return "Hustler";
+}
+
 function renderHud() {
   const area = currentArea();
   const chips = [
     `Cash $${GAME.cash}`,
+    `Bank $${GAME.bank}`,
+    `Health ${GAME.health}`,
+    `Capacity ${cargoCount()} / ${GAME.maxCarry}`,
+    `City ${area.displayName}`,
+    `Day ${GAME.day} / 30`,
+    `Rank ${currentRank()}`,
     `Heat ${GAME.heat}`,
-    `Rep ${GAME.rep}`,
-    `Day ${GAME.day} / Tick ${GAME.tick}`,
-    `Area ${area.displayName}`,
   ];
-  el.hudStats.innerHTML = chips.map((chip) => `<span class="chip">${chip}</span>`).join("");
+  el.hudStats.innerHTML = chips.map((chip) => `<span class="status-chip">${chip}</span>`).join("");
 }
 
-function renderMarket() {
+function renderNav() {
+  const primaryOrder = [
+    { id: "places", label: "Places" },
+    { id: "info", label: "Info" },
+    { id: "inventory", label: "Inventory" },
+  ];
+
+  el.primaryNav.innerHTML = primaryOrder
+    .map((entry) => `<button class="btn ${UI.primary === entry.id ? "active" : ""}" data-primary="${entry.id}" type="button">${entry.label}</button>`)
+    .join("");
+
+  const secondaryOptions = NAV[UI.primary];
+  if (!secondaryOptions.some((item) => item.id === UI.secondary)) UI.secondary = secondaryOptions[0].id;
+  el.secondaryNav.innerHTML = secondaryOptions
+    .map((entry) => `<button class="btn ${UI.secondary === entry.id ? "active" : ""}" data-secondary="${entry.id}" type="button">${entry.label}</button>`)
+    .join("");
+  el.screenTitle.textContent = secondaryOptions.find((item) => item.id === UI.secondary)?.title || "907 Hustle";
+}
+
+function renderMarketScreen() {
   const { bestMarginId, cheapestId, bestFlipId } = marketSignals();
   const rows = [
-    '<div class="market-row header"><div>Drug</div><div>Buy</div><div>Sell</div><div>Owned</div><div>Margin</div><div>Actions</div></div>',
+    '<div class="row market header"><div>Drug</div><div>Buy</div><div>Sell</div><div>Owned</div><div>Margin</div><div>Actions</div></div>',
   ];
 
   for (const drug of DRUGS) {
@@ -504,7 +563,7 @@ function renderMarket() {
     if (drug.id === bestFlipId) cues.push('<span class="signal flip">flip</span>');
 
     rows.push(`
-      <div class="market-row">
+      <div class="row market">
         <div class="drug-meta"><strong>${drug.displayName}</strong>${cues.join("")}</div>
         <div>$${buy}</div>
         <div>$${sell}</div>
@@ -520,49 +579,165 @@ function renderMarket() {
     `);
   }
 
-  el.marketTable.innerHTML = rows.join("");
-}
-
-function renderTravel() {
-  el.travelList.innerHTML = "";
-  for (const area of AREAS) {
-    const button = document.createElement("button");
-    button.className = "btn travel";
-    button.type = "button";
-    button.disabled = area.id === GAME.locationId;
-    button.innerHTML = `${area.displayName}<div class="travel-sub">Risk ${areaRiskLabel(area.riskLevel)} • ${area.hint}</div>`;
-    button.addEventListener("click", () => travelTo(area.id));
-    el.travelList.appendChild(button);
-  }
-}
-
-function renderRiskPreview() {
-  const area = currentArea();
-  const areaRisk = areaRiskLabel(area.riskLevel);
-  const rookPressure = rookPressureState();
-  const carry = cargoValue();
-  const carryState = carry >= 900 ? "High" : carry >= 450 ? "Medium" : "Low";
-
-  el.riskPreview.innerHTML = `
-    <div class="risk-chip ${areaRisk.toLowerCase()}">Area Risk: <strong>${areaRisk}</strong></div>
-    <div class="risk-chip ${rookPressure === "Active" ? "high" : rookPressure === "Watching" ? "medium" : "low"}">Rook Pressure: <strong>${rookPressure}</strong></div>
-    <div class="risk-chip ${carryState.toLowerCase()}">Carry Exposure: <strong>${carryState}</strong> ($${carry})</div>
+  el.mainPanel.innerHTML = `
+    <h3 class="section-title">Drug Market</h3>
+    <div class="card-grid" style="margin-bottom:8px;">
+      <section class="card">
+        <p class="eyebrow">Quick Actions</p>
+        <div class="input-row">
+          <button class="btn danger" data-quick-action="rob" type="button">Rob for Cash</button>
+          <button class="btn secondary" data-quick-action="loan" type="button">Ask Dre for Loan</button>
+          <button class="btn secondary" data-quick-action="repay" type="button">Repay Dre</button>
+        </div>
+      </section>
+      <section class="card">
+        <p class="eyebrow">Risk Preview</p>
+        <p>Area Risk: <strong>${areaRiskLabel(currentArea().riskLevel)}</strong> · Rook: <strong>${rookPressureState()}</strong></p>
+      </section>
+    </div>
+    <div class="market-table">${rows.join("")}</div>
   `;
 }
 
-function renderHoldings() {
+function renderFinancesScreen() {
+  el.mainPanel.innerHTML = `
+    <h3 class="section-title">Finances</h3>
+    <div class="card-grid">
+      <section class="card">
+        <p class="eyebrow">Street Cash</p>
+        <h3>$${GAME.cash}</h3>
+        <p class="muted">Use this for trading and quick actions.</p>
+      </section>
+      <section class="card">
+        <p class="eyebrow">Bank Balance</p>
+        <h3>$${GAME.bank}</h3>
+        <p class="muted">Safe stash. Simple 2% daily interest.</p>
+      </section>
+    </div>
+    <div class="card" style="margin-top:8px;">
+      <h3>Move Money</h3>
+      <div class="input-row">
+        <input id="financeAmount" type="number" min="1" value="50" />
+        <button class="btn primary" data-finance-action="deposit" type="button">Deposit</button>
+        <button class="btn secondary" data-finance-action="withdraw" type="button">Withdraw</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderInventoryDrugsScreen() {
   const lines = DRUGS
     .filter((drug) => GAME.inventory[drug.id] > 0)
     .sort((a, b) => GAME.inventory[b.id] - GAME.inventory[a.id])
-    .map((drug) => `<div class="label-line"><span>${drug.displayName}</span><strong>${GAME.inventory[drug.id]}</strong></div>`)
+    .map((drug) => `<div class="row simple"><span>${drug.displayName}</span><strong>${GAME.inventory[drug.id]}</strong></div>`)
     .join("");
-
-  el.holdings.innerHTML = `
-    <div class="label-line"><span>Carry Slots</span><strong>${cargoCount()} / ${GAME.maxCarry}</strong></div>
-    <div class="label-line"><span>Carry Value</span><strong>$${cargoValue()}</strong></div>
-    <div class="label-line"><span>Dre Debt</span><strong>$${GAME.dre.loanOutstanding}</strong></div>
-    ${lines || '<p class="muted">No product on you.</p>'}
+  el.mainPanel.innerHTML = `
+    <h3 class="section-title">Inventory - Drugs</h3>
+    <div class="list-table">
+      <div class="row simple header"><div>Item</div><div>Qty</div></div>
+      ${lines || '<div class="row simple"><span class="muted">No product on hand.</span><span>-</span></div>'}
+    </div>
   `;
+}
+
+function renderInventoryEquipmentScreen() {
+  const lines = (GAME.assets || [])
+    .map((assetId) => UPGRADES.find((upgrade) => upgrade.id === assetId))
+    .filter(Boolean)
+    .map((asset) => `<div class="row simple"><span>${asset.displayName}</span><strong class="good">Equipped</strong></div>`)
+    .join("");
+  el.mainPanel.innerHTML = `
+    <h3 class="section-title">Inventory - Equipment</h3>
+    <div class="list-table">
+      <div class="row simple header"><div>Gear</div><div>Status</div></div>
+      ${lines || '<div class="row simple"><span class="muted">No equipment owned.</span><span>-</span></div>'}
+    </div>
+  `;
+}
+
+function renderInventoryConsumablesScreen() {
+  el.mainPanel.innerHTML = `
+    <h3 class="section-title">Inventory - Consumables</h3>
+    <div class="card">
+      <p class="muted">No consumables yet. Future updates will route medkits, boosters, and one-use items here.</p>
+    </div>
+  `;
+}
+
+function renderHospitalScreen() {
+  const missing = Math.max(0, 100 - GAME.health);
+  const healCost = missing * 4;
+  el.mainPanel.innerHTML = `
+    <h3 class="section-title">Hospital</h3>
+    <div class="card-grid">
+      <section class="card"><p class="eyebrow">Current Health</p><h3>${GAME.health} / 100</h3></section>
+      <section class="card"><p class="eyebrow">Full Heal Cost</p><h3>$${healCost}</h3></section>
+    </div>
+    <div class="input-row">
+      <button class="btn primary" data-heal="full" type="button" ${healCost <= 0 || GAME.cash < healCost ? "disabled" : ""}>Heal Up</button>
+    </div>
+  `;
+}
+
+function renderShoppingScreen() {
+  const lines = UPGRADES.map((item) => {
+    const owned = GAME.assets.includes(item.id);
+    return `<div class="row simple"><span>${item.displayName} - $${item.cost}</span><button class="btn ${owned ? "secondary" : "primary"}" data-upgrade-buy="${item.id}" ${owned ? "disabled" : ""}>${owned ? "Owned" : "Buy"}</button></div>`;
+  }).join("");
+  el.mainPanel.innerHTML = `
+    <h3 class="section-title">Shopping</h3>
+    <div class="list-table">
+      <div class="row simple header"><div>Gear</div><div>Action</div></div>
+      ${lines}
+    </div>
+  `;
+}
+
+function renderShippingScreen() {
+  el.mainPanel.innerHTML = `
+    <h3 class="section-title">Shipping</h3>
+    <div class="card"><p class="muted">Shipment network not wired yet. This screen is reserved in the shell so future shipping systems stay mode-based.</p></div>
+  `;
+}
+
+function renderPlayerStatsScreen() {
+  const area = currentArea();
+  el.mainPanel.innerHTML = `
+    <h3 class="section-title">Player Stats</h3>
+    <div class="card-grid">
+      <section class="card"><p class="eyebrow">Rep</p><h3>${GAME.rep}</h3></section>
+      <section class="card"><p class="eyebrow">Heat</p><h3>${GAME.heat}</h3></section>
+      <section class="card"><p class="eyebrow">Rook Pressure</p><h3>${rookPressureState()}</h3></section>
+      <section class="card"><p class="eyebrow">Current Area Risk</p><h3>${areaRiskLabel(area.riskLevel)}</h3></section>
+    </div>
+  `;
+}
+
+function renderRumorsScreen() {
+  const area = currentArea();
+  el.mainPanel.innerHTML = `
+    <h3 class="section-title">Rumors</h3>
+    <div class="card">
+      <p>Word on the block: <strong>${area.hint}</strong> around ${area.displayName}.</p>
+      <div class="input-row"><button class="btn primary" data-open-rumor="1" type="button">Open Rumor Brief</button></div>
+    </div>
+  `;
+}
+
+function renderMainPanel() {
+  switch (UI.secondary) {
+    case "drug_market": return renderMarketScreen();
+    case "finances": return renderFinancesScreen();
+    case "hospital": return renderHospitalScreen();
+    case "shopping": return renderShoppingScreen();
+    case "shipping": return renderShippingScreen();
+    case "player_stats": return renderPlayerStatsScreen();
+    case "rumors": return renderRumorsScreen();
+    case "inventory_drugs": return renderInventoryDrugsScreen();
+    case "inventory_equipment": return renderInventoryEquipmentScreen();
+    case "inventory_consumables": return renderInventoryConsumablesScreen();
+    default: return renderMarketScreen();
+  }
 }
 
 function renderFeed() {
@@ -571,67 +746,136 @@ function renderFeed() {
     .join("");
 }
 
-function renderUpgrades() {
-  const unlockedPanel = GAME.cash >= 900 || GAME.rep >= 12;
-  el.assetsPanel.classList.toggle("hidden", !unlockedPanel);
-  if (!unlockedPanel) return;
+function openModal(title, bodyHtml) {
+  el.modalTitle.textContent = title;
+  el.modalBody.innerHTML = bodyHtml;
+  el.modalBackdrop.classList.remove("hidden");
+}
 
-  el.upgrades.innerHTML = "";
-  for (const upgrade of UPGRADES) {
-    const owned = GAME.assets.includes(upgrade.id);
-    const canSee = owned || GAME.cash >= (upgrade.unlockRequirements.money || 0) || GAME.rep >= (upgrade.unlockRequirements.rep || 0);
-    if (!canSee) continue;
+function closeModal() {
+  el.modalBackdrop.classList.add("hidden");
+  el.modalBody.innerHTML = "";
+}
 
-    const line = document.createElement("div");
-    line.className = "label-line";
-    line.innerHTML = `<span>${upgrade.displayName} ($${upgrade.cost})</span>`;
+function openTravelModal() {
+  const lines = AREAS.map((area) => `
+    <div class="row simple">
+      <span>${area.displayName} <small class="muted">(Risk ${areaRiskLabel(area.riskLevel)})</small></span>
+      <button class="btn primary" data-travel-go="${area.id}" ${area.id === GAME.locationId ? "disabled" : ""}>Go</button>
+    </div>
+  `).join("");
+  openModal("Travel", `<div class="list-table">${lines}</div>`);
+}
 
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "btn";
-    btn.textContent = owned ? "Owned" : "Buy";
-    btn.disabled = owned;
-    btn.addEventListener("click", () => maybeBuyUpgrade(upgrade.id));
-    line.appendChild(btn);
-    el.upgrades.appendChild(line);
-  }
-
-  if (!el.upgrades.children.length) {
-    el.upgrades.innerHTML = '<p class="muted">Keep stacking cash or rep to unlock assets.</p>';
-  }
+function maybeShowPromotionModal() {
+  const rank = currentRank();
+  if (GAME.rep <= 0) return;
+  if (GAME.lastPromotion === rank) return;
+  GAME.lastPromotion = rank;
+  openModal("Rank Promotion", `<p>You are now <strong>${rank}</strong>.</p><p class="muted">Keep stacking rep to unlock tougher routes and better leverage.</p><button class="btn primary" data-modal-ok="1">Back to work</button>`);
 }
 
 function render() {
   renderHud();
-  renderMarket();
-  renderTravel();
-  renderRiskPreview();
-  renderHoldings();
+  renderNav();
+  renderMainPanel();
   renderFeed();
-  renderUpgrades();
+  maybeShowPromotionModal();
 }
 
 function bindEvents() {
-  el.marketTable.addEventListener("click", (event) => {
+  el.primaryNav.addEventListener("click", (event) => {
+    const nextPrimary = event.target.getAttribute("data-primary");
+    if (!nextPrimary) return;
+    UI.primary = nextPrimary;
+    UI.secondary = NAV[UI.primary][0].id;
+    render();
+  });
+
+  el.secondaryNav.addEventListener("click", (event) => {
+    const nextSecondary = event.target.getAttribute("data-secondary");
+    if (!nextSecondary) return;
+    UI.secondary = nextSecondary;
+    render();
+  });
+
+  el.mainPanel.addEventListener("click", (event) => {
     const buyOne = event.target.getAttribute("data-buy-one");
     const buyMax = event.target.getAttribute("data-buy-max");
     const sellOne = event.target.getAttribute("data-sell-one");
     const sellAll = event.target.getAttribute("data-sell-all");
+    const financeAction = event.target.getAttribute("data-finance-action");
+    const doHeal = event.target.getAttribute("data-heal");
+    const upgradeBuy = event.target.getAttribute("data-upgrade-buy");
+    const openRumor = event.target.getAttribute("data-open-rumor");
+    const quickAction = event.target.getAttribute("data-quick-action");
 
     if (buyOne) buyDrug(buyOne, 1);
     if (buyMax) buyDrug(buyMax, maxBuyQty(buyMax));
     if (sellOne) sellDrug(sellOne, 1);
     if (sellAll) sellDrug(sellAll, GAME.inventory[sellAll]);
+    if (doHeal) healAtHospital();
+    if (upgradeBuy) maybeBuyUpgrade(upgradeBuy);
+    if (openRumor) openRumorModal();
+    if (quickAction === "rob") robAction();
+    if (quickAction === "loan") takeDreLoan();
+    if (quickAction === "repay") repayDre();
+    if (financeAction) moveMoney(financeAction);
   });
 
-  el.robBtn.addEventListener("click", robAction);
-  el.loanBtn.addEventListener("click", takeDreLoan);
-  el.repayBtn.addEventListener("click", repayDre);
-  el.rerollBtn.addEventListener("click", () => stepTick("You lay low and let one market tick pass."));
+  el.stayBtn.addEventListener("click", () => stepTick("You lay low and let one market tick pass."));
+  el.travelModalBtn.addEventListener("click", openTravelModal);
   el.clearFeedBtn.addEventListener("click", () => {
     GAME.events = [];
     renderFeed();
   });
+  el.modalCloseBtn.addEventListener("click", closeModal);
+
+  el.modalBody.addEventListener("click", (event) => {
+    const go = event.target.getAttribute("data-travel-go");
+    const ok = event.target.getAttribute("data-modal-ok");
+    if (go) {
+      travelTo(go);
+      closeModal();
+    }
+    if (ok) closeModal();
+  });
+}
+
+function moveMoney(kind) {
+  const amount = Math.max(1, Number(document.getElementById("financeAmount")?.value || 0));
+  if (!amount) return;
+  if (kind === "deposit") {
+    const moved = Math.min(amount, GAME.cash);
+    if (!moved) return addFeed("No cash to deposit.", "bad");
+    GAME.cash -= moved;
+    GAME.bank += moved;
+    addFeed(`Deposited $${moved} to bank.`, "good");
+  } else {
+    const moved = Math.min(amount, GAME.bank);
+    if (!moved) return addFeed("No bank funds to withdraw.", "bad");
+    GAME.bank -= moved;
+    GAME.cash += moved;
+    addFeed(`Withdrew $${moved} from bank.`, "good");
+  }
+  render();
+}
+
+function healAtHospital() {
+  const missing = Math.max(0, 100 - GAME.health);
+  const cost = missing * 4;
+  if (cost <= 0) return addFeed("You're already at full health.");
+  if (GAME.cash < cost) return addFeed("Not enough cash for treatment.", "bad");
+  GAME.cash -= cost;
+  GAME.health = 100;
+  addFeed(`Hospital patched you up for $${cost}.`, "good");
+  render();
+}
+
+function openRumorModal() {
+  const area = currentArea();
+  const rumor = `Word is ${area.hint} in ${area.displayName}. Keep your load light if pressure is rising.`;
+  openModal("Rumor", `<p>${rumor}</p><button class="btn primary" data-modal-ok="1">Got it</button>`);
 }
 
 function resetGame() {
@@ -639,6 +883,7 @@ function resetGame() {
   GAME.tick = 1;
   GAME.locationId = "north_star_lot";
   GAME.cash = 200;
+  GAME.bank = 0;
   GAME.heat = 0;
   GAME.rep = 0;
   GAME.health = 100;
@@ -650,6 +895,7 @@ function resetGame() {
   GAME.rook = { attention: 0, warned: false, taxActive: false };
   GAME.flags = { robbedRecently: false };
   GAME.assets = [];
+  GAME.lastPromotion = currentRank();
   generatePrices();
   addFeed("Fresh run started: $200 cash, no crew, no safety net.");
   render();

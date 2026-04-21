@@ -8,56 +8,45 @@
   </head>
   <body>
     <main class="app-shell">
-      <header class="hud card">
+      <header class="status-bar panel">
         <h1>907 HUSTLE</h1>
-        <div id="hudStats" class="hud-stats"></div>
+        <div id="hudStats" class="status-stats"></div>
       </header>
 
-      <section class="main-grid">
-        <section class="card market-panel">
-          <div class="panel-header">
-            <h2>Drug Market</h2>
-            <button id="rerollBtn" class="btn ghost" type="button">Wait +1 Tick</button>
-          </div>
-          <div id="marketTable" class="market-table"></div>
-        </section>
+      <section class="context-row panel">
+        <div>
+          <p class="eyebrow">Current Screen</p>
+          <h2 id="screenTitle">Drug Market</h2>
+        </div>
+        <div class="context-actions">
+          <button id="stayBtn" class="btn secondary" type="button">Stay Here (+1 Tick)</button>
+          <button id="travelModalBtn" class="btn primary" type="button">Travel / Fly To</button>
+        </div>
+      </section>
 
-        <aside class="support-column">
-          <section class="card support-panel compact">
-            <h3>Actions + Travel</h3>
-            <div class="quick-actions">
-              <button id="robBtn" class="btn danger" type="button">Rob for Cash</button>
-              <button id="loanBtn" class="btn" type="button">Ask Dre for Loan</button>
-              <button id="repayBtn" class="btn" type="button">Repay Dre</button>
-            </div>
-            <div id="travelList" class="travel-list"></div>
-          </section>
+      <nav class="primary-nav panel" id="primaryNav"></nav>
+      <nav class="secondary-nav panel" id="secondaryNav"></nav>
 
-          <section class="card support-panel compact risk-panel">
-            <h3>Risk Preview</h3>
-            <div id="riskPreview"></div>
-          </section>
+      <section id="mainPanel" class="main-panel panel"></section>
 
-          <section class="card support-panel compact">
-            <h3>Holdings</h3>
-            <div id="holdings" class="holdings"></div>
-          </section>
-
-          <section id="assetsPanel" class="card support-panel compact hidden">
-            <h3>Assets &amp; Crew</h3>
-            <div id="upgrades" class="upgrades"></div>
-          </section>
-
-          <section class="card support-panel feed-panel compact">
-            <div class="panel-header">
-              <h3>Street Feed</h3>
-              <button id="clearFeedBtn" class="btn ghost" type="button">Clear</button>
-            </div>
-            <div id="eventFeed" class="event-feed"></div>
-          </section>
-        </aside>
+      <section class="message-strip panel">
+        <div class="panel-header">
+          <h3>Street Feed</h3>
+          <button id="clearFeedBtn" class="btn ghost" type="button">Clear</button>
+        </div>
+        <div id="eventFeed" class="event-feed"></div>
       </section>
     </main>
+
+    <div id="modalBackdrop" class="modal-backdrop hidden">
+      <div class="modal panel" role="dialog" aria-modal="true">
+        <div class="panel-header">
+          <h3 id="modalTitle">Modal</h3>
+          <button id="modalCloseBtn" class="btn ghost" type="button">Close</button>
+        </div>
+        <div id="modalBody" class="modal-body"></div>
+      </div>
+    </div>
 
     <script src="script.js"></script>
   </body>

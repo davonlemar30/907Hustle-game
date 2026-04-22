@@ -88,12 +88,32 @@ function currentSlotName() { return SLOTS[GAME.tick - 1] || SLOTS[0]; }
 function nextSlotName() { return SLOTS[GAME.tick % 4]; }
 
 const TABS = [
-  { id: "market",   label: "Market", title: "Drug Market" },
-  { id: "stash",    label: "Stash", title: "Bag + Street Intel" },
-  { id: "bank",     label: "Cash/Bank", title: "Cash + Bank" },
-  { id: "shop",     label: "Gear", title: "Gear Shop" },
-  { id: "hospital", label: "Clinic", title: "Clinic" },
+  { id: "market",   label: "Market", title: "Drug Market", icon: "cash" },
+  { id: "stash",    label: "Stash", title: "Bag + Street Intel", icon: "bag" },
+  { id: "bank",     label: "Cash/Bank", title: "Cash + Bank", icon: "bank" },
+  { id: "shop",     label: "Gear", title: "Gear Shop", icon: "shop" },
+  { id: "hospital", label: "Clinic", title: "Clinic", icon: "health" },
 ];
+
+function iconSvg(kind = "info") {
+  const icons = {
+    cash: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>',
+    bag: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9h12l-1 10H7z"/><path d="M9 9V7a3 3 0 0 1 6 0v2"/></svg>',
+    heat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3c2 3 0 4 2 6 1 1 3 2 3 5a6 6 0 1 1-12 0c0-4 3-5 4-8 2 1 2 2 3 3z"/></svg>',
+    day: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+    location: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-7 7-12a7 7 0 1 0-14 0c0 5 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>',
+    health: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-4.5-7-10a4 4 0 0 1 7-2 4 4 0 0 1 7 2c0 5.5-7 10-7 10z"/></svg>',
+    warn: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l10 18H2z"/><path d="M12 9v5M12 17h.01"/></svg>',
+    bank: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h18M5 9v9M9 9v9M13 9v9M17 9v9M3 18h18"/><path d="M2 9l10-5 10 5"/></svg>',
+    shop: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16l-1 3H5z"/><path d="M6 10h12v10H6z"/></svg>',
+    info: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v6M12 7h.01"/></svg>',
+  };
+  return `<span class="icon-badge icon-${kind}">${icons[kind] || icons.info}</span>`;
+}
+
+function sectionHeader(title, icon = "info") {
+  return `<div class="screen-title">${iconSvg(icon)}<span>${title}</span></div>`;
+}
 
 function rng(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -690,22 +710,23 @@ function renderHud() {
   const heatLvl = Math.min(5, GAME.heat);
   const heatBar = "●".repeat(heatLvl) + "○".repeat(5 - heatLvl);
   const heatCls = GAME.heat >= 6 ? "chip-danger" : GAME.heat >= 3 ? "chip-warn" : "";
+  const hpCls = GAME.health < 40 ? "chip-danger" : GAME.health < 70 ? "chip-warn" : "";
+
+  const chip = (label, value, cls = "", icon = "info") =>
+    `<span class="status-chip ${cls}">${iconSvg(icon)}<span class="chip-k">${label}</span><span class="chip-v">${value}</span></span>`;
 
   const parts = [];
-  parts.push(`<span class="status-chip chip-money" data-cash-chip="1">$${GAME.cash.toLocaleString()}</span>`);
-  if (GAME.bank > 0) parts.push(`<span class="status-chip">Bank $${GAME.bank.toLocaleString()}</span>`);
-  parts.push(`<span class="status-chip">Bag ${cargoCount()}/${GAME.maxCarry}</span>`);
-  parts.push(`<span class="status-chip">Day ${GAME.day}/30 · ${currentSlotName()}</span>`);
+  parts.push(`<span class="status-chip chip-money" data-cash-chip="1">${iconSvg("cash")}<span class="chip-k">Cash</span><span class="chip-v">$${GAME.cash.toLocaleString()}</span></span>`);
+  parts.push(chip("Bank", `$${GAME.bank.toLocaleString()}`, "chip-bank", "bank"));
+  parts.push(chip("Bag", `${cargoCount()}/${GAME.maxCarry}`, "chip-bag", "bag"));
+  parts.push(chip("Clock", `Day ${GAME.day}/30 · ${currentSlotName()}`, "", "day"));
   if (GAME.dre.loanOutstanding > 0) {
     const overdue = GAME.day > GAME.dre.deadlineDay;
-    parts.push(`<span class="status-chip ${overdue ? "chip-danger" : "chip-warn"}">Dre $${GAME.dre.loanOutstanding} · D${GAME.dre.deadlineDay}</span>`);
+    parts.push(chip("Dre", `$${GAME.dre.loanOutstanding} · D${GAME.dre.deadlineDay}`, overdue ? "chip-danger" : "chip-warn", "warn"));
   }
-  parts.push(`<span class="status-chip chip-location">${area.displayName}</span>`);
-  parts.push(`<span class="status-chip ${heatCls}">Heat ${heatBar}</span>`);
-  if (GAME.health < 100) {
-    const hpCls = GAME.health < 40 ? "chip-danger" : GAME.health < 70 ? "chip-warn" : "";
-    parts.push(`<span class="status-chip ${hpCls}">HP ${GAME.health}</span>`);
-  }
+  parts.push(chip("Area", area.displayName, "chip-location", "location"));
+  parts.push(chip("Heat", heatBar, heatCls, "heat"));
+  parts.push(chip("Health", `${GAME.health}`, hpCls, "health"));
 
   el.hudStats.innerHTML = parts.join("");
 
@@ -719,7 +740,11 @@ function renderHud() {
 
 function renderNav() {
   el.mainNav.innerHTML = TABS
-    .map((t) => `<button class="tab ${UI.tab === t.id ? "active" : ""}" data-tab="${t.id}" type="button">${t.label}</button>`)
+    .map((t) => `
+      <button class="tab ${UI.tab === t.id ? "active" : ""}" data-tab="${t.id}" type="button">
+        ${iconSvg(t.icon)}
+        <span class="tab-text">${t.label}</span>
+      </button>`)
     .join("");
 }
 
@@ -743,6 +768,7 @@ function renderMarketScreen() {
 
     const expandedHtml = expanded ? `
       <div class="trade-row-expand">
+        <div class="trade-expand-head">Trade Quantity</div>
         <div class="qty-stepper">
           <button class="stepper" data-qty-minus="${drug.id}" type="button">−</button>
           <input class="qty-input" type="number" min="1" value="${qty}" data-qty-input="${drug.id}" />
@@ -766,15 +792,16 @@ function renderMarketScreen() {
         <div class="trade-row-main" data-toggle-row="${drug.id}">
           <div class="trade-drug">
             <strong>${drug.displayName}</strong>
+            <small>${drug.category.toUpperCase()} · TIER ${drug.riskTier}</small>
             ${hot ? '<span class="tag-hot">Hot</span>' : ""}
           </div>
-          <div class="trade-price">$${buy.toLocaleString()}</div>
+          <div class="trade-price">$${buy.toLocaleString()}<small>sell $${sell.toLocaleString()}</small></div>
           <div class="trend-wrap">
             <span class="trend ${trend.dir}" title="${trend.dir.replace("-", " ")}">${trend.arrow}</span>
           </div>
           <div class="trade-owned ${owned > 0 ? "has" : ""}"><span>Owned</span><strong>${owned}</strong></div>
           <div class="trade-toggle">
-            <button class="trade-btn" data-toggle-trade="${drug.id}" type="button">${expanded ? "Close" : "Tap to Trade"}</button>
+            <button class="trade-btn" data-toggle-trade="${drug.id}" type="button">${expanded ? "Collapse" : "Open Trade"}</button>
           </div>
         </div>
         ${expandedHtml}
@@ -782,7 +809,7 @@ function renderMarketScreen() {
   }).join("");
 
   el.mainPanel.innerHTML = `
-    <div class="screen-title">Market · ${area.displayName}</div>
+    ${sectionHeader(`Drug Market · ${area.displayName}`, "cash")}
     <div class="market-head">
       <div>Drug</div>
       <div>Price</div>
@@ -801,7 +828,7 @@ function renderMarketScreen() {
 
 function renderBankScreen() {
   el.mainPanel.innerHTML = `
-    <div class="screen-title">Bank</div>
+    ${sectionHeader("Cash + Bank", "bank")}
     <div class="card-grid" style="margin-bottom:12px;">
       <section class="card money"><p class="eyebrow">Street Cash</p><h3>$${GAME.cash.toLocaleString()}</h3><p class="muted">Can be lost in muggings, busts, robberies.</p></section>
       <section class="card"><p class="eyebrow">Bank Balance</p><h3>$${GAME.bank.toLocaleString()}</h3><p class="muted">Safe. Earns 2% daily interest.</p></section>
@@ -836,22 +863,22 @@ function renderStashScreen() {
   const cargoValueStr = cargoValue().toLocaleString();
 
   el.mainPanel.innerHTML = `
-    <div class="screen-title">Stash + Street Intel</div>
+    ${sectionHeader("Stash + Street Intel", "bag")}
     <div class="card-grid" style="margin-bottom:12px;">
       <section class="card money"><p class="eyebrow">Total Value</p><h3>$${cargoValueStr}</h3><p class="muted">If you sold everything here right now.</p></section>
       <section class="card"><p class="eyebrow">Bag</p><h3>${cargoCount()} / ${GAME.maxCarry}</h3><p class="muted">Upgrade via the Shop tab.</p></section>
     </div>
 
-    <div class="screen-title">Street Intel</div>
+    ${sectionHeader("Street Intel", "info")}
     <div class="card-grid" style="margin-bottom:12px;">
       <section class="card"><p class="eyebrow">Rank</p><h3>${currentRank()}</h3><p class="muted">${GAME.rep} rep</p></section>
       <section class="card"><p class="eyebrow">Pressure</p><h3>${rookPressureState()}</h3><p class="muted">Heat ${GAME.heat} · ${areaRiskLabel(currentArea().riskLevel)} risk zone.</p></section>
     </div>
-    <div class="screen-title">Drugs on Hand</div>
+    ${sectionHeader("Drugs on Hand", "cash")}
     <div class="list-table" style="margin-bottom:12px;">
       ${drugLines || '<div class="row simple"><span class="muted">Nothing in the bag.</span><span>—</span></div>'}
     </div>
-    <div class="screen-title">Gear</div>
+    ${sectionHeader("Gear", "shop")}
     <div class="list-table">
       ${gearLines || '<div class="row simple"><span class="muted">No gear equipped.</span><span>—</span></div>'}
     </div>
@@ -862,7 +889,7 @@ function renderHospitalScreen() {
   const missing = Math.max(0, 100 - GAME.health);
   const healCost = missing * 4;
   el.mainPanel.innerHTML = `
-    <div class="screen-title">Hospital</div>
+    ${sectionHeader("Hospital", "health")}
     <div class="card-grid" style="margin-bottom:12px;">
       <section class="card"><p class="eyebrow">Current Health</p><h3>${GAME.health} / 100</h3></section>
       <section class="card"><p class="eyebrow">Full Heal</p><h3>$${healCost.toLocaleString()}</h3><p class="muted">Street Doctor event is cheaper when available.</p></section>
@@ -883,7 +910,7 @@ function renderShopScreen() {
       </div>`;
   }).join("");
   el.mainPanel.innerHTML = `
-    <div class="screen-title">Gear Shop</div>
+    ${sectionHeader("Gear Shop", "shop")}
     <div class="list-table">
       <div class="row simple header"><span>Item</span><span>Action</span></div>
       ${lines}

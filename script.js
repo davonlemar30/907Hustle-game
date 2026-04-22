@@ -52,7 +52,9 @@ const GAME = {
   maxCarry: 30,
   inventory: Object.fromEntries(DRUGS.map((drug) => [drug.id, 0])),
   prices: {},
+  priceHistory: {},
   events: [],
+  modifiers: [],
   dre: { loanOutstanding: 0, deadlineDay: null, trust: 0 },
   mina: { trust: 0, dealChanceBonus: 0 },
   rook: { attention: 0, warned: false, taxActive: false },
@@ -62,12 +64,11 @@ const GAME = {
 
 const el = {
   hudStats: document.getElementById("hudStats"),
-  screenTitle: document.getElementById("screenTitle"),
-  primaryNav: document.getElementById("primaryNav"),
-  secondaryNav: document.getElementById("secondaryNav"),
+  mainNav: document.getElementById("mainNav"),
   mainPanel: document.getElementById("mainPanel"),
   eventFeed: document.getElementById("eventFeed"),
   stayBtn: document.getElementById("stayBtn"),
+  stayBtnSub: document.getElementById("stayBtnSub"),
   travelModalBtn: document.getElementById("travelModalBtn"),
   clearFeedBtn: document.getElementById("clearFeedBtn"),
   modalBackdrop: document.getElementById("modalBackdrop"),
@@ -77,28 +78,23 @@ const el = {
 };
 
 const UI = {
-  primary: "places",
-  secondary: "drug_market",
+  tab: "market",
+  expandedDrug: null,
+  qty: {},
 };
 
-const NAV = {
-  places: [
-    { id: "drug_market", label: "Drug Market", title: "Drug Market" },
-    { id: "finances", label: "Finances", title: "Street Finances" },
-    { id: "hospital", label: "Hospital", title: "Hospital" },
-    { id: "shopping", label: "Shopping", title: "Shopping" },
-    { id: "shipping", label: "Shipping", title: "Shipping" },
-  ],
-  info: [
-    { id: "player_stats", label: "Player Stats", title: "Player Stats" },
-    { id: "rumors", label: "Rumors", title: "Street Rumors" },
-  ],
-  inventory: [
-    { id: "inventory_drugs", label: "Drugs", title: "Inventory: Drugs" },
-    { id: "inventory_equipment", label: "Equipment", title: "Inventory: Equipment" },
-    { id: "inventory_consumables", label: "Consumables", title: "Inventory: Consumables" },
-  ],
-};
+const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
+function currentSlotName() { return SLOTS[GAME.tick - 1] || SLOTS[0]; }
+function nextSlotName() { return SLOTS[GAME.tick % 4]; }
+
+const TABS = [
+  { id: "market",   label: "Market",   title: "Drug Market" },
+  { id: "stash",    label: "Stash",    title: "Your Stash" },
+  { id: "bank",     label: "Bank",     title: "Bank" },
+  { id: "shop",     label: "Shop",     title: "Gear Shop" },
+  { id: "hospital", label: "Hospital", title: "Hospital" },
+  { id: "stats",    label: "Stats",    title: "Player Stats" },
+];
 
 function rng(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -161,7 +157,7 @@ function areaRiskLabel(level) {
 }
 
 function addFeed(text, tone = "") {
-  GAME.events.unshift({ text, tone, stamp: `D${GAME.day}T${GAME.tick}` });
+  GAME.events.unshift({ text, tone, stamp: `Day ${GAME.day} · ${currentSlotName()}` });
   GAME.events = GAME.events.slice(0, 70);
 }
 
@@ -174,9 +170,40 @@ function generatePrices() {
     const locationBias = area.marketBias[drug.id] || 1;
     const minaDiscount = GAME.mina.trust >= 5 ? 0.95 : 1;
     const rookTax = rookPressureState() === "Active" && area.riskLevel >= 3 ? 1.05 : 1;
-    const scaled = base * volatilitySwing * locationBias * minaDiscount * rookTax;
+    let scaled = base * volatilitySwing * locationBias * minaDiscount * rookTax;
+    if (typeof applyModifiers === "function") scaled = applyModifiers(drug.id, scaled);
     GAME.prices[drug.id] = Math.max(5, Math.round(scaled));
   }
+  recordPriceHistory();
+}
+
+function recordPriceHistory() {
+  GAME.priceHistory = GAME.priceHistory || {};
+  for (const drug of DRUGS) {
+    const h = GAME.priceHistory[drug.id] || [];
+    h.push(GAME.prices[drug.id]);
+    if (h.length > 5) h.shift();
+    GAME.priceHistory[drug.id] = h;
+  }
+}
+
+function getTrend(drugId) {
+  const h = (GAME.priceHistory || {})[drugId] || [];
+  if (h.length < 2) return { dir: "flat", arrow: "—" };
+  const cur = h[h.length - 1];
+  const prev = h[h.length - 2];
+  const delta = (cur - prev) / Math.max(1, prev);
+  if (delta > 0.18) return { dir: "up-strong", arrow: "▲▲" };
+  if (delta > 0.05) return { dir: "up", arrow: "▲" };
+  if (delta < -0.18) return { dir: "down-strong", arrow: "▼▼" };
+  if (delta < -0.05) return { dir: "down", arrow: "▼" };
+  return { dir: "flat", arrow: "—" };
+}
+
+function isHotDrug(drugId) {
+  const trend = getTrend(drugId);
+  const margin = sellPriceFor(drugId) - (GAME.prices[drugId] || 0);
+  return trend.dir === "up-strong" || (margin > 0 && trend.dir === "up");
 }
 
 function incrementTick() {
@@ -189,6 +216,7 @@ function incrementTick() {
       GAME.bank += interest;
       addFeed(`Bank kicked in +$${interest} interest.`, "good");
     }
+    if (typeof expireModifiers === "function") expireModifiers();
   }
 }
 
@@ -196,8 +224,9 @@ function stepTick(reason = "") {
   incrementTick();
   GAME.flags.robbedRecently = false;
   if (reason) addFeed(reason);
-  triggerRandomEvent("tick");
   generatePrices();
+  const popped = (typeof tryPopupEvent === "function") && tryPopupEvent("laylow");
+  if (!popped) triggerRandomEvent("tick");
   render();
 }
 
@@ -207,37 +236,46 @@ function maxBuyQty(drugId) {
   return Math.max(0, Math.min(freeSlots, byCash));
 }
 
-function buyDrug(drugId, qty = 1) {
+function buyDrug(drugId, qty = 1, anchor = null) {
   const amount = Math.max(1, qty);
   const canBuy = maxBuyQty(drugId);
-  if (canBuy <= 0) return addFeed("Not enough room or cash for that buy.", "bad");
-  const actual = Math.min(amount, canBuy);
-  const totalCost = GAME.prices[drugId] * actual;
+  if (canBuy <= 0 || amount > canBuy) {
+    playBonk();
+    shakeElement(`[data-drug-id="${drugId}"]`);
+    addFeed("Not enough cash or bag space.", "bad");
+    return;
+  }
+  const totalCost = GAME.prices[drugId] * amount;
   GAME.cash -= totalCost;
-  GAME.inventory[drugId] += actual;
+  GAME.inventory[drugId] = (GAME.inventory[drugId] || 0) + amount;
 
   if (["mdma", "cocaine", "heroin", "fentanyl", "meth"].includes(drugId)) {
-    GAME.heat += Math.max(1, Math.floor(actual / 2));
-    GAME.rep += Math.max(1, Math.floor(actual / 2));
+    GAME.heat += Math.max(1, Math.floor(amount / 2));
+    GAME.rep += Math.max(1, Math.floor(amount / 2));
     GAME.rook.attention += 1;
   }
 
-  addFeed(`Bought ${actual} ${nameOf(drugId)} for $${totalCost}.`, "good");
+  playBuyChime();
+  floatText(`−$${totalCost.toLocaleString()}`, "var(--spend)", anchor);
+  addFeed(`Bought ${amount} ${nameOf(drugId)} for $${totalCost.toLocaleString()}.`, "good");
   triggerRandomEvent("deal");
   render();
 }
 
-function sellDrug(drugId, qty = 1) {
+function sellDrug(drugId, qty = 1, anchor = null) {
   const owned = GAME.inventory[drugId] || 0;
-  if (!owned) return addFeed(`No ${nameOf(drugId)} in your pockets.`, "bad");
+  if (!owned) { playBonk(); addFeed(`No ${nameOf(drugId)} in your pockets.`, "bad"); return; }
   const actual = Math.min(Math.max(1, qty), owned);
   const salePrice = sellPriceFor(drugId);
+  const total = salePrice * actual;
   GAME.inventory[drugId] -= actual;
-  GAME.cash += salePrice * actual;
+  GAME.cash += total;
   GAME.rep += Math.max(1, Math.floor(actual / 2));
   GAME.rook.attention += currentArea().riskLevel >= 3 ? 1 : 0;
 
-  addFeed(`Sold ${actual} ${nameOf(drugId)} for $${salePrice * actual}.`, "good");
+  playChaChing();
+  floatText(`+$${total.toLocaleString()}`, "var(--money)", anchor);
+  addFeed(`Sold ${actual} ${nameOf(drugId)} for $${total.toLocaleString()}.`, "good");
   triggerRandomEvent("deal");
   render();
 }
@@ -250,8 +288,9 @@ function travelTo(areaId) {
   GAME.heat = Math.max(0, GAME.heat + target.riskLevel - 1 - assetEffect("heatDeltaOnTravel"));
   GAME.rook.attention += target.rivalPressure;
   addFeed(`Moved to ${target.displayName}.`, "");
-  triggerRandomEvent("travel");
   generatePrices();
+  const popped = (typeof tryPopupEvent === "function") && tryPopupEvent("travel");
+  if (!popped) triggerRandomEvent("travel");
   render();
 }
 
@@ -512,154 +551,272 @@ function currentRank() {
   return "Hustler";
 }
 
+// ============================================================================
+// AUDIO — Web Audio cha-ching, bonk, click (no file deps)
+// ============================================================================
+let audioCtx = null;
+let audioEnabled = true;
+
+function ensureAudio() {
+  if (!audioEnabled) return null;
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch (e) { audioEnabled = false; return null; }
+  }
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+
+function playTone(freq, dur = 0.15, type = "triangle", peak = 0.2, delay = 0) {
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const start = ctx.currentTime + delay;
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, start);
+  g.gain.setValueAtTime(0.0001, start);
+  g.gain.exponentialRampToValueAtTime(peak, start + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  osc.connect(g).connect(ctx.destination);
+  osc.start(start);
+  osc.stop(start + dur + 0.05);
+}
+
+function playChaChing() {
+  // classic two-note cash register: high bright ping + rising sparkle
+  playTone(988,  0.12, "triangle", 0.22, 0);
+  playTone(1319, 0.30, "triangle", 0.26, 0.08);
+  playTone(1760, 0.18, "sine",     0.12, 0.12);
+}
+
+function playBuyChime() {
+  playTone(523, 0.08, "triangle", 0.18, 0);
+  playTone(392, 0.16, "triangle", 0.15, 0.05);
+}
+
+function playBonk() {
+  playTone(180, 0.15, "square", 0.12, 0);
+  playTone(120, 0.20, "sawtooth", 0.08, 0.03);
+}
+
+function playClick() {
+  playTone(720, 0.03, "square", 0.06);
+}
+
+function playCombatHit() {
+  playTone(90, 0.08, "sawtooth", 0.2, 0);
+  playTone(60, 0.12, "square", 0.15, 0.04);
+}
+
+// ============================================================================
+// FLOATING NUMBER ANIMATION
+// ============================================================================
+function floatText(text, color, anchorEl) {
+  const node = document.createElement("div");
+  node.className = "float-text";
+  node.textContent = text;
+  node.style.color = color || "var(--money)";
+  const rect = anchorEl ? anchorEl.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight / 3, width: 0, height: 0 };
+  node.style.left = (rect.left + rect.width / 2) + "px";
+  node.style.top  = (rect.top  + rect.height / 2) + "px";
+  document.body.appendChild(node);
+  setTimeout(() => node.remove(), 1100);
+}
+
+function shakeElement(selector) {
+  const e = typeof selector === "string" ? document.querySelector(selector) : selector;
+  if (!e) return;
+  e.classList.remove("shake");
+  void e.offsetWidth;
+  e.classList.add("shake");
+}
+
+// ============================================================================
+// SLEEP / LAY LOW OVERLAY
+// ============================================================================
+function showSleepOverlay(nextSlot, done) {
+  const ov = document.createElement("div");
+  ov.className = "sleep-overlay";
+  ov.innerHTML = `
+    <div class="sleep-box">
+      <div class="sleep-label">Laying Low</div>
+      <div class="sleep-zzz"><span>z</span><span>z</span><span>Z</span></div>
+      <div class="sleep-clock">${nextSlot || "…"}</div>
+    </div>
+  `;
+  document.body.appendChild(ov);
+  // soft low-pitch breathing tone
+  playTone(220, 0.4, "sine", 0.08, 0);
+  playTone(165, 0.5, "sine", 0.06, 0.15);
+  setTimeout(() => {
+    ov.classList.add("fade-out");
+    setTimeout(() => { ov.remove(); if (done) done(); }, 240);
+  }, 550);
+}
+
 function renderHud() {
   const area = currentArea();
-  const chips = [
-    `Cash $${GAME.cash}`,
-    `Bank $${GAME.bank}`,
-    `Health ${GAME.health}`,
-    `Capacity ${cargoCount()} / ${GAME.maxCarry}`,
-    `City ${area.displayName}`,
-    `Day ${GAME.day} / 30`,
-    `Rank ${currentRank()}`,
-    `Heat ${GAME.heat}`,
-  ];
-  el.hudStats.innerHTML = chips.map((chip) => `<span class="status-chip">${chip}</span>`).join("");
+  const heatLvl = Math.min(5, GAME.heat);
+  const heatBar = "●".repeat(heatLvl) + "○".repeat(5 - heatLvl);
+  const heatCls = GAME.heat >= 6 ? "chip-danger" : GAME.heat >= 3 ? "chip-warn" : "";
+
+  const parts = [];
+  parts.push(`<span class="status-chip chip-money">$${GAME.cash.toLocaleString()}</span>`);
+  if (GAME.bank > 0) parts.push(`<span class="status-chip">Bank $${GAME.bank.toLocaleString()}</span>`);
+  parts.push(`<span class="status-chip">Bag ${cargoCount()}/${GAME.maxCarry}</span>`);
+  parts.push(`<span class="status-chip">Day ${GAME.day}/30 · ${currentSlotName()}</span>`);
+  if (GAME.dre.loanOutstanding > 0) {
+    const overdue = GAME.day > GAME.dre.deadlineDay;
+    parts.push(`<span class="status-chip ${overdue ? "chip-danger" : "chip-warn"}">Dre $${GAME.dre.loanOutstanding} · D${GAME.dre.deadlineDay}</span>`);
+  }
+  parts.push(`<span class="status-chip chip-location">${area.displayName}</span>`);
+  parts.push(`<span class="status-chip ${heatCls}">Heat ${heatBar}</span>`);
+  if (GAME.health < 100) {
+    const hpCls = GAME.health < 40 ? "chip-danger" : GAME.health < 70 ? "chip-warn" : "";
+    parts.push(`<span class="status-chip ${hpCls}">HP ${GAME.health}</span>`);
+  }
+
+  el.hudStats.innerHTML = parts.join("");
+
+  if (el.stayBtn) {
+    el.stayBtn.innerHTML = `Lay Low<small>advance to ${nextSlotName()}</small>`;
+  }
+  if (el.travelModalBtn) {
+    el.travelModalBtn.innerHTML = `Travel<small>leave ${area.displayName}</small>`;
+  }
 }
 
 function renderNav() {
-  const primaryOrder = [
-    { id: "places", label: "Places" },
-    { id: "info", label: "Info" },
-    { id: "inventory", label: "Inventory" },
-  ];
-
-  el.primaryNav.innerHTML = primaryOrder
-    .map((entry) => `<button class="btn ${UI.primary === entry.id ? "active" : ""}" data-primary="${entry.id}" type="button">${entry.label}</button>`)
+  el.mainNav.innerHTML = TABS
+    .map((t) => `<button class="tab ${UI.tab === t.id ? "active" : ""}" data-tab="${t.id}" type="button">${t.label}</button>`)
     .join("");
-
-  const secondaryOptions = NAV[UI.primary];
-  if (!secondaryOptions.some((item) => item.id === UI.secondary)) UI.secondary = secondaryOptions[0].id;
-  el.secondaryNav.innerHTML = secondaryOptions
-    .map((entry) => `<button class="btn ${UI.secondary === entry.id ? "active" : ""}" data-secondary="${entry.id}" type="button">${entry.label}</button>`)
-    .join("");
-  el.screenTitle.textContent = secondaryOptions.find((item) => item.id === UI.secondary)?.title || "907 Hustle";
 }
 
 function renderMarketScreen() {
-  const { bestMarginId, cheapestId, bestFlipId } = marketSignals();
-  const rows = [
-    '<div class="row market header"><div>Drug</div><div>Buy</div><div>Sell</div><div>Owned</div><div>Margin</div><div>Actions</div></div>',
-  ];
+  const area = currentArea();
 
-  for (const drug of DRUGS) {
-    const buy = GAME.prices[drug.id];
+  const rowsHtml = DRUGS.map((drug) => {
+    const buy = GAME.prices[drug.id] || 0;
     const sell = sellPriceFor(drug.id);
-    const margin = sell - buy;
-    const cues = [];
+    const owned = GAME.inventory[drug.id] || 0;
+    const expanded = UI.expandedDrug === drug.id;
+    const trend = getTrend(drug.id);
+    const hot = isHotDrug(drug.id);
+    const qty = Math.max(1, UI.qty[drug.id] || 1);
+    const maxBuy = maxBuyQty(drug.id);
+    const canBuy = maxBuyQty(drug.id) >= qty && buy > 0;
+    const sellQty = Math.min(qty, owned);
+    const canSell = sellQty > 0;
+    const buyCost = buy * qty;
+    const sellTotal = sell * sellQty;
 
-    if (drug.id === cheapestId) cues.push('<span class="signal cheap">cheap</span>');
-    if (drug.id === bestMarginId) cues.push('<span class="signal hot">hot</span>');
-    if (drug.id === bestFlipId) cues.push('<span class="signal flip">flip</span>');
-
-    rows.push(`
-      <div class="row market">
-        <div class="drug-meta"><strong>${drug.displayName}</strong>${cues.join("")}</div>
-        <div>$${buy}</div>
-        <div>$${sell}</div>
-        <div>${GAME.inventory[drug.id]}</div>
-        <div class="${margin >= 0 ? "margin-positive" : "margin-negative"}">${margin >= 0 ? "+" : ""}$${margin}</div>
-        <div class="actions">
-          <button class="btn" data-buy-one="${drug.id}" type="button">B1</button>
-          <button class="btn" data-buy-max="${drug.id}" type="button">BMax</button>
-          <button class="btn" data-sell-one="${drug.id}" type="button">S1</button>
-          <button class="btn" data-sell-all="${drug.id}" type="button">SAll</button>
+    const expandedHtml = expanded ? `
+      <div class="trade-row-expand">
+        <div class="qty-stepper">
+          <button class="stepper" data-qty-minus="${drug.id}" type="button">−</button>
+          <input class="qty-input" type="number" min="1" value="${qty}" data-qty-input="${drug.id}" />
+          <button class="stepper" data-qty-plus="${drug.id}" type="button">+</button>
+          <button class="qty-max" data-qty-max="${drug.id}" type="button">Max ${Math.max(maxBuy, owned)}</button>
         </div>
-      </div>
-    `);
-  }
+        <div class="trade-actions">
+          <button class="action-btn buy-btn" data-do-buy="${drug.id}" ${canBuy ? "" : "disabled"} type="button">
+            Buy ${qty}
+            <small>−$${buyCost.toLocaleString()}</small>
+          </button>
+          <button class="action-btn sell-btn" data-do-sell="${drug.id}" ${canSell ? "" : "disabled"} type="button">
+            Sell ${sellQty}
+            <small>+$${sellTotal.toLocaleString()}</small>
+          </button>
+        </div>
+      </div>` : "";
+
+    return `
+      <div class="trade-row ${expanded ? "expanded" : ""} ${hot ? "hot" : ""}" data-drug-id="${drug.id}">
+        <div class="trade-row-main" data-toggle-row="${drug.id}">
+          <div class="trade-drug">
+            <strong>${drug.displayName}</strong>
+            ${hot ? '<span class="tag-hot">Hot</span>' : ""}
+          </div>
+          <div class="trade-price">
+            <span>$${buy.toLocaleString()}</span>
+            <span class="trend ${trend.dir}">${trend.arrow}</span>
+          </div>
+          <div class="trade-owned ${owned > 0 ? "has" : ""}">${owned}</div>
+          <div class="trade-toggle">
+            <button class="trade-btn" data-toggle-trade="${drug.id}" type="button">${expanded ? "Close ▴" : "Trade ▾"}</button>
+          </div>
+        </div>
+        ${expandedHtml}
+      </div>`;
+  }).join("");
 
   el.mainPanel.innerHTML = `
-    <h3 class="section-title">Drug Market</h3>
-    <div class="card-grid" style="margin-bottom:8px;">
-      <section class="card">
-        <p class="eyebrow">Quick Actions</p>
-        <div class="input-row">
-          <button class="btn danger" data-quick-action="rob" type="button">Rob for Cash</button>
-          <button class="btn secondary" data-quick-action="loan" type="button">Ask Dre for Loan</button>
-          <button class="btn secondary" data-quick-action="repay" type="button">Repay Dre</button>
-        </div>
-      </section>
-      <section class="card">
-        <p class="eyebrow">Risk Preview</p>
-        <p>Area Risk: <strong>${areaRiskLabel(currentArea().riskLevel)}</strong> · Rook: <strong>${rookPressureState()}</strong></p>
-      </section>
+    <div class="screen-title">Market · ${area.displayName}</div>
+    <div class="market-head">
+      <div>Drug</div>
+      <div>Price</div>
+      <div>Have</div>
+      <div></div>
     </div>
-    <div class="market-table">${rows.join("")}</div>
+    <div class="trade-list">${rowsHtml}</div>
+    <div class="quick-strip">
+      <button class="btn danger" data-quick-action="rob" type="button">Rob for Cash</button>
+      <button class="btn" data-quick-action="loan" type="button">Ask Dre for Loan</button>
+      <button class="btn" data-quick-action="repay" type="button" ${GAME.dre.loanOutstanding > 0 ? "" : "disabled"}>Repay Dre</button>
+    </div>
   `;
 }
 
-function renderFinancesScreen() {
+function renderBankScreen() {
   el.mainPanel.innerHTML = `
-    <h3 class="section-title">Finances</h3>
-    <div class="card-grid">
-      <section class="card">
-        <p class="eyebrow">Street Cash</p>
-        <h3>$${GAME.cash}</h3>
-        <p class="muted">Use this for trading and quick actions.</p>
-      </section>
-      <section class="card">
-        <p class="eyebrow">Bank Balance</p>
-        <h3>$${GAME.bank}</h3>
-        <p class="muted">Safe stash. Simple 2% daily interest.</p>
-      </section>
+    <div class="screen-title">Bank</div>
+    <div class="card-grid" style="margin-bottom:12px;">
+      <section class="card money"><p class="eyebrow">Street Cash</p><h3>$${GAME.cash.toLocaleString()}</h3><p class="muted">Can be lost in muggings, busts, robberies.</p></section>
+      <section class="card"><p class="eyebrow">Bank Balance</p><h3>$${GAME.bank.toLocaleString()}</h3><p class="muted">Safe. Earns 2% daily interest.</p></section>
     </div>
-    <div class="card" style="margin-top:8px;">
-      <h3>Move Money</h3>
+    <div class="card">
+      <p class="eyebrow">Move Money</p>
       <div class="input-row">
-        <input id="financeAmount" type="number" min="1" value="50" />
+        <input id="financeAmount" type="number" min="1" value="100" />
         <button class="btn primary" data-finance-action="deposit" type="button">Deposit</button>
-        <button class="btn secondary" data-finance-action="withdraw" type="button">Withdraw</button>
+        <button class="btn" data-finance-action="withdraw" type="button">Withdraw</button>
       </div>
     </div>
   `;
 }
 
-function renderInventoryDrugsScreen() {
-  const lines = DRUGS
+function renderStashScreen() {
+  const drugLines = DRUGS
     .filter((drug) => GAME.inventory[drug.id] > 0)
     .sort((a, b) => GAME.inventory[b.id] - GAME.inventory[a.id])
-    .map((drug) => `<div class="row simple"><span>${drug.displayName}</span><strong>${GAME.inventory[drug.id]}</strong></div>`)
+    .map((drug) => {
+      const worth = sellPriceFor(drug.id) * GAME.inventory[drug.id];
+      return `<div class="row simple"><span>${drug.displayName} × <strong>${GAME.inventory[drug.id]}</strong></span><span class="good">$${worth.toLocaleString()}</span></div>`;
+    })
     .join("");
-  el.mainPanel.innerHTML = `
-    <h3 class="section-title">Inventory - Drugs</h3>
-    <div class="list-table">
-      <div class="row simple header"><div>Item</div><div>Qty</div></div>
-      ${lines || '<div class="row simple"><span class="muted">No product on hand.</span><span>-</span></div>'}
-    </div>
-  `;
-}
 
-function renderInventoryEquipmentScreen() {
-  const lines = (GAME.assets || [])
-    .map((assetId) => UPGRADES.find((upgrade) => upgrade.id === assetId))
+  const gearLines = (GAME.assets || [])
+    .map((assetId) => UPGRADES.find((u) => u.id === assetId))
     .filter(Boolean)
-    .map((asset) => `<div class="row simple"><span>${asset.displayName}</span><strong class="good">Equipped</strong></div>`)
+    .map((a) => `<div class="row simple"><span>${a.displayName}</span><span class="good">Equipped</span></div>`)
     .join("");
-  el.mainPanel.innerHTML = `
-    <h3 class="section-title">Inventory - Equipment</h3>
-    <div class="list-table">
-      <div class="row simple header"><div>Gear</div><div>Status</div></div>
-      ${lines || '<div class="row simple"><span class="muted">No equipment owned.</span><span>-</span></div>'}
-    </div>
-  `;
-}
 
-function renderInventoryConsumablesScreen() {
+  const cargoValueStr = cargoValue().toLocaleString();
+
   el.mainPanel.innerHTML = `
-    <h3 class="section-title">Inventory - Consumables</h3>
-    <div class="card">
-      <p class="muted">No consumables yet. Future updates will route medkits, boosters, and one-use items here.</p>
+    <div class="screen-title">Stash</div>
+    <div class="card-grid" style="margin-bottom:12px;">
+      <section class="card money"><p class="eyebrow">Total Value</p><h3>$${cargoValueStr}</h3><p class="muted">If you sold everything here right now.</p></section>
+      <section class="card"><p class="eyebrow">Bag</p><h3>${cargoCount()} / ${GAME.maxCarry}</h3><p class="muted">Upgrade via the Shop tab.</p></section>
+    </div>
+    <div class="screen-title">Drugs on Hand</div>
+    <div class="list-table" style="margin-bottom:12px;">
+      ${drugLines || '<div class="row simple"><span class="muted">Nothing in the bag.</span><span>—</span></div>'}
+    </div>
+    <div class="screen-title">Gear</div>
+    <div class="list-table">
+      ${gearLines || '<div class="row simple"><span class="muted">No gear equipped.</span><span>—</span></div>'}
     </div>
   `;
 }
@@ -668,81 +825,65 @@ function renderHospitalScreen() {
   const missing = Math.max(0, 100 - GAME.health);
   const healCost = missing * 4;
   el.mainPanel.innerHTML = `
-    <h3 class="section-title">Hospital</h3>
-    <div class="card-grid">
+    <div class="screen-title">Hospital</div>
+    <div class="card-grid" style="margin-bottom:12px;">
       <section class="card"><p class="eyebrow">Current Health</p><h3>${GAME.health} / 100</h3></section>
-      <section class="card"><p class="eyebrow">Full Heal Cost</p><h3>$${healCost}</h3></section>
+      <section class="card"><p class="eyebrow">Full Heal</p><h3>$${healCost.toLocaleString()}</h3><p class="muted">Street Doctor event is cheaper when available.</p></section>
     </div>
-    <div class="input-row">
-      <button class="btn primary" data-heal="full" type="button" ${healCost <= 0 || GAME.cash < healCost ? "disabled" : ""}>Heal Up</button>
-    </div>
+    <button class="btn primary" data-heal="full" type="button" ${healCost <= 0 || GAME.cash < healCost ? "disabled" : ""}>Heal Up</button>
   `;
 }
 
-function renderShoppingScreen() {
+function renderShopScreen() {
   const lines = UPGRADES.map((item) => {
     const owned = GAME.assets.includes(item.id);
-    return `<div class="row simple"><span>${item.displayName} - $${item.cost}</span><button class="btn ${owned ? "secondary" : "primary"}" data-upgrade-buy="${item.id}" ${owned ? "disabled" : ""}>${owned ? "Owned" : "Buy"}</button></div>`;
+    const canAfford = GAME.cash >= item.cost;
+    const btnCls = owned ? "btn secondary" : canAfford ? "btn primary" : "btn";
+    return `
+      <div class="row simple">
+        <span><strong>${item.displayName}</strong><br><small class="muted">$${item.cost.toLocaleString()}</small></span>
+        <button class="${btnCls}" data-upgrade-buy="${item.id}" ${owned || !canAfford ? "disabled" : ""}>${owned ? "Owned" : "Buy"}</button>
+      </div>`;
   }).join("");
   el.mainPanel.innerHTML = `
-    <h3 class="section-title">Shopping</h3>
+    <div class="screen-title">Gear Shop</div>
     <div class="list-table">
-      <div class="row simple header"><div>Gear</div><div>Action</div></div>
+      <div class="row simple header"><span>Item</span><span>Action</span></div>
       ${lines}
     </div>
   `;
 }
 
-function renderShippingScreen() {
-  el.mainPanel.innerHTML = `
-    <h3 class="section-title">Shipping</h3>
-    <div class="card"><p class="muted">Shipment network not wired yet. This screen is reserved in the shell so future shipping systems stay mode-based.</p></div>
-  `;
-}
-
-function renderPlayerStatsScreen() {
+function renderStatsScreen() {
   const area = currentArea();
   el.mainPanel.innerHTML = `
-    <h3 class="section-title">Player Stats</h3>
+    <div class="screen-title">Player Stats</div>
     <div class="card-grid">
-      <section class="card"><p class="eyebrow">Rep</p><h3>${GAME.rep}</h3></section>
-      <section class="card"><p class="eyebrow">Heat</p><h3>${GAME.heat}</h3></section>
-      <section class="card"><p class="eyebrow">Rook Pressure</p><h3>${rookPressureState()}</h3></section>
-      <section class="card"><p class="eyebrow">Current Area Risk</p><h3>${areaRiskLabel(area.riskLevel)}</h3></section>
-    </div>
-  `;
-}
-
-function renderRumorsScreen() {
-  const area = currentArea();
-  el.mainPanel.innerHTML = `
-    <h3 class="section-title">Rumors</h3>
-    <div class="card">
-      <p>Word on the block: <strong>${area.hint}</strong> around ${area.displayName}.</p>
-      <div class="input-row"><button class="btn primary" data-open-rumor="1" type="button">Open Rumor Brief</button></div>
+      <section class="card"><p class="eyebrow">Rank</p><h3>${currentRank()}</h3><p class="muted">${GAME.rep} rep</p></section>
+      <section class="card"><p class="eyebrow">Heat</p><h3>${GAME.heat}</h3><p class="muted">Higher = busts & muggings likelier.</p></section>
+      <section class="card"><p class="eyebrow">Rook Pressure</p><h3>${rookPressureState()}</h3><p class="muted">Rival boss's crew tracking you.</p></section>
+      <section class="card"><p class="eyebrow">Area Risk</p><h3>${areaRiskLabel(area.riskLevel)}</h3><p class="muted">${area.hint}</p></section>
+      <section class="card"><p class="eyebrow">Dre Trust</p><h3>${GAME.dre.trust}</h3></section>
+      <section class="card"><p class="eyebrow">Mina Trust</p><h3>${GAME.mina.trust}</h3></section>
     </div>
   `;
 }
 
 function renderMainPanel() {
-  switch (UI.secondary) {
-    case "drug_market": return renderMarketScreen();
-    case "finances": return renderFinancesScreen();
+  switch (UI.tab) {
+    case "market":   return renderMarketScreen();
+    case "stash":    return renderStashScreen();
+    case "bank":     return renderBankScreen();
+    case "shop":     return renderShopScreen();
     case "hospital": return renderHospitalScreen();
-    case "shopping": return renderShoppingScreen();
-    case "shipping": return renderShippingScreen();
-    case "player_stats": return renderPlayerStatsScreen();
-    case "rumors": return renderRumorsScreen();
-    case "inventory_drugs": return renderInventoryDrugsScreen();
-    case "inventory_equipment": return renderInventoryEquipmentScreen();
-    case "inventory_consumables": return renderInventoryConsumablesScreen();
-    default: return renderMarketScreen();
+    case "stats":    return renderStatsScreen();
+    default:         return renderMarketScreen();
   }
 }
 
 function renderFeed() {
   el.eventFeed.innerHTML = GAME.events
-    .map((entry) => `<div class="feed-item ${entry.tone}"><strong>[${entry.stamp}]</strong> ${entry.text}</div>`)
+    .map((entry) => `<div class="feed-item ${entry.tone}"><strong>${entry.stamp}</strong>${entry.text}</div>`)
     .join("");
 }
 
@@ -752,7 +893,11 @@ function openModal(title, bodyHtml) {
   el.modalBackdrop.classList.remove("hidden");
 }
 
-function closeModal() {
+function closeModal(force = false) {
+  if (!force) {
+    if (typeof CURRENT_EVENT !== "undefined" && CURRENT_EVENT) return;
+    if (typeof COMBAT !== "undefined" && COMBAT) return;
+  }
   el.modalBackdrop.classList.add("hidden");
   el.modalBody.innerHTML = "";
 }
@@ -784,61 +929,87 @@ function render() {
 }
 
 function bindEvents() {
-  el.primaryNav.addEventListener("click", (event) => {
-    const nextPrimary = event.target.getAttribute("data-primary");
-    if (!nextPrimary) return;
-    UI.primary = nextPrimary;
-    UI.secondary = NAV[UI.primary][0].id;
-    render();
-  });
-
-  el.secondaryNav.addEventListener("click", (event) => {
-    const nextSecondary = event.target.getAttribute("data-secondary");
-    if (!nextSecondary) return;
-    UI.secondary = nextSecondary;
+  el.mainNav.addEventListener("click", (event) => {
+    const tabId = event.target.closest("[data-tab]")?.getAttribute("data-tab");
+    if (!tabId) return;
+    UI.tab = tabId;
+    playClick();
     render();
   });
 
   el.mainPanel.addEventListener("click", (event) => {
-    const buyOne = event.target.getAttribute("data-buy-one");
-    const buyMax = event.target.getAttribute("data-buy-max");
-    const sellOne = event.target.getAttribute("data-sell-one");
-    const sellAll = event.target.getAttribute("data-sell-all");
-    const financeAction = event.target.getAttribute("data-finance-action");
-    const doHeal = event.target.getAttribute("data-heal");
-    const upgradeBuy = event.target.getAttribute("data-upgrade-buy");
-    const openRumor = event.target.getAttribute("data-open-rumor");
-    const quickAction = event.target.getAttribute("data-quick-action");
+    const t = event.target;
+    const toggleTrade = t.closest("[data-toggle-trade]")?.getAttribute("data-toggle-trade");
+    const toggleRow = t.closest("[data-toggle-row]")?.getAttribute("data-toggle-row");
+    const qMinus = t.closest("[data-qty-minus]")?.getAttribute("data-qty-minus");
+    const qPlus = t.closest("[data-qty-plus]")?.getAttribute("data-qty-plus");
+    const qMax = t.closest("[data-qty-max]")?.getAttribute("data-qty-max");
+    const doBuy = t.closest("[data-do-buy]")?.getAttribute("data-do-buy");
+    const doSell = t.closest("[data-do-sell]")?.getAttribute("data-do-sell");
+    const financeAction = t.closest("[data-finance-action]")?.getAttribute("data-finance-action");
+    const doHeal = t.closest("[data-heal]")?.getAttribute("data-heal");
+    const upgradeBuy = t.closest("[data-upgrade-buy]")?.getAttribute("data-upgrade-buy");
+    const quickAction = t.closest("[data-quick-action]")?.getAttribute("data-quick-action");
 
-    if (buyOne) buyDrug(buyOne, 1);
-    if (buyMax) buyDrug(buyMax, maxBuyQty(buyMax));
-    if (sellOne) sellDrug(sellOne, 1);
-    if (sellAll) sellDrug(sellAll, GAME.inventory[sellAll]);
-    if (doHeal) healAtHospital();
-    if (upgradeBuy) maybeBuyUpgrade(upgradeBuy);
-    if (openRumor) openRumorModal();
-    if (quickAction === "rob") robAction();
-    if (quickAction === "loan") takeDreLoan();
-    if (quickAction === "repay") repayDre();
-    if (financeAction) moveMoney(financeAction);
+    // Trade button or row-body click toggles expansion
+    const toToggle = toggleTrade || (toggleRow && !qMinus && !qPlus && !qMax && !doBuy && !doSell ? toggleRow : null);
+    if (toToggle) {
+      UI.expandedDrug = UI.expandedDrug === toToggle ? null : toToggle;
+      UI.qty[toToggle] = UI.qty[toToggle] || 1;
+      playClick();
+      render();
+      return;
+    }
+
+    if (qMinus) { UI.qty[qMinus] = Math.max(1, (UI.qty[qMinus] || 1) - 1); playClick(); render(); return; }
+    if (qPlus)  { UI.qty[qPlus]  = (UI.qty[qPlus] || 1) + 1; playClick(); render(); return; }
+    if (qMax)   {
+      const owned = GAME.inventory[qMax] || 0;
+      UI.qty[qMax] = Math.max(1, Math.max(owned, maxBuyQty(qMax)));
+      playClick();
+      render();
+      return;
+    }
+
+    if (doBuy)  { buyDrug(doBuy, UI.qty[doBuy] || 1, t); return; }
+    if (doSell) { sellDrug(doSell, UI.qty[doSell] || 1, t); return; }
+
+    if (doHeal) { healAtHospital(); return; }
+    if (upgradeBuy) { maybeBuyUpgrade(upgradeBuy); return; }
+    if (quickAction === "rob") { robAction(); return; }
+    if (quickAction === "loan") { takeDreLoan(); return; }
+    if (quickAction === "repay") { repayDre(); return; }
+    if (financeAction) { moveMoney(financeAction); return; }
   });
 
-  el.stayBtn.addEventListener("click", () => stepTick("You lay low and let one market tick pass."));
-  el.travelModalBtn.addEventListener("click", openTravelModal);
-  el.clearFeedBtn.addEventListener("click", () => {
-    GAME.events = [];
-    renderFeed();
+  el.mainPanel.addEventListener("change", (event) => {
+    const input = event.target.closest("[data-qty-input]");
+    if (!input) return;
+    const id = input.getAttribute("data-qty-input");
+    UI.qty[id] = Math.max(1, Number(input.value) || 1);
+    render();
   });
-  el.modalCloseBtn.addEventListener("click", closeModal);
+
+  el.stayBtn.addEventListener("click", () => {
+    const nextSlot = nextSlotName();
+    showSleepOverlay(`Day ${GAME.tick === 4 ? GAME.day + 1 : GAME.day} · ${nextSlot}`, () => {
+      stepTick("You lay low and let time pass.");
+    });
+  });
+
+  el.travelModalBtn.addEventListener("click", () => { playClick(); openTravelModal(); });
+  el.clearFeedBtn.addEventListener("click", () => { GAME.events = []; renderFeed(); });
+  el.modalCloseBtn.addEventListener("click", () => closeModal());
 
   el.modalBody.addEventListener("click", (event) => {
-    const go = event.target.getAttribute("data-travel-go");
-    const ok = event.target.getAttribute("data-modal-ok");
-    if (go) {
-      travelTo(go);
-      closeModal();
-    }
+    const go = event.target.closest("[data-travel-go]")?.getAttribute("data-travel-go");
+    const ok = event.target.closest("[data-modal-ok]")?.getAttribute("data-modal-ok");
+    const eventChoice = event.target.closest("[data-event-choice]")?.getAttribute("data-event-choice");
+    const combatAct = event.target.closest("[data-combat]")?.getAttribute("data-combat");
+    if (go) { closeModal(true); travelTo(go); }
     if (ok) closeModal();
+    if (eventChoice !== null && eventChoice !== undefined) resolveEventChoice(Number(eventChoice));
+    if (combatAct) combatAction(combatAct);
   });
 }
 
@@ -895,7 +1066,11 @@ function resetGame() {
   GAME.rook = { attention: 0, warned: false, taxActive: false };
   GAME.flags = { robbedRecently: false };
   GAME.assets = [];
+  GAME.modifiers = [];
+  GAME.friendRepayDay = null;
   GAME.lastPromotion = currentRank();
+  if (typeof CURRENT_EVENT !== "undefined") CURRENT_EVENT = null;
+  if (typeof COMBAT !== "undefined") COMBAT = null;
   generatePrices();
   addFeed("Fresh run started: $200 cash, no crew, no safety net.");
   render();

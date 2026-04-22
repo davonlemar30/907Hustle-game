@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>907 Hustle - Drug Trade Sim</title>
+    <title>907 Hustle</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
@@ -13,19 +13,7 @@
         <div id="hudStats" class="status-stats"></div>
       </header>
 
-      <section class="context-row panel">
-        <div>
-          <p class="eyebrow">Current Screen</p>
-          <h2 id="screenTitle">Drug Market</h2>
-        </div>
-        <div class="context-actions">
-          <button id="stayBtn" class="btn secondary" type="button">Stay Here (+1 Tick)</button>
-          <button id="travelModalBtn" class="btn primary" type="button">Travel / Fly To</button>
-        </div>
-      </section>
-
-      <nav class="primary-nav panel" id="primaryNav"></nav>
-      <nav class="secondary-nav panel" id="secondaryNav"></nav>
+      <nav class="nav-row" id="mainNav"></nav>
 
       <section id="mainPanel" class="main-panel panel"></section>
 
@@ -36,6 +24,11 @@
         </div>
         <div id="eventFeed" class="event-feed"></div>
       </section>
+
+      <div class="action-bar">
+        <button id="travelModalBtn" class="btn secondary" type="button">Travel<small>change city</small></button>
+        <button id="stayBtn" class="btn primary" type="button">Lay Low<small id="stayBtnSub">advance time</small></button>
+      </div>
     </main>
 
     <div id="modalBackdrop" class="modal-backdrop hidden">
@@ -48,6 +41,8 @@
       </div>
     </div>
 
+    <script src="combat.js"></script>
+    <script src="events.js"></script>
     <script src="script.js"></script>
   </body>
 </html>

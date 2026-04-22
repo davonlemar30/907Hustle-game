@@ -1,54 +1,1551 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>907 Hustle</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@500;700&family=Inter:wght@400;500;700&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="style.css" />
-  </head>
-  <body>
-    <main class="app-shell">
-      <header class="status-bar panel">
-        <h1>907 HUSTLE // ANCHORAGE RUN</h1>
-        <div id="hudStats" class="status-stats"></div>
-      </header>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>907 Hustle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:ital,wght@0,400;0,600;0,700;1,700&family=Share+Tech+Mono&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+:root {
+  --bg:        #080706;
+  --bg2:       #0d0b09;
+  --surf:      #111009;
+  --surf2:     #171410;
+  --surf3:     #1e1a13;
+  --plate:     #0a0907;
+  --border:    #2a2418;
+  --border2:   #3a3020;
+  --edge:      #5a4c30;
+  --scratch:   rgba(255,255,255,0.06);
+  --ink:       #e8d8b0;
+  --ink-dim:   #a09070;
+  --ink-muted: #6a5840;
+  --gold:      #c8a020;
+  --gold2:     #f0c840;
+  --money:     #5a9840;
+  --money2:    #8acc60;
+  --red:       #c03020;
+  --red2:      #f05040;
+  --heat:      #c82818;
+  --teal:      #407878;
+  --teal2:     #60a8a8;
+  --blue:      #385878;
+  --hdr-market:  #2a3818;
+  --hdr-stash:   #242e14;
+  --hdr-bank:    #182828;
+  --hdr-shop:    #281e10;
+  --hdr-hosp:    #301818;
+  --hdr-stats:   #202820;
+  --btn-buy:     #304820;
+  --btn-buy2:    #486830;
+  --btn-sell:    #582010;
+  --btn-sell2:   #803020;
+  --btn-gold:    #604010;
+  --btn-gold2:   #906020;
+  --btn-teal:    #204040;
+  --font-head: "Anton","Impact","Arial Narrow",sans-serif;
+  --font-ui:   "Barlow Condensed","Arial Narrow",sans-serif;
+  --font-mono: "Share Tech Mono","Courier New",monospace;
+  --r: 2px;
+}
 
-      <nav class="nav-row" id="mainNav"></nav>
+* { box-sizing:border-box; margin:0; padding:0; }
+html,body { height:100%; background:var(--bg); overflow:hidden; }
 
-      <section id="mainPanel" class="main-panel panel"></section>
+body {
+  font-family: var(--font-ui);
+  color: var(--ink);
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E"),
+    repeating-linear-gradient(17deg, rgba(255,255,255,0.018) 0 1px, transparent 1px 6px),
+    repeating-linear-gradient(107deg, rgba(255,255,255,0.012) 0 1px, transparent 1px 9px),
+    var(--bg);
+}
 
-      <section class="message-strip panel">
-        <div class="panel-header">
-          <h3>Street Feed</h3>
-          <button id="clearFeedBtn" class="btn ghost" type="button">Clear</button>
-        </div>
-        <div id="eventFeed" class="event-feed"></div>
-      </section>
+#root { height:100vh; }
 
-      <div class="action-bar">
-        <button id="travelModalBtn" class="btn secondary" type="button">Travel<small>change city</small></button>
-        <button id="stayBtn" class="btn primary" type="button">Lay Low<small id="stayBtnSub">advance time</small></button>
-      </div>
-    </main>
+.app {
+  height: 100vh;
+  max-width: 1300px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-rows: auto auto minmax(0,1fr) 148px 50px;
+  gap: 5px;
+  padding: 6px 8px;
+}
 
-    <div id="modalBackdrop" class="modal-backdrop hidden">
-      <div class="modal panel" role="dialog" aria-modal="true">
-        <div class="panel-header">
-          <h3 id="modalTitle">Modal</h3>
-          <button id="modalCloseBtn" class="btn ghost" type="button">Close</button>
-        </div>
-        <div id="modalBody" class="modal-body"></div>
+.panel {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E"),
+    repeating-linear-gradient(157deg, rgba(255,255,255,0.025) 0 1px, transparent 1px 5px),
+    var(--surf);
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    inset 0 -1px 0 rgba(0,0,0,0.5),
+    0 2px 8px rgba(0,0,0,0.6);
+  position: relative;
+  overflow: hidden;
+}
+.panel::after {
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  border-radius:inherit;
+  border-top:1px solid rgba(255,255,255,0.06);
+  border-left:1px solid rgba(255,255,255,0.03);
+}
+
+/* HUD */
+.hud {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:6px 10px;
+  border-top:3px solid var(--gold);
+  border-bottom:2px solid var(--border2);
+  background:
+    repeating-linear-gradient(90deg,rgba(255,255,255,0.015) 0 1px,transparent 1px 40px),
+    linear-gradient(180deg,#1a1608 0%,var(--surf) 100%);
+  flex-wrap:wrap;
+}
+
+.logo {
+  font-family: var(--font-head);
+  font-size: 1.5rem;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-shadow: 0 0 20px rgba(200,160,32,0.3), 2px 2px 0 rgba(0,0,0,0.8);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.logo em { color:var(--gold); font-style:normal; }
+.logo-drip {
+  font-size:.55rem;
+  color:var(--gold);
+  letter-spacing:.25em;
+  display:block;
+  margin-top:-4px;
+  font-family:var(--font-ui);
+  font-weight:700;
+}
+
+.chips { display:flex; gap:4px; flex-wrap:wrap; flex:1; }
+
+.chip {
+  display:flex;
+  align-items:center;
+  gap:4px;
+  padding: 4px 8px;
+  background:
+    repeating-linear-gradient(135deg,rgba(255,255,255,0.02) 0 1px,transparent 1px 4px),
+    var(--surf2);
+  border:1px solid var(--border2);
+  border-radius:var(--r);
+  font-family:var(--font-ui);
+  font-size:.72rem;
+  font-weight:700;
+  letter-spacing:.06em;
+  white-space:nowrap;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.04),0 1px 3px rgba(0,0,0,.5);
+  cursor:default;
+}
+.chip svg { width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0; }
+.chip-k { color:var(--ink-muted);font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em; }
+.chip-v { color:var(--ink); }
+.chip-cash { border-color:#3a5820;background:linear-gradient(180deg,#1a2a0e,#0e1808); }
+.chip-cash .chip-v { color:var(--money2);font-family:var(--font-mono); }
+.chip-heat { border-color:#5a1e10; }
+.chip-heat .chip-v { color:var(--red2); }
+.chip-heat-hi { background:linear-gradient(180deg,#2a0e08,#1a0806);border-color:var(--heat); }
+.chip-hp .chip-v { color:#e07878; }
+.chip-hp-lo { background:linear-gradient(180deg,#2a0808,#1a0608);border-color:#6a1818; }
+.chip-bank .chip-v { color:var(--gold2);font-family:var(--font-mono); }
+.chip-warn { border-color:#604010;background:linear-gradient(180deg,#201408,#120c04); }
+.chip-warn .chip-v { color:#e0a030; }
+.chip-rep .chip-v { color:var(--teal2); }
+
+/* PANEL HEADERS */
+.ph { display:flex;align-items:center;gap:0;position:relative;overflow:hidden;flex-shrink:0; }
+.ph-bar {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding: 9px 14px;
+  flex:1;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='60'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='60' filter='url(%23n)' opacity='0.08'/%3E%3C/svg%3E"),
+    repeating-linear-gradient(100deg,rgba(255,255,255,0.04) 0 1px,transparent 1px 6px),
+    var(--hdr-color, var(--hdr-market));
+  border-bottom: 2px solid rgba(0,0,0,0.5);
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.ph-icon {
+  width:26px;height:26px;
+  background:rgba(0,0,0,0.35);
+  border:1px solid rgba(255,255,255,0.1);
+  border-radius:var(--r);
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.ph-icon svg { width:14px;height:14px;fill:none;stroke:var(--gold);stroke-width:2;stroke-linecap:round;stroke-linejoin:round; }
+.ph h2 {
+  font-family:var(--font-head);
+  font-size:1rem;
+  letter-spacing:.15em;
+  text-transform:uppercase;
+  color:var(--ink);
+  text-shadow:1px 1px 0 rgba(0,0,0,0.8);
+}
+.ph-sub { margin-left:auto;font-size:.65rem;font-weight:700;letter-spacing:.06em;color:rgba(232,216,176,0.45);text-transform:uppercase; }
+
+/* NAV TABS */
+.nav { display:flex;gap:3px; }
+.tab {
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:2px;
+  padding:7px 4px 6px;
+  background:
+    repeating-linear-gradient(145deg,rgba(255,255,255,0.02) 0 1px,transparent 1px 5px),
+    var(--surf2);
+  border:1px solid var(--border2);
+  border-bottom:none;
+  border-radius:var(--r) var(--r) 0 0;
+  cursor:pointer;
+  font-family:var(--font-ui);
+  font-size:.7rem;
+  font-weight:700;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--ink-muted);
+  transition:all .1s;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.tab svg { width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round; }
+.tab:hover { background:var(--surf3);color:var(--ink-dim); }
+.tab.active {
+  background:
+    repeating-linear-gradient(145deg,rgba(255,255,255,0.03) 0 1px,transparent 1px 5px),
+    var(--surf3);
+  color:var(--gold);
+  border-color:var(--gold);
+  border-bottom:2px solid var(--surf3);
+  margin-bottom:-1px;
+  z-index:1;
+  box-shadow:0 -2px 0 rgba(200,160,32,.4),inset 0 1px 0 rgba(255,255,255,0.06);
+}
+
+/* MAIN PANEL */
+.main-panel { overflow:hidden;display:flex;flex-direction:column; }
+.panel-scroll { flex:1;overflow-y:auto;padding:10px 12px; }
+.panel-scroll::-webkit-scrollbar { width:4px; }
+.panel-scroll::-webkit-scrollbar-track { background:var(--plate); }
+.panel-scroll::-webkit-scrollbar-thumb { background:var(--border2); }
+
+/* MARKET */
+.mkt-list { display:flex;flex-direction:column;gap:2px; }
+
+.drug-row {
+  background:
+    repeating-linear-gradient(165deg,rgba(255,255,255,0.015) 0 1px,transparent 1px 6px),
+    var(--surf2);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  transition:border-color .1s;
+  cursor:pointer;
+  position:relative;
+  overflow:hidden;
+}
+.drug-row::before {
+  content:"";
+  position:absolute;
+  left:0;top:0;bottom:0;
+  width:3px;
+  background:var(--border2);
+}
+.drug-row:hover { border-color:var(--border2);background:var(--surf3); }
+.drug-row.expanded { border-color:var(--edge);border-left-color:var(--gold); }
+.drug-row.expanded::before { background:var(--gold); }
+.drug-row.hot::before { background:var(--money); }
+.drug-row.hot { border-left-color:var(--money); }
+
+.drug-row-main {
+  display:grid;
+  grid-template-columns:1fr 100px 52px 44px 80px;
+  align-items:center;
+  gap:8px;
+  padding:7px 10px 7px 14px;
+}
+.drug-name {
+  font-family:var(--font-ui);
+  font-size:.9rem;
+  font-weight:700;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+  color:var(--ink);
+}
+.drug-cat { font-size:.6rem;font-weight:700;letter-spacing:.1em;color:var(--ink-muted);text-transform:uppercase; }
+.tag-hot {
+  display:inline-block;
+  background:var(--money);
+  color:#050a02;
+  font-family:var(--font-ui);
+  font-size:.58rem;
+  font-weight:700;
+  letter-spacing:.1em;
+  padding:1px 5px;
+  border-radius:1px;
+  margin-left:6px;
+  text-transform:uppercase;
+  vertical-align:middle;
+}
+.drug-price { font-family:var(--font-mono);font-size:.88rem;color:var(--ink); }
+.drug-sell { font-family:var(--font-mono);font-size:.6rem;color:var(--money);margin-top:1px; }
+.trend { font-family:var(--font-ui);font-weight:700;font-size:.85rem;text-align:center;letter-spacing:-.02em; }
+.trend-up { color:var(--money2); }
+.trend-down { color:var(--red2); }
+.trend-flat { color:var(--ink-muted); }
+
+.owned-badge {
+  background:var(--surf);
+  border:1px solid var(--border2);
+  border-radius:var(--r);
+  font-family:var(--font-mono);
+  font-size:.78rem;
+  font-weight:700;
+  color:var(--ink-muted);
+  padding:2px 0;
+  text-align:center;
+}
+.owned-badge.has { background:#0e1e08;border-color:#305018;color:var(--money2); }
+
+.btn-trade {
+  background:
+    repeating-linear-gradient(140deg,rgba(255,255,255,0.04) 0 1px,transparent 1px 5px),
+    linear-gradient(180deg,var(--btn-buy2),var(--btn-buy));
+  border:1px solid #486830;
+  border-bottom:2px solid #203010;
+  border-radius:var(--r);
+  font-family:var(--font-head);
+  font-size:.75rem;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:#c0f090;
+  padding:6px 8px;
+  cursor:pointer;
+  transition:all .1s;
+  text-shadow:0 1px 2px rgba(0,0,0,.6);
+}
+.btn-trade:hover { background:linear-gradient(180deg,#5a8038,#407028);color:#d8ffb0; }
+
+.drug-expand {
+  padding:10px 14px 12px;
+  border-top:1px solid var(--border);
+  background:rgba(0,0,0,0.2);
+  animation:fadeIn .12s ease;
+}
+@keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+.expand-label { font-family:var(--font-ui);font-size:.62rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-muted);margin-bottom:8px; }
+.qty-row { display:flex;align-items:center;gap:6px;margin-bottom:10px; }
+.qty-btn {
+  width:32px;height:32px;
+  background:var(--surf3);
+  border:1px solid var(--border2);
+  border-bottom:2px solid rgba(0,0,0,.5);
+  border-radius:var(--r);
+  font-size:1.1rem;font-weight:700;color:var(--ink);
+  cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-mono);
+  transition:all .08s;
+}
+.qty-btn:hover { background:var(--border2);color:var(--ink); }
+.qty-val {
+  width:54px;height:32px;
+  background:var(--plate);
+  border:1px solid var(--border2);
+  border-radius:var(--r);
+  font-family:var(--font-mono);
+  font-size:.9rem;font-weight:700;color:var(--ink);
+  text-align:center;
+}
+.qty-val:focus { outline:none;border-color:var(--gold); }
+.qty-max {
+  height:32px;padding:0 10px;
+  background:var(--surf);
+  border:1px solid var(--border2);
+  border-bottom:2px solid rgba(0,0,0,.5);
+  border-radius:var(--r);
+  font-family:var(--font-ui);
+  font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-muted);
+  cursor:pointer;transition:all .1s;
+}
+.qty-max:hover { border-color:var(--edge);color:var(--ink); }
+.trade-btns { display:flex;gap:8px; }
+
+/* BUTTONS */
+.btn {
+  font-family: var(--font-head);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  border-radius: var(--r);
+  cursor: pointer;
+  transition: all .1s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 16px;
+  font-size: .82rem;
+  text-shadow: 0 1px 3px rgba(0,0,0,.7);
+  position: relative;
+  overflow: hidden;
+}
+.btn::before {
+  content:"";
+  position:absolute;inset:0;
+  background:repeating-linear-gradient(140deg,rgba(255,255,255,0.04) 0 1px,transparent 1px 5px);
+  pointer-events:none;
+}
+.btn small { font-size:.58rem;font-weight:700;letter-spacing:.06em;opacity:.7;margin-top:1px;font-family:var(--font-ui); }
+.btn:disabled { opacity:.3;cursor:not-allowed; }
+
+.btn-buy {
+  background:linear-gradient(180deg,var(--btn-buy2),var(--btn-buy));
+  border:1px solid #4a6a28;border-bottom:3px solid #182808;color:#b8f090;
+}
+.btn-buy:hover:not(:disabled) { background:linear-gradient(180deg,#587838,#406028); }
+.btn-sell {
+  background:linear-gradient(180deg,var(--btn-sell2),var(--btn-sell));
+  border:1px solid #7a2818;border-bottom:3px solid #2a0808;color:#ffa090;
+}
+.btn-sell:hover:not(:disabled) { background:linear-gradient(180deg,#9a3820,#702010); }
+.btn-primary {
+  background:linear-gradient(180deg,var(--btn-gold2),var(--btn-gold));
+  border:1px solid #806018;border-bottom:3px solid #301c04;color:var(--ink);
+}
+.btn-primary:hover:not(:disabled) { background:linear-gradient(180deg,#a07020,#784808); }
+.btn-secondary {
+  background:linear-gradient(180deg,var(--surf3),var(--surf2));
+  border:1px solid var(--border2);border-bottom:3px solid rgba(0,0,0,.6);color:var(--ink-dim);
+}
+.btn-secondary:hover:not(:disabled) { border-color:var(--edge);color:var(--ink); }
+.btn-danger {
+  background:linear-gradient(180deg,#7a2818,#4a1208);
+  border:1px solid #902818;border-bottom:3px solid #1a0604;color:#ffa090;
+}
+.btn-danger:hover:not(:disabled) { background:linear-gradient(180deg,#9a3020,#601a0a); }
+.btn-teal {
+  background:linear-gradient(180deg,#285858,#183838);
+  border:1px solid var(--teal);border-bottom:3px solid #081818;color:#90d8d8;
+}
+.btn-teal:hover:not(:disabled) { background:linear-gradient(180deg,#386868,#285050); }
+.btn-ghost {
+  background:transparent;border:1px solid var(--border2);color:var(--ink-muted);
+  font-size:.68rem;padding:4px 10px;font-family:var(--font-ui);font-weight:700;letter-spacing:.08em;
+}
+.btn-ghost:hover { border-color:var(--border2);color:var(--ink-dim); }
+
+/* STREET FEED */
+.feed-panel { display:flex;flex-direction:column;overflow:hidden; }
+.feed-ph {
+  display:flex;align-items:center;gap:8px;
+  padding:5px 10px;
+  background:repeating-linear-gradient(100deg,rgba(255,255,255,0.02) 0 1px,transparent 1px 8px),#141008;
+  border-bottom:1px solid var(--border2);
+  flex-shrink:0;
+}
+.feed-ph-title { font-family:var(--font-head);font-size:.78rem;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-dim); }
+.feed-body { flex:1;overflow-y:auto;padding:5px 10px;display:flex;flex-direction:column;gap:2px; }
+.feed-body::-webkit-scrollbar { width:3px; }
+.feed-body::-webkit-scrollbar-thumb { background:var(--border); }
+.feed-entry {
+  font-size:.7rem;font-family:var(--font-ui);font-weight:600;letter-spacing:.03em;color:var(--ink-muted);
+  border-left:2px solid var(--border);padding:1px 7px;line-height:1.5;
+}
+.feed-good { border-color:var(--money);color:var(--money2); }
+.feed-bad  { border-color:var(--heat);color:#e08070; }
+.feed-warn { border-color:var(--gold);color:#e0c060; }
+.feed-stamp { font-size:.58rem;color:var(--ink-muted);margin-right:5px;font-family:var(--font-mono); }
+
+/* ACTION BAR */
+.action-bar { display:flex;gap:5px; }
+.action-bar .btn { flex:1;padding:9px 10px; }
+
+/* STASH */
+.stash-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px; }
+.stash-card {
+  background:repeating-linear-gradient(155deg,rgba(255,255,255,0.02) 0 1px,transparent 1px 5px),var(--surf2);
+  border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;
+  display:flex;flex-direction:column;gap:5px;
+}
+.stash-name { font-family:var(--font-ui);font-weight:700;font-size:.8rem;letter-spacing:.06em;text-transform:uppercase; }
+.stash-qty { font-family:var(--font-head);font-size:2rem;color:var(--money2);line-height:1;letter-spacing:.04em; }
+.stash-val { font-family:var(--font-mono);font-size:.65rem;color:var(--ink-muted); }
+
+/* BANK */
+.bank-grid { display:flex;flex-direction:column;gap:10px; }
+.bank-card {
+  background:repeating-linear-gradient(155deg,rgba(255,255,255,0.02) 0 1px,transparent 1px 5px),var(--surf2);
+  border:1px solid var(--border2);border-radius:var(--r);padding:12px 14px;
+}
+.bank-row { display:flex;gap:8px; }
+.bank-label { font-family:var(--font-ui);font-size:.62rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-muted);margin-bottom:4px; }
+.bank-amount { font-family:var(--font-mono);font-size:1.6rem;color:var(--gold2);line-height:1; }
+.bank-sub { font-size:.62rem;color:var(--ink-muted);margin-top:3px;font-family:var(--font-ui); }
+.game-input {
+  flex:1;background:var(--plate);border:1px solid var(--border2);border-radius:var(--r);
+  color:var(--ink);font-family:var(--font-mono);font-size:.85rem;padding:6px 10px;
+}
+.game-input:focus { outline:none;border-color:var(--gold); }
+.input-row { display:flex;gap:6px;margin-top:8px; }
+.dre-card {
+  background:repeating-linear-gradient(155deg,rgba(255,255,255,0.02) 0 1px,transparent 1px 5px),linear-gradient(135deg,#1a1004,#100c04);
+  border:1px solid #604010;border-left:3px solid #c08020;border-radius:var(--r);padding:12px 14px;
+}
+.dre-title { font-family:var(--font-head);font-size:.95rem;letter-spacing:.14em;text-transform:uppercase;color:#d09030;margin-bottom:8px; }
+
+/* SHOP */
+.shop-list { display:flex;flex-direction:column;gap:6px; }
+.shop-item {
+  background:repeating-linear-gradient(155deg,rgba(255,255,255,0.02) 0 1px,transparent 1px 5px),var(--surf2);
+  border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;
+  display:flex;align-items:center;gap:10px;
+}
+.shop-item.owned { border-color:#305020;border-left:3px solid var(--money); }
+.shop-item.locked { opacity:.45; }
+.shop-name { font-family:var(--font-ui);font-weight:700;font-size:.88rem;text-transform:uppercase;letter-spacing:.06em; }
+.shop-desc { font-size:.68rem;color:var(--ink-muted);margin-top:3px; }
+.shop-cost { font-family:var(--font-mono);font-size:1.1rem;color:var(--gold2); }
+
+/* HOSPITAL */
+.hp-bar-bg { background:var(--plate);border:1px solid var(--border2);border-radius:1px;height:16px;overflow:hidden;position:relative; }
+.hp-bar { height:100%;transition:width .4s; }
+.hp-bar.healthy { background:linear-gradient(90deg,#285020,#5a9840); }
+.hp-bar.hurt    { background:linear-gradient(90deg,#601010,#c03020); }
+.heal-option {
+  background:repeating-linear-gradient(155deg,rgba(255,255,255,0.02) 0 1px,transparent 1px 5px),var(--surf2);
+  border:1px solid var(--border2);border-radius:var(--r);
+  padding:10px 12px;display:flex;align-items:center;gap:10px;
+}
+.heal-name { font-family:var(--font-ui);font-weight:700;font-size:.88rem;text-transform:uppercase;letter-spacing:.06em; }
+.heal-desc { font-size:.68rem;color:var(--ink-muted);margin-top:2px; }
+
+/* STATS */
+.stats-grid { display:grid;grid-template-columns:1fr 1fr;gap:6px; }
+.stat-card {
+  background:repeating-linear-gradient(155deg,rgba(255,255,255,0.02) 0 1px,transparent 1px 5px),var(--surf2);
+  border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;
+}
+.stat-label { font-family:var(--font-ui);font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:var(--ink-muted);margin-bottom:3px; }
+.stat-val { font-family:var(--font-head);font-size:1.5rem;color:var(--ink);line-height:1.1; }
+.rank-badge {
+  display:inline-block;background:var(--gold);color:#0a0700;
+  font-family:var(--font-head);font-size:.72rem;letter-spacing:.14em;
+  padding:2px 8px;border-radius:1px;text-transform:uppercase;
+}
+
+/* MODALS */
+.modal-backdrop {
+  position:fixed;inset:0;background:rgba(0,0,0,.88);
+  display:flex;align-items:center;justify-content:center;
+  z-index:100;backdrop-filter:blur(2px);
+}
+.modal {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E"),
+    repeating-linear-gradient(157deg,rgba(255,255,255,0.025) 0 1px,transparent 1px 5px),
+    var(--surf);
+  border:1px solid var(--border2);border-radius:var(--r);
+  width:min(620px,96vw);max-height:88vh;overflow:hidden;
+  display:flex;flex-direction:column;
+  box-shadow:0 30px 80px rgba(0,0,0,.9),0 0 0 1px rgba(255,255,255,0.04);
+  animation:slideUp .2s ease;
+}
+@keyframes slideUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:none} }
+.modal-body { overflow-y:auto;padding:12px; }
+.modal-body::-webkit-scrollbar { width:4px; }
+.modal-body::-webkit-scrollbar-thumb { background:var(--border2); }
+
+.area-grid { display:grid;grid-template-columns:1fr 1fr;gap:6px; }
+.area-card {
+  background:repeating-linear-gradient(155deg,rgba(255,255,255,0.02) 0 1px,transparent 1px 5px),var(--surf2);
+  border:1px solid var(--border2);border-radius:var(--r);padding:12px 14px;
+  cursor:pointer;transition:border-color .1s,background .1s;
+}
+.area-card:hover { border-color:var(--edge);background:var(--surf3); }
+.area-card.current { border-color:var(--gold);border-left:3px solid var(--gold);background:rgba(200,160,32,.06); }
+.area-name { font-family:var(--font-head);font-size:.95rem;letter-spacing:.1em;text-transform:uppercase; }
+.area-hint { font-size:.65rem;font-weight:600;letter-spacing:.08em;color:var(--ink-muted);text-transform:uppercase;margin-top:3px; }
+.area-risk { display:flex;gap:3px;margin-top:8px;align-items:center; }
+.risk-dot { width:9px;height:9px;border-radius:1px; }
+.risk-dot.r { background:var(--red2); }
+.risk-dot.p { background:var(--blue); }
+.risk-dot.e { background:var(--border2); }
+
+.confirm-modal { width:min(420px,92vw)!important; }
+.confirm-body { padding:28px 24px;text-align:center; }
+.confirm-title { font-family:var(--font-head);font-size:1.4rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold2);text-shadow:0 0 20px rgba(200,160,32,.4);margin-bottom:12px; }
+.confirm-msg { font-family:var(--font-ui);font-size:.85rem;font-weight:600;color:var(--ink-muted);line-height:1.6;margin-bottom:20px;letter-spacing:.04em; }
+.confirm-btns { display:flex;gap:8px; }
+.confirm-btns .btn { flex:1;padding:14px; }
+
+/* EVENT MODAL */
+.event-modal { width:min(500px,94vw)!important; }
+.event-body { padding:20px 20px 16px; }
+.event-title { font-family:var(--font-head);font-size:1.2rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gold2);margin-bottom:8px; }
+.event-desc { font-family:var(--font-ui);font-size:.84rem;font-weight:600;color:var(--ink-dim);line-height:1.65;margin-bottom:16px;letter-spacing:.03em; }
+.event-choices { display:flex;flex-direction:column;gap:6px; }
+.event-choice {
+  background:repeating-linear-gradient(155deg,rgba(255,255,255,0.02) 0 1px,transparent 1px 5px),var(--surf2);
+  border:1px solid var(--border2);border-radius:var(--r);
+  padding:10px 14px;cursor:pointer;
+  font-family:var(--font-ui);font-size:.82rem;font-weight:700;letter-spacing:.04em;
+  color:var(--ink-dim);text-align:left;
+  transition:border-color .1s,color .1s;
+}
+.event-choice:hover { border-color:var(--edge);color:var(--ink); }
+
+/* COMBAT MODAL */
+.combat-log { background:var(--plate);border:1px solid var(--border);border-radius:var(--r);padding:8px 10px;margin-bottom:12px;max-height:100px;overflow-y:auto;font-family:var(--font-mono);font-size:.7rem;color:var(--ink-muted);display:flex;flex-direction:column;gap:2px; }
+.combat-actions { display:grid;grid-template-columns:1fr 1fr;gap:6px; }
+.combat-hp { display:flex;gap:10px;margin-bottom:10px; }
+.combat-hp-box { flex:1;background:var(--surf2);border:1px solid var(--border2);border-radius:var(--r);padding:8px 10px; }
+.combat-hp-label { font-family:var(--font-ui);font-size:.58rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-muted);margin-bottom:3px; }
+.combat-hp-val { font-family:var(--font-head);font-size:1.2rem; }
+
+/* GAME OVER */
+.gameover-body { padding:40px 24px;text-align:center; }
+.gameover-title { font-family:var(--font-head);font-size:2rem;letter-spacing:.2em;text-transform:uppercase;color:var(--red2);text-shadow:0 0 30px rgba(200,40,24,.5);margin-bottom:12px; }
+.gameover-sub { font-family:var(--font-ui);font-size:.9rem;font-weight:600;color:var(--ink-muted);line-height:1.6;margin-bottom:24px;letter-spacing:.04em; }
+
+/* RESPONSIVE */
+@media(max-width:640px) {
+  .drug-row-main { grid-template-columns:1fr 80px 40px 36px 64px;gap:4px; }
+  .logo { font-size:1.1rem; }
+  .chip-k { display:none; }
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useReducer, useRef, useCallback } = React;
+
+// ── DATA ──────────────────────────────────────────────────────────────────────
+const DRUGS = [
+  {id:"weed",      name:"Weed",          min:18,  max:85,  vol:.22, tier:1, cat:"STREET"},
+  {id:"cocaine",   name:"Cocaine",        min:180, max:650, vol:.28, tier:3, cat:"POWDER"},
+  {id:"adderall",  name:"Adderall",       min:22,  max:120, vol:.24, tier:2, cat:"PILL"},
+  {id:"heroin",    name:"Heroin",         min:130, max:500, vol:.30, tier:4, cat:"OPIATE"},
+  {id:"meth",      name:"Meth",           min:90,  max:420, vol:.33, tier:4, cat:"STREET"},
+  {id:"crack",     name:"Crack",          min:70,  max:300, vol:.31, tier:3, cat:"STREET"},
+  {id:"xanax",     name:"Xanax",          min:18,  max:90,  vol:.21, tier:2, cat:"PILL"},
+  {id:"oxy",       name:"Oxy",            min:45,  max:210, vol:.25, tier:3, cat:"PILL"},
+  {id:"percocet",  name:"Percocet",       min:40,  max:190, vol:.24, tier:3, cat:"PILL"},
+  {id:"mdma",      name:"Molly / MDMA",   min:55,  max:260, vol:.27, tier:2, cat:"PARTY"},
+  {id:"shrooms",   name:"Shrooms",        min:35,  max:150, vol:.20, tier:1, cat:"PARTY"},
+  {id:"lsd",       name:"Acid / LSD",     min:28,  max:180, vol:.29, tier:2, cat:"PARTY"},
+  {id:"fentanyl",  name:"Fentanyl",       min:110, max:620, vol:.35, tier:5, cat:"OPIATE"},
+  {id:"lean",      name:"Lean",           min:50,  max:260, vol:.25, tier:2, cat:"SYRUP"},
+  {id:"ketamine",  name:"Ketamine",       min:60,  max:280, vol:.26, tier:2, cat:"PARTY"},
+  {id:"pcp",       name:"PCP",            min:80,  max:340, vol:.32, tier:4, cat:"STREET"},
+  {id:"coke_rock", name:"Coke Rock",      min:65,  max:290, vol:.30, tier:3, cat:"POWDER"},
+  {id:"bars",      name:"Bars / Benzo",   min:15,  max:80,  vol:.22, tier:2, cat:"PILL"},
+  {id:"speed",     name:"Speed",          min:55,  max:200, vol:.28, tier:3, cat:"STREET"},
+  {id:"dmt",       name:"DMT",            min:120, max:480, vol:.30, tier:3, cat:"PARTY"},
+];
+
+const AREAS = [
+  {id:"north_star_lot",     name:"North Star Lot",      risk:1,police:1,rival:0,hint:"Cheap street stock",      bias:{weed:.85,shrooms:.9,bars:.85}},
+  {id:"spenard",            name:"Spenard",              risk:2,police:2,rival:1,hint:"Powder demand",           bias:{cocaine:1.2,meth:1.15,coke_rock:1.12}},
+  {id:"mountain_view",      name:"Mountain View",        risk:3,police:2,rival:2,hint:"Hard market",             bias:{crack:1.2,heroin:1.16,fentanyl:1.2,pcp:1.18}},
+  {id:"downtown",           name:"Downtown",             risk:2,police:3,rival:1,hint:"Club flips",              bias:{adderall:1.17,cocaine:1.22,mdma:1.16,dmt:1.15}},
+  {id:"muldoon",            name:"Muldoon",              risk:3,police:2,rival:3,hint:"Rival corners",           bias:{meth:1.22,lean:1.15,speed:1.18}},
+  {id:"midtown",            name:"Midtown",              risk:2,police:2,rival:1,hint:"Pill discounts",          bias:{adderall:.86,xanax:.9,percocet:.9,oxy:.88}},
+  {id:"southside",          name:"Southside",            risk:1,police:1,rival:1,hint:"Party crowd",             bias:{shrooms:1.15,lsd:1.2,ketamine:1.1,mdma:1.1}},
+  {id:"airport_industrial", name:"Airport / Industrial", risk:4,police:3,rival:2,hint:"High margin, high heat",  bias:{ketamine:1.24,fentanyl:1.26,dmt:1.2,heroin:1.22}},
+];
+
+const UPGRADES = [
+  {id:"beater",       name:"Used Beater",          cost:900,  desc:"+20 carry · −2 heat on travel", fx:{maxCarry:20,heatTravel:-2}},
+  {id:"stash_closet", name:"Hidden Closet Stash",  cost:650,  desc:"+10 carry · stash safety",      fx:{maxCarry:10}},
+  {id:"burner_pack",  name:"Burner Pack",           cost:450,  desc:"+8 event protection · draw",    fx:{}},
+  {id:"muscle_1",     name:"1 Crew Muscle",         cost:1700, desc:"Mugging defense +18 · −rival",  fx:{}, req:{rep:12}},
+];
+
+const ENEMY_TYPES = [
+  {id:"mugger",     name:"Mugger",         hp:30,  minDmg:3,  maxDmg:10, bribeCost:80,  fleeChance:.65},
+  {id:"thug",       name:"Street Thug",    hp:40,  minDmg:4,  maxDmg:14, bribeCost:120, fleeChance:.55},
+  {id:"rival",      name:"Rival Dealer",   hp:55,  minDmg:5,  maxDmg:16, bribeCost:200, fleeChance:.5,  loot:{crack:rng(2,6)}},
+  {id:"undercover", name:"Undercover APD", hp:60,  minDmg:6,  maxDmg:18, bribeCost:350, fleeChance:.4,  seizeInventory:true},
+  {id:"apd",        name:"APD Patrol",     hp:75,  minDmg:7,  maxDmg:20, bribeCost:500, fleeChance:.35},
+];
+
+const EVENTS = [
+  {id:"dry_market",    title:"Supply Dried Up",       desc:"Word on the block — can't find product nowhere. Prices spiking.",            trigger:"laylow", choices:[{label:"Wait it out",fn:G=>({...G,prices:boostPrices(G.prices,["heroin","cocaine","meth"],1.35),feed:addFeed(G,"Drought hits the block — prices spiked.","warn")})}]},
+  {id:"club_opening",  title:"Club Night",            desc:"Big opening downtown. Party crowd is out, demand for product is up.",        trigger:"travel",  choices:[{label:"Work the crowd",fn:G=>({...G,prices:boostPrices(G.prices,["mdma","lsd","ketamine","cocaine"],1.4),rep:G.rep+1,feed:addFeed(G,"Club night — party demand surging.","good")})}], cond:G=>G.locationId==="downtown"},
+  {id:"cop_shakedown", title:"Cop Shakedown",         desc:"Officer catches you slipping. He wants a cut or he's calling it in.",       trigger:"travel",  choices:[{label:"Pay $200",fn:G=>G.cash>=200?{...G,cash:G.cash-200,heat:Math.max(0,G.heat-2),feed:addFeed(G,"Paid off the cop. Heat down.","warn")}:{...G,heat:G.heat+3,feed:addFeed(G,"Couldn't pay — heat spiked.","bad")}},{label:"Refuse",fn:G=>({...G,heat:G.heat+4,feed:addFeed(G,"Refused the cop. APD on high alert.","bad")})}], cond:G=>G.heat>=3},
+  {id:"lucky_buyer",   title:"Lucky Buyer",           desc:"High-roller needs product fast, paying premium.",                           trigger:"deal",   choices:[{label:"Flip it",fn:G=>{const d=DRUGS[Math.floor(Math.random()*DRUGS.length)];const gain=rng(60,180);return {...G,cash:G.cash+gain,rep:G.rep+2,feed:addFeed(G,`Lucky buyer — scored +$${gain}.`,"good")};}}]},
+  {id:"stash_found",   title:"Police Found Your Stash",desc:"APD found some product. They're confiscating and adding to your sheet.", trigger:"laylow",  choices:[{label:"Take the L",fn:G=>{const d=Object.keys(G.inventory).find(k=>G.inventory[k]>0);if(!d)return {...G,feed:addFeed(G,"APD found nothing.","")};const lost=Math.min(G.inventory[d],rng(2,8));const inv={...G.inventory,[d]:G.inventory[d]-lost};return {...G,inventory:inv,heat:G.heat+2,feed:addFeed(G,`APD seized ${lost}× ${DRUGS.find(x=>x.id===d)?.name}.`,"bad")};}}], cond:G=>{const cargo=Object.values(G.inventory).reduce((s,v)=>s+v,0);return cargo>0&&G.heat>=5;}},
+  {id:"mina_tip",      title:"Mina's Tip",            desc:"Mina slides you a hot location. Prices look good there right now.",        trigger:"laylow",  choices:[{label:"Thanks, Mina",fn:G=>{const gain=rng(30,90);return {...G,cash:G.cash+gain,feed:addFeed(G,`Mina's tip pays out — +$${gain}.`,"good")};}}]},
+  {id:"good_samaritan",title:"Random Windfall",        desc:"Found a dropped wallet. Take it or leave it.",                             trigger:"travel",  choices:[{label:"Take it",fn:G=>{const c=rng(40,120);return {...G,cash:G.cash+c,feed:addFeed(G,`Pocketed $${c} from a lost wallet.`,"good")}}},{label:"Leave it",fn:G=>({...G,rep:G.rep+1,feed:addFeed(G,"Left the wallet. Good looks.","good")})}]},
+  {id:"rival_warning", title:"Rook's Warning",        desc:"Someone from Rook's crew steps to you. He's watching your moves.",        trigger:"travel",  choices:[{label:"Play it cool",fn:G=>({...G,heat:G.heat+1,feed:addFeed(G,"Rook's crew clocks you. Stay low.","warn")})}], cond:G=>G.rep>=8},
+  {id:"bad_batch",     title:"Bad Batch",             desc:"Product on the block is cut bad. Prices crash as buyers disappear.",       trigger:"laylow",  choices:[{label:"Sit tight",fn:G=>{const d=["crack","heroin","meth","fentanyl"][Math.floor(Math.random()*4)];return {...G,prices:{...G.prices,[d]:Math.max(5,Math.floor((G.prices[d]||50)*.6))},feed:addFeed(G,`Bad batch — ${DRUGS.find(x=>x.id===d)?.name} prices crash.`,"bad")};}}]},
+  {id:"bank_run",      title:"Street Tax",            desc:"Someone's been watching your stash. They want 10% as 'protection'.",      trigger:"laylow",  choices:[{label:"Pay up",fn:G=>{const tax=Math.max(20,Math.floor(G.cash*.1));return G.cash>=tax?{...G,cash:G.cash-tax,feed:addFeed(G,`Paid $${tax} street tax.`,"bad")}:{...G,feed:addFeed(G,"No cash to tax — they'll remember.","warn")};}},{label:"Refuse",fn:G=>({...G,heat:G.heat+2,feed:addFeed(G,"Refused the tax — they marked you.","bad")})}], cond:G=>G.cash>100},
+];
+
+function boostPrices(prices,ids,mult) {
+  const p={...prices};
+  for(const id of ids) if(p[id]) p[id]=Math.round(p[id]*mult);
+  return p;
+}
+
+const SLOTS = ["Morning","Afternoon","Evening","Night"];
+
+function rng(a,b) { return Math.floor(Math.random()*(b-a+1))+a; }
+
+function genPrices(locationId) {
+  const area = AREAS.find(a=>a.id===locationId)||AREAS[0];
+  const p = {};
+  for(const d of DRUGS){
+    const b = d.min + Math.random()*(d.max-d.min);
+    const s = 1+(Math.random()*2-1)*d.vol;
+    const bias = area.bias[d.id]||1;
+    p[d.id] = Math.max(5, Math.round(b*s*bias));
+  }
+  return p;
+}
+
+function getTrend(id,hist) {
+  const h=hist[id]||[];
+  if(h.length<2) return {dir:"flat",sym:"—"};
+  const d=(h[h.length-1]-h[h.length-2])/Math.max(1,h[h.length-2]);
+  if(d>.18) return {dir:"up-strong",sym:"▲▲"};
+  if(d>.05) return {dir:"up",sym:"▲"};
+  if(d<-.18) return {dir:"down-strong",sym:"▼▼"};
+  if(d<-.05) return {dir:"down",sym:"▼"};
+  return {dir:"flat",sym:"—"};
+}
+
+function initGame() {
+  const prices=genPrices("north_star_lot");
+  const history={};
+  for(const d of DRUGS) history[d.id]=[prices[d.id]];
+  return {
+    day:1, tick:1, locationId:"north_star_lot",
+    cash:200, bank:0, heat:0, rep:0, health:100, maxCarry:30,
+    inventory:Object.fromEntries(DRUGS.map(d=>[d.id,0])),
+    prices, history,
+    dre:{loan:0, deadline:null, trust:0},
+    assets:[],
+    feed:[{text:"Game started. Check the market.",tone:"",stamp:"Day 1 · Morning"}],
+    pendingEvent:null,
+    combatState:null,
+    gameOver:false,
+  };
+}
+
+function addFeed(G,text,tone="") {
+  return [{text,tone,stamp:`Day ${G.day} · ${SLOTS[G.tick-1]}`},...G.feed].slice(0,70);
+}
+
+function advanceTime(G) {
+  const nTick=G.tick>=4?1:G.tick+1;
+  const nDay=G.tick>=4?G.day+1:G.day;
+  const nPrices=genPrices(G.locationId);
+  const nHist={};
+  for(const d of DRUGS) nHist[d.id]=[...(G.history[d.id]||[]),nPrices[d.id]].slice(-5);
+  const interest=nTick===1&&G.bank>0?Math.max(1,Math.floor(G.bank*.02)):0;
+  return {nTick,nDay,nPrices,nHist,interest};
+}
+
+function pickRandomEvent(G,trigger) {
+  const eligible=EVENTS.filter(e=>e.trigger===trigger&&(!e.cond||e.cond(G)));
+  if(!eligible.length||Math.random()>.38) return null;
+  return eligible[Math.floor(Math.random()*eligible.length)];
+}
+
+// ── REDUCER ───────────────────────────────────────────────────────────────────
+function reducer(G,action) {
+  switch(action.type) {
+
+    case "BUY": {
+      const {drugId,qty}=action;
+      const cost=(G.prices[drugId]||0)*qty;
+      const cargo=Object.values(G.inventory).reduce((s,v)=>s+v,0);
+      if(G.cash<cost) return {...G,feed:addFeed(G,"Not enough cash.","bad")};
+      if(cargo+qty>G.maxCarry) return {...G,feed:addFeed(G,"Bag is full.","bad")};
+      const hAdd=["cocaine","heroin","fentanyl","meth","pcp"].includes(drugId)?Math.max(1,Math.floor(qty/2)):0;
+      return {...G,
+        cash:G.cash-cost,
+        inventory:{...G.inventory,[drugId]:(G.inventory[drugId]||0)+qty},
+        heat:Math.min(15,G.heat+hAdd),
+        rep:G.rep+Math.max(1,Math.floor(qty/3)),
+        feed:addFeed(G,`Bought ${qty}× ${DRUGS.find(d=>d.id===drugId)?.name} — −$${cost.toLocaleString()}.`,"good"),
+      };
+    }
+
+    case "SELL": {
+      const {drugId,qty}=action;
+      const owned=G.inventory[drugId]||0;
+      if(!owned) return {...G,feed:addFeed(G,"Nothing to sell.","bad")};
+      const actual=Math.min(qty,owned);
+      const repBonus=Math.min(0.14,G.rep*0.003);
+      const sell=Math.max(1,Math.round((G.prices[drugId]||0)*(1.04+repBonus)));
+      const total=sell*actual;
+      // trigger deal event
+      const ev=pickRandomEvent(G,"deal");
+      let next={...G,
+        cash:G.cash+total,
+        inventory:{...G.inventory,[drugId]:owned-actual},
+        rep:G.rep+Math.max(1,Math.floor(actual/3)),
+        feed:addFeed(G,`Sold ${actual}× ${DRUGS.find(d=>d.id===drugId)?.name} — +$${total.toLocaleString()}.`,"good"),
+      };
+      if(ev) next={...next,pendingEvent:ev};
+      return next;
+    }
+
+    case "TRAVEL": {
+      const target=AREAS.find(a=>a.id===action.areaId);
+      if(!target||target.id===G.locationId) return G;
+      const {nTick,nDay,nPrices,nHist}=advanceTime(G);
+      const heatDelta=target.risk-1-(G.assets.includes("beater")?2:0);
+      const ev=pickRandomEvent({...G,locationId:action.areaId},"travel");
+      let next={...G,
+        locationId:action.areaId,
+        day:nDay,tick:nTick,
+        heat:Math.max(0,Math.min(15,G.heat+heatDelta)),
+        prices:nPrices,history:nHist,
+        feed:addFeed({...G,day:nDay,tick:nTick},`Moved to ${target.name}.`),
+        pendingEvent:ev||null,
+      };
+      if(nDay>30) next={...next,gameOver:true};
+      return next;
+    }
+
+    case "LAY_LOW": {
+      const {nTick,nDay,nPrices,nHist,interest}=advanceTime(G);
+      const ev=pickRandomEvent(G,"laylow");
+      let newFeed=[
+        ...(interest?[{text:`Bank interest +$${interest}.`,tone:"good",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`}]:[]),
+        {text:`Laying low → ${SLOTS[nTick-1]}.`,tone:"",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},
+        ...G.feed,
+      ].slice(0,70);
+      let dre={...G.dre};
+      let extraCash=0;
+      if(dre.loan>0&&G.day>=dre.deadline&&Math.random()<.3){
+        const penalty=Math.min(G.cash,rng(30,80));
+        extraCash=-penalty;
+        newFeed=[{text:`Dre's people collected $${penalty} — pay up or else.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
+      }
+      let next={...G,
+        tick:nTick,day:nDay,
+        heat:Math.max(0,G.heat-1),
+        cash:G.cash+interest+extraCash,
+        bank:G.bank+interest,
+        prices:nPrices,history:nHist,
+        feed:newFeed,
+        dre,
+        pendingEvent:ev||null,
+      };
+      if(nDay>30) next={...next,gameOver:true};
+      return next;
+    }
+
+    case "ROB": {
+      const hasMuscle=G.assets.includes("muscle_1");
+      const roll=Math.random();
+      if(roll<.45+hasMuscle*.1){
+        const gain=rng(60,160);
+        return {...G,cash:G.cash+gain,heat:Math.min(15,G.heat+2),rep:G.rep+1,feed:addFeed(G,`Quick lick — scored $${gain}.`,"good")};
+      } else if(roll<.75){
+        const loss=rng(8,22);
+        return {...G,health:Math.max(1,G.health-loss),heat:Math.min(15,G.heat+1),feed:addFeed(G,`Came up short — took ${loss} damage.`,"bad")};
+      } else {
+        // Start combat
+        const enemy=ENEMY_TYPES[rng(0,2)];
+        return {...G,heat:Math.min(15,G.heat+1),combatState:{enemy:{...enemy,curHp:enemy.hp},log:[`${enemy.name} stepped to you.`]},feed:addFeed(G,`${enemy.name} caught you slipping.`,"bad")};
+      }
+    }
+
+    case "DEPOSIT": {
+      if(action.amount<=0||action.amount>G.cash) return G;
+      return {...G,cash:G.cash-action.amount,bank:G.bank+action.amount,feed:addFeed(G,`Deposited $${action.amount.toLocaleString()}.`)};
+    }
+    case "WITHDRAW": {
+      if(action.amount<=0||action.amount>G.bank) return G;
+      return {...G,cash:G.cash+action.amount,bank:G.bank-action.amount,feed:addFeed(G,`Withdrew $${action.amount.toLocaleString()}.`)};
+    }
+
+    case "HEAL": {
+      if(G.cash<action.cost) return {...G,feed:addFeed(G,"Not enough cash.","bad")};
+      const gain=Math.min(action.amount,100-G.health);
+      return {...G,cash:G.cash-action.cost,health:Math.min(100,G.health+action.amount),feed:addFeed(G,`Healed +${gain} HP.`,"good")};
+    }
+
+    case "TAKE_DRE_LOAN": {
+      if(G.dre.loan>0) return {...G,feed:addFeed(G,"Clear your current note first.","bad")};
+      return {...G,cash:G.cash+400,dre:{...G.dre,loan:480,deadline:G.day+5,trust:G.dre.trust+1},feed:addFeed(G,`Dre fronts $400. Owe $480 by day ${G.day+5}.`)};
+    }
+    case "REPAY_DRE": {
+      if(G.cash<G.dre.loan) return {...G,feed:addFeed(G,"Not enough cash.","bad")};
+      return {...G,cash:G.cash-G.dre.loan,dre:{...G.dre,loan:0,deadline:null,trust:G.dre.trust+2},rep:G.rep+2,feed:addFeed(G,"Paid Dre in full. Trust up.","good")};
+    }
+
+    case "BUY_UPGRADE": {
+      const u=UPGRADES.find(x=>x.id===action.id);
+      if(!u||G.assets.includes(action.id)||G.cash<u.cost) return G;
+      const newMax=G.maxCarry+(u.fx.maxCarry||0);
+      return {...G,cash:G.cash-u.cost,assets:[...G.assets,action.id],maxCarry:newMax,feed:addFeed(G,`Purchased ${u.name}.`,"good")};
+    }
+
+    case "RESOLVE_EVENT": {
+      const ev=G.pendingEvent;
+      if(!ev) return {...G,pendingEvent:null};
+      const choice=ev.choices[action.choiceIdx];
+      if(!choice) return {...G,pendingEvent:null};
+      const next=choice.fn({...G,pendingEvent:null});
+      return {...next,pendingEvent:null};
+    }
+
+    case "COMBAT_ACTION": {
+      if(!G.combatState) return G;
+      const {enemy,log}=G.combatState;
+      const hasBurner=G.assets.includes("burner_pack");
+      const hasMuscle=G.assets.includes("muscle_1");
+      let newLog=[...log];
+      let newEnemy={...enemy};
+      let newG={...G};
+
+      if(action.act==="fight"){
+        const pDmg=rng(4,11)+(hasBurner?6:0)+(hasMuscle?4:0);
+        newEnemy.curHp-=pDmg;
+        newLog.push(`You hit for ${pDmg} dmg.`);
+        if(newEnemy.curHp<=0){
+          const loot=rng(40,120);
+          const drugLoot=enemy.loot?Object.entries(enemy.loot):[null];
+          let extra="";
+          if(enemy.loot){
+            const [dId,qty]=Object.entries(enemy.loot)[0];
+            newG.inventory={...newG.inventory,[dId]:(newG.inventory[dId]||0)+Math.min(qty,newG.maxCarry-Object.values(newG.inventory).reduce((s,v)=>s+v,0))};
+            extra=` + looted some product`;
+          }
+          return {...newG,combatState:null,cash:newG.cash+loot,rep:newG.rep+2,heat:Math.min(15,newG.heat+1),feed:addFeed(newG,`Took down the ${enemy.name}. +$${loot}${extra}.`,"good")};
+        }
+      } else if(action.act==="flee"){
+        const chance=enemy.fleeChance+(hasMuscle?.1:0);
+        if(Math.random()<chance){
+          const cashLost=Math.floor(newG.cash*.08);
+          return {...newG,combatState:null,cash:Math.max(0,newG.cash-cashLost),heat:Math.min(15,newG.heat+1),feed:addFeed(newG,`Fled the ${enemy.name}. Lost $${cashLost}.`,"warn")};
+        }
+        newLog.push("Failed to flee!");
+      } else if(action.act==="bribe"){
+        if(newG.cash<enemy.bribeCost) return {...newG,combatState:{...G.combatState,log:[...newLog,"Not enough cash to bribe!"]}};
+        return {...newG,combatState:null,cash:newG.cash-enemy.bribeCost,heat:Math.max(0,newG.heat-1),feed:addFeed(newG,`Bribed the ${enemy.name} for $${enemy.bribeCost}.`,"warn")};
+      } else if(action.act==="draw"&&hasBurner){
+        const pDmg=rng(14,28);
+        newEnemy.curHp-=pDmg;
+        newLog.push(`Drew burner — ${pDmg} dmg!`);
+        newG.heat=Math.min(15,newG.heat+2);
+        if(newEnemy.curHp<=0){
+          const loot=rng(60,140);
+          return {...newG,combatState:null,cash:newG.cash+loot,rep:newG.rep+2,feed:addFeed(newG,`Dropped the ${enemy.name}. +$${loot}.`,"good")};
+        }
+      }
+
+      // Enemy attacks back
+      const eDmg=rng(enemy.minDmg,enemy.maxDmg);
+      newG.health=Math.max(0,newG.health-eDmg);
+      newLog.push(`${enemy.name} hits you for ${eDmg}.`);
+      if(newG.health<=0){
+        return {...newG,combatState:null,gameOver:true,feed:addFeed(newG,"You died. Game over.","bad")};
+      }
+      return {...newG,combatState:{enemy:newEnemy,log:newLog.slice(-5)}};
+    }
+
+    case "CLEAR_FEED": return {...G,feed:[]};
+    case "DISMISS_EVENT": return {...G,pendingEvent:null};
+    case "NEW_GAME": return initGame();
+
+    default: return G;
+  }
+}
+
+// ── ICONS ─────────────────────────────────────────────────────────────────────
+const PATHS = {
+  cash:    <><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></>,
+  bag:     <><path d="M6 9h12l-1 10H7z"/><path d="M9 9V7a3 3 0 0 1 6 0v2"/></>,
+  heat:    <><path d="M13 3c2 3 0 4 2 6 1 1 3 2 3 5a6 6 0 1 1-12 0c0-4 3-5 4-8 2 1 2 2 3 3z"/></>,
+  day:     <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></>,
+  loc:     <><path d="M12 21s7-7 7-12a7 7 0 1 0-14 0c0 5 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></>,
+  hp:      <><path d="M12 21s-7-4.5-7-10a4 4 0 0 1 7-2 4 4 0 0 1 7 2c0 5.5-7 10-7 10z"/></>,
+  bank:    <><path d="M3 9h18M5 9v9M9 9v9M13 9v9M17 9v9M3 18h18"/><path d="M2 9l10-5 10 5"/></>,
+  shop:    <><path d="M4 7h16l-1 3H5z"/><path d="M6 10h12v10H6z"/><path d="M9 10v10M15 10v10"/></>,
+  hosp:    <><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></>,
+  stats:   <><path d="M3 3v18h18"/><path d="M7 16l4-5 4 3 4-7"/></>,
+  mkt:     <><path d="M3 3h2l.4 2M7 13h10l4-8H5.4"/><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/></>,
+  travel:  <><path d="M5 12h14M12 5l7 7-7 7"/></>,
+  warn:    <><path d="M12 3l10 18H2z"/><path d="M12 9v5M12 17h.01"/></>,
+  skull:   <><circle cx="12" cy="10" r="7"/><path d="M10 17v2M14 17v2M8 13a2 2 0 0 0 4 0M12 13a2 2 0 0 0 4 0"/></>,
+  rep:     <><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></>,
+};
+const Ic = ({n,sz=16,col="currentColor"}) => (
+  <svg width={sz} height={sz} viewBox="0 0 24 24" fill="none" stroke={col} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    {PATHS[n]}
+  </svg>
+);
+
+// ── PANEL HEADER ──────────────────────────────────────────────────────────────
+const HDR_COLORS = {
+  market:"var(--hdr-market)", stash:"var(--hdr-stash)", bank:"var(--hdr-bank)",
+  shop:"var(--hdr-shop)", hospital:"var(--hdr-hosp)", stats:"var(--hdr-stats)",
+  travel:"#1a2818", confirm:"#281a08", event:"#201820", combat:"#281210",
+};
+function PH({tab,icon,title,sub}) {
+  const color=HDR_COLORS[tab]||"var(--surf3)";
+  return (
+    <div className="ph">
+      <div className="ph-bar" style={{"--hdr-color":color}}>
+        <div className="ph-icon"><Ic n={icon} sz={14}/></div>
+        <h2>{title||tab}</h2>
+        {sub&&<span className="ph-sub">{sub}</span>}
       </div>
     </div>
+  );
+}
 
-    <script src="combat.js"></script>
-    <script src="events.js"></script>
-    <script src="script.js"></script>
-  </body>
+// ── CHIP ──────────────────────────────────────────────────────────────────────
+function Chip({icon,label,value,cls=""}) {
+  return (
+    <div className={`chip ${cls}`}>
+      <Ic n={icon} sz={11}/>
+      <span className="chip-k">{label}</span>
+      <span className="chip-v">{value}</span>
+    </div>
+  );
+}
+
+// ── MARKET ────────────────────────────────────────────────────────────────────
+function MarketScreen({G,dispatch}) {
+  const [expanded,setExpanded]=useState(null);
+  const [qtys,setQtys]=useState({});
+  const cargo=Object.values(G.inventory).reduce((s,v)=>s+v,0);
+  const repBonus=Math.min(0.14,G.rep*0.003);
+  const sellP=(id)=>Math.max(1,Math.round((G.prices[id]||0)*(1.04+repBonus)));
+  const maxBuy=(id)=>Math.min(G.maxCarry-cargo,Math.floor(G.cash/Math.max(1,G.prices[id])));
+  const getQ=(id)=>Math.max(1,qtys[id]||1);
+  const setQ=(id,v)=>setQtys(q=>({...q,[id]:Math.max(1,v)}));
+  const bestFlip=DRUGS.reduce((b,d)=>{const s=sellP(d.id)-(G.prices[d.id]||0);return s>b.s?{id:d.id,s}:b;},{id:null,s:-Infinity}).id;
+  const area=AREAS.find(a=>a.id===G.locationId);
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <PH tab="market" icon="mkt" title="Drug Market" sub={`${cargo}/${G.maxCarry} bag · ${area?.hint||""}`}/>
+      <div className="panel-scroll">
+        <div className="mkt-list">
+          <div style={{display:"grid",gridTemplateColumns:"1fr 100px 52px 44px 80px",gap:8,padding:"3px 10px 3px 14px"}}>
+            {["Drug Name","Price","Trend","Owned",""].map(l=>(
+              <div key={l} style={{fontSize:".58rem",fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink-muted)",fontFamily:"var(--font-ui)"}}>{l}</div>
+            ))}
+          </div>
+          {DRUGS.map(drug=>{
+            const buy=G.prices[drug.id]||0;
+            const sell=sellP(drug.id);
+            const owned=G.inventory[drug.id]||0;
+            const trend=getTrend(drug.id,G.history);
+            const hot=trend.dir==="up-strong"||(trend.dir==="up"&&owned>0);
+            const isOpen=expanded===drug.id;
+            const qty=getQ(drug.id);
+            const mb=maxBuy(drug.id);
+            return (
+              <div key={drug.id} className={`drug-row${isOpen?" expanded":""}${hot?" hot":""}`}>
+                <div className="drug-row-main" onClick={()=>setExpanded(isOpen?null:drug.id)}>
+                  <div>
+                    <div className="drug-name">
+                      {drug.name}
+                      {drug.id===bestFlip&&<span className="tag-hot">Best Flip</span>}
+                    </div>
+                    <div className="drug-cat">{drug.cat} · T{drug.tier}</div>
+                  </div>
+                  <div>
+                    <div className="drug-price">${buy.toLocaleString()}</div>
+                    <div className="drug-sell">↑ ${sell.toLocaleString()}</div>
+                  </div>
+                  <div className={`trend trend-${trend.dir==="up"||trend.dir==="up-strong"?"up":trend.dir==="down"||trend.dir==="down-strong"?"down":"flat"}`}>{trend.sym}</div>
+                  <div className={`owned-badge${owned>0?" has":""}`}>{owned}</div>
+                  <button className="btn-trade" onClick={e=>{e.stopPropagation();setExpanded(isOpen?null:drug.id);}}>Trade</button>
+                </div>
+                {isOpen&&(
+                  <div className="drug-expand">
+                    <div className="expand-label">Quantity</div>
+                    <div className="qty-row">
+                      <button className="qty-btn" onClick={()=>setQ(drug.id,qty-1)}>−</button>
+                      <input className="qty-val" type="number" min="1" value={qty} onChange={e=>setQ(drug.id,parseInt(e.target.value)||1)}/>
+                      <button className="qty-btn" onClick={()=>setQ(drug.id,qty+1)}>+</button>
+                      <button className="qty-max" onClick={()=>setQ(drug.id,Math.max(mb,owned))}>Max {Math.max(mb,owned)}</button>
+                    </div>
+                    <div className="trade-btns">
+                      <button className="btn btn-buy" style={{flex:1}} disabled={mb<qty} onClick={()=>dispatch({type:"BUY",drugId:drug.id,qty})}>
+                        Buy {qty}<small>−${(buy*qty).toLocaleString()}</small>
+                      </button>
+                      <button className="btn btn-sell" style={{flex:1}} disabled={owned<1} onClick={()=>dispatch({type:"SELL",drugId:drug.id,qty:Math.min(qty,owned)})}>
+                        Sell {Math.min(qty,owned)}<small>+${(sell*Math.min(qty,owned)).toLocaleString()}</small>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── STASH ─────────────────────────────────────────────────────────────────────
+function StashScreen({G,dispatch}) {
+  const cargo=Object.values(G.inventory).reduce((s,v)=>s+v,0);
+  const repBonus=Math.min(0.14,G.rep*0.003);
+  const val=DRUGS.reduce((s,d)=>s+(G.inventory[d.id]||0)*Math.max(1,Math.round((G.prices[d.id]||0)*(1.04+repBonus))),0);
+  const held=DRUGS.filter(d=>G.inventory[d.id]>0);
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <PH tab="stash" icon="bag" title="Your Stash" sub={`${cargo}/${G.maxCarry} · ~$${val.toLocaleString()}`}/>
+      <div className="panel-scroll">
+        {!held.length?(
+          <div style={{fontFamily:"var(--font-ui)",fontWeight:700,fontSize:".85rem",letterSpacing:".1em",textTransform:"uppercase",color:"var(--ink-muted)",padding:"28px",textAlign:"center"}}>Bag Empty — Hit The Market</div>
+        ):(
+          <div className="stash-grid">
+            {held.map(drug=>{
+              const sell=Math.max(1,Math.round((G.prices[drug.id]||0)*(1.04+repBonus)));
+              return (
+                <div key={drug.id} className="stash-card">
+                  <div className="stash-name">{drug.name}</div>
+                  <div className="stash-qty">{G.inventory[drug.id]}</div>
+                  <div className="stash-val">~${(G.inventory[drug.id]*sell).toLocaleString()}</div>
+                  <button className="btn btn-sell" style={{marginTop:4,fontSize:".7rem",padding:"6px 10px"}} onClick={()=>dispatch({type:"SELL",drugId:drug.id,qty:G.inventory[drug.id]})}>
+                    Sell All
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── BANK ──────────────────────────────────────────────────────────────────────
+function BankScreen({G,dispatch}) {
+  const [dep,setDep]=useState("");
+  const [wd,setWd]=useState("");
+  const overdue=G.dre.loan>0&&G.day>=G.dre.deadline;
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <PH tab="bank" icon="bank" title="Cash & Bank" sub="2% daily interest"/>
+      <div className="panel-scroll">
+        <div className="bank-grid">
+          <div className="bank-row">
+            <div className="bank-card" style={{flex:1,borderLeft:"3px solid var(--money)"}}>
+              <div className="bank-label">On Hand</div>
+              <div className="bank-amount" style={{color:"var(--money2)"}}>${G.cash.toLocaleString()}</div>
+              <div className="bank-sub">Street cash · spendable now</div>
+            </div>
+            <div className="bank-card" style={{flex:1,borderLeft:"3px solid var(--gold)"}}>
+              <div className="bank-label">In Bank</div>
+              <div className="bank-amount">${G.bank.toLocaleString()}</div>
+              <div className="bank-sub">+2% per day · safe</div>
+            </div>
+          </div>
+          <div className="bank-card">
+            <div className="bank-label">Deposit</div>
+            <div className="input-row">
+              <input className="game-input" placeholder="Amount..." value={dep} onChange={e=>setDep(e.target.value)} type="number" min="1"/>
+              <button className="btn btn-primary" style={{padding:"6px 14px",flexDirection:"row",fontSize:".78rem"}} onClick={()=>{const a=parseInt(dep)||0;if(a>0&&a<=G.cash){dispatch({type:"DEPOSIT",amount:a});setDep("");}}}>Deposit</button>
+              <button className="btn btn-secondary" style={{padding:"6px 10px",flexDirection:"row",fontSize:".72rem"}} onClick={()=>{if(G.cash>0){dispatch({type:"DEPOSIT",amount:G.cash});setDep("");}}}>All</button>
+            </div>
+          </div>
+          <div className="bank-card">
+            <div className="bank-label">Withdraw</div>
+            <div className="input-row">
+              <input className="game-input" placeholder="Amount..." value={wd} onChange={e=>setWd(e.target.value)} type="number" min="1"/>
+              <button className="btn btn-secondary" style={{padding:"6px 14px",flexDirection:"row",fontSize:".78rem"}} onClick={()=>{const a=parseInt(wd)||0;if(a>0&&a<=G.bank){dispatch({type:"WITHDRAW",amount:a});setWd("");}}}>Withdraw</button>
+            </div>
+          </div>
+          <div className="dre-card">
+            <div className="dre-title">⚠ Dre's Corner</div>
+            {G.dre.loan>0?(
+              <div>
+                <div style={{fontFamily:"var(--font-mono)",fontSize:".82rem",color:"var(--ink)",marginBottom:8}}>Outstanding: <span style={{color:"#e0a030"}}>${G.dre.loan.toLocaleString()}</span> · Due Day {G.dre.deadline}</div>
+                {overdue&&<div style={{fontFamily:"var(--font-ui)",fontSize:".72rem",fontWeight:700,letterSpacing:".08em",color:"var(--red2)",marginBottom:8}}>OVERDUE — Dre is collecting.</div>}
+                <button className="btn btn-danger" disabled={G.cash<G.dre.loan} style={{flexDirection:"row",padding:"8px 18px",fontSize:".78rem"}} onClick={()=>dispatch({type:"REPAY_DRE"})}>Repay ${G.dre.loan.toLocaleString()}</button>
+              </div>
+            ):(
+              <div>
+                <div style={{fontFamily:"var(--font-ui)",fontSize:".78rem",fontWeight:600,color:"var(--ink-muted)",marginBottom:10,letterSpacing:".04em"}}>Borrow $400 · Owe $480 in 5 days · Trust: {G.dre.trust}</div>
+                <button className="btn btn-primary" style={{flexDirection:"row",padding:"8px 18px",fontSize:".78rem"}} onClick={()=>dispatch({type:"TAKE_DRE_LOAN"})}>Take $400 Loan</button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── SHOP ──────────────────────────────────────────────────────────────────────
+function ShopScreen({G,dispatch}) {
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <PH tab="shop" icon="shop" title="Gear Shop" sub="Upgrades persist all run"/>
+      <div className="panel-scroll">
+        <div className="shop-list">
+          {UPGRADES.map(u=>{
+            const owned=G.assets.includes(u.id);
+            const locked=u.req?.rep&&G.rep<u.req.rep;
+            return (
+              <div key={u.id} className={`shop-item${owned?" owned":""}${locked?" locked":""}`}>
+                <div style={{flex:1}}>
+                  <div className="shop-name">{u.name}</div>
+                  <div className="shop-desc">{u.desc}</div>
+                  {locked&&<div style={{fontSize:".62rem",fontWeight:700,letterSpacing:".08em",color:"var(--red2)",marginTop:3}}>REQ REP {u.req.rep}</div>}
+                </div>
+                <div style={{textAlign:"right",flexShrink:0}}>
+                  {owned?(
+                    <div style={{fontFamily:"var(--font-head)",fontSize:".82rem",letterSpacing:".1em",color:"var(--money2)"}}>✓ OWNED</div>
+                  ):(
+                    <>
+                      <div className="shop-cost">${u.cost.toLocaleString()}</div>
+                      <button className="btn btn-primary" style={{marginTop:6,padding:"5px 14px",fontSize:".72rem",flexDirection:"row"}} disabled={G.cash<u.cost||locked} onClick={()=>dispatch({type:"BUY_UPGRADE",id:u.id})}>Buy</button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── HOSPITAL ──────────────────────────────────────────────────────────────────
+function HospitalScreen({G,dispatch}) {
+  const healthy=G.health>65;
+  const heals=[
+    {name:"First Aid Kit",   cost:60,  amt:25,  desc:"Basic patch — quick fix"},
+    {name:"Clinic Visit",    cost:160, amt:55,  desc:"Proper treatment"},
+    {name:"Doctor On Call",  cost:380, amt:100, desc:"Full recovery · no questions"},
+  ];
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <PH tab="hospital" icon="hosp" title="Clinic" sub="Stay alive, stay in the game"/>
+      <div className="panel-scroll">
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div>
+            <div style={{fontFamily:"var(--font-ui)",fontSize:".62rem",fontWeight:700,letterSpacing:".14em",textTransform:"uppercase",color:"var(--ink-muted)",marginBottom:6}}>Current Health</div>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div className="hp-bar-bg" style={{flex:1}}>
+                <div className={`hp-bar ${healthy?"healthy":"hurt"}`} style={{width:`${G.health}%`}}/>
+              </div>
+              <span style={{fontFamily:"var(--font-mono)",fontSize:"1.1rem",color:healthy?"var(--money2)":"var(--red2)",minWidth:60}}>{G.health} / 100</span>
+            </div>
+          </div>
+          {heals.map(h=>{
+            const gain=Math.min(h.amt,100-G.health);
+            return (
+              <div key={h.name} className="heal-option">
+                <div style={{flex:1}}>
+                  <div className="heal-name">{h.name}</div>
+                  <div className="heal-desc">{h.desc} · +{gain} HP → {Math.min(100,G.health+h.amt)}</div>
+                </div>
+                <div style={{textAlign:"right",flexShrink:0}}>
+                  <div style={{fontFamily:"var(--font-mono)",fontSize:"1rem",color:"var(--gold2)"}}>${h.cost}</div>
+                  <button className="btn btn-teal" style={{marginTop:6,padding:"5px 14px",fontSize:".72rem",flexDirection:"row"}} disabled={G.cash<h.cost||G.health===100} onClick={()=>dispatch({type:"HEAL",amount:h.amt,cost:h.cost})}>Heal Up</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── STATS ─────────────────────────────────────────────────────────────────────
+function StatsScreen({G}) {
+  const cargo=Object.values(G.inventory).reduce((s,v)=>s+v,0);
+  const rank=G.rep>=60?"Boss":G.rep>=35?"Shot Caller":G.rep>=18?"Runner":"Hustler";
+  const area=AREAS.find(a=>a.id===G.locationId);
+  const netWorth=G.cash+G.bank+DRUGS.reduce((s,d)=>s+(G.inventory[d.id]||0)*(G.prices[d.id]||0),0);
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <PH tab="stats" icon="stats" title="Player Stats" sub={`Rank: ${rank}`}/>
+      <div className="panel-scroll">
+        <div className="stats-grid">
+          <div className="stat-card"><div className="stat-label">Cash on Hand</div><div className="stat-val" style={{color:"var(--money2)",fontFamily:"var(--font-mono)",fontSize:"1.2rem"}}>${G.cash.toLocaleString()}</div></div>
+          <div className="stat-card"><div className="stat-label">Bank Balance</div><div className="stat-val" style={{color:"var(--gold2)",fontFamily:"var(--font-mono)",fontSize:"1.2rem"}}>${G.bank.toLocaleString()}</div></div>
+          <div className="stat-card"><div className="stat-label">Health</div><div className="stat-val" style={{color:G.health>65?"var(--money2)":"var(--red2)"}}>{G.health}<span style={{fontSize:".8rem",color:"var(--ink-muted)"}}>/100</span></div></div>
+          <div className="stat-card"><div className="stat-label">Heat Level</div><div className="stat-val" style={{color:G.heat>=7?"var(--red2)":G.heat>=4?"#e0a030":"var(--ink)"}}>{G.heat}<span style={{display:"block",fontSize:".65rem",color:"var(--ink-muted)",marginTop:2,fontFamily:"var(--font-mono)"}}>{"■".repeat(Math.min(G.heat,10))}{"□".repeat(Math.max(0,10-Math.min(G.heat,10)))}</span></div></div>
+          <div className="stat-card"><div className="stat-label">Reputation</div><div className="stat-val">{G.rep}<div style={{marginTop:5}}><span className="rank-badge">{rank}</span></div></div></div>
+          <div className="stat-card"><div className="stat-label">Day / Slot</div><div className="stat-val">{G.day}<span style={{fontSize:".7rem",color:"var(--ink-muted)"}}>/30</span><div style={{fontSize:".7rem",color:"var(--ink-muted)",marginTop:2,fontFamily:"var(--font-ui)",fontWeight:700,letterSpacing:".08em"}}>{SLOTS[G.tick-1]}</div></div></div>
+          <div className="stat-card"><div className="stat-label">Location</div><div className="stat-val" style={{fontSize:"1rem"}}>{area?.name}</div><div style={{fontSize:".62rem",color:"var(--ink-muted)",marginTop:4,fontFamily:"var(--font-ui)",fontWeight:700,letterSpacing:".08em"}}>RISK {area?.risk}/4 · PD {area?.police}/3</div></div>
+          <div className="stat-card"><div className="stat-label">Net Worth</div><div className="stat-val" style={{color:"var(--gold2)",fontFamily:"var(--font-mono)",fontSize:"1.1rem"}}>${netWorth.toLocaleString()}</div><div style={{fontSize:".62rem",color:"var(--ink-muted)",marginTop:4,fontFamily:"var(--font-ui)",fontWeight:700,letterSpacing:".08em"}}>{G.assets.length} UPGRADES ACTIVE</div></div>
+        </div>
+        {G.dre.loan>0&&(
+          <div style={{marginTop:10,padding:"10px 12px",background:"rgba(192,128,32,.08)",border:"1px solid #604010",borderLeft:"3px solid var(--gold)",borderRadius:"var(--r)",fontFamily:"var(--font-mono)",fontSize:".78rem",color:"#d09030"}}>
+            DRE LOAN: ${G.dre.loan.toLocaleString()} · DUE DAY {G.dre.deadline}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── TRAVEL MODAL ──────────────────────────────────────────────────────────────
+function TravelModal({G,onTravel,onClose}) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <PH tab="travel" icon="travel" title="Travel" sub="Costs 1 time slot"/>
+        <div className="modal-body">
+          <div className="area-grid">
+            {AREAS.map(area=>{
+              const cur=area.id===G.locationId;
+              return (
+                <div key={area.id} className={`area-card${cur?" current":""}`} onClick={()=>!cur&&onTravel(area.id)}>
+                  <div className="area-name">{area.name}{cur&&<span style={{color:"var(--gold)",marginLeft:8,fontSize:".65rem",fontFamily:"var(--font-ui)",fontWeight:700,letterSpacing:".1em"}}>★ HERE</span>}</div>
+                  <div className="area-hint">{area.hint}</div>
+                  <div className="area-risk">
+                    <span style={{fontFamily:"var(--font-ui)",fontSize:".58rem",fontWeight:700,letterSpacing:".12em",color:"var(--ink-muted)",marginRight:4}}>RISK</span>
+                    {Array.from({length:4},(_,i)=><div key={i} className={`risk-dot ${i<area.risk?"r":"e"}`}/>)}
+                    <span style={{fontFamily:"var(--font-ui)",fontSize:".58rem",fontWeight:700,letterSpacing:".12em",color:"var(--ink-muted)",marginLeft:6,marginRight:4}}>PD</span>
+                    {Array.from({length:3},(_,i)=><div key={i} className={`risk-dot ${i<area.police?"p":"e"}`}/>)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── CONFIRM MODAL ─────────────────────────────────────────────────────────────
+function ConfirmModal({title,msg,onConfirm,onCancel}) {
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+        <div className="confirm-body">
+          <div className="confirm-title">{title}</div>
+          <div className="confirm-msg">{msg}</div>
+          <div className="confirm-btns">
+            <button className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+            <button className="btn btn-primary" onClick={onConfirm}>Confirm</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── EVENT MODAL ───────────────────────────────────────────────────────────────
+function EventModal({ev,dispatch}) {
+  return (
+    <div className="modal-backdrop">
+      <div className="modal event-modal" onClick={e=>e.stopPropagation()}>
+        <PH tab="event" icon="warn" title="Street Event" sub="Choose your move"/>
+        <div className="event-body">
+          <div className="event-title">{ev.title}</div>
+          <div className="event-desc">{ev.desc}</div>
+          <div className="event-choices">
+            {ev.choices.map((c,i)=>(
+              <button key={i} className="event-choice" onClick={()=>dispatch({type:"RESOLVE_EVENT",choiceIdx:i})}>
+                → {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── COMBAT MODAL ──────────────────────────────────────────────────────────────
+function CombatModal({G,dispatch}) {
+  const {enemy,log}=G.combatState;
+  const hasBurner=G.assets.includes("burner_pack");
+  const hpPct=Math.max(0,enemy.curHp/enemy.hp*100);
+  return (
+    <div className="modal-backdrop">
+      <div className="modal event-modal" onClick={e=>e.stopPropagation()}>
+        <PH tab="combat" icon="skull" title="Combat" sub={`vs. ${enemy.name}`}/>
+        <div className="event-body">
+          <div className="combat-hp">
+            <div className="combat-hp-box">
+              <div className="combat-hp-label">You</div>
+              <div className="combat-hp-val" style={{color:G.health<40?"var(--red2)":"var(--money2)"}}>{G.health} HP</div>
+            </div>
+            <div className="combat-hp-box">
+              <div className="combat-hp-label">{enemy.name}</div>
+              <div className="combat-hp-val" style={{color:"var(--red2)"}}>{Math.max(0,enemy.curHp)} HP</div>
+              <div style={{marginTop:4,height:4,background:"var(--plate)",borderRadius:1,overflow:"hidden"}}>
+                <div style={{height:"100%",width:`${hpPct}%`,background:"var(--red)",transition:"width .2s"}}/>
+              </div>
+            </div>
+          </div>
+          <div className="combat-log">
+            {log.map((l,i)=><div key={i} style={{color:l.includes("You hit")||l.includes("Drew")||l.includes("Took down")||l.includes("Dropped")?"var(--money2)":l.includes("hits you")||l.includes("Failed")?"var(--red2)":"var(--ink-muted)"}}>{l}</div>)}
+          </div>
+          <div className="combat-actions">
+            <button className="btn btn-danger" style={{flexDirection:"row"}} onClick={()=>dispatch({type:"COMBAT_ACTION",act:"fight"})}>Fight</button>
+            <button className="btn btn-secondary" style={{flexDirection:"row"}} onClick={()=>dispatch({type:"COMBAT_ACTION",act:"flee"})}>Flee</button>
+            <button className="btn btn-primary" style={{flexDirection:"row",fontSize:".72rem"}} disabled={G.cash<enemy.bribeCost} onClick={()=>dispatch({type:"COMBAT_ACTION",act:"bribe"})}>Bribe ${enemy.bribeCost}</button>
+            {hasBurner&&<button className="btn btn-teal" style={{flexDirection:"row"}} onClick={()=>dispatch({type:"COMBAT_ACTION",act:"draw"})}>Draw 🔫</button>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── GAME OVER ─────────────────────────────────────────────────────────────────
+function GameOverModal({G,dispatch}) {
+  const netWorth=G.cash+G.bank;
+  const rank=G.rep>=60?"Boss":G.rep>=35?"Shot Caller":G.rep>=18?"Runner":"Hustler";
+  const won=G.day>30&&G.health>0;
+  return (
+    <div className="modal-backdrop">
+      <div className="modal confirm-modal">
+        <div className="gameover-body">
+          <div className="gameover-title">{won?"Run Complete":"Game Over"}</div>
+          <div className="gameover-sub">
+            {won?`You survived 30 days on the Anchorage streets.`:`You got taken out on Day ${G.day}.`}<br/>
+            Final Cash: ${netWorth.toLocaleString()} · Rep: {G.rep} · Rank: {rank}
+          </div>
+          <button className="btn btn-primary" style={{width:"100%",padding:"14px",flexDirection:"row",fontSize:".88rem"}} onClick={()=>dispatch({type:"NEW_GAME"})}>New Run</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── APP ───────────────────────────────────────────────────────────────────────
+const TABS=[
+  {id:"market",   label:"Market", icon:"mkt"},
+  {id:"stash",    label:"Stash",  icon:"bag"},
+  {id:"bank",     label:"Bank",   icon:"bank"},
+  {id:"shop",     label:"Shop",   icon:"shop"},
+  {id:"hospital", label:"Clinic", icon:"hosp"},
+  {id:"stats",    label:"Stats",  icon:"stats"},
+];
+
+function App() {
+  const saved=()=>{try{const s=localStorage.getItem("907g3");return s?JSON.parse(s):null;}catch{return null;}};
+  const [G,dispatch]=useReducer(reducer,null,()=>saved()||initGame());
+  const [tab,setTab]=useState("market");
+  const [travel,setTravel]=useState(false);
+  const [confirm,setConfirm]=useState(null);
+
+  useEffect(()=>{try{localStorage.setItem("907g3",JSON.stringify(G));}catch{};},[G]);
+
+  const area=AREAS.find(a=>a.id===G.locationId);
+  const cargo=Object.values(G.inventory).reduce((s,v)=>s+v,0);
+  const heatHi=G.heat>=7,heatMid=G.heat>=4;
+  const hpLow=G.health<40;
+
+  return (
+    <div className="app">
+      {/* HUD */}
+      <header className="panel hud">
+        <div className="logo">907 <em>HUSTLE</em><span className="logo-drip">Anchorage Run</span></div>
+        <div className="chips">
+          <Chip icon="cash" label="Cash"  value={`$${G.cash.toLocaleString()}`}     cls="chip-cash"/>
+          {G.bank>0&&<Chip icon="bank" label="Bank"  value={`$${G.bank.toLocaleString()}`} cls="chip-bank"/>}
+          <Chip icon="bag"  label="Bag"   value={`${cargo}/${G.maxCarry}`}/>
+          <Chip icon="day"  label="Day"   value={`${G.day}/30 · ${SLOTS[G.tick-1]}`}/>
+          <Chip icon="loc"  label="Area"  value={area?.name}/>
+          <Chip icon="heat" label="Heat"  value={`${G.heat}`} cls={heatHi?"chip-heat chip-heat-hi":heatMid?"chip-heat":""}/>
+          <Chip icon="hp"   label="HP"    value={`${G.health}`} cls={hpLow?"chip-hp chip-hp-lo":"chip-hp"}/>
+          <Chip icon="rep"  label="Rep"   value={`${G.rep}`} cls="chip-rep"/>
+          {G.dre.loan>0&&<Chip icon="warn" label="Dre" value={`$${G.dre.loan}`} cls="chip-warn"/>}
+        </div>
+      </header>
+
+      {/* NAV */}
+      <nav className="nav">
+        {TABS.map(t=>(
+          <button key={t.id} className={`tab${tab===t.id?" active":""}`} onClick={()=>setTab(t.id)}>
+            <Ic n={t.icon} sz={14}/>{t.label}
+          </button>
+        ))}
+      </nav>
+
+      {/* MAIN */}
+      <main className="main-panel panel">
+        {tab==="market"   &&<MarketScreen   G={G} dispatch={dispatch}/>}
+        {tab==="stash"    &&<StashScreen    G={G} dispatch={dispatch}/>}
+        {tab==="bank"     &&<BankScreen     G={G} dispatch={dispatch}/>}
+        {tab==="shop"     &&<ShopScreen     G={G} dispatch={dispatch}/>}
+        {tab==="hospital" &&<HospitalScreen G={G} dispatch={dispatch}/>}
+        {tab==="stats"    &&<StatsScreen    G={G}/>}
+      </main>
+
+      {/* FEED */}
+      <section className="panel feed-panel">
+        <div className="feed-ph">
+          <Ic n="stats" sz={12} col="var(--ink-muted)"/>
+          <span className="feed-ph-title">Street Feed</span>
+          <button className="btn btn-ghost" style={{marginLeft:"auto"}} onClick={()=>dispatch({type:"CLEAR_FEED"})}>Clear</button>
+        </div>
+        <div className="feed-body">
+          {G.feed.map((e,i)=>(
+            <div key={i} className={`feed-entry${e.tone==="good"?" feed-good":e.tone==="bad"?" feed-bad":e.tone==="warn"?" feed-warn":""}`}>
+              <span className="feed-stamp">{e.stamp}</span>{e.text}
+            </div>
+          ))}
+          {G.feed.length===0&&<div style={{color:"var(--ink-muted)",fontSize:".7rem",padding:"4px 0",fontFamily:"var(--font-ui)",fontWeight:700,letterSpacing:".08em",textTransform:"uppercase"}}>No activity yet.</div>}
+        </div>
+      </section>
+
+      {/* ACTION BAR */}
+      <div className="action-bar">
+        <button className="btn btn-secondary" onClick={()=>setTravel(true)}>
+          <Ic n="travel" sz={13}/>Travel<small>Leave {area?.name}</small>
+        </button>
+        <button className="btn btn-primary" onClick={()=>setConfirm({title:"Lay Low",msg:`Advance time to ${SLOTS[G.tick>=4?0:G.tick]}. Prices shift, events may trigger.`,action:()=>dispatch({type:"LAY_LOW"})})}>
+          Lay Low<small>→ {SLOTS[G.tick>=4?0:G.tick]}</small>
+        </button>
+        <button className="btn btn-danger" style={{flex:.65}} onClick={()=>setConfirm({title:"Rob Someone",msg:"High risk. You might score cash, take damage, or get jumped.",action:()=>dispatch({type:"ROB"})})}>
+          Rob<small>High risk</small>
+        </button>
+      </div>
+
+      {/* MODALS */}
+      {travel&&<TravelModal G={G} onTravel={(id)=>{dispatch({type:"TRAVEL",areaId:id});setTravel(false);}} onClose={()=>setTravel(false)}/>}
+      {confirm&&<ConfirmModal title={confirm.title} msg={confirm.msg} onConfirm={()=>{confirm.action();setConfirm(null);}} onCancel={()=>setConfirm(null)}/>}
+      {G.pendingEvent&&!G.gameOver&&!G.combatState&&<EventModal ev={G.pendingEvent} dispatch={dispatch}/>}
+      {G.combatState&&!G.gameOver&&<CombatModal G={G} dispatch={dispatch}/>}
+      {G.gameOver&&<GameOverModal G={G} dispatch={dispatch}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
 </html>

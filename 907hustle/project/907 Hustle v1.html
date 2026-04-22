@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>907 Hustle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+:root {
+  --bg: #0f0d0b;
+  --asphalt: #131008;
+  --surface: #1e1812;
+  --surface-2: #2a2018;
+  --surface-3: #342820;
+  --plate: #16120e;
+  --border: #4a3c2c;
+  --border-soft: #352a1e;
+  --edge: #7a6040;
+  --ink: #f0e4cc;
+  --ink-dim: #b0987c;
+  --ink-muted: #7a6850;
+  --money: #6aaa5e;
+  --money-deep: #2a5e30;
+  --spend: #c05548;
+  --heat: #b03528;
+  --gold: #c0982c;
+  --gold-light: #d4b050;
+  --teal: #507878;
+  --warn: #b07820;
+  --blue: #486080;
+  --font-head: "Anton","Impact","Arial Narrow",sans-serif;
+  --font-ui: "Barlow Condensed","Segoe UI",Tahoma,sans-serif;
+  --font-body: "Inter",system-ui,sans-serif;
+  --r: 6px;
+  --r-sm: 3px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;background:var(--bg);}
+body{
+  font-family:var(--font-body);
+  color:var(--ink);
+  background:
+    repeating-linear-gradient(170deg,rgba(255,255,255,0.012) 0 1px,transparent 1px 5px),
+    radial-gradient(ellipse at 15% 10%,rgba(192,152,44,0.07) 0%,transparent 50%),
+    radial-gradient(ellipse at 85% 85%,rgba(80,120,120,0.06) 0%,transparent 45%),
+    var(--bg);
+  overflow:hidden;
+}
+/* LAYOUT */
+#root{height:100vh;display:flex;flex-direction:column;}
+.app{height:100vh;max-width:1280px;margin:0 auto;width:100%;display:grid;grid-template-rows:auto auto minmax(0,1fr) 160px 52px;gap:6px;padding:8px;}
+
+/* PANEL */
+.panel{
+  background:linear-gradient(180deg,rgba(255,255,255,0.025) 0%,transparent 30%),var(--surface);
+  border:1px solid var(--border);border-radius:var(--r);
+  position:relative;overflow:hidden;
+}
+.panel::before{
+  content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;
+  background:repeating-linear-gradient(173deg,rgba(255,255,255,0.018) 0 1px,transparent 1px 5px);
+  opacity:.4;
+}
+
+/* HUD */
+.hud{display:flex;align-items:center;gap:8px;padding:8px 12px;border-top:3px solid var(--gold);flex-wrap:wrap;}
+.logo{font-family:var(--font-head);font-size:1.3rem;letter-spacing:.12em;color:var(--ink);white-space:nowrap;margin-right:4px;}
+.logo span{color:var(--gold);}
+.chips{display:flex;gap:5px;flex-wrap:wrap;flex:1;}
+.chip{
+  display:flex;align-items:center;gap:5px;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);
+  padding:4px 8px;font-family:var(--font-ui);font-size:.78rem;font-weight:600;letter-spacing:.04em;
+  white-space:nowrap;user-select:none;
+}
+.chip svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;}
+.chip-k{color:var(--ink-muted);font-size:.68rem;font-weight:500;text-transform:uppercase;}
+.chip-v{color:var(--ink);}
+.chip-cash{border-color:var(--money-deep);background:rgba(42,94,48,.25);}
+.chip-cash .chip-icon{color:var(--money);}
+.chip-cash .chip-v{color:var(--money);}
+.chip-heat{border-color:var(--heat);}
+.chip-heat .chip-icon{color:var(--spend);}
+.chip-heat .chip-v{color:var(--spend);}
+.chip-heat-high{background:rgba(176,53,40,.2);border-color:var(--heat);}
+.chip-hp{border-color:#5a3030;}
+.chip-hp .chip-icon,.chip-hp .chip-v{color:#d06060;}
+.chip-hp-low{background:rgba(176,53,40,.2);}
+.chip-bank .chip-v{color:var(--gold);}
+.chip-warn{background:rgba(176,120,32,.2);border-color:var(--warn);}
+.chip-warn .chip-v{color:#d09840;}
+
+/* NAV */
+.nav{display:flex;gap:4px;padding:0 2px;}
+.tab{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r) var(--r) 0 0;
+  padding:8px 6px 7px;cursor:pointer;font-family:var(--font-ui);font-weight:700;
+  font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim);
+  transition:background .12s,color .12s,border-color .12s;border-bottom:none;
+}
+.tab svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.tab:hover{background:var(--surface-3);color:var(--ink);}
+.tab.active{background:var(--surface-3);color:var(--gold);border-color:var(--gold);border-bottom:none;}
+.tab.active-danger{color:var(--spend);border-color:var(--spend);}
+
+/* PANEL HEADER */
+.ph{
+  display:flex;align-items:center;gap:10px;padding:10px 14px;
+  background:linear-gradient(90deg,var(--surface-3),var(--surface-2));
+  border-bottom:2px solid var(--border);position:relative;
+}
+.ph::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gold);border-radius:var(--r) 0 0 var(--r);}
+.ph-icon{width:28px;height:28px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.ph-icon svg{width:16px;height:16px;fill:none;stroke:var(--gold);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+.ph h2{font-family:var(--font-ui);font-size:1rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);}
+.ph-sub{font-family:var(--font-ui);font-size:.72rem;color:var(--ink-muted);margin-left:auto;}
+
+/* MAIN PANEL */
+.main-panel{overflow-y:auto;display:flex;flex-direction:column;}
+.main-panel::-webkit-scrollbar{width:4px;}
+.main-panel::-webkit-scrollbar-track{background:var(--surface);}
+.main-panel::-webkit-scrollbar-thumb{background:var(--border);}
+.panel-body{padding:10px 12px;flex:1;}
+
+/* MARKET */
+.market-list{display:flex;flex-direction:column;gap:3px;}
+.drug-row{
+  background:var(--surface-2);border:1px solid var(--border-soft);border-radius:var(--r-sm);
+  transition:border-color .12s,background .12s;cursor:pointer;
+}
+.drug-row:hover{border-color:var(--border);}
+.drug-row.expanded{border-color:var(--gold);background:var(--surface-3);}
+.drug-row.hot{border-left:3px solid var(--money);}
+.drug-row-main{display:grid;grid-template-columns:1fr 110px 60px 48px 80px;align-items:center;gap:8px;padding:8px 10px;}
+.drug-name{font-family:var(--font-ui);font-weight:700;font-size:.88rem;letter-spacing:.03em;color:var(--ink);}
+.drug-cat{font-size:.65rem;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.06em;}
+.tag-hot{display:inline-block;background:rgba(106,170,94,.2);border:1px solid var(--money-deep);border-radius:2px;font-size:.6rem;padding:1px 5px;color:var(--money);margin-left:5px;vertical-align:middle;font-family:var(--font-ui);font-weight:700;letter-spacing:.06em;}
+.drug-price{font-family:var(--font-ui);font-weight:700;font-size:.9rem;color:var(--ink);}
+.drug-sell{font-size:.65rem;color:var(--money);font-family:var(--font-ui);}
+.trend{font-family:var(--font-ui);font-weight:700;font-size:.8rem;text-align:center;}
+.trend-up{color:var(--money);}
+.trend-down{color:var(--spend);}
+.trend-flat{color:var(--ink-muted);}
+.owned-badge{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);
+  font-family:var(--font-ui);font-size:.75rem;font-weight:700;color:var(--ink-dim);
+  padding:2px 6px;text-align:center;
+}
+.owned-badge.has{background:rgba(42,94,48,.3);border-color:var(--money-deep);color:var(--money);}
+.trade-quick{
+  background:var(--surface-3);border:1px solid var(--border);border-radius:var(--r-sm);
+  font-family:var(--font-ui);font-size:.75rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-dim);padding:5px 10px;cursor:pointer;transition:all .12s;
+}
+.trade-quick:hover{background:var(--gold);border-color:var(--gold-light);color:#000;}
+
+/* EXPAND PANEL */
+.drug-expand{padding:10px 12px 12px;border-top:1px solid var(--border-soft);}
+.expand-label{font-family:var(--font-ui);font-size:.68rem;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-muted);margin-bottom:8px;}
+.qty-row{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.qty-btn{
+  width:34px;height:34px;background:var(--surface-3);border:1px solid var(--border);border-radius:var(--r-sm);
+  font-size:1.1rem;color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-ui);font-weight:700;transition:all .1s;
+}
+.qty-btn:hover{background:var(--border);color:var(--ink);}
+.qty-val{
+  width:52px;height:34px;background:var(--asphalt);border:1px solid var(--border);border-radius:var(--r-sm);
+  font-family:var(--font-ui);font-weight:700;font-size:.95rem;color:var(--ink);text-align:center;
+}
+.qty-max{
+  background:var(--surface-3);border:1px solid var(--border);border-radius:var(--r-sm);
+  font-family:var(--font-ui);font-size:.7rem;font-weight:700;letter-spacing:.05em;color:var(--ink-dim);
+  padding:0 10px;height:34px;cursor:pointer;transition:all .12s;
+}
+.qty-max:hover{border-color:var(--edge);color:var(--ink);}
+.trade-btns{display:flex;gap:8px;}
+
+/* BUTTONS */
+.btn{
+  font-family:var(--font-ui);font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  border-radius:var(--r-sm);cursor:pointer;transition:all .12s;border:none;display:flex;flex-direction:column;align-items:center;
+  padding:8px 18px;font-size:.82rem;
+}
+.btn small{font-size:.62rem;font-weight:500;letter-spacing:.04em;opacity:.75;margin-top:1px;}
+.btn:disabled{opacity:.38;cursor:not-allowed;}
+.btn-buy{background:linear-gradient(180deg,#3a6e30,#2a5020);border:1px solid #4a8840;color:#c0f0b0;}
+.btn-buy:hover:not(:disabled){background:linear-gradient(180deg,#4a8840,#3a6e30);}
+.btn-sell{background:linear-gradient(180deg,#7a2820,#5a1c18);border:1px solid #a03830;color:#ffc0b0;}
+.btn-sell:hover:not(:disabled){background:linear-gradient(180deg,#a03830,#7a2820);}
+.btn-primary{background:linear-gradient(180deg,#8a6e24,#5e4a18);border:1px solid var(--gold);color:var(--ink);}
+.btn-primary:hover:not(:disabled){background:linear-gradient(180deg,#a07e2c,#7a6020);}
+.btn-secondary{background:var(--surface-3);border:1px solid var(--border);color:var(--ink-dim);}
+.btn-secondary:hover:not(:disabled){border-color:var(--edge);color:var(--ink);}
+.btn-danger{background:linear-gradient(180deg,#7a2820,#5a1c18);border:1px solid #a03830;color:#ffc0b0;}
+.btn-ghost{background:transparent;border:1px solid var(--border-soft);color:var(--ink-muted);font-size:.72rem;padding:5px 10px;}
+.btn-ghost:hover{border-color:var(--border);color:var(--ink);}
+.btn-teal{background:linear-gradient(180deg,#3a6060,#2a4848);border:1px solid var(--teal);color:#a0d0d0;}
+.btn-teal:hover:not(:disabled){background:linear-gradient(180deg,#4a7878,#3a6060);}
+
+/* STREET FEED */
+.feed-panel{overflow:hidden;display:flex;flex-direction:column;}
+.feed-body{flex:1;overflow-y:auto;padding:6px 10px;display:flex;flex-direction:column;gap:3px;}
+.feed-body::-webkit-scrollbar{width:3px;}
+.feed-body::-webkit-scrollbar-thumb{background:var(--border-soft);}
+.feed-entry{
+  font-size:.72rem;font-family:var(--font-ui);color:var(--ink-dim);
+  border-left:2px solid var(--border-soft);padding:2px 7px;
+}
+.feed-good{border-color:var(--money-deep);color:var(--money);}
+.feed-bad{border-color:var(--heat);color:#d08080;}
+.feed-stamp{font-size:.6rem;color:var(--ink-muted);margin-right:5px;}
+
+/* ACTION BAR */
+.action-bar{display:flex;gap:8px;}
+.action-bar .btn{flex:1;padding:10px 12px;}
+
+/* STASH */
+.stash-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;}
+.stash-card{background:var(--surface-2);border:1px solid var(--border-soft);border-radius:var(--r);padding:10px;display:flex;flex-direction:column;gap:6px;}
+.stash-card.empty{opacity:.35;}
+.stash-name{font-family:var(--font-ui);font-size:.82rem;font-weight:700;letter-spacing:.04em;}
+.stash-qty{font-family:var(--font-head);font-size:1.5rem;color:var(--money);line-height:1;}
+.stash-val{font-size:.68rem;color:var(--ink-muted);}
+
+/* BANK */
+.bank-section{display:flex;flex-direction:column;gap:14px;}
+.bank-row{display:flex;gap:12px;align-items:stretch;}
+.bank-card{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;flex:1;}
+.bank-label{font-family:var(--font-ui);font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-muted);margin-bottom:4px;}
+.bank-amount{font-family:var(--font-head);font-size:1.7rem;color:var(--gold);line-height:1;}
+.bank-sub{font-size:.68rem;color:var(--ink-muted);margin-top:3px;}
+.input-row{display:flex;gap:8px;align-items:center;margin-top:10px;}
+.game-input{
+  flex:1;background:var(--asphalt);border:1px solid var(--border);border-radius:var(--r-sm);
+  color:var(--ink);font-family:var(--font-ui);font-size:.88rem;font-weight:600;padding:7px 10px;
+}
+.game-input:focus{outline:none;border-color:var(--gold);}
+.dre-card{background:linear-gradient(135deg,rgba(176,120,32,.12),rgba(26,20,12,.8));border:1px solid var(--warn);border-radius:var(--r);padding:14px 16px;}
+.dre-title{font-family:var(--font-ui);font-weight:700;font-size:.9rem;letter-spacing:.08em;text-transform:uppercase;color:#d09840;margin-bottom:8px;}
+
+/* SHOP */
+.shop-list{display:flex;flex-direction:column;gap:8px;}
+.shop-item{background:var(--surface-2);border:1px solid var(--border-soft);border-radius:var(--r);padding:12px 14px;display:flex;align-items:center;gap:12px;}
+.shop-item.owned{border-color:var(--money-deep);background:rgba(42,94,48,.12);}
+.shop-item.locked{opacity:.5;}
+.shop-info{flex:1;}
+.shop-name{font-family:var(--font-ui);font-weight:700;font-size:.9rem;}
+.shop-desc{font-size:.7rem;color:var(--ink-muted);margin-top:3px;}
+.shop-cost{font-family:var(--font-head);font-size:1.1rem;color:var(--gold);}
+
+/* HOSPITAL */
+.hospital-section{display:flex;flex-direction:column;gap:12px;}
+.hp-bar-bg{background:var(--asphalt);border:1px solid var(--border);border-radius:100px;height:14px;overflow:hidden;}
+.hp-bar{height:100%;border-radius:100px;transition:width .4s;background:linear-gradient(90deg,#c04040,#e06060);}
+.hp-bar.healthy{background:linear-gradient(90deg,#3a8030,#6aaa5e);}
+.heal-option{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;display:flex;align-items:center;gap:12px;}
+.heal-info{flex:1;}
+.heal-name{font-family:var(--font-ui);font-weight:700;font-size:.9rem;}
+.heal-desc{font-size:.7rem;color:var(--ink-muted);margin-top:2px;}
+
+/* STATS */
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.stat-card{background:var(--surface-2);border:1px solid var(--border-soft);border-radius:var(--r);padding:12px 14px;}
+.stat-label{font-family:var(--font-ui);font-size:.68rem;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-muted);margin-bottom:4px;}
+.stat-val{font-family:var(--font-head);font-size:1.5rem;color:var(--ink);line-height:1;}
+.stat-sub{font-size:.68rem;color:var(--ink-muted);margin-top:4px;}
+.rank-badge{display:inline-block;background:var(--gold);color:#1a1000;font-family:var(--font-ui);font-weight:700;font-size:.72rem;letter-spacing:.08em;padding:3px 10px;border-radius:2px;text-transform:uppercase;}
+
+/* TRAVEL MODAL */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:100;}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);width:min(600px,96vw);max-height:88vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.7);}
+.modal-body{overflow-y:auto;padding:14px;}
+.modal-body::-webkit-scrollbar{width:4px;}
+.modal-body::-webkit-scrollbar-thumb{background:var(--border);}
+.area-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.area-card{
+  background:var(--surface-2);border:2px solid var(--border-soft);border-radius:var(--r);
+  padding:12px 14px;cursor:pointer;transition:all .12s;
+}
+.area-card:hover{border-color:var(--edge);background:var(--surface-3);}
+.area-card.current{border-color:var(--gold);background:rgba(192,152,44,.08);}
+.area-name{font-family:var(--font-ui);font-weight:700;font-size:.9rem;letter-spacing:.04em;}
+.area-hint{font-size:.68rem;color:var(--ink-muted);margin-top:3px;}
+.area-risk{display:flex;gap:4px;margin-top:8px;}
+.risk-dot{width:10px;height:10px;border-radius:50%;}
+.risk-dot.filled{background:var(--spend);}
+.risk-dot.empty{background:var(--border);}
+.risk-dot.police{background:var(--blue);}
+
+/* CONFIRM MODAL */
+.confirm-modal{width:min(420px,92vw);}
+.confirm-body{padding:24px;text-align:center;}
+.confirm-title{font-family:var(--font-ui);font-weight:700;font-size:1rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);margin-bottom:12px;}
+.confirm-msg{font-size:.85rem;color:var(--ink-dim);line-height:1.5;margin-bottom:20px;}
+.confirm-btns{display:flex;gap:10px;}
+.confirm-btns .btn{flex:1;padding:12px;}
+
+/* EVENT FLASH */
+.event-overlay{position:fixed;inset:0;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;z-index:200;}
+.event-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);width:min(460px,92vw);padding:28px 24px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.8);}
+.event-tag{font-family:var(--font-ui);font-size:.68rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-muted);margin-bottom:12px;}
+.event-title{font-family:var(--font-head);font-size:1.6rem;letter-spacing:.06em;margin-bottom:10px;}
+.event-title.bad{color:var(--spend);}
+.event-title.good{color:var(--money);}
+.event-desc{font-size:.85rem;color:var(--ink-dim);line-height:1.6;margin-bottom:20px;}
+
+/* ANIMATIONS */
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.drug-expand{animation:fadeIn .12s ease}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.pulsing{animation:pulse .8s ease infinite}
+@keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+.modal,.event-box{animation:slideUp .2s ease}
+@keyframes flash-good{0%,100%{background:var(--surface-2)}50%{background:rgba(42,94,48,.4)}}
+@keyframes flash-bad{0%,100%{background:var(--surface-2)}50%{background:rgba(176,53,40,.25)}}
+.flash-good{animation:flash-good .4s ease}
+.flash-bad{animation:flash-bad .4s ease}
+
+/* SCROLLBAR */
+.main-panel{scrollbar-gutter:stable;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ── GAME DATA ────────────────────────────────────────────────────────────────
+const DRUGS = [
+  { id:"weed",     name:"Weed",              min:18,  max:85,  vol:.22, tier:1, cat:"street"  },
+  { id:"cocaine",  name:"Cocaine",           min:180, max:650, vol:.28, tier:3, cat:"powder"  },
+  { id:"adderall", name:"Adderall",          min:22,  max:120, vol:.24, tier:2, cat:"pill"    },
+  { id:"heroin",   name:"Heroin",            min:130, max:500, vol:.30, tier:4, cat:"opiate"  },
+  { id:"meth",     name:"Meth",              min:90,  max:420, vol:.33, tier:4, cat:"street"  },
+  { id:"crack",    name:"Crack",             min:70,  max:300, vol:.31, tier:3, cat:"street"  },
+  { id:"xanax",    name:"Xanax",             min:18,  max:90,  vol:.21, tier:2, cat:"pill"    },
+  { id:"oxy",      name:"Oxy",               min:45,  max:210, vol:.25, tier:3, cat:"pill"    },
+  { id:"mdma",     name:"Molly / MDMA",      min:55,  max:260, vol:.27, tier:2, cat:"party"   },
+  { id:"shrooms",  name:"Shrooms",           min:35,  max:150, vol:.20, tier:1, cat:"party"   },
+  { id:"lsd",      name:"Acid / LSD",        min:28,  max:180, vol:.29, tier:2, cat:"party"   },
+  { id:"fentanyl", name:"Fentanyl",          min:110, max:620, vol:.35, tier:5, cat:"opiate"  },
+  { id:"lean",     name:"Lean / Promethazine",min:50, max:260, vol:.25, tier:2, cat:"syrup"   },
+  { id:"ketamine", name:"Ketamine",          min:60,  max:280, vol:.26, tier:2, cat:"party"   },
+];
+
+const AREAS = [
+  { id:"north_star_lot",    name:"North Star Lot",    risk:1, police:1, rival:0, hint:"cheap street stock",   bias:{weed:.85,shrooms:.9}         },
+  { id:"spenard",           name:"Spenard",           risk:2, police:2, rival:1, hint:"powder demand",        bias:{cocaine:1.2,meth:1.15,oxy:1.12} },
+  { id:"mountain_view",     name:"Mountain View",     risk:3, police:2, rival:2, hint:"hard market",          bias:{crack:1.2,heroin:1.16,fentanyl:1.2} },
+  { id:"downtown",          name:"Downtown",          risk:2, police:3, rival:1, hint:"club flips",           bias:{adderall:1.17,cocaine:1.22,mdma:1.16} },
+  { id:"muldoon",           name:"Muldoon",           risk:3, police:2, rival:3, hint:"rival corners",        bias:{meth:1.22,lean:1.15}           },
+  { id:"midtown",           name:"Midtown",           risk:2, police:2, rival:1, hint:"pill discounts",       bias:{adderall:.86,xanax:.9}         },
+  { id:"southside",         name:"Southside",         risk:1, police:1, rival:1, hint:"party crowd",          bias:{shrooms:1.15,lsd:1.2,mdma:1.14}},
+  { id:"airport_industrial",name:"Airport / Industrial",risk:4,police:3,rival:2, hint:"high margin, high heat",bias:{ketamine:1.24,fentanyl:1.26} },
+];
+
+const UPGRADES = [
+  { id:"beater",       name:"Used Beater",       cost:900,  cat:"car",   desc:"+20 carry, −2 heat on travel",  fx:{maxCarry:20,heatDelta:-2} },
+  { id:"stash_closet", name:"Hidden Closet Stash",cost:650, cat:"stash", desc:"+stash safety, +10 carry",       fx:{maxCarry:10,stashSafety:12} },
+  { id:"burner_pack",  name:"Burner Pack",        cost:450, cat:"ops",   desc:"+8 event protection",            fx:{protection:8} },
+  { id:"muscle_1",     name:"1 Crew Muscle",      cost:1700,cat:"crew",  desc:"Mugging defense +18, req. rep 12",fx:{muggingDef:18},req:{rep:12} },
+];
+
+const SLOTS = ["Morning","Afternoon","Evening","Night"];
+const rng = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
+
+function genPrices(locationId, prevHistory={}) {
+  const area = AREAS.find(a=>a.id===locationId);
+  const prices = {};
+  for (const d of DRUGS) {
+    const span = d.max - d.min;
+    const base = d.min + Math.random()*span;
+    const swing = 1+(Math.random()*2-1)*d.vol;
+    const bias = area.bias[d.id]||1;
+    prices[d.id] = Math.max(5,Math.round(base*swing*bias));
+  }
+  return prices;
+}
+
+function getTrend(drugId, history) {
+  const h = history[drugId]||[];
+  if(h.length<2) return {dir:"flat",sym:"—"};
+  const delta=(h[h.length-1]-h[h.length-2])/Math.max(1,h[h.length-2]);
+  if(delta>.18) return {dir:"up-strong",sym:"▲▲"};
+  if(delta>.05) return {dir:"up",sym:"▲"};
+  if(delta<-.18) return {dir:"down-strong",sym:"▼▼"};
+  if(delta<-.05) return {dir:"down",sym:"▼"};
+  return {dir:"flat",sym:"—"};
+}
+
+function initGame() {
+  const prices = genPrices("north_star_lot",{});
+  const history = {};
+  for(const d of DRUGS){ history[d.id]=[prices[d.id]]; }
+  return {
+    day:1, tick:1, locationId:"north_star_lot",
+    cash:200, bank:0, heat:0, rep:0, health:100, maxCarry:30,
+    inventory: Object.fromEntries(DRUGS.map(d=>[d.id,0])),
+    prices, history,
+    dre:{loan:0,deadline:null,trust:0},
+    assets:[],
+    feed:[{text:"Game started. Check the market.",tone:"",stamp:"Day 1 · Morning"}],
+  };
+}
+
+// ── ICONS ────────────────────────────────────────────────────────────────────
+const Icon = ({n, size=16, stroke="currentColor"}) => {
+  const paths = {
+    cash: <><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></>,
+    bag: <><path d="M6 9h12l-1 10H7z"/><path d="M9 9V7a3 3 0 0 1 6 0v2"/></>,
+    heat: <><path d="M13 3c2 3 0 4 2 6 1 1 3 2 3 5a6 6 0 1 1-12 0c0-4 3-5 4-8 2 1 2 2 3 3z"/></>,
+    day:  <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></>,
+    loc:  <><path d="M12 21s7-7 7-12a7 7 0 1 0-14 0c0 5 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></>,
+    hp:   <><path d="M12 21s-7-4.5-7-10a4 4 0 0 1 7-2 4 4 0 0 1 7 2c0 5.5-7 10-7 10z"/></>,
+    bank: <><path d="M3 9h18M5 9v9M9 9v9M13 9v9M17 9v9M3 18h18"/><path d="M2 9l10-5 10 5"/></>,
+    shop: <><path d="M4 7h16l-1 3H5z"/><path d="M6 10h12v10H6z"/><path d="M9 10v10M15 10v10"/></>,
+    hosp: <><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></>,
+    stats:<><path d="M3 3v18h18"/><path d="M7 16l4-5 4 3 4-7"/></>,
+    mkt:  <><path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13l-1.4 5h11.8"/><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/></>,
+    travel:<><path d="M3 12h18M12 3l9 9-9 9"/></>,
+    warn: <><path d="M12 3l10 18H2z"/><path d="M12 9v5M12 17h.01"/></>,
+    x:    <><path d="M18 6 6 18M6 6l12 12"/></>,
+    check:<><path d="M20 6 9 17l-5-5"/></>,
+    lock: <><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></>,
+    crown:<><path d="M2 18h20M4 18l2-10 6 5 4-8 4 8 2-5 2 10z"/></>,
+  };
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {paths[n]}
+    </svg>
+  );
+};
+
+// ── CHIPS ────────────────────────────────────────────────────────────────────
+function Chip({icon, label, value, cls=""}) {
+  return (
+    <div className={`chip ${cls}`}>
+      <span className="chip-icon"><Icon n={icon} size={12}/></span>
+      <span className="chip-k">{label}</span>
+      <span className="chip-v">{value}</span>
+    </div>
+  );
+}
+
+// ── PANEL HEADER ─────────────────────────────────────────────────────────────
+function PH({icon, title, sub}) {
+  return (
+    <div className="ph">
+      <div className="ph-icon"><Icon n={icon}/></div>
+      <h2>{title}</h2>
+      {sub && <span className="ph-sub">{sub}</span>}
+    </div>
+  );
+}
+
+// ── MARKET SCREEN ────────────────────────────────────────────────────────────
+function MarketScreen({G, dispatch}) {
+  const [expanded, setExpanded] = useState(null);
+  const [qtys, setQtys] = useState({});
+  const [flash, setFlash] = useState({});
+
+  const cargoCount = () => Object.values(G.inventory).reduce((s,v)=>s+v,0);
+  const sellPrice = (drugId) => Math.max(1,Math.round((G.prices[drugId]||0)*1.04));
+  const maxBuy = (drugId) => Math.min(G.maxCarry-cargoCount(), Math.floor(G.cash/Math.max(1,G.prices[drugId])));
+  const getQty = (id) => Math.max(1,qtys[id]||1);
+  const setQty = (id,v) => setQtys(q=>({...q,[id]:Math.max(1,v)}));
+
+  const doFlash = (id,type) => {
+    setFlash(f=>({...f,[id]:type}));
+    setTimeout(()=>setFlash(f=>({...f,[id]:null})),420);
+  };
+
+  const signals = (() => {
+    let bestId=null,bestScore=-Infinity;
+    for(const d of DRUGS){
+      const score=sellPrice(d.id)-G.prices[d.id];
+      if(score>bestScore){bestScore=score;bestId=d.id;}
+    }
+    return {bestId};
+  })();
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <PH icon="mkt" title="Drug Market" sub={`${AREAS.find(a=>a.id===G.locationId)?.hint||""} · ${Object.values(G.inventory).reduce((s,v)=>s+v,0)}/${G.maxCarry} bag`}/>
+      <div className="panel-body" style={{overflowY:"auto",flex:1}}>
+        <div className="market-list">
+          {DRUGS.map(drug=>{
+            const buy = G.prices[drug.id]||0;
+            const sell = sellPrice(drug.id);
+            const owned = G.inventory[drug.id]||0;
+            const trend = getTrend(drug.id,G.history);
+            const hot = trend.dir==="up-strong"||(trend.dir==="up"&&owned>0);
+            const qty = getQty(drug.id);
+            const canBuy = maxBuy(drug.id)>=qty;
+            const canSell = owned>=qty;
+            const isOpen = expanded===drug.id;
+            const fc = flash[drug.id];
+
+            return (
+              <div key={drug.id} className={`drug-row${isOpen?" expanded":""}${hot?" hot":""}`} data-drug-id={drug.id}>
+                <div className={`drug-row-main${fc?` ${fc}`:""}`} onClick={()=>setExpanded(isOpen?null:drug.id)}>
+                  <div>
+                    <div className="drug-name">{drug.name}{signals.bestId===drug.id&&<span className="tag-hot">Best Flip</span>}</div>
+                    <div className="drug-cat">{drug.cat} · tier {drug.tier}</div>
+                  </div>
+                  <div>
+                    <div className="drug-price">${buy.toLocaleString()}</div>
+                    <div className="drug-sell">sell ${sell.toLocaleString()}</div>
+                  </div>
+                  <div className={`trend ${trend.dir==="up"||trend.dir==="up-strong"?"trend-up":trend.dir==="down"||trend.dir==="down-strong"?"trend-down":"trend-flat"}`}>{trend.sym}</div>
+                  <div className={`owned-badge${owned>0?" has":""}`}>{owned}</div>
+                  <button className="trade-quick" onClick={e=>{e.stopPropagation();setExpanded(isOpen?null:drug.id);}}>Trade</button>
+                </div>
+                {isOpen&&(
+                  <div className="drug-expand">
+                    <div className="expand-label">Quantity</div>
+                    <div className="qty-row">
+                      <button className="qty-btn" onClick={()=>setQty(drug.id,qty-1)}>−</button>
+                      <input className="qty-val" type="number" min="1" value={qty} onChange={e=>setQty(drug.id,parseInt(e.target.value)||1)}/>
+                      <button className="qty-btn" onClick={()=>setQty(drug.id,qty+1)}>+</button>
+                      <button className="qty-max" onClick={()=>setQty(drug.id,Math.max(maxBuy(drug.id),owned))}>Max {Math.max(maxBuy(drug.id),owned)}</button>
+                    </div>
+                    <div className="trade-btns">
+                      <button className="btn btn-buy" disabled={!canBuy} onClick={()=>{dispatch({type:"BUY",drugId:drug.id,qty});doFlash(drug.id,"flash-good");}}>
+                        Buy {qty}<small>−${(buy*qty).toLocaleString()}</small>
+                      </button>
+                      <button className="btn btn-sell" disabled={!canSell} onClick={()=>{dispatch({type:"SELL",drugId:drug.id,qty:Math.min(qty,owned)});doFlash(drug.id,"flash-good");}}>
+                        Sell {Math.min(qty,owned)}<small>+${(sell*Math.min(qty,owned)).toLocaleString()}</small>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── STASH SCREEN ─────────────────────────────────────────────────────────────
+function StashScreen({G, dispatch}) {
+  const cargo = Object.values(G.inventory).reduce((s,v)=>s+v,0);
+  const value = DRUGS.reduce((s,d)=>{
+    const sell = Math.max(1,Math.round((G.prices[d.id]||0)*1.04));
+    return s+(G.inventory[d.id]||0)*sell;
+  },0);
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <PH icon="bag" title="Your Stash" sub={`${cargo}/${G.maxCarry} bag · Est. value $${value.toLocaleString()}`}/>
+      <div className="panel-body" style={{overflowY:"auto",flex:1}}>
+        {cargo===0?(
+          <div style={{color:"var(--ink-muted)",fontFamily:"var(--font-ui)",fontSize:".85rem",padding:"20px",textAlign:"center"}}>Bag is empty. Hit the market.</div>
+        ):(
+          <div className="stash-grid">
+            {DRUGS.filter(d=>G.inventory[d.id]>0).map(drug=>{
+              const sell = Math.max(1,Math.round((G.prices[drug.id]||0)*1.04));
+              return (
+                <div key={drug.id} className="stash-card">
+                  <div className="stash-name">{drug.name}</div>
+                  <div className="stash-qty">{G.inventory[drug.id]}</div>
+                  <div className="stash-val">~${(G.inventory[drug.id]*sell).toLocaleString()} est.</div>
+                  <button className="btn btn-sell" style={{marginTop:"4px",fontSize:".72rem",padding:"6px 10px"}}
+                    onClick={()=>dispatch({type:"SELL",drugId:drug.id,qty:G.inventory[drug.id]})}>
+                    Sell All
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── BANK SCREEN ──────────────────────────────────────────────────────────────
+function BankScreen({G, dispatch}) {
+  const [dep,setDep]=useState("");
+  const [wd,setWd]=useState("");
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <PH icon="bank" title="Cash & Bank" sub="2% daily interest on deposits"/>
+      <div className="panel-body" style={{overflowY:"auto",flex:1}}>
+        <div className="bank-section">
+          <div className="bank-row">
+            <div className="bank-card">
+              <div className="bank-label">On Hand</div>
+              <div className="bank-amount" style={{color:"var(--money)"}}>${G.cash.toLocaleString()}</div>
+              <div className="bank-sub">street cash · spendable now</div>
+            </div>
+            <div className="bank-card">
+              <div className="bank-label">In Bank</div>
+              <div className="bank-amount">${G.bank.toLocaleString()}</div>
+              <div className="bank-sub">+2% per day · safe from muggers</div>
+            </div>
+          </div>
+          <div className="bank-card">
+            <div className="bank-label">Deposit Cash</div>
+            <div className="input-row">
+              <input className="game-input" placeholder="Amount..." value={dep} onChange={e=>setDep(e.target.value)} type="number" min="1"/>
+              <button className="btn btn-primary" onClick={()=>{const a=parseInt(dep)||0;if(a>0&&a<=G.cash){dispatch({type:"DEPOSIT",amount:a});setDep("");}}} style={{padding:"7px 16px",flexDirection:"row",gap:4,fontSize:".8rem"}}>Deposit</button>
+              <button className="btn btn-secondary" onClick={()=>{if(G.cash>0){dispatch({type:"DEPOSIT",amount:G.cash});setDep("");}}} style={{padding:"7px 12px",flexDirection:"row",gap:4,fontSize:".75rem"}}>All</button>
+            </div>
+          </div>
+          <div className="bank-card">
+            <div className="bank-label">Withdraw</div>
+            <div className="input-row">
+              <input className="game-input" placeholder="Amount..." value={wd} onChange={e=>setWd(e.target.value)} type="number" min="1"/>
+              <button className="btn btn-secondary" onClick={()=>{const a=parseInt(wd)||0;if(a>0&&a<=G.bank){dispatch({type:"WITHDRAW",amount:a});setWd("");}}} style={{padding:"7px 16px",flexDirection:"row",fontSize:".8rem"}}>Withdraw</button>
+            </div>
+          </div>
+          <div className="dre-card">
+            <div className="dre-title">⚠ Dre's Corner — Loan Shark</div>
+            {G.dre.loan>0?(
+              <div style={{marginBottom:10}}>
+                <div style={{fontSize:".82rem",color:"var(--ink)",marginBottom:6}}>Outstanding: <strong style={{color:"#d09840"}}>${G.dre.loan.toLocaleString()}</strong> · Due Day {G.dre.deadline}</div>
+                {G.day>G.dre.deadline&&<div style={{fontSize:".72rem",color:"var(--spend)",marginBottom:8}}>OVERDUE — Dre is not happy.</div>}
+                <button className="btn btn-danger" disabled={G.cash<G.dre.loan}
+                  onClick={()=>dispatch({type:"REPAY_DRE"})} style={{padding:"8px 18px",flexDirection:"row",fontSize:".8rem"}}>
+                  Repay ${G.dre.loan.toLocaleString()}
+                </button>
+              </div>
+            ):(
+              <div>
+                <div style={{fontSize:".78rem",color:"var(--ink-dim)",marginBottom:10}}>Borrow $400. Owe $480 within 5 days. Trust level: {G.dre.trust}</div>
+                <button className="btn btn-warn" style={{background:"rgba(176,120,32,.3)",border:"1px solid var(--warn)",color:"#d09840",padding:"8px 18px",flexDirection:"row",fontSize:".8rem"}}
+                  onClick={()=>dispatch({type:"TAKE_DRE_LOAN"})}>
+                  Take $400 Loan
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── SHOP SCREEN ──────────────────────────────────────────────────────────────
+function ShopScreen({G, dispatch}) {
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <PH icon="shop" title="Gear Shop" sub="Upgrades stick for the whole run"/>
+      <div className="panel-body" style={{overflowY:"auto",flex:1}}>
+        <div className="shop-list">
+          {UPGRADES.map(u=>{
+            const owned = G.assets.includes(u.id);
+            const locked = u.req?.rep&&G.rep<u.req.rep;
+            const canAfford = G.cash>=u.cost;
+            return (
+              <div key={u.id} className={`shop-item${owned?" owned":""}${locked?" locked":""}`}>
+                <div className="shop-info">
+                  <div className="shop-name">{u.name}</div>
+                  <div className="shop-desc">{u.desc}</div>
+                  {locked&&<div style={{fontSize:".65rem",color:"var(--spend)",marginTop:3}}>Requires Rep {u.req.rep}</div>}
+                </div>
+                <div style={{textAlign:"right"}}>
+                  {owned?(
+                    <div style={{color:"var(--money)",fontFamily:"var(--font-ui)",fontWeight:700,fontSize:".78rem"}}>✓ Owned</div>
+                  ):(
+                    <>
+                      <div className="shop-cost">${u.cost.toLocaleString()}</div>
+                      <button className="btn btn-primary" style={{padding:"6px 14px",marginTop:6,fontSize:".75rem",flexDirection:"row"}}
+                        disabled={!canAfford||locked}
+                        onClick={()=>dispatch({type:"BUY_UPGRADE",id:u.id})}>
+                        Buy
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── HOSPITAL SCREEN ──────────────────────────────────────────────────────────
+function HospitalScreen({G, dispatch}) {
+  const pct = G.health;
+  const healthy = pct>65;
+  const heals = [
+    {name:"First Aid Kit",cost:60,amt:25,desc:"Patch it up — basic heal"},
+    {name:"Clinic Visit",cost:160,amt:55,desc:"Proper treatment, full patch"},
+    {name:"Doctor on Call",cost:380,amt:100,desc:"Full recovery, no questions asked"},
+  ];
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <PH icon="hosp" title="Clinic" sub="Stay alive, stay in the game"/>
+      <div className="panel-body" style={{overflowY:"auto",flex:1}}>
+        <div className="hospital-section">
+          <div>
+            <div style={{fontFamily:"var(--font-ui)",fontSize:".72rem",textTransform:"uppercase",letterSpacing:".1em",color:"var(--ink-muted)",marginBottom:6}}>Current Health</div>
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6}}>
+              <div className="hp-bar-bg" style={{flex:1}}>
+                <div className={`hp-bar${healthy?" healthy":""}`} style={{width:`${pct}%`}}/>
+              </div>
+              <span style={{fontFamily:"var(--font-head)",fontSize:"1.3rem",color:healthy?"var(--money)":"var(--spend)",minWidth:50}}>{pct}/100</span>
+            </div>
+            {!healthy&&<div style={{fontSize:".75rem",color:"var(--spend)"}}>You're hurt. Get patched up before things get worse.</div>}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {heals.map(h=>{
+              const newHp = Math.min(100,G.health+h.amt);
+              const already = G.health>=100;
+              return (
+                <div key={h.name} className="heal-option">
+                  <div className="heal-info">
+                    <div className="heal-name">{h.name}</div>
+                    <div className="heal-desc">{h.desc} · +{Math.min(h.amt,100-G.health)} HP → {newHp}</div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{color:"var(--gold)",fontFamily:"var(--font-head)",fontSize:"1.1rem"}}>${h.cost}</div>
+                    <button className="btn btn-teal" style={{marginTop:6,padding:"6px 14px",fontSize:".75rem",flexDirection:"row"}}
+                      disabled={G.cash<h.cost||already||G.health===100}
+                      onClick={()=>dispatch({type:"HEAL",amount:h.amt,cost:h.cost})}>
+                      {already?"Full HP":"Heal Up"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── STATS SCREEN ─────────────────────────────────────────────────────────────
+function StatsScreen({G}) {
+  const cargo = Object.values(G.inventory).reduce((s,v)=>s+v,0);
+  const rank = G.rep>=60?"Boss":G.rep>=35?"Shot Caller":G.rep>=18?"Runner":"Hustler";
+  const area = AREAS.find(a=>a.id===G.locationId);
+  const heatLvl = Math.min(10,G.heat);
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <PH icon="stats" title="Player Stats" sub={`Rank: ${rank}`}/>
+      <div className="panel-body" style={{overflowY:"auto",flex:1}}>
+        <div className="stats-grid">
+          <div className="stat-card"><div className="stat-label">Cash on Hand</div><div className="stat-val" style={{color:"var(--money)"}}>${G.cash.toLocaleString()}</div></div>
+          <div className="stat-card"><div className="stat-label">Bank Balance</div><div className="stat-val" style={{color:"var(--gold)"}}>${G.bank.toLocaleString()}</div></div>
+          <div className="stat-card"><div className="stat-label">Health</div><div className="stat-val" style={{color:G.health>65?"var(--money)":"var(--spend)"}}>{G.health}<span style={{fontSize:".8rem",color:"var(--ink-muted)"}}>/100</span></div></div>
+          <div className="stat-card"><div className="stat-label">Heat Level</div><div className="stat-val" style={{color:G.heat>6?"var(--spend)":G.heat>3?"#d09840":"var(--ink)"}}>{G.heat}<span style={{fontSize:".7rem",color:"var(--ink-muted)",display:"block",marginTop:2}}>{"●".repeat(Math.min(heatLvl,5))}{"○".repeat(Math.max(0,5-heatLvl))}</span></div></div>
+          <div className="stat-card"><div className="stat-label">Reputation</div><div className="stat-val">{G.rep}<div style={{marginTop:4}}><span className="rank-badge">{rank}</span></div></div></div>
+          <div className="stat-card"><div className="stat-label">Day</div><div className="stat-val">{G.day}<span style={{fontSize:".7rem",color:"var(--ink-muted)"}}>/30 · {SLOTS[G.tick-1]}</span></div></div>
+          <div className="stat-card"><div className="stat-label">Location</div><div className="stat-val" style={{fontSize:"1.1rem"}}>{area?.name}</div><div className="stat-sub">Risk {area?.risk}/4 · Police {area?.police}/3</div></div>
+          <div className="stat-card"><div className="stat-label">Bag Space</div><div className="stat-val">{cargo}<span style={{fontSize:".8rem",color:"var(--ink-muted)"}}>/{G.maxCarry}</span></div><div className="stat-sub">{G.assets.length} upgrades active</div></div>
+        </div>
+        {G.dre.loan>0&&(
+          <div style={{marginTop:10,padding:"10px 12px",background:"rgba(176,120,32,.1)",border:"1px solid var(--warn)",borderRadius:"var(--r)",fontSize:".78rem",color:"#d09840"}}>
+            Dre Loan: ${G.dre.loan.toLocaleString()} outstanding · Due Day {G.dre.deadline}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── TRAVEL MODAL ─────────────────────────────────────────────────────────────
+function TravelModal({G, onTravel, onClose}) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <PH icon="travel" title="Travel" sub="Moving costs a time slot"/>
+        <div className="modal-body">
+          <div className="area-grid">
+            {AREAS.map(area=>{
+              const cur = area.id===G.locationId;
+              const dots = [];
+              for(let i=0;i<4;i++) dots.push(<div key={i} className={`risk-dot${i<area.risk?" filled":""}`}/>);
+              const pdots=[];
+              for(let i=0;i<3;i++) pdots.push(<div key={i} className={`risk-dot${i<area.police?" police":""}`}/>);
+              return (
+                <div key={area.id} className={`area-card${cur?" current":""}`} onClick={()=>!cur&&onTravel(area.id)}>
+                  <div className="area-name">{area.name}{cur&&<span style={{color:"var(--gold)",marginLeft:6,fontSize:".72rem"}}>★ HERE</span>}</div>
+                  <div className="area-hint">{area.hint}</div>
+                  <div className="area-risk" style={{marginTop:8}}>
+                    <span style={{fontSize:".65rem",color:"var(--ink-muted)",marginRight:4,fontFamily:"var(--font-ui)"}}>RISK</span>{dots}
+                    <span style={{fontSize:".65rem",color:"var(--ink-muted)",marginLeft:6,marginRight:4,fontFamily:"var(--font-ui)"}}>PD</span>{pdots}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── REDUCER ──────────────────────────────────────────────────────────────────
+function feed(G, text, tone="") {
+  const stamp = `Day ${G.day} · ${SLOTS[G.tick-1]}`;
+  return [{text,tone,stamp},...G.feed].slice(0,60);
+}
+
+function reducer(G, action) {
+  switch(action.type) {
+    case "BUY": {
+      const {drugId,qty} = action;
+      const cost = (G.prices[drugId]||0)*qty;
+      if(G.cash<cost) return {...G,feed:feed(G,"Not enough cash.","bad")};
+      const cargo = Object.values(G.inventory).reduce((s,v)=>s+v,0);
+      if(cargo+qty>G.maxCarry) return {...G,feed:feed(G,"Bag is full.","bad")};
+      const heatAdd = ["cocaine","heroin","fentanyl","meth"].includes(drugId)?Math.max(1,Math.floor(qty/2)):0;
+      return {...G,
+        cash:G.cash-cost,
+        inventory:{...G.inventory,[drugId]:(G.inventory[drugId]||0)+qty},
+        heat:G.heat+heatAdd,rep:G.rep+Math.max(1,Math.floor(qty/3)),
+        feed:feed(G,`Bought ${qty} ${DRUGS.find(d=>d.id===drugId)?.name} for $${cost.toLocaleString()}.`,"good")
+      };
+    }
+    case "SELL": {
+      const {drugId,qty} = action;
+      const owned = G.inventory[drugId]||0;
+      if(!owned) return {...G,feed:feed(G,"Nothing to sell.","bad")};
+      const actual=Math.min(qty,owned);
+      const sell = Math.max(1,Math.round((G.prices[drugId]||0)*1.04));
+      const total = sell*actual;
+      return {...G,
+        cash:G.cash+total,
+        inventory:{...G.inventory,[drugId]:owned-actual},
+        rep:G.rep+Math.max(1,Math.floor(actual/3)),
+        feed:feed(G,`Sold ${actual} ${DRUGS.find(d=>d.id===drugId)?.name} for $${total.toLocaleString()}.`,"good")
+      };
+    }
+    case "TRAVEL": {
+      const target = AREAS.find(a=>a.id===action.areaId);
+      if(!target) return G;
+      const newTick = G.tick>=4?1:G.tick+1;
+      const newDay = G.tick>=4?G.day+1:G.day;
+      const newPrices = genPrices(action.areaId,G.history);
+      const newHist = {};
+      for(const d of DRUGS){ newHist[d.id]=[...(G.history[d.id]||[]),newPrices[d.id]].slice(-5); }
+      const heatDelta = target.risk-1-(G.assets.includes("beater")?2:0);
+      return {...G,
+        locationId:action.areaId,day:newDay,tick:newTick,
+        heat:Math.max(0,G.heat+heatDelta),
+        prices:newPrices,history:newHist,
+        feed:feed(G,`Moved to ${target.name}.`)
+      };
+    }
+    case "LAY_LOW": {
+      const newTick = G.tick>=4?1:G.tick+1;
+      const newDay = G.tick>=4?G.day+1:G.day;
+      const newPrices = genPrices(G.locationId,G.history);
+      const newHist = {};
+      for(const d of DRUGS){ newHist[d.id]=[...(G.history[d.id]||[]),newPrices[d.id]].slice(-5); }
+      const interest = newTick===1&&G.bank>0?Math.max(1,Math.floor(G.bank*.02)):0;
+      const evtFeed = [];
+      // random event
+      if(Math.random()<.45){
+        const evts=[
+          {w:5+G.heat,fn:()=>{const f=rng(10,40);return {cash:-f,heat:2,msg:`Police heat. Burned $${f} staying mobile.`,tone:"bad"}}},
+          {w:8,fn:()=>{const b=rng(25,80);return {cash:b,msg:`Street tip pays out +$${b}.`,tone:"good"}}},
+          {w:6,fn:()=>{const dmg=rng(5,15);return {hp:-dmg,heat:1,msg:`Roughed up. Lost ${dmg} health.`,tone:"bad"}}},
+        ];
+        const total=evts.reduce((s,e)=>s+e.w,0);
+        let roll=Math.random()*total;
+        for(const e of evts){roll-=e.w;if(roll<=0){const r=e.fn();if(r.msg)evtFeed.push(r);break;}}
+      }
+      const evtState = evtFeed[0]||{cash:0,hp:0,heat:0};
+      return {...G,
+        tick:newTick,day:newDay,
+        heat:Math.max(0,G.heat-1+(evtState.heat||0)),
+        health:Math.max(1,Math.min(100,G.health+(evtState.hp||0))),
+        cash:G.cash+(evtState.cash||0),
+        bank:G.bank+interest,
+        prices:newPrices,history:newHist,
+        feed:[...(evtFeed.length?[{text:evtState.msg,tone:evtState.tone,stamp:`Day ${newDay} · ${SLOTS[newTick-1]}`}]:[]),
+              ...(interest?[{text:`Bank interest +$${interest}.`,tone:"good",stamp:`Day ${newDay} · ${SLOTS[newTick-1]}`}]:[]),
+              {text:`Lay low → ${SLOTS[newTick-1]}.`,tone:"",stamp:`Day ${newDay} · ${SLOTS[newTick-1]}`},
+              ...G.feed].slice(0,60)
+      };
+    }
+    case "DEPOSIT": {
+      if(action.amount>G.cash) return G;
+      return {...G,cash:G.cash-action.amount,bank:G.bank+action.amount,feed:feed(G,`Deposited $${action.amount.toLocaleString()}.`)};
+    }
+    case "WITHDRAW": {
+      if(action.amount>G.bank) return G;
+      return {...G,cash:G.cash+action.amount,bank:G.bank-action.amount,feed:feed(G,`Withdrew $${action.amount.toLocaleString()}.`)};
+    }
+    case "HEAL": {
+      if(G.cash<action.cost) return {...G,feed:feed(G,"Not enough cash.","bad")};
+      return {...G,cash:G.cash-action.cost,health:Math.min(100,G.health+action.amount),feed:feed(G,`Healed +${Math.min(action.amount,100-G.health)} HP.`,"good")};
+    }
+    case "TAKE_DRE_LOAN": {
+      if(G.dre.loan>0) return {...G,feed:feed(G,"Clear your current note first.","bad")};
+      return {...G,cash:G.cash+400,dre:{...G.dre,loan:480,deadline:G.day+5,trust:G.dre.trust+1},feed:feed(G,"Dre fronts $400. Owe $480 by day "+(G.day+5)+".")};
+    }
+    case "REPAY_DRE": {
+      if(G.cash<G.dre.loan) return {...G,feed:feed(G,"Not enough cash.","bad")};
+      return {...G,cash:G.cash-G.dre.loan,dre:{...G.dre,loan:0,deadline:null,trust:G.dre.trust+2},rep:G.rep+2,feed:feed(G,"Paid Dre in full. Trust up.","good")};
+    }
+    case "BUY_UPGRADE": {
+      const u = UPGRADES.find(x=>x.id===action.id);
+      if(!u||G.assets.includes(action.id)||G.cash<u.cost) return G;
+      return {...G,
+        cash:G.cash-u.cost,
+        assets:[...G.assets,action.id],
+        maxCarry:G.maxCarry+(u.fx.maxCarry||0),
+        feed:feed(G,`Purchased ${u.name}.`,"good")
+      };
+    }
+    case "CLEAR_FEED": return {...G,feed:[]};
+    default: return G;
+  }
+}
+
+// ── MAIN APP ─────────────────────────────────────────────────────────────────
+const TABS_DEF = [
+  {id:"market",label:"Market",icon:"mkt"},
+  {id:"stash",label:"Stash",icon:"bag"},
+  {id:"bank",label:"Bank",icon:"bank"},
+  {id:"shop",label:"Shop",icon:"shop"},
+  {id:"hospital",label:"Clinic",icon:"hosp"},
+  {id:"stats",label:"Stats",icon:"stats"},
+];
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "colorAccent":"gold",
+  "panelDensity":"normal",
+  "showTrends":true
+}/*EDITMODE-END*/;
+
+function App() {
+  const saved = (() => { try { const s=localStorage.getItem("907_game"); return s?JSON.parse(s):null; } catch{return null;} })();
+  const [G, rawDispatch] = React.useReducer(reducer, saved||initGame());
+  const [tab, setTab] = useState(localStorage.getItem("907_tab")||"market");
+  const [showTravel, setShowTravel] = useState(false);
+  const [confirm, setConfirm] = useState(null); // {title,msg,action}
+  const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [tweaks, setTweaks] = useState(TWEAK_DEFAULTS);
+
+  const dispatch = useCallback((action) => {
+    rawDispatch(action);
+  }, []);
+
+  useEffect(()=>{
+    try{localStorage.setItem("907_game",JSON.stringify(G));}catch{}
+  },[G]);
+  useEffect(()=>{ localStorage.setItem("907_tab",tab); },[tab]);
+
+  // Tweaks mode
+  useEffect(()=>{
+    const handler = (e)=>{
+      if(e.data?.type==="__activate_edit_mode") setTweaksOpen(true);
+      if(e.data?.type==="__deactivate_edit_mode") setTweaksOpen(false);
+    };
+    window.addEventListener("message",handler);
+    window.parent.postMessage({type:"__edit_mode_available"},"*");
+    return ()=>window.removeEventListener("message",handler);
+  },[]);
+
+  const area = AREAS.find(a=>a.id===G.locationId);
+  const heatHigh = G.heat>=7;
+  const hpLow = G.health<40;
+  const heatMid = G.heat>=4;
+
+  const handleTravel = (areaId) => {
+    dispatch({type:"TRAVEL",areaId});
+    setShowTravel(false);
+  };
+
+  const handleLayLow = () => {
+    setConfirm({
+      title:"Lay Low",
+      msg:`Advance to ${TABS_DEF&&SLOTS[G.tick>=4?0:G.tick]}. Prices will shift. Continue?`,
+      action:()=>dispatch({type:"LAY_LOW"})
+    });
+  };
+
+  const cargo = Object.values(G.inventory).reduce((s,v)=>s+v,0);
+
+  return (
+    <div className="app">
+      {/* HUD */}
+      <header className="panel hud">
+        <div className="logo">907 <span>HUSTLE</span></div>
+        <div className="chips">
+          <Chip icon="cash" label="Cash" value={`$${G.cash.toLocaleString()}`} cls="chip-cash"/>
+          {G.bank>0&&<Chip icon="bank" label="Bank" value={`$${G.bank.toLocaleString()}`} cls="chip-bank"/>}
+          <Chip icon="bag"  label="Bag"  value={`${cargo}/${G.maxCarry}`}/>
+          <Chip icon="day"  label="Day"  value={`${G.day}/30 · ${SLOTS[G.tick-1]}`}/>
+          <Chip icon="loc"  label="Area" value={area?.name}/>
+          <Chip icon="heat" label="Heat" value={`${G.heat}`} cls={heatHigh?"chip-heat-high chip-heat":heatMid?"chip-heat":""}/>
+          <Chip icon="hp"   label="HP"   value={`${G.health}/100`} cls={hpLow?"chip-hp chip-hp-low":"chip-hp"}/>
+          {G.dre.loan>0&&<Chip icon="warn" label="Dre" value={`$${G.dre.loan}`} cls="chip-warn"/>}
+        </div>
+      </header>
+
+      {/* NAV */}
+      <nav className="nav">
+        {TABS_DEF.map(t=>(
+          <button key={t.id} className={`tab${tab===t.id?" active":""}`} onClick={()=>setTab(t.id)}>
+            <Icon n={t.icon} size={16}/>
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
+      {/* MAIN PANEL */}
+      <main className="main-panel panel">
+        {tab==="market"&&<MarketScreen G={G} dispatch={dispatch}/>}
+        {tab==="stash"&&<StashScreen G={G} dispatch={dispatch}/>}
+        {tab==="bank"&&<BankScreen G={G} dispatch={dispatch}/>}
+        {tab==="shop"&&<ShopScreen G={G} dispatch={dispatch}/>}
+        {tab==="hospital"&&<HospitalScreen G={G} dispatch={dispatch}/>}
+        {tab==="stats"&&<StatsScreen G={G}/>}
+      </main>
+
+      {/* STREET FEED */}
+      <section className="panel feed-panel">
+        <div className="ph" style={{padding:"6px 12px"}}>
+          <div className="ph-icon"><Icon n="stats" size={14}/></div>
+          <h2 style={{fontSize:".8rem"}}>Street Feed</h2>
+          <button className="btn btn-ghost" style={{marginLeft:"auto"}} onClick={()=>dispatch({type:"CLEAR_FEED"})}>Clear</button>
+        </div>
+        <div className="feed-body">
+          {G.feed.map((e,i)=>(
+            <div key={i} className={`feed-entry${e.tone==="good"?" feed-good":e.tone==="bad"?" feed-bad":""}`}>
+              <span className="feed-stamp">{e.stamp}</span>{e.text}
+            </div>
+          ))}
+          {G.feed.length===0&&<div style={{color:"var(--ink-muted)",fontSize:".72rem",padding:"4px 0"}}>No activity yet.</div>}
+        </div>
+      </section>
+
+      {/* ACTION BAR */}
+      <div className="action-bar">
+        <button className="btn btn-secondary" onClick={()=>setShowTravel(true)}>
+          Travel <small>leave {area?.name}</small>
+        </button>
+        <button className="btn btn-primary" onClick={handleLayLow}>
+          Lay Low <small>advance to {SLOTS[G.tick>=4?0:G.tick]}</small>
+        </button>
+        <button className="btn btn-danger" style={{flexGrow:.6}} onClick={()=>setConfirm({title:"Rob Someone",msg:"High risk. You might get caught, take damage, or score quick cash. Proceed?",action:()=>{
+          const evts=[
+            {w:25,fn:()=>{const c=rng(50,130);dispatch({type:"BUY",drugId:"weed",qty:0});rawDispatch({type:"__CASH_ADD"});const nc=G.cash+c;localStorage.setItem("907_game",JSON.stringify({...G,cash:nc,heat:G.heat+1,feed:[{text:`Rob pays out +$${c}.`,tone:"good",stamp:`Day ${G.day} · ${SLOTS[G.tick-1]}`},...G.feed].slice(0,60)}));}},
+            {w:20,fn:()=>{const d=rng(8,20);rawDispatch({type:"HEAL",amount:-d,cost:0});}},
+          ];
+          // simplified rob
+          const roll = Math.random();
+          if(roll<.55){ const c=rng(50,130); dispatch({type:"DEPOSIT",amount:0}); rawDispatch({...G,cash:G.cash+c,heat:G.heat+1,feed:[{text:`Rob hit clean +$${c}.`,tone:"good",stamp:`Day ${G.day} · ${SLOTS[G.tick-1]}`},...G.feed].slice(0,60)}); }
+          else { dispatch({type:"HEAL",amount:-rng(8,20),cost:0}); }
+        }})}>
+          Rob <small>risky hustle</small>
+        </button>
+      </div>
+
+      {/* TRAVEL MODAL */}
+      {showTravel&&<TravelModal G={G} onTravel={handleTravel} onClose={()=>setShowTravel(false)}/>}
+
+      {/* CONFIRM MODAL */}
+      {confirm&&(
+        <div className="modal-backdrop" onClick={()=>setConfirm(null)}>
+          <div className="modal confirm-modal" onClick={e=>e.stopPropagation()}>
+            <div className="confirm-body">
+              <div className="confirm-title">{confirm.title}</div>
+              <div className="confirm-msg">{confirm.msg}</div>
+              <div className="confirm-btns">
+                <button className="btn btn-secondary" onClick={()=>setConfirm(null)}>Cancel</button>
+                <button className="btn btn-primary" onClick={()=>{confirm.action();setConfirm(null);}}>Confirm</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TWEAKS PANEL */}
+      {tweaksOpen&&(
+        <div style={{position:"fixed",bottom:16,right:16,background:"var(--surface)",border:"1px solid var(--border)",borderRadius:"var(--r)",padding:"14px 16px",zIndex:300,width:220,boxShadow:"0 8px 30px rgba(0,0,0,.6)"}}>
+          <div style={{fontFamily:"var(--font-ui)",fontWeight:700,fontSize:".8rem",letterSpacing:".1em",textTransform:"uppercase",color:"var(--gold)",marginBottom:12}}>Tweaks</div>
+          <div style={{fontSize:".72rem",color:"var(--ink-muted)",marginBottom:6,fontFamily:"var(--font-ui)"}}>Reset Progress</div>
+          <button className="btn btn-danger" style={{width:"100%",padding:"7px",fontSize:".75rem",flexDirection:"row",marginBottom:8}}
+            onClick={()=>{localStorage.removeItem("907_game");window.location.reload();}}>
+            New Game
+          </button>
+          <div style={{fontSize:".72rem",color:"var(--ink-muted)",marginBottom:6,fontFamily:"var(--font-ui)"}}>Quick Cash (+$500)</div>
+          <button className="btn btn-secondary" style={{width:"100%",padding:"7px",fontSize:".75rem",flexDirection:"row"}}
+            onClick={()=>dispatch({type:"DEPOSIT",amount:-500})}>
+            Add $500
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Patch for quick cash tweak
+const origReducer = reducer;
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

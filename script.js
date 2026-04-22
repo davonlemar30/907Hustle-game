@@ -88,12 +88,11 @@ function currentSlotName() { return SLOTS[GAME.tick - 1] || SLOTS[0]; }
 function nextSlotName() { return SLOTS[GAME.tick % 4]; }
 
 const TABS = [
-  { id: "market",   label: "Market",   title: "Drug Market" },
-  { id: "stash",    label: "Stash",    title: "Your Stash" },
-  { id: "bank",     label: "Bank",     title: "Bank" },
-  { id: "shop",     label: "Shop",     title: "Gear Shop" },
-  { id: "hospital", label: "Hospital", title: "Hospital" },
-  { id: "stats",    label: "Stats",    title: "Player Stats" },
+  { id: "market",   label: "Market", title: "Drug Market" },
+  { id: "stash",    label: "Stash", title: "Bag + Street Intel" },
+  { id: "bank",     label: "Cash/Bank", title: "Cash + Bank" },
+  { id: "shop",     label: "Gear", title: "Gear Shop" },
+  { id: "hospital", label: "Clinic", title: "Clinic" },
 ];
 
 function rng(min, max) {
@@ -256,6 +255,8 @@ function buyDrug(drugId, qty = 1, anchor = null) {
   }
 
   playBuyChime();
+  pulseCash("down");
+  flashTradeRow(drugId, "buy");
   floatText(`−$${totalCost.toLocaleString()}`, "var(--spend)", anchor);
   addFeed(`Bought ${amount} ${nameOf(drugId)} for $${totalCost.toLocaleString()}.`, "good");
   triggerRandomEvent("deal");
@@ -274,6 +275,8 @@ function sellDrug(drugId, qty = 1, anchor = null) {
   GAME.rook.attention += currentArea().riskLevel >= 3 ? 1 : 0;
 
   playChaChing();
+  pulseCash("up");
+  flashTradeRow(drugId, "sell");
   floatText(`+$${total.toLocaleString()}`, "var(--money)", anchor);
   addFeed(`Sold ${actual} ${nameOf(drugId)} for $${total.toLocaleString()}.`, "good");
   triggerRandomEvent("deal");
@@ -563,7 +566,15 @@ function ensureAudio() {
     try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
     catch (e) { audioEnabled = false; return null; }
   }
-  if (audioCtx.state === "suspended") audioCtx.resume();
+  if (audioCtx.state === "suspended") {
+    try {
+      const resumed = audioCtx.resume();
+      if (resumed && typeof resumed.catch === "function") resumed.catch(() => { audioEnabled = false; });
+    } catch (e) {
+      audioEnabled = false;
+      return null;
+    }
+  }
   return audioCtx;
 }
 
@@ -640,9 +651,10 @@ function showSleepOverlay(nextSlot, done) {
   ov.className = "sleep-overlay";
   ov.innerHTML = `
     <div class="sleep-box">
-      <div class="sleep-label">Laying Low</div>
-      <div class="sleep-zzz"><span>z</span><span>z</span><span>Z</span></div>
+      <div class="sleep-label">Lay Low</div>
+      <div class="sleep-zzz"><span>•</span><span>•</span><span>•</span></div>
       <div class="sleep-clock">${nextSlot || "…"}</div>
+      <div class="sleep-sub">Street noise fades. Another run starts.</div>
     </div>
   `;
   document.body.appendChild(ov);
@@ -655,6 +667,24 @@ function showSleepOverlay(nextSlot, done) {
   }, 550);
 }
 
+
+function pulseCash(type = "") {
+  const chip = document.querySelector("[data-cash-chip]");
+  if (!chip) return;
+  chip.classList.remove("cash-up", "cash-down");
+  void chip.offsetWidth;
+  chip.classList.add(type === "up" ? "cash-up" : "cash-down");
+}
+
+function flashTradeRow(drugId, type = "buy") {
+  const row = document.querySelector(`[data-drug-id="${drugId}"]`);
+  if (!row) return;
+  const cls = type === "sell" ? "sold" : "bought";
+  row.classList.remove("bought", "sold");
+  void row.offsetWidth;
+  row.classList.add(cls);
+}
+
 function renderHud() {
   const area = currentArea();
   const heatLvl = Math.min(5, GAME.heat);
@@ -662,7 +692,7 @@ function renderHud() {
   const heatCls = GAME.heat >= 6 ? "chip-danger" : GAME.heat >= 3 ? "chip-warn" : "";
 
   const parts = [];
-  parts.push(`<span class="status-chip chip-money">$${GAME.cash.toLocaleString()}</span>`);
+  parts.push(`<span class="status-chip chip-money" data-cash-chip="1">$${GAME.cash.toLocaleString()}</span>`);
   if (GAME.bank > 0) parts.push(`<span class="status-chip">Bank $${GAME.bank.toLocaleString()}</span>`);
   parts.push(`<span class="status-chip">Bag ${cargoCount()}/${GAME.maxCarry}</span>`);
   parts.push(`<span class="status-chip">Day ${GAME.day}/30 · ${currentSlotName()}</span>`);
@@ -738,13 +768,13 @@ function renderMarketScreen() {
             <strong>${drug.displayName}</strong>
             ${hot ? '<span class="tag-hot">Hot</span>' : ""}
           </div>
-          <div class="trade-price">
-            <span>$${buy.toLocaleString()}</span>
-            <span class="trend ${trend.dir}">${trend.arrow}</span>
+          <div class="trade-price">$${buy.toLocaleString()}</div>
+          <div class="trend-wrap">
+            <span class="trend ${trend.dir}" title="${trend.dir.replace("-", " ")}">${trend.arrow}</span>
           </div>
-          <div class="trade-owned ${owned > 0 ? "has" : ""}">${owned}</div>
+          <div class="trade-owned ${owned > 0 ? "has" : ""}"><span>Owned</span><strong>${owned}</strong></div>
           <div class="trade-toggle">
-            <button class="trade-btn" data-toggle-trade="${drug.id}" type="button">${expanded ? "Close ▴" : "Trade ▾"}</button>
+            <button class="trade-btn" data-toggle-trade="${drug.id}" type="button">${expanded ? "Close" : "Tap to Trade"}</button>
           </div>
         </div>
         ${expandedHtml}
@@ -756,8 +786,9 @@ function renderMarketScreen() {
     <div class="market-head">
       <div>Drug</div>
       <div>Price</div>
-      <div>Have</div>
-      <div></div>
+      <div>Trend</div>
+      <div>Owned</div>
+      <div>Trade</div>
     </div>
     <div class="trade-list">${rowsHtml}</div>
     <div class="quick-strip">
@@ -805,10 +836,16 @@ function renderStashScreen() {
   const cargoValueStr = cargoValue().toLocaleString();
 
   el.mainPanel.innerHTML = `
-    <div class="screen-title">Stash</div>
+    <div class="screen-title">Stash + Street Intel</div>
     <div class="card-grid" style="margin-bottom:12px;">
       <section class="card money"><p class="eyebrow">Total Value</p><h3>$${cargoValueStr}</h3><p class="muted">If you sold everything here right now.</p></section>
       <section class="card"><p class="eyebrow">Bag</p><h3>${cargoCount()} / ${GAME.maxCarry}</h3><p class="muted">Upgrade via the Shop tab.</p></section>
+    </div>
+
+    <div class="screen-title">Street Intel</div>
+    <div class="card-grid" style="margin-bottom:12px;">
+      <section class="card"><p class="eyebrow">Rank</p><h3>${currentRank()}</h3><p class="muted">${GAME.rep} rep</p></section>
+      <section class="card"><p class="eyebrow">Pressure</p><h3>${rookPressureState()}</h3><p class="muted">Heat ${GAME.heat} · ${areaRiskLabel(currentArea().riskLevel)} risk zone.</p></section>
     </div>
     <div class="screen-title">Drugs on Hand</div>
     <div class="list-table" style="margin-bottom:12px;">
@@ -854,21 +891,6 @@ function renderShopScreen() {
   `;
 }
 
-function renderStatsScreen() {
-  const area = currentArea();
-  el.mainPanel.innerHTML = `
-    <div class="screen-title">Player Stats</div>
-    <div class="card-grid">
-      <section class="card"><p class="eyebrow">Rank</p><h3>${currentRank()}</h3><p class="muted">${GAME.rep} rep</p></section>
-      <section class="card"><p class="eyebrow">Heat</p><h3>${GAME.heat}</h3><p class="muted">Higher = busts & muggings likelier.</p></section>
-      <section class="card"><p class="eyebrow">Rook Pressure</p><h3>${rookPressureState()}</h3><p class="muted">Rival boss's crew tracking you.</p></section>
-      <section class="card"><p class="eyebrow">Area Risk</p><h3>${areaRiskLabel(area.riskLevel)}</h3><p class="muted">${area.hint}</p></section>
-      <section class="card"><p class="eyebrow">Dre Trust</p><h3>${GAME.dre.trust}</h3></section>
-      <section class="card"><p class="eyebrow">Mina Trust</p><h3>${GAME.mina.trust}</h3></section>
-    </div>
-  `;
-}
-
 function renderMainPanel() {
   switch (UI.tab) {
     case "market":   return renderMarketScreen();
@@ -876,7 +898,6 @@ function renderMainPanel() {
     case "bank":     return renderBankScreen();
     case "shop":     return renderShopScreen();
     case "hospital": return renderHospitalScreen();
-    case "stats":    return renderStatsScreen();
     default:         return renderMarketScreen();
   }
 }
@@ -961,8 +982,8 @@ function bindEvents() {
       return;
     }
 
-    if (qMinus) { UI.qty[qMinus] = Math.max(1, (UI.qty[qMinus] || 1) - 1); playClick(); render(); return; }
-    if (qPlus)  { UI.qty[qPlus]  = (UI.qty[qPlus] || 1) + 1; playClick(); render(); return; }
+    if (qMinus) { UI.qty[qMinus] = Math.max(1, (UI.qty[qMinus] || 1) - 1); playClick(); t.closest(".qty-stepper")?.classList.add("bump"); setTimeout(() => t.closest(".qty-stepper")?.classList.remove("bump"), 120); render(); return; }
+    if (qPlus)  { UI.qty[qPlus]  = (UI.qty[qPlus] || 1) + 1; playClick(); t.closest(".qty-stepper")?.classList.add("bump"); setTimeout(() => t.closest(".qty-stepper")?.classList.remove("bump"), 120); render(); return; }
     if (qMax)   {
       const owned = GAME.inventory[qMax] || 0;
       UI.qty[qMax] = Math.max(1, Math.max(owned, maxBuyQty(qMax)));

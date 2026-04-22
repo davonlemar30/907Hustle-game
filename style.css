@@ -1,32 +1,30 @@
-/* 907 Hustle — redesigned UI
-   color scheme: deep blue-black base, mint money, amber highlights, red heat */
+/* 907 Hustle — gritty comic shell */
 
 :root {
-  --bg: #0a0e14;
-  --bg-deep: #06090e;
-  --surface: #141a24;
-  --surface-2: #1c2432;
-  --surface-3: #242d3e;
-  --border: #2a3344;
-  --border-soft: #1f2636;
+  --bg: #12100e;
+  --bg-deep: #0b0908;
+  --surface: #1d1815;
+  --surface-2: #27201b;
+  --surface-3: #332a22;
+  --border: #4b3d31;
+  --border-soft: #3a2f26;
 
-  --ink: #e8ecf3;
-  --ink-dim: #8892a8;
-  --ink-muted: #5a6478;
+  --ink: #f2ebdd;
+  --ink-dim: #bcae9b;
+  --ink-muted: #8f806d;
 
-  --money: #34d399;        /* mint green — inflow */
-  --money-deep: #059669;
-  --spend: #f87171;        /* soft red — outflow */
-  --heat: #ef4444;
-  --heat-glow: #ff6b5e;
-  --gold: #fbbf24;         /* hot tags, highlights */
-  --cool: #60a5fa;         /* info / location */
-  --danger: #dc2626;
-  --warn: #f59e0b;
+  --money: #4ea46a;
+  --money-deep: #2f7e49;
+  --spend: #c35d4f;
+  --heat: #bc3e31;
+  --gold: #c6a24a;
+  --cool: #6e8f82;
+  --danger: #b13126;
+  --warn: #b88726;
 
   --radius: 10px;
   --radius-sm: 6px;
-  --shadow-lift: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-lift: 0 8px 24px rgba(0, 0, 0, 0.45);
 
   --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
   --font-mono: "SF Mono", "JetBrains Mono", "Menlo", monospace;
@@ -38,8 +36,9 @@ html, body { height: 100%; margin: 0; }
 body {
   color: var(--ink);
   background:
-    radial-gradient(ellipse at top left, rgba(96, 165, 250, 0.06) 0%, transparent 60%),
-    radial-gradient(ellipse at bottom right, rgba(52, 211, 153, 0.04) 0%, transparent 60%),
+    radial-gradient(ellipse at top left, rgba(198, 162, 74, 0.08) 0%, transparent 65%),
+    radial-gradient(ellipse at bottom right, rgba(78, 164, 106, 0.05) 0%, transparent 65%),
+    repeating-linear-gradient(130deg, rgba(255,255,255,0.015) 0 2px, transparent 2px 9px),
     var(--bg);
   font-family: var(--font-ui);
   font-size: 14px;
@@ -73,7 +72,7 @@ h1, h2, h3, h4, p { margin: 0; }
   display: flex;
   align-items: center;
   gap: 14px;
-  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  background: linear-gradient(180deg, #2b221c, var(--surface));
 }
 
 .status-bar h1 {
@@ -127,7 +126,7 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 
 .status-chip.chip-location {
-  color: var(--cool);
+  color: var(--gold);
   border-color: rgba(96, 165, 250, 0.3);
 }
 
@@ -167,7 +166,7 @@ h1, h2, h3, h4, p { margin: 0; }
 .tab:hover { color: var(--ink); background: rgba(255,255,255,0.03); }
 .tab.active {
   color: var(--gold);
-  background: rgba(251, 191, 36, 0.1);
+  background: rgba(198, 162, 74, 0.18);
   box-shadow: inset 0 -2px 0 var(--gold);
 }
 
@@ -212,10 +211,10 @@ h1, h2, h3, h4, p { margin: 0; }
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
   overflow: hidden;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
 }
 
-.trade-row:hover { background: var(--surface-3); cursor: pointer; }
+.trade-row:hover { background: var(--surface-3); cursor: pointer; transform: translateY(-1px); }
 
 .trade-row.expanded {
   background: var(--surface-3);
@@ -225,7 +224,7 @@ h1, h2, h3, h4, p { margin: 0; }
 
 .trade-row.hot {
   border-color: rgba(251, 191, 36, 0.4);
-  background: linear-gradient(90deg, rgba(251, 191, 36, 0.06), var(--surface-2));
+  background: linear-gradient(90deg, rgba(198, 162, 74, 0.14), var(--surface-2));
 }
 
 .trade-row-main {
@@ -262,32 +261,53 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 
 .trade-price {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   font-size: 0.95rem;
   color: var(--ink);
 }
 
-.trend {
-  font-size: 0.8rem;
-  font-weight: 700;
-  min-width: 22px;
+.trend-wrap {
+  display: flex;
+  justify-content: center;
 }
-.trend.up { color: var(--money); }
-.trend.up-strong { color: var(--money); text-shadow: 0 0 8px rgba(52,211,153,0.4); }
-.trend.down { color: var(--spend); }
-.trend.down-strong { color: var(--spend); text-shadow: 0 0 8px rgba(248,113,113,0.4); }
-.trend.flat { color: var(--ink-muted); }
+
+.trend {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.trend.up { color: #7ed497; background: rgba(78,164,106,0.14); }
+.trend.up-strong { color: #b9efca; background: rgba(78,164,106,0.3); }
+.trend.down { color: #de8172; background: rgba(195,93,79,0.14); }
+.trend.down-strong { color: #f2b0a6; background: rgba(195,93,79,0.32); }
+.trend.flat { color: var(--ink-muted); background: rgba(143,128,109,0.14); }
 
 .trade-owned {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-variant-numeric: tabular-nums;
   color: var(--ink-dim);
   font-weight: 600;
+  font-size: 0.75rem;
 }
-.trade-owned.has { color: var(--money); }
+.trade-owned span {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-muted);
+}
+.trade-owned strong {
+  font-size: 0.92rem;
+  color: var(--ink-dim);
+}
+.trade-owned.has strong { color: var(--money); }
 
 .trade-toggle {
   display: flex;
@@ -398,7 +418,7 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 
 .action-btn:hover:not(:disabled) { transform: translateY(-1px); }
-.action-btn:active:not(:disabled) { transform: translateY(0); }
+.action-btn:active:not(:disabled) { transform: scale(0.96); }
 .action-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 .action-btn small {
@@ -425,6 +445,49 @@ h1, h2, h3, h4, p { margin: 0; }
 .sell-btn:hover:not(:disabled) {
   background: rgba(52, 211, 153, 0.2);
   border-color: var(--money);
+}
+
+.qty-stepper.bump {
+  transform: scale(1.02);
+  border-color: var(--gold);
+}
+
+.trade-row.bought {
+  animation: buyFlash 0.35s ease-out;
+}
+
+.trade-row.sold {
+  animation: sellFlash 0.35s ease-out;
+}
+
+@keyframes buyFlash {
+  0% { box-shadow: inset 0 0 0 0 rgba(195,93,79,0.45); }
+  100% { box-shadow: inset 0 0 0 999px rgba(195,93,79,0); }
+}
+
+@keyframes sellFlash {
+  0% { box-shadow: inset 0 0 0 0 rgba(78,164,106,0.45); }
+  100% { box-shadow: inset 0 0 0 999px rgba(78,164,106,0); }
+}
+
+.status-chip.chip-money.cash-up {
+  animation: cashUp 0.45s ease-out;
+}
+
+.status-chip.chip-money.cash-down {
+  animation: cashDown 0.45s ease-out;
+}
+
+@keyframes cashUp {
+  0% { transform: scale(1); box-shadow: 0 0 0 rgba(78,164,106,0); }
+  35% { transform: scale(1.07); box-shadow: 0 0 0 5px rgba(78,164,106,0.28); }
+  100% { transform: scale(1); box-shadow: 0 0 0 rgba(78,164,106,0); }
+}
+
+@keyframes cashDown {
+  0% { transform: scale(1); box-shadow: 0 0 0 rgba(195,93,79,0); }
+  35% { transform: scale(0.95); box-shadow: 0 0 0 5px rgba(195,93,79,0.24); }
+  100% { transform: scale(1); box-shadow: 0 0 0 rgba(195,93,79,0); }
 }
 
 /* ============ QUICK ACTIONS STRIP ============ */
@@ -837,10 +900,10 @@ h1, h2, h3, h4, p { margin: 0; }
 .sleep-zzz {
   font-size: 3.5rem;
   font-weight: 300;
-  color: var(--cool);
+  color: var(--gold);
   letter-spacing: 0.35em;
   font-family: var(--font-mono);
-  text-shadow: 0 0 16px rgba(96, 165, 250, 0.4);
+  text-shadow: 0 0 14px rgba(198, 162, 74, 0.45);
 }
 
 .sleep-zzz span {
@@ -873,6 +936,13 @@ h1, h2, h3, h4, p { margin: 0; }
   letter-spacing: 0.1em;
 }
 
+.sleep-sub {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  color: var(--ink-muted);
+}
+
 /* ============ ROW SHAKE (on insufficient funds) ============ */
 
 .shake { animation: shakeX 0.3s ease-in-out; }
@@ -889,9 +959,9 @@ h1, h2, h3, h4, p { margin: 0; }
   .status-bar { flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 10px; }
   .status-stats { margin-left: 0; width: 100%; }
   .card-grid { grid-template-columns: 1fr; }
-  .market-head { grid-template-columns: 1.4fr .8fr .5fr auto; }
-  .market-head > :nth-child(4) { display: none; }
-  .trade-row-main { grid-template-columns: 1.4fr .8fr .5fr auto; }
+  .market-head { grid-template-columns: 1.4fr .8fr .6fr auto; }
+  .market-head > :nth-child(4), .market-head > :nth-child(5) { display: none; }
+  .trade-row-main { grid-template-columns: 1.4fr .8fr .6fr auto; }
   .trade-row-main .trade-owned { display: none; }
   .trade-actions { grid-template-columns: 1fr; }
 }

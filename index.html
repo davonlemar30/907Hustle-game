@@ -720,8 +720,10 @@ const SLOTS = ["Morning","Afternoon","Evening","Night"];
 
 function rng(a,b) { return Math.floor(Math.random()*(b-a+1))+a; }
 
-function genPrices(locationId,previous={},tick=1) {
+function genPrices(locationId,previous={},tick=1,G=null) {
   const area = AREAS.find(a=>a.id===locationId)||AREAS[0];
+  const mood=G?.areaState||{};
+  const farmCount=G?.areaTradeCounts?.[locationId]||0;
   const p = {};
   for(const d of DRUGS){
     const anchor=(d.min+d.max)/2;
@@ -732,7 +734,10 @@ function genPrices(locationId,previous={},tick=1) {
     const b = drift*daySwing*intraday;
     const s = 1+(Math.random()*2-1)*(d.vol*0.16);
     const bias = area.bias[d.id]||1;
-    p[d.id] = Math.max(5, Math.round(Math.min(d.max*1.38,Math.max(d.min*0.72,b*s*bias))));
+    const moodBoost=(mood.hotAreaId===locationId&&d.cat===mood.hotCategory)?1.16:1;
+    const crackdown=(mood.crackdownAreaId===locationId&&d.tier>=3)?1.08:1;
+    const fatigue=Math.max(0.88,1-(farmCount*0.015));
+    p[d.id] = Math.max(5, Math.round(Math.min(d.max*1.38,Math.max(d.min*0.72,b*s*bias*moodBoost*crackdown*fatigue))));
   }
   return p;
 }
@@ -750,6 +755,51 @@ function getTrend(id,hist) {
 
 const RUN_GOAL_NET_WORTH = 10000;
 const RUN_GOAL_HEAT_CAP = 7;
+
+const START_DAY_TICKS = 4;
+
+function toAbsTick(day,tick){ return ((day-1)*START_DAY_TICKS)+tick; }
+
+function paceState(G) {
+  const progress=Math.min(1,Math.max(0,toAbsTick(G.day,Math.min(4,G.tick))/toAbsTick(30,4)));
+  const expected=RUN_GOAL_NET_WORTH*progress;
+  const worth=netWorthOf(G);
+  if(worth>=expected*1.15) return {label:"Ahead of pace",tone:"good",delta:worth-expected};
+  if(worth>=expected*0.92) return {label:"On pace",tone:"",delta:worth-expected};
+  return {label:"Behind pace",tone:"bad",delta:worth-expected};
+}
+
+function drePressureStage(G){
+  if(G.dre.loan<=0||!G.dre.deadline) return {stage:0,label:"Square",line:"No active note."};
+  const overdue=Math.max(0,G.day-G.dre.deadline+1);
+  const trustMod=G.dre.trust>=4?-1:G.dre.trust<=-2?1:0;
+  const score=overdue+trustMod;
+  if(score>=4) return {stage:3,label:"Dre's done asking",line:"Harsh collections active."};
+  if(score>=2) return {stage:2,label:"Out of favors",line:"Aggressive pressure this cycle."};
+  if(overdue>=1) return {stage:1,label:"Dre's getting impatient",line:"Warning stage — pay soon."};
+  return {stage:0,label:"On the clock",line:`Due Day ${G.dre.deadline}.`};
+}
+
+function areaMoodForDay(day) {
+  const area=AREAS[(day*3)%AREAS.length];
+  const categories=["PILL","POWDER","PARTY","STREET","OPIATE"];
+  return {
+    hotAreaId: area.id,
+    hotCategory: categories[day%categories.length],
+    crackdownAreaId: AREAS[(day*5+2)%AREAS.length].id,
+    laneNote: day%3===0?"Night demand shifting south.":day%3===1?"Midtown scripts moving quick.":"Airport lanes paying but watched.",
+  };
+}
+
+function getRunStyleLabel(G){
+  const worth=netWorthOf(G);
+  if(worth>=RUN_GOAL_NET_WORTH&&G.dre.loan<=0&&G.heat<RUN_GOAL_HEAT_CAP) return "Boss Tier";
+  if(G.heat<=4&&G.dre.loan<=0) return "Clean Operator";
+  if((G.runStats?.hottestDay||0)>=10&&worth>=7000) return "Street Survivor";
+  if(worth>=RUN_GOAL_NET_WORTH&&G.heat>=8) return "Reckless Earner";
+  if((G.runStats?.seizures||0)>=3) return "Sloppy Runner";
+  return "Came Up Short";
+}
 
 function getSellPrice(G,id) {
   const repBonus=Math.min(0.14,G.rep*0.003);
@@ -779,7 +829,7 @@ function getHeatBand(heat) {
 }
 
 function initGame() {
-  const prices=genPrices("north_star_lot",{},1);
+  const prices=genPrices("north_star_lot",{},1,null);
   const history={};
   for(const d of DRUGS) history[d.id]=[prices[d.id]];
   const seenPrices={north_star_lot:{...prices}};
@@ -793,7 +843,15 @@ function initGame() {
     feed:[{text:"Game started. Check the market.",tone:"",stamp:"Day 1 · Morning"}],
     pendingEvent:null,
     combatState:null,
-    dayStats:{startWorth:200,bestTrade:null},
+    dayStats:{startWorth:200,bestTrade:0,biggestSale:0,areaSales:{}},
+    runStats:{bestTrade:0,biggestSale:0,hottestDay:0,cleanProfitDay:0,bestArea:{id:"north_star_lot",total:0},areaTotals:{},seizures:0,forcedDumps:0,records:[]},
+    guidanceStep:0,
+    seenMeta:{north_star_lot:Object.fromEntries(DRUGS.map(d=>[d.id,{day:1,tick:1}]))},
+    inventoryAge:Object.fromEntries(DRUGS.map(d=>[d.id,null])),
+    carryStreak:0,
+    areaTradeCounts:Object.fromEntries(AREAS.map(a=>[a.id,0])),
+    areaState:areaMoodForDay(1),
+    lockdowns:[],
     daySummary:null,
     runSummary:null,
     gameOver:false,
@@ -807,11 +865,12 @@ function addFeed(G,text,tone="") {
 function advanceTime(G) {
   const nTick=G.tick>=4?1:G.tick+1;
   const nDay=G.tick>=4?G.day+1:G.day;
-  const nPrices=genPrices(G.locationId,G.prices,nTick);
+  const nAreaState=nTick===1?areaMoodForDay(nDay):(G.areaState||areaMoodForDay(nDay));
+  const nPrices=genPrices(G.locationId,G.prices,nTick,{...G,areaState:nAreaState});
   const nHist={};
   for(const d of DRUGS) nHist[d.id]=[...(G.history[d.id]||[]),nPrices[d.id]].slice(-5);
   const interest=nTick===1&&G.bank>0?Math.max(1,Math.floor(G.bank*.02)):0;
-  return {nTick,nDay,nPrices,nHist,interest};
+  return {nTick,nDay,nPrices,nHist,interest,nAreaState};
 }
 
 function pickRandomEvent(G,trigger) {
@@ -831,14 +890,20 @@ function reducer(G,action) {
       if(G.cash<cost) return {...G,feed:addFeed(G,"Not enough cash.","bad")};
       if(cargo+qty>G.maxCarry) return {...G,feed:addFeed(G,"Bag is full.","bad")};
       const hAdd=["cocaine","heroin","fentanyl","meth","pcp"].includes(drugId)?Math.max(1,Math.floor(qty/2)):0;
-      return {...G,
+      const firstHeld=(G.inventoryAge?.[drugId]===null||G.inventory[drugId]===0)?G.day:G.inventoryAge?.[drugId];
+      let next={...G,
         cash:G.cash-cost,
         inventory:{...G.inventory,[drugId]:(G.inventory[drugId]||0)+qty},
+        inventoryAge:{...G.inventoryAge,[drugId]:firstHeld},
         heat:Math.min(15,G.heat+hAdd),
         rep:G.rep+Math.max(1,Math.floor(qty/3)),
         dayStats:{...G.dayStats,bestTrade:Math.max(G.dayStats?.bestTrade||0,cost)},
+        runStats:{...G.runStats,bestTrade:Math.max(G.runStats?.bestTrade||0,cost)},
+        areaTradeCounts:{...G.areaTradeCounts,[G.locationId]:(G.areaTradeCounts?.[G.locationId]||0)+1},
         feed:addFeed(G,`Bought ${qty}× ${DRUGS.find(d=>d.id===drugId)?.name} — −$${cost.toLocaleString()}.`,"good"),
       };
+      if(next.day<=3&&next.guidanceStep<2) next={...next,guidanceStep:2,feed:addFeed(next,"Early run tip: flip quick wins before holding deep inventory.","warn")};
+      return next;
     }
 
     case "SELL": {
@@ -851,13 +916,27 @@ function reducer(G,action) {
       const total=sell*actual;
       // trigger deal event
       const ev=pickRandomEvent(G,"deal");
+      const remaining=owned-actual;
+      const areaSales={...(G.dayStats?.areaSales||{})};
+      areaSales[G.locationId]=(areaSales[G.locationId]||0)+total;
+      const areaTotals={...(G.runStats?.areaTotals||{})};
+      areaTotals[G.locationId]=(areaTotals[G.locationId]||0)+total;
+      const bestArea=Object.entries(areaTotals).sort((a,b)=>b[1]-a[1])[0]||["north_star_lot",0];
       let next={...G,
         cash:G.cash+total,
-        inventory:{...G.inventory,[drugId]:owned-actual},
+        inventory:{...G.inventory,[drugId]:remaining},
+        inventoryAge:{...G.inventoryAge,[drugId]:remaining>0?G.inventoryAge?.[drugId]:null},
         rep:G.rep+Math.max(1,Math.floor(actual/3)),
-        dayStats:{...G.dayStats,bestTrade:Math.max(G.dayStats?.bestTrade||0,total)},
+        dayStats:{...G.dayStats,bestTrade:Math.max(G.dayStats?.bestTrade||0,total),biggestSale:Math.max(G.dayStats?.biggestSale||0,total),areaSales},
+        runStats:{...G.runStats,bestTrade:Math.max(G.runStats?.bestTrade||0,total),biggestSale:Math.max(G.runStats?.biggestSale||0,total),areaTotals,bestArea:{id:bestArea[0],total:bestArea[1]}},
+        areaTradeCounts:{...G.areaTradeCounts,[G.locationId]:(G.areaTradeCounts?.[G.locationId]||0)+1},
         feed:addFeed(G,`Sold ${actual}× ${DRUGS.find(d=>d.id===drugId)?.name} — +$${total.toLocaleString()}.`,"good"),
       };
+      if(total>(G.runStats?.biggestSale||0)) next={...next,feed:addFeed(next,`Record set: biggest sale $${total.toLocaleString()}. Big Flip.`,"good")};
+      if(next.heat>=8&&DRUGS.find(d=>d.id===drugId)?.tier>=4&&Math.random()<0.32){
+        const sting=Math.min(next.cash,rng(35,120));
+        next={...next,cash:next.cash-sting,heat:Math.min(15,next.heat+1),feed:addFeed(next,`Undercover sting tax: burned $${sting} on a hot handoff.`,"bad")};
+      }
       if(ev) next={...next,pendingEvent:ev};
       return next;
     }
@@ -865,7 +944,7 @@ function reducer(G,action) {
     case "TRAVEL": {
       const target=AREAS.find(a=>a.id===action.areaId);
       if(!target||target.id===G.locationId) return G;
-      const {nTick,nDay,nPrices,nHist}=advanceTime(G);
+      const {nTick,nDay,nPrices,nHist,nAreaState}=advanceTime(G);
       const heatDelta=target.risk-1-(G.assets.includes("beater")?2:0);
       let nextHeat=Math.max(0,Math.min(15,G.heat+heatDelta));
       let cashPenalty=0;
@@ -887,10 +966,13 @@ function reducer(G,action) {
         cashPenalty=Math.min(G.cash,rng(20,70));
         heatFeed=`Heat 5+ checkpoint friction cost you $${cashPenalty}.`;
       }
+      const locked=(G.lockdowns||[]).find(x=>x.areaId===action.areaId&&x.untilDay>=G.day);
+      if(locked) return {...G,feed:addFeed(G,`${target.name} is on APD lockdown until Day ${locked.untilDay}.`,"bad")};
       const ev=pickRandomEvent({...G,locationId:action.areaId,heat:nextHeat},"travel");
       const prevBand=getHeatBand(G.heat).id;
       const nextBand=getHeatBand(nextHeat).id;
       const bandAlert=prevBand!==nextBand?`Heat status now ${getHeatBand(nextHeat).label}.`:null;
+      let seizureInc=0;
       let next={...G,
         locationId:action.areaId,
         day:nDay,tick:nTick,
@@ -899,12 +981,21 @@ function reducer(G,action) {
         inventory:inv,
         prices:nPrices,history:nHist,
         prevAreaPrices:G.prices,
+        areaState:nAreaState,
+        runStats:{...G.runStats,hottestDay:Math.max(G.runStats?.hottestDay||0,nextHeat)},
         seenPrices:{...(G.seenPrices||{}),[action.areaId]:{...nPrices}},
+        seenMeta:{...(G.seenMeta||{}),[action.areaId]:Object.fromEntries(DRUGS.map(d=>[d.id,{day:nDay,tick:nTick}]))},
         feed:addFeed({...G,day:nDay,tick:nTick},`Moved to ${target.name}.`),
         pendingEvent:ev||null,
       };
       if(heatFeed) next={...next,feed:addFeed(next,heatFeed,"bad")};
+      if((heatFeed||"").includes("seized")) seizureInc+=1;
       if(bandAlert) next={...next,feed:addFeed(next,bandAlert,getHeatBand(nextHeat).tone)};
+      if(nextHeat>=9&&Math.random()<0.25){
+        const lockArea=AREAS.filter(a=>a.id!==action.areaId)[rng(0,AREAS.length-2)];
+        next={...next,lockdowns:[...(next.lockdowns||[]),{areaId:lockArea.id,untilDay:nDay+1}],feed:addFeed(next,`APD attention makes ${lockArea.name} too hot through Day ${nDay+1}.`,"warn")};
+      }
+      if(seizureInc>0) next={...next,runStats:{...next.runStats,seizures:(next.runStats?.seizures||0)+seizureInc}};
       if(nDay>30){
         const worth=netWorthOf(next);
         const debtClear=next.dre.loan<=0;
@@ -913,13 +1004,13 @@ function reducer(G,action) {
         if(worth>=RUN_GOAL_NET_WORTH && debtClear && lowHeat) tier="boss_tier";
         else if(worth>=RUN_GOAL_NET_WORTH && debtClear) tier="success";
         else if(worth>=RUN_GOAL_NET_WORTH || debtClear) tier="survived";
-        next={...next,runSummary:{tier,netWorth:worth,debt:next.dre.loan,heat:next.heat,target:RUN_GOAL_NET_WORTH,heatCap:RUN_GOAL_HEAT_CAP},gameOver:true};
+        next={...next,runSummary:{tier,netWorth:worth,debt:next.dre.loan,heat:next.heat,target:RUN_GOAL_NET_WORTH,heatCap:RUN_GOAL_HEAT_CAP,style:getRunStyleLabel(next),bestTrade:next.runStats?.bestTrade||0,biggestSale:next.runStats?.biggestSale||0,bestArea:next.runStats?.bestArea,seizures:next.runStats?.seizures||0},gameOver:true};
       }
       return next;
     }
 
     case "LAY_LOW": {
-      const {nTick,nDay,nPrices,nHist,interest}=advanceTime(G);
+      const {nTick,nDay,nPrices,nHist,interest,nAreaState}=advanceTime(G);
       const ev=pickRandomEvent(G,"laylow");
       let newFeed=[
         ...(interest?[{text:`Bank interest +$${interest}.`,tone:"good",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`}]:[]),
@@ -930,22 +1021,29 @@ function reducer(G,action) {
       let extraCash=0;
       let extraHeat=0;
       let inv={...G.inventory};
+      let invAge={...G.inventoryAge};
       if(dre.loan>0&&G.day>=dre.deadline){
         const overdueDays=Math.max(1,G.day-dre.deadline+1);
-        const penalty=Math.min(G.cash,rng(35,90)+(overdueDays*20));
+        const stage=drePressureStage(G).stage;
+        const trustSoftener=dre.trust>=4?0.75:dre.trust<=-2?1.2:1;
+        const penalty=Math.min(G.cash,Math.round((rng(35,90)+(overdueDays*20)+(stage*20))*trustSoftener));
         extraCash=-penalty;
         dre.trust-=1;
-        extraHeat=Math.min(4,1+Math.floor(overdueDays/2));
-        newFeed=[{text:`Dre collection hit: -$${penalty}. Overdue day ${overdueDays} and pressure rising.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
+        extraHeat=Math.min(5,1+Math.floor(overdueDays/2)+stage);
+        const lines=["Dre's getting impatient.","You're out of favors.","Dre's done asking."];
+        newFeed=[{text:`${lines[Math.min(2,stage)]} Collection hit -$${penalty}. Overdue day ${overdueDays}.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
       }
       let nextHeat=Math.max(0,Math.min(15,G.heat-1+extraHeat));
+      let seizureInc=0;
       if(nextHeat>=10){
         const loaded=DRUGS.filter(d=>inv[d.id]>0);
         if(loaded.length){
           const pick=loaded[rng(0,loaded.length-1)];
           const lost=Math.max(1,Math.floor(inv[pick.id]*rng(18,35)/100));
           inv[pick.id]=Math.max(0,inv[pick.id]-lost);
+          if(inv[pick.id]===0) invAge[pick.id]=null;
           newFeed=[{text:`Heat 10+ raid: APD seized ${lost}× ${pick.name} from stash movement.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
+          seizureInc+=1;
         }
       } else if(nextHeat>=8 && Math.random()<0.65){
         const sweep=Math.min(Math.max(0,G.cash+extraCash),rng(25,95));
@@ -954,19 +1052,53 @@ function reducer(G,action) {
       } else if(nextHeat>=5 && Math.random()<0.4){
         newFeed=[{text:`Heat 5+ checkpoints slowed your day.`,tone:"warn",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
       }
+      let staleHeat=0;
+      let staleDrops=0;
+      const stalePrices={...nPrices};
+      for(const drug of DRUGS){
+        const held=inv[drug.id]||0;
+        const heldDay=invAge?.[drug.id];
+        if(!held||heldDay===null) continue;
+        const age=nDay-heldDay;
+        if(age>=3){
+          staleHeat+=Math.min(2,Math.floor(age/3));
+          if(Math.random()<0.28){
+            stalePrices[drug.id]=Math.max(5,Math.floor(stalePrices[drug.id]*0.92));
+            staleDrops+=1;
+          }
+        }
+      }
+      if(staleHeat>0){
+        extraHeat+=staleHeat;
+        newFeed=[{text:`Holding too long raised visibility (+${staleHeat} heat). Move stale product.`,tone:"warn",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
+      }
+      if(staleDrops>0){
+        newFeed=[{text:`Street demand cooled on ${staleDrops} stale product lane(s).`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
+      }
       let next={...G,
         tick:nTick,day:nDay,
         heat:nextHeat,
         cash:G.cash+interest+extraCash,
         bank:G.bank+interest,
         inventory:inv,
-        prices:nPrices,history:nHist,
+        prices:stalePrices,history:nHist,
         prevAreaPrices:G.prices,
+        areaState:nAreaState,
+        inventoryAge:invAge,
         seenPrices:{...(G.seenPrices||{}),[G.locationId]:{...nPrices}},
+        seenMeta:{...(G.seenMeta||{}),[G.locationId]:Object.fromEntries(DRUGS.map(d=>[d.id,{day:nDay,tick:nTick}]))},
         feed:newFeed,
         dre,
         pendingEvent:ev||null,
       };
+      const cargo=Object.values(inv).reduce((s,v)=>s+v,0);
+      const carryStreak=(cargo>=Math.floor(next.maxCarry*0.75))?(G.carryStreak||0)+1:0;
+      next={...next,carryStreak};
+      if(carryStreak>=3){
+        next={...next,heat:Math.min(15,next.heat+1),feed:addFeed(next,"Heavy carry streak drew extra APD attention (+1 heat).","warn")};
+      }
+      const decayedAreaCounts=Object.fromEntries(Object.entries(G.areaTradeCounts||{}).map(([k,v])=>[k,Math.max(0,v-(nTick===1?1:0))]));
+      next={...next,areaTradeCounts:decayedAreaCounts,runStats:{...next.runStats,hottestDay:Math.max(next.runStats?.hottestDay||0,next.heat),seizures:(next.runStats?.seizures||0)+seizureInc}};
       const prevBand=getHeatBand(G.heat).id;
       const currentBand=getHeatBand(nextHeat).id;
       if(prevBand!==currentBand){
@@ -977,6 +1109,7 @@ function reducer(G,action) {
         const pnl=dayWorth-(G.dayStats?.startWorth||netWorthOf(G));
         const overdue=next.dre.loan>0&&next.day>next.dre.deadline;
         const note=overdue?"Dre wants his money":next.heat>=8?"You're moving sloppy":pnl>=450?"Hot but profitable":pnl>=0?"Quiet day":"Took a hit today";
+        const cleanCandidate=next.heat<=3&&pnl>0?Math.max(next.runStats?.cleanProfitDay||0,pnl):(next.runStats?.cleanProfitDay||0);
         next={...next,daySummary:{
           day:G.day,
           pnl,
@@ -985,8 +1118,9 @@ function reducer(G,action) {
           debt:next.dre.loan,
           debtOverdue:overdue,
           heat:next.heat,
-          note
-        },dayStats:{startWorth:dayWorth,bestTrade:0}};
+          note,
+          areaTop:Object.entries(next.dayStats?.areaSales||{}).sort((a,b)=>b[1]-a[1])[0]||null,
+        },dayStats:{startWorth:dayWorth,bestTrade:0,biggestSale:0,areaSales:{}},runStats:{...next.runStats,cleanProfitDay:cleanCandidate}};
       }
       if(nDay>30){
         const worth=netWorthOf(next);
@@ -996,7 +1130,7 @@ function reducer(G,action) {
         if(worth>=RUN_GOAL_NET_WORTH && debtClear && lowHeat) tier="boss_tier";
         else if(worth>=RUN_GOAL_NET_WORTH && debtClear) tier="success";
         else if(worth>=RUN_GOAL_NET_WORTH || debtClear) tier="survived";
-        next={...next,runSummary:{tier,netWorth:worth,debt:next.dre.loan,heat:next.heat,target:RUN_GOAL_NET_WORTH,heatCap:RUN_GOAL_HEAT_CAP},gameOver:true};
+        next={...next,runSummary:{tier,netWorth:worth,debt:next.dre.loan,heat:next.heat,target:RUN_GOAL_NET_WORTH,heatCap:RUN_GOAL_HEAT_CAP,style:getRunStyleLabel(next),bestTrade:next.runStats?.bestTrade||0,biggestSale:next.runStats?.biggestSale||0,bestArea:next.runStats?.bestArea,seizures:next.runStats?.seizures||0},gameOver:true};
       }
       return next;
     }
@@ -1187,7 +1321,19 @@ function MarketScreen({G,dispatch}) {
   const setQ=(id,v)=>setQtys(q=>({...q,[id]:Math.max(1,v)}));
   const bestFlip=DRUGS.reduce((b,d)=>{const s=sellP(d.id)-(G.prices[d.id]||0);return s>b.s?{id:d.id,s}:b;},{id:null,s:-Infinity}).id;
   const area=AREAS.find(a=>a.id===G.locationId);
+  const mood=G.areaState||{};
   const otherAreas=(G.seenPrices&&Object.keys(G.seenPrices).filter(id=>id!==G.locationId))||[];
+  const worth=netWorthOf(G);
+  const targetLeft=Math.max(0,RUN_GOAL_NET_WORTH-worth);
+  const progressPct=Math.min(100,Math.round((worth/RUN_GOAL_NET_WORTH)*100));
+  const pace=paceState(G);
+  const debtBlock=G.dre.loan>0;
+  const heatBlock=G.heat>=RUN_GOAL_HEAT_CAP;
+  const earlyHint=G.day<=5?(
+    G.day<=2?"Starter edge: focus on 1-2 low tier flips and keep travel cheap.":
+    G.day<=3?"Route check: compare Midtown pill prices vs Downtown party demand.":
+    "Debt + heat discipline now decides Day 30 outcomes."
+  ):null;
 
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
@@ -1196,6 +1342,22 @@ function MarketScreen({G,dispatch}) {
         <div className="goal-banner">
           <strong>Day 30 Goal:</strong> ${RUN_GOAL_NET_WORTH.toLocaleString()}+ net worth · clear Dre debt · finish below heat {RUN_GOAL_HEAT_CAP}.
         </div>
+        <div className="goal-banner" style={{marginTop:6,padding:"10px 12px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
+            <strong>Progress {progressPct}%</strong>
+            <span style={{color:pace.tone==="good"?"var(--money2)":pace.tone==="bad"?"var(--red2)":"var(--ink)"}}>{pace.label}</span>
+          </div>
+          <div style={{height:6,background:"var(--plate)",border:"1px solid var(--border2)",margin:"6px 0 8px",position:"relative"}}>
+            <div style={{height:"100%",width:`${progressPct}%`,background:"linear-gradient(90deg,var(--gold),var(--money2))"}}/>
+          </div>
+          <div style={{fontSize:".68rem",fontWeight:700,letterSpacing:".08em",textTransform:"uppercase",color:"var(--ink-dim)"}}>
+            ${targetLeft.toLocaleString()} left · {debtBlock?"Boss Tier blocked by debt":"Debt clear"} · {heatBlock?"Heat too high for boss finish":"Heat eligible for boss tier"}
+          </div>
+        </div>
+        <div className="goal-banner" style={{marginTop:6,padding:"8px 12px"}}>
+          <strong>Area pulse:</strong> {(AREAS.find(a=>a.id===mood.hotAreaId)?.name)||"—"} hot for {mood.hotCategory||"—"} · Crackdown: {(AREAS.find(a=>a.id===mood.crackdownAreaId)?.name)||"—"} · {mood.laneNote}
+        </div>
+        {earlyHint&&<div className="goal-banner" style={{marginTop:6,padding:"8px 12px",borderColor:"#604010",color:"#e0c080"}}><strong>Day {G.day} guidance:</strong> {earlyHint}</div>}
         <div className="mkt-list">
           <div style={{display:"grid",gridTemplateColumns:"1fr 100px 52px 44px 80px",gap:8,padding:"3px 10px 3px 14px"}}>
             {["Drug Name","Price","Trend","Owned",""].map(l=>(
@@ -1233,7 +1395,9 @@ function MarketScreen({G,dispatch}) {
                           .sort((a,b)=>a.price-b.price)[0];
                         if(!bestArea) return "";
                         const areaName=AREAS.find(a=>a.id===bestArea.id)?.name||bestArea.id;
-                        return ` · Last seen ${areaName}: $${bestArea.price.toLocaleString()}`;
+                        const seen=G.seenMeta?.[bestArea.id]?.[drug.id];
+                        const age=seen?toAbsTick(G.day,G.tick)-toAbsTick(seen.day,seen.tick):999;
+                        return ` · Best known buy ${areaName}: $${bestArea.price.toLocaleString()} (${age>8?"intel stale":`seen ${age} ticks ago`})`;
                       })()}
                     </div>
                   </div>
@@ -1308,6 +1472,7 @@ function BankScreen({G,dispatch}) {
   const [dep,setDep]=useState("");
   const [wd,setWd]=useState("");
   const overdue=G.dre.loan>0&&G.day>G.dre.deadline;
+  const dreStage=drePressureStage(G);
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <PH tab="bank" icon="bank" title="Cash & Bank" sub="2% daily interest"/>
@@ -1342,10 +1507,12 @@ function BankScreen({G,dispatch}) {
           </div>
           <div className="dre-card">
             <div className="dre-title">⚠ Dre's Corner</div>
+            <div style={{fontSize:".68rem",fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:8,color:dreStage.stage>=2?"var(--red2)":"var(--ink-dim)"}}>{dreStage.label}</div>
             {G.dre.loan>0?(
               <div>
                 <div style={{fontFamily:"var(--font-mono)",fontSize:".82rem",color:"var(--ink)",marginBottom:8}}>Outstanding: <span style={{color:"#e0a030"}}>${G.dre.loan.toLocaleString()}</span> · Due Day {G.dre.deadline}</div>
                 {overdue&&<div style={{fontFamily:"var(--font-ui)",fontSize:".72rem",fontWeight:700,letterSpacing:".08em",color:"var(--red2)",marginBottom:8}}>OVERDUE — Dre is collecting.</div>}
+                <div style={{fontSize:".7rem",color:"var(--ink-muted)",marginBottom:8}}>{dreStage.line} Trust {G.dre.trust}.</div>
                 <button className="btn btn-danger" disabled={G.cash<G.dre.loan} style={{flexDirection:"row",padding:"8px 18px",fontSize:".78rem"}} onClick={()=>dispatch({type:"REPAY_DRE"})}>Repay ${G.dre.loan.toLocaleString()}</button>
               </div>
             ):(
@@ -1364,11 +1531,12 @@ function BankScreen({G,dispatch}) {
 // ── SHOP ──────────────────────────────────────────────────────────────────────
 function ShopScreen({G,dispatch}) {
   const groups=[
-    {id:"carry",label:"Carry / Storage"},
-    {id:"utility",label:"Street Ops / Utility"},
-    {id:"defense",label:"Protection / Defense"},
-    {id:"mobility",label:"Vehicles / Mobility"},
+    {id:"carry",label:"Volume Mover",blurb:"Scale flips with bigger bag space and longer routes."},
+    {id:"utility",label:"Street Ops Specialist",blurb:"Gain tactical options and cleaner deal control."},
+    {id:"defense",label:"Risk Tank / Heat-Resistant",blurb:"Absorb hostile events and pressure spikes."},
+    {id:"mobility",label:"Low-Profile Runner",blurb:"Travel cleaner, route faster, reduce transit heat."},
   ];
+  const recommended=UPGRADES.filter(u=>!G.assets.includes(u.id)&&G.cash>=u.cost&&(u.req?.rep?G.rep>=u.req.rep:true)).sort((a,b)=>a.cost-b.cost)[0];
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <PH tab="shop" icon="shop" title="Gear Shop" sub="Upgrades persist all run"/>
@@ -1378,7 +1546,7 @@ function ShopScreen({G,dispatch}) {
             const list=UPGRADES.filter(u=>(u.bucket||"utility")===group.id);
             if(!list.length) return null;
             return <div key={group.id} className="shop-group">
-              <div className="shop-group-head">{group.label}</div>
+              <div className="shop-group-head">{group.label}<span style={{marginLeft:8,color:"var(--ink-muted)",fontWeight:600,letterSpacing:".06em"}}>{group.blurb}</span></div>
               {list.map(u=>{
             const owned=G.assets.includes(u.id);
             const locked=u.req?.rep&&G.rep<u.req.rep;
@@ -1387,6 +1555,7 @@ function ShopScreen({G,dispatch}) {
                 <div style={{flex:1}}>
                   <div className="shop-name">{u.name}</div>
                   <div className="shop-desc">{u.desc}</div>
+                  {recommended?.id===u.id&&<div style={{fontSize:".62rem",marginTop:4,color:"var(--money2)",fontWeight:700,letterSpacing:".08em"}}>RECOMMENDED NEXT BUY</div>}
                   {locked&&<div style={{fontSize:".62rem",fontWeight:700,letterSpacing:".08em",color:"var(--red2)",marginTop:3}}>REQ REP {u.req.rep}</div>}
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}>
@@ -1485,6 +1654,7 @@ function StatsScreen({G}) {
 
 // ── TRAVEL MODAL ──────────────────────────────────────────────────────────────
 function TravelModal({G,onTravel,onClose}) {
+  const mood=G.areaState||{};
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
@@ -1499,6 +1669,9 @@ function TravelModal({G,onTravel,onClose}) {
                   <div className="area-name">{area.name}{cur&&<span style={{color:"var(--gold)",marginLeft:8,fontSize:".65rem",fontFamily:"var(--font-ui)",fontWeight:700,letterSpacing:".1em"}}>★ HERE</span>}</div>
                   <div className="area-hint">{area.hint}</div>
                   <div className="area-meta">Risk {area.risk}/4 · Police {area.police}/3 · Rival {area.rival}/3</div>
+                  {mood.hotAreaId===area.id&&<div className="area-meta" style={{color:"var(--money2)"}}>Hot lane: {mood.hotCategory} demand spike</div>}
+                  {mood.crackdownAreaId===area.id&&<div className="area-meta" style={{color:"var(--red2)"}}>APD spotlight: high-tier trades riskier</div>}
+                  {(G.areaTradeCounts?.[area.id]||0)>=6&&<div className="area-meta" style={{color:"#d09030"}}>Route fatigued: margins cooling from overfarming</div>}
                   {!!biasTop.length&&<div className="area-meta">Best for: {biasTop.join(" · ")}</div>}
                   <div className="area-risk">
                     <span style={{fontFamily:"var(--font-ui)",fontSize:".58rem",fontWeight:700,letterSpacing:".12em",color:"var(--ink-muted)",marginRight:4}}>RISK</span>
@@ -1608,6 +1781,7 @@ function DaySummaryModal({summary,dispatch}) {
             <div>Net Worth: <strong>${summary.netWorth.toLocaleString()}</strong></div>
             <div>Debt: <strong>{summary.debt>0?`$${summary.debt.toLocaleString()}`:"Clear"}</strong>{summary.debtOverdue?" · OVERDUE":""}</div>
             <div>Heat: <strong>{summary.heat}</strong></div>
+            {summary.areaTop&&<div>Strongest Area Today: <strong>{AREAS.find(a=>a.id===summary.areaTop[0])?.name||summary.areaTop[0]}</strong> (${summary.areaTop[1].toLocaleString()})</div>}
             <div style={{marginTop:8,color:"var(--gold2)"}}>{summary.note}</div>
           </div>
           <div className="confirm-btns">
@@ -1626,6 +1800,8 @@ function GameOverModal({G,dispatch}) {
   const won=G.day>30&&G.health>0;
   const tier=G.runSummary?.tier;
   const title=tier==="boss_tier"?"Boss-Tier Success":tier==="success"?"Run Complete — Success":tier==="survived"?"Survived, Came Up Short":tier==="came_up_short"?"Failed Run":"Game Over";
+  const styleLabel=G.runSummary?.style||getRunStyleLabel(G);
+  const bestAreaName=AREAS.find(a=>a.id===G.runSummary?.bestArea?.id)?.name||"—";
   return (
     <div className="modal-backdrop">
       <div className="modal confirm-modal">
@@ -1633,9 +1809,12 @@ function GameOverModal({G,dispatch}) {
           <div className="gameover-title">{won?title:"Game Over"}</div>
           <div className="gameover-sub">
             {won?`Day 30 evaluation complete.`:`You got taken out on Day ${G.day}.`}<br/>
+            Run Style: {styleLabel}<br/>
             Net Worth: ${netWorth.toLocaleString()} · Debt: ${G.dre.loan.toLocaleString()} · Heat: {G.heat}<br/>
             Target: ${RUN_GOAL_NET_WORTH.toLocaleString()}+ · debt clear · heat under {RUN_GOAL_HEAT_CAP}<br/>
-            Rep: {G.rep} · Rank: {rank}
+            Rep: {G.rep} · Rank: {rank}<br/>
+            Best Trade: ${(G.runSummary?.bestTrade||G.runStats?.bestTrade||0).toLocaleString()} · Biggest Sale: ${(G.runSummary?.biggestSale||G.runStats?.biggestSale||0).toLocaleString()}<br/>
+            Strongest Area: {bestAreaName} · Seizures: {G.runSummary?.seizures||G.runStats?.seizures||0}
           </div>
           <button className="btn btn-primary" style={{width:"100%",padding:"14px",flexDirection:"row",fontSize:".88rem"}} onClick={()=>dispatch({type:"NEW_GAME"})}>New Run</button>
         </div>
@@ -1670,6 +1849,7 @@ function App() {
   const worth=netWorthOf(G);
   const heatBand=getHeatBand(G.heat);
   const dreOverdue=G.dre.loan>0&&G.day>G.dre.deadline;
+  const pace=paceState(G);
 
   return (
     <div className="app">
@@ -1680,6 +1860,7 @@ function App() {
           <Chip icon="cash" label="Cash"  value={`$${G.cash.toLocaleString()}`}     cls="chip-cash"/>
           {G.bank>0&&<Chip icon="bank" label="Bank"  value={`$${G.bank.toLocaleString()}`} cls="chip-bank"/>}
           <Chip icon="stats" label="Worth" value={`$${worth.toLocaleString()}`} cls={worth>=RUN_GOAL_NET_WORTH?"chip-bank":""}/>
+          <Chip icon="warn" label="Pace" value={pace.label.replace(" of "," ")} cls={pace.tone==="good"?"chip-bank":pace.tone==="bad"?"chip-heat":""}/>
           <Chip icon="bag"  label="Bag"   value={`${cargo}/${G.maxCarry}`}/>
           <Chip icon="day"  label="Day"   value={`${G.day}/30 · ${SLOTS[G.tick-1]}`}/>
           <Chip icon="loc"  label="Area"  value={area?.name}/>

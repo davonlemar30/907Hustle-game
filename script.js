@@ -60,6 +60,9 @@ const GAME = {
   rook: { attention: 0, warned: false, taxActive: false },
   flags: { robbedRecently: false },
   assets: [],
+  marketState: {},
+  heatFlags: { checkpointDay: null, raidDay: null, drePressureDay: null },
+  endgame: { resolved: false, result: null },
 };
 
 const el = {
@@ -153,6 +156,10 @@ function cargoValue() {
   return DRUGS.reduce((sum, drug) => sum + (GAME.inventory[drug.id] || 0) * sellPriceFor(drug.id), 0);
 }
 
+function netWorth() {
+  return GAME.cash + GAME.bank + cargoValue();
+}
+
 function assetEffect(effectId) {
   return GAME.assets.reduce((sum, assetId) => {
     const asset = UPGRADES.find((item) => item.id === assetId);
@@ -181,19 +188,50 @@ function addFeed(text, tone = "") {
 }
 
 function generatePrices() {
+  evolveMarketState();
   const area = currentArea();
+  const state = GAME.marketState[area.id] || {};
   for (const drug of DRUGS) {
-    const span = drug.maxPrice - drug.minPrice;
-    const base = drug.minPrice + Math.random() * span;
-    const volatilitySwing = 1 + (Math.random() * 2 - 1) * drug.volatility;
-    const locationBias = area.marketBias[drug.id] || 1;
+    const base = state[drug.id] || Math.round((drug.minPrice + drug.maxPrice) / 2);
     const minaDiscount = GAME.mina.trust >= 5 ? 0.95 : 1;
     const rookTax = rookPressureState() === "Active" && area.riskLevel >= 3 ? 1.05 : 1;
-    let scaled = base * volatilitySwing * locationBias * minaDiscount * rookTax;
+    let scaled = base * minaDiscount * rookTax;
     if (typeof applyModifiers === "function") scaled = applyModifiers(drug.id, scaled);
     GAME.prices[drug.id] = Math.max(5, Math.round(scaled));
   }
   recordPriceHistory();
+}
+
+function initializeMarketState() {
+  GAME.marketState = {};
+  for (const area of AREAS) {
+    GAME.marketState[area.id] = {};
+    for (const drug of DRUGS) {
+      const center = (drug.minPrice + drug.maxPrice) / 2;
+      const areaBias = area.marketBias[drug.id] || 1;
+      const seed = center * areaBias * (1 + (Math.random() * 2 - 1) * 0.12);
+      GAME.marketState[area.id][drug.id] = Math.max(5, Math.round(seed));
+    }
+  }
+}
+
+function evolveMarketState() {
+  if (!GAME.marketState || !Object.keys(GAME.marketState).length) initializeMarketState();
+  const isNewDayTick = GAME.tick === 1;
+  for (const area of AREAS) {
+    for (const drug of DRUGS) {
+      const prev = GAME.marketState[area.id][drug.id];
+      const anchor = ((drug.minPrice + drug.maxPrice) / 2) * (area.marketBias[drug.id] || 1);
+      const meanReversion = prev + (anchor - prev) * 0.18;
+      const intradaySwing = 1 + (Math.random() * 2 - 1) * 0.08;
+      const daySwing = isNewDayTick ? 1 + (Math.random() * 2 - 1) * 0.2 : 1;
+      const volatilitySwing = 1 + (Math.random() * 2 - 1) * Math.max(0.02, drug.volatility * 0.28);
+      const next = meanReversion * intradaySwing * daySwing * volatilitySwing;
+      const floor = drug.minPrice * 0.72;
+      const ceil = drug.maxPrice * 1.35;
+      GAME.marketState[area.id][drug.id] = Math.max(5, Math.round(Math.min(ceil, Math.max(floor, next))));
+    }
+  }
 }
 
 function recordPriceHistory() {
@@ -230,12 +268,16 @@ function incrementTick() {
   if (GAME.tick > 4) {
     GAME.tick = 1;
     GAME.day += 1;
+    GAME.heatFlags.checkpointDay = null;
+    GAME.heatFlags.raidDay = null;
+    GAME.heatFlags.drePressureDay = null;
     if (GAME.bank > 0) {
       const interest = Math.max(1, Math.floor(GAME.bank * 0.02));
       GAME.bank += interest;
       addFeed(`Bank kicked in +$${interest} interest.`, "good");
     }
     if (typeof expireModifiers === "function") expireModifiers();
+    maybeResolveRunGoal();
   }
 }
 
@@ -244,6 +286,7 @@ function stepTick(reason = "") {
   GAME.flags.robbedRecently = false;
   if (reason) addFeed(reason);
   generatePrices();
+  applyHeatConsequences();
   const popped = (typeof tryPopupEvent === "function") && tryPopupEvent("laylow");
   if (!popped) triggerRandomEvent("tick");
   render();
@@ -312,6 +355,7 @@ function travelTo(areaId) {
   GAME.rook.attention += target.rivalPressure;
   addFeed(`Moved to ${target.displayName}.`, "");
   generatePrices();
+  applyHeatConsequences();
   const popped = (typeof tryPopupEvent === "function") && tryPopupEvent("travel");
   if (!popped) triggerRandomEvent("travel");
   render();
@@ -382,8 +426,13 @@ function triggerRandomEvent(source) {
   const carryRisk = Math.floor(loadedValue / 450);
   const robbedFactor = GAME.flags.robbedRecently ? 4 : 0;
 
-  if (GAME.dre.loanOutstanding > 0 && GAME.day > GAME.dre.deadlineDay) {
-    const penalty = Math.min(120, GAME.cash);
+  if (GAME.dre.loanOutstanding > 0 && GAME.day > GAME.dre.deadlineDay && GAME.heatFlags.drePressureDay !== GAME.day) {
+    GAME.heatFlags.drePressureDay = GAME.day;
+    if (Math.random() < 0.55) {
+      addFeed("Dre sent an enforcer to collect. Handle it.", "bad");
+      return startCombat("dre_enforcer", "You're late on Dre's money.");
+    }
+    const penalty = Math.min(160, GAME.cash);
     GAME.cash -= penalty;
     GAME.dre.trust -= 2;
     GAME.rook.attention += 2;
@@ -727,6 +776,7 @@ function renderHud() {
   parts.push(chip("Area", area.displayName, "chip-location", "location"));
   parts.push(chip("Heat", heatBar, heatCls, "heat"));
   parts.push(chip("Health", `${GAME.health}`, hpCls, "health"));
+  parts.push(chip("Goal", `$${netWorth().toLocaleString()} / $10,000`, netWorth() >= 10000 ? "chip-bank" : "", "cash"));
 
   el.hudStats.innerHTML = parts.join("");
 
@@ -841,6 +891,13 @@ function renderBankScreen() {
         <button class="btn" data-finance-action="withdraw" type="button">Withdraw</button>
       </div>
     </div>
+    ${sectionHeader("Loans", "warn")}
+    <div class="list-table">
+      <div class="row simple header"><span>Lender</span><span>Status</span></div>
+      <div class="row simple"><span><strong>Dre</strong><br><small class="muted">Primary street credit line</small></span><span>${GAME.dre.loanOutstanding > 0 ? `$${GAME.dre.loanOutstanding.toLocaleString()} due Day ${GAME.dre.deadlineDay}` : "No active loan"}</span></div>
+      <div class="row simple"><span><strong>Mina</strong><br><small class="muted">Insider discounts unlock with trust</small></span><span>${GAME.mina.trust >= 5 ? "Discounts active" : `Trust ${GAME.mina.trust}/5`}</span></div>
+      <div class="row simple"><span><strong>Rook</strong><br><small class="muted">Territory tax pressure</small></span><span>${GAME.rook.taxActive ? "Tax active" : "No current tax"}</span></div>
+    </div>
   `;
 }
 
@@ -899,21 +956,37 @@ function renderHospitalScreen() {
 }
 
 function renderShopScreen() {
-  const lines = UPGRADES.map((item) => {
-    const owned = GAME.assets.includes(item.id);
-    const canAfford = GAME.cash >= item.cost;
-    const btnCls = owned ? "btn secondary" : canAfford ? "btn primary" : "btn";
-    return `
+  const categoryLabels = { car: "Cars", stash: "Stash", ops: "Phones & Ops", crew: "Weapons & Crew" };
+  const grouped = UPGRADES.reduce((acc, item) => {
+    const key = item.category || "misc";
+    acc[key] = acc[key] || [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+
+  const sections = Object.entries(grouped).map(([category, items]) => {
+    const lines = items.map((item) => {
+      const owned = GAME.assets.includes(item.id);
+      const canAfford = GAME.cash >= item.cost;
+      const btnCls = owned ? "btn secondary" : canAfford ? "btn primary" : "btn";
+      return `
       <div class="row simple">
         <span><strong>${item.displayName}</strong><br><small class="muted">$${item.cost.toLocaleString()}</small></span>
         <button class="${btnCls}" data-upgrade-buy="${item.id}" ${owned || !canAfford ? "disabled" : ""}>${owned ? "Owned" : "Buy"}</button>
       </div>`;
+    }).join("");
+    return `
+      <div class="shop-category">
+        <div class="row simple header"><span>${categoryLabels[category] || category}</span><span>Action</span></div>
+        ${lines}
+      </div>
+    `;
   }).join("");
+
   el.mainPanel.innerHTML = `
     ${sectionHeader("Gear Shop", "shop")}
     <div class="list-table">
-      <div class="row simple header"><span>Item</span><span>Action</span></div>
-      ${lines}
+      ${sections}
     </div>
   `;
 }
@@ -1054,10 +1127,12 @@ function bindEvents() {
     const ok = event.target.closest("[data-modal-ok]")?.getAttribute("data-modal-ok");
     const eventChoice = event.target.closest("[data-event-choice]")?.getAttribute("data-event-choice");
     const combatAct = event.target.closest("[data-combat]")?.getAttribute("data-combat");
+    const resetRun = event.target.closest("[data-reset-run]")?.getAttribute("data-reset-run");
     if (go) { closeModal(true); travelTo(go); }
     if (ok) closeModal();
     if (eventChoice !== null && eventChoice !== undefined) resolveEventChoice(Number(eventChoice));
     if (combatAct) combatAction(combatAct);
+    if (resetRun) { closeModal(true); resetGame(); }
   });
 }
 
@@ -1115,13 +1190,51 @@ function resetGame() {
   GAME.flags = { robbedRecently: false };
   GAME.assets = [];
   GAME.modifiers = [];
+  GAME.heatFlags = { checkpointDay: null, raidDay: null, drePressureDay: null };
+  GAME.endgame = { resolved: false, result: null };
   GAME.friendRepayDay = null;
   GAME.lastPromotion = currentRank();
   if (typeof CURRENT_EVENT !== "undefined") CURRENT_EVENT = null;
   if (typeof COMBAT !== "undefined") COMBAT = null;
+  initializeMarketState();
   generatePrices();
   addFeed("Fresh run started: $200 cash, no crew, no safety net.");
   render();
+}
+
+function applyHeatConsequences() {
+  if (GAME.heat >= 5 && GAME.heatFlags.checkpointDay !== GAME.day) {
+    GAME.heatFlags.checkpointDay = GAME.day;
+    addFeed("Heat 5+: forced APD checkpoint pressure this day.", "bad");
+    if (Math.random() < 0.45) startCombat("patrol", "Checkpoint stop escalates fast.");
+  }
+  if (GAME.heat >= 10 && GAME.heatFlags.raidDay !== GAME.day) {
+    GAME.heatFlags.raidDay = GAME.day;
+    const invOptions = DRUGS.filter((drug) => GAME.inventory[drug.id] > 0);
+    if (invOptions.length) {
+      const pick = invOptions[rng(0, invOptions.length - 1)];
+      const pct = rng(25, 50) / 100;
+      const seized = Math.max(1, Math.floor(GAME.inventory[pick.id] * pct));
+      GAME.inventory[pick.id] = Math.max(0, GAME.inventory[pick.id] - seized);
+      addFeed(`Heat 10+: police raid seized ${seized} ${pick.displayName}.`, "bad");
+    }
+    GAME.cash = Math.max(0, GAME.cash - rng(40, 160));
+  }
+}
+
+function maybeResolveRunGoal() {
+  if (GAME.endgame.resolved || GAME.day <= 30) return;
+  GAME.endgame.resolved = true;
+  const worth = netWorth();
+  const hitTarget = worth >= 10000;
+  GAME.endgame.result = hitTarget ? "win" : "loss";
+  openModal(
+    hitTarget ? "Run Complete — Target Hit" : "Run Complete — Target Missed",
+    `<p>Day 30 is over.</p>
+     <p><strong>Net Worth:</strong> $${worth.toLocaleString()} (target: $10,000)</p>
+     <p>${hitTarget ? "You built a profitable Anchorage operation." : "You survived, but missed the target this run."}</p>
+     <button class="btn primary" data-reset-run="1">Start New Run</button>`
+  );
 }
 
 bindEvents();

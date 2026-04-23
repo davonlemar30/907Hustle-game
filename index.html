@@ -312,6 +312,8 @@ body {
 }
 .drug-price { font-family:var(--font-mono);font-size:.88rem;color:var(--ink); }
 .drug-sell { font-family:var(--font-mono);font-size:.6rem;color:var(--money);margin-top:1px; }
+.drug-memo { font-family:var(--font-ui);font-size:.56rem;letter-spacing:.06em;color:var(--ink-muted);margin-top:2px;line-height:1.25; }
+.goal-banner { margin:0 0 8px 0;padding:8px 10px;border:1px solid #5a4c30;background:linear-gradient(180deg,#241b10,#18120b);font-family:var(--font-ui);font-size:.68rem;letter-spacing:.06em;color:var(--ink-dim); }
 .trend { font-family:var(--font-ui);font-weight:700;font-size:.85rem;text-align:center;letter-spacing:-.02em; }
 .trend-up { color:var(--money2); }
 .trend-down { color:var(--red2); }
@@ -517,6 +519,8 @@ body {
 
 /* SHOP */
 .shop-list { display:flex;flex-direction:column;gap:6px; }
+.shop-group { border:1px solid var(--border2); }
+.shop-group-head { padding:8px 10px;background:linear-gradient(180deg,#241c13,#1a140f);font-family:var(--font-ui);font-size:.63rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--gold2);border-bottom:1px solid var(--border2); }
 .shop-item {
   background:repeating-linear-gradient(155deg,rgba(255,255,255,0.02) 0 1px,transparent 1px 5px),var(--surf2);
   border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;
@@ -587,6 +591,7 @@ body {
 .area-card.current { border-color:var(--gold);border-left:3px solid var(--gold);background:rgba(200,160,32,.06); }
 .area-name { font-family:var(--font-head);font-size:.95rem;letter-spacing:.1em;text-transform:uppercase; }
 .area-hint { font-size:.65rem;font-weight:600;letter-spacing:.08em;color:var(--ink-muted);text-transform:uppercase;margin-top:3px; }
+.area-meta { font-size:.62rem;font-family:var(--font-ui);font-weight:700;letter-spacing:.08em;color:var(--ink-dim);margin-top:4px;text-transform:uppercase;line-height:1.35; }
 .area-risk { display:flex;gap:3px;margin-top:8px;align-items:center; }
 .risk-dot { width:9px;height:9px;border-radius:1px; }
 .risk-dot.r { background:var(--red2); }
@@ -678,10 +683,10 @@ const AREAS = [
 ];
 
 const UPGRADES = [
-  {id:"beater",       name:"Used Beater",          cost:900,  desc:"+20 carry · −2 heat on travel", fx:{maxCarry:20,heatTravel:-2}},
-  {id:"stash_closet", name:"Hidden Closet Stash",  cost:650,  desc:"+10 carry · stash safety",      fx:{maxCarry:10}},
-  {id:"burner_pack",  name:"Burner Pack",           cost:450,  desc:"+8 event protection · draw",    fx:{}},
-  {id:"muscle_1",     name:"1 Crew Muscle",         cost:1700, desc:"Mugging defense +18 · −rival",  fx:{}, req:{rep:12}},
+  {id:"beater",       name:"Used Beater",          cost:900,  desc:"+20 carry · −2 heat on travel", fx:{maxCarry:20,heatTravel:-2}, bucket:"mobility"},
+  {id:"stash_closet", name:"Hidden Closet Stash",  cost:650,  desc:"+10 carry · stash safety",      fx:{maxCarry:10}, bucket:"carry"},
+  {id:"burner_pack",  name:"Burner Pack",          cost:450,  desc:"+8 event protection · draw",    fx:{}, bucket:"utility"},
+  {id:"muscle_1",     name:"1 Crew Muscle",        cost:1700, desc:"Mugging defense +18 · −rival",  fx:{}, req:{rep:12}, bucket:"defense"},
 ];
 
 const ENEMY_TYPES = [
@@ -715,14 +720,19 @@ const SLOTS = ["Morning","Afternoon","Evening","Night"];
 
 function rng(a,b) { return Math.floor(Math.random()*(b-a+1))+a; }
 
-function genPrices(locationId) {
+function genPrices(locationId,previous={},tick=1) {
   const area = AREAS.find(a=>a.id===locationId)||AREAS[0];
   const p = {};
   for(const d of DRUGS){
-    const b = d.min + Math.random()*(d.max-d.min);
-    const s = 1+(Math.random()*2-1)*d.vol;
+    const anchor=(d.min+d.max)/2;
+    const prev=previous[d.id]||anchor;
+    const drift=prev+(anchor-prev)*0.22;
+    const daySwing=tick===1?(1+(Math.random()*2-1)*(d.vol*0.38)):1;
+    const intraday=1+(Math.random()*2-1)*Math.max(0.03,d.vol*0.2);
+    const b = drift*daySwing*intraday;
+    const s = 1+(Math.random()*2-1)*(d.vol*0.16);
     const bias = area.bias[d.id]||1;
-    p[d.id] = Math.max(5, Math.round(b*s*bias));
+    p[d.id] = Math.max(5, Math.round(Math.min(d.max*1.38,Math.max(d.min*0.72,b*s*bias))));
   }
   return p;
 }
@@ -738,20 +748,54 @@ function getTrend(id,hist) {
   return {dir:"flat",sym:"—"};
 }
 
+const RUN_GOAL_NET_WORTH = 10000;
+const RUN_GOAL_HEAT_CAP = 7;
+
+function getSellPrice(G,id) {
+  const repBonus=Math.min(0.14,G.rep*0.003);
+  return Math.max(1,Math.round((G.prices[id]||0)*(1.04+repBonus)));
+}
+
+function inventoryValue(G) {
+  return DRUGS.reduce((s,d)=>s+(G.inventory[d.id]||0)*getSellPrice(G,d.id),0);
+}
+
+function upgradeValue(G) {
+  return G.assets.reduce((sum,id)=>{
+    const u=UPGRADES.find(x=>x.id===id);
+    return sum+(u?.cost||0);
+  },0);
+}
+
+function netWorthOf(G) {
+  return G.cash+G.bank+inventoryValue(G)+Math.floor(upgradeValue(G)*0.45);
+}
+
+function getHeatBand(heat) {
+  if(heat>=10) return {id:"lockdown",label:"LOCKDOWN",tone:"bad"};
+  if(heat>=8) return {id:"critical",label:"CRITICAL",tone:"bad"};
+  if(heat>=5) return {id:"elevated",label:"ELEVATED",tone:"warn"};
+  return {id:"low",label:"LOW",tone:""};
+}
+
 function initGame() {
-  const prices=genPrices("north_star_lot");
+  const prices=genPrices("north_star_lot",{},1);
   const history={};
   for(const d of DRUGS) history[d.id]=[prices[d.id]];
+  const seenPrices={north_star_lot:{...prices}};
   return {
     day:1, tick:1, locationId:"north_star_lot",
     cash:200, bank:0, heat:0, rep:0, health:100, maxCarry:30,
     inventory:Object.fromEntries(DRUGS.map(d=>[d.id,0])),
-    prices, history,
+    prices, history, seenPrices, prevAreaPrices:{},
     dre:{loan:0, deadline:null, trust:0},
     assets:[],
     feed:[{text:"Game started. Check the market.",tone:"",stamp:"Day 1 · Morning"}],
     pendingEvent:null,
     combatState:null,
+    dayStats:{startWorth:200,bestTrade:null},
+    daySummary:null,
+    runSummary:null,
     gameOver:false,
   };
 }
@@ -763,7 +807,7 @@ function addFeed(G,text,tone="") {
 function advanceTime(G) {
   const nTick=G.tick>=4?1:G.tick+1;
   const nDay=G.tick>=4?G.day+1:G.day;
-  const nPrices=genPrices(G.locationId);
+  const nPrices=genPrices(G.locationId,G.prices,nTick);
   const nHist={};
   for(const d of DRUGS) nHist[d.id]=[...(G.history[d.id]||[]),nPrices[d.id]].slice(-5);
   const interest=nTick===1&&G.bank>0?Math.max(1,Math.floor(G.bank*.02)):0;
@@ -792,6 +836,7 @@ function reducer(G,action) {
         inventory:{...G.inventory,[drugId]:(G.inventory[drugId]||0)+qty},
         heat:Math.min(15,G.heat+hAdd),
         rep:G.rep+Math.max(1,Math.floor(qty/3)),
+        dayStats:{...G.dayStats,bestTrade:Math.max(G.dayStats?.bestTrade||0,cost)},
         feed:addFeed(G,`Bought ${qty}× ${DRUGS.find(d=>d.id===drugId)?.name} — −$${cost.toLocaleString()}.`,"good"),
       };
     }
@@ -810,6 +855,7 @@ function reducer(G,action) {
         cash:G.cash+total,
         inventory:{...G.inventory,[drugId]:owned-actual},
         rep:G.rep+Math.max(1,Math.floor(actual/3)),
+        dayStats:{...G.dayStats,bestTrade:Math.max(G.dayStats?.bestTrade||0,total)},
         feed:addFeed(G,`Sold ${actual}× ${DRUGS.find(d=>d.id===drugId)?.name} — +$${total.toLocaleString()}.`,"good"),
       };
       if(ev) next={...next,pendingEvent:ev};
@@ -821,16 +867,54 @@ function reducer(G,action) {
       if(!target||target.id===G.locationId) return G;
       const {nTick,nDay,nPrices,nHist}=advanceTime(G);
       const heatDelta=target.risk-1-(G.assets.includes("beater")?2:0);
-      const ev=pickRandomEvent({...G,locationId:action.areaId},"travel");
+      let nextHeat=Math.max(0,Math.min(15,G.heat+heatDelta));
+      let cashPenalty=0;
+      let inv={...G.inventory};
+      let heatFeed=null;
+      if(nextHeat>=10){
+        const loaded=DRUGS.filter(d=>inv[d.id]>0);
+        if(loaded.length){
+          const pick=loaded[rng(0,loaded.length-1)];
+          const seized=Math.max(1,Math.floor(inv[pick.id]*rng(20,45)/100));
+          inv[pick.id]=Math.max(0,inv[pick.id]-seized);
+          heatFeed=`Heat 10+ raid pressure: seized ${seized}× ${pick.name} in transit.`;
+        }
+        cashPenalty=Math.min(G.cash,rng(90,220));
+      } else if(nextHeat>=8){
+        cashPenalty=Math.min(G.cash,rng(35,120));
+        heatFeed=`Heat 8+ pressure: checkpoints burned $${cashPenalty} to move.`;
+      } else if(nextHeat>=5&&Math.random()<0.45){
+        cashPenalty=Math.min(G.cash,rng(20,70));
+        heatFeed=`Heat 5+ checkpoint friction cost you $${cashPenalty}.`;
+      }
+      const ev=pickRandomEvent({...G,locationId:action.areaId,heat:nextHeat},"travel");
+      const prevBand=getHeatBand(G.heat).id;
+      const nextBand=getHeatBand(nextHeat).id;
+      const bandAlert=prevBand!==nextBand?`Heat status now ${getHeatBand(nextHeat).label}.`:null;
       let next={...G,
         locationId:action.areaId,
         day:nDay,tick:nTick,
-        heat:Math.max(0,Math.min(15,G.heat+heatDelta)),
+        heat:nextHeat,
+        cash:G.cash-cashPenalty,
+        inventory:inv,
         prices:nPrices,history:nHist,
+        prevAreaPrices:G.prices,
+        seenPrices:{...(G.seenPrices||{}),[action.areaId]:{...nPrices}},
         feed:addFeed({...G,day:nDay,tick:nTick},`Moved to ${target.name}.`),
         pendingEvent:ev||null,
       };
-      if(nDay>30) next={...next,gameOver:true};
+      if(heatFeed) next={...next,feed:addFeed(next,heatFeed,"bad")};
+      if(bandAlert) next={...next,feed:addFeed(next,bandAlert,getHeatBand(nextHeat).tone)};
+      if(nDay>30){
+        const worth=netWorthOf(next);
+        const debtClear=next.dre.loan<=0;
+        const lowHeat=next.heat<RUN_GOAL_HEAT_CAP;
+        let tier="came_up_short";
+        if(worth>=RUN_GOAL_NET_WORTH && debtClear && lowHeat) tier="boss_tier";
+        else if(worth>=RUN_GOAL_NET_WORTH && debtClear) tier="success";
+        else if(worth>=RUN_GOAL_NET_WORTH || debtClear) tier="survived";
+        next={...next,runSummary:{tier,netWorth:worth,debt:next.dre.loan,heat:next.heat,target:RUN_GOAL_NET_WORTH,heatCap:RUN_GOAL_HEAT_CAP},gameOver:true};
+      }
       return next;
     }
 
@@ -844,22 +928,76 @@ function reducer(G,action) {
       ].slice(0,70);
       let dre={...G.dre};
       let extraCash=0;
-      if(dre.loan>0&&G.day>=dre.deadline&&Math.random()<.3){
-        const penalty=Math.min(G.cash,rng(30,80));
+      let extraHeat=0;
+      let inv={...G.inventory};
+      if(dre.loan>0&&G.day>=dre.deadline){
+        const overdueDays=Math.max(1,G.day-dre.deadline+1);
+        const penalty=Math.min(G.cash,rng(35,90)+(overdueDays*20));
         extraCash=-penalty;
-        newFeed=[{text:`Dre's people collected $${penalty} — pay up or else.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
+        dre.trust-=1;
+        extraHeat=Math.min(4,1+Math.floor(overdueDays/2));
+        newFeed=[{text:`Dre collection hit: -$${penalty}. Overdue day ${overdueDays} and pressure rising.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
+      }
+      let nextHeat=Math.max(0,Math.min(15,G.heat-1+extraHeat));
+      if(nextHeat>=10){
+        const loaded=DRUGS.filter(d=>inv[d.id]>0);
+        if(loaded.length){
+          const pick=loaded[rng(0,loaded.length-1)];
+          const lost=Math.max(1,Math.floor(inv[pick.id]*rng(18,35)/100));
+          inv[pick.id]=Math.max(0,inv[pick.id]-lost);
+          newFeed=[{text:`Heat 10+ raid: APD seized ${lost}× ${pick.name} from stash movement.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
+        }
+      } else if(nextHeat>=8 && Math.random()<0.65){
+        const sweep=Math.min(Math.max(0,G.cash+extraCash),rng(25,95));
+        extraCash-=Math.max(0,sweep);
+        newFeed=[{text:`Heat 8+ sweep burned another $${Math.max(0,sweep)} in hush money.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
+      } else if(nextHeat>=5 && Math.random()<0.4){
+        newFeed=[{text:`Heat 5+ checkpoints slowed your day.`,tone:"warn",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
       }
       let next={...G,
         tick:nTick,day:nDay,
-        heat:Math.max(0,G.heat-1),
+        heat:nextHeat,
         cash:G.cash+interest+extraCash,
         bank:G.bank+interest,
+        inventory:inv,
         prices:nPrices,history:nHist,
+        prevAreaPrices:G.prices,
+        seenPrices:{...(G.seenPrices||{}),[G.locationId]:{...nPrices}},
         feed:newFeed,
         dre,
         pendingEvent:ev||null,
       };
-      if(nDay>30) next={...next,gameOver:true};
+      const prevBand=getHeatBand(G.heat).id;
+      const currentBand=getHeatBand(nextHeat).id;
+      if(prevBand!==currentBand){
+        next={...next,feed:addFeed(next,`Heat status shifted to ${getHeatBand(nextHeat).label}.`,getHeatBand(nextHeat).tone)};
+      }
+      if(nTick===1){
+        const dayWorth=netWorthOf(next);
+        const pnl=dayWorth-(G.dayStats?.startWorth||netWorthOf(G));
+        const overdue=next.dre.loan>0&&next.day>next.dre.deadline;
+        const note=overdue?"Dre wants his money":next.heat>=8?"You're moving sloppy":pnl>=450?"Hot but profitable":pnl>=0?"Quiet day":"Took a hit today";
+        next={...next,daySummary:{
+          day:G.day,
+          pnl,
+          bestTrade:G.dayStats?.bestTrade||0,
+          netWorth:dayWorth,
+          debt:next.dre.loan,
+          debtOverdue:overdue,
+          heat:next.heat,
+          note
+        },dayStats:{startWorth:dayWorth,bestTrade:0}};
+      }
+      if(nDay>30){
+        const worth=netWorthOf(next);
+        const debtClear=next.dre.loan<=0;
+        const lowHeat=next.heat<RUN_GOAL_HEAT_CAP;
+        let tier="came_up_short";
+        if(worth>=RUN_GOAL_NET_WORTH && debtClear && lowHeat) tier="boss_tier";
+        else if(worth>=RUN_GOAL_NET_WORTH && debtClear) tier="success";
+        else if(worth>=RUN_GOAL_NET_WORTH || debtClear) tier="survived";
+        next={...next,runSummary:{tier,netWorth:worth,debt:next.dre.loan,heat:next.heat,target:RUN_GOAL_NET_WORTH,heatCap:RUN_GOAL_HEAT_CAP},gameOver:true};
+      }
       return next;
     }
 
@@ -975,6 +1113,7 @@ function reducer(G,action) {
     }
 
     case "CLEAR_FEED": return {...G,feed:[]};
+    case "DISMISS_DAY_SUMMARY": return {...G,daySummary:null};
     case "DISMISS_EVENT": return {...G,pendingEvent:null};
     case "NEW_GAME": return initGame();
 
@@ -1048,11 +1187,15 @@ function MarketScreen({G,dispatch}) {
   const setQ=(id,v)=>setQtys(q=>({...q,[id]:Math.max(1,v)}));
   const bestFlip=DRUGS.reduce((b,d)=>{const s=sellP(d.id)-(G.prices[d.id]||0);return s>b.s?{id:d.id,s}:b;},{id:null,s:-Infinity}).id;
   const area=AREAS.find(a=>a.id===G.locationId);
+  const otherAreas=(G.seenPrices&&Object.keys(G.seenPrices).filter(id=>id!==G.locationId))||[];
 
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
-      <PH tab="market" icon="mkt" title="Drug Market" sub={`${cargo}/${G.maxCarry} bag · ${area?.hint||""}`}/>
+      <PH tab="market" icon="mkt" title="Drug Market" sub={`${cargo}/${G.maxCarry} bag · ${area?.hint||""} · Risk ${area?.risk||1}/4`}/>
       <div className="panel-scroll">
+        <div className="goal-banner">
+          <strong>Day 30 Goal:</strong> ${RUN_GOAL_NET_WORTH.toLocaleString()}+ net worth · clear Dre debt · finish below heat {RUN_GOAL_HEAT_CAP}.
+        </div>
         <div className="mkt-list">
           <div style={{display:"grid",gridTemplateColumns:"1fr 100px 52px 44px 80px",gap:8,padding:"3px 10px 3px 14px"}}>
             {["Drug Name","Price","Trend","Owned",""].map(l=>(
@@ -1081,6 +1224,18 @@ function MarketScreen({G,dispatch}) {
                   <div>
                     <div className="drug-price">${buy.toLocaleString()}</div>
                     <div className="drug-sell">↑ ${sell.toLocaleString()}</div>
+                    <div className="drug-memo">
+                      {G.prevAreaPrices?.[drug.id]?`Prev: $${G.prevAreaPrices[drug.id].toLocaleString()}`:"Prev: —"}
+                      {otherAreas.length>0&&(()=>{
+                        const bestArea=otherAreas
+                          .map(id=>({id,price:G.seenPrices[id]?.[drug.id]}))
+                          .filter(x=>x.price)
+                          .sort((a,b)=>a.price-b.price)[0];
+                        if(!bestArea) return "";
+                        const areaName=AREAS.find(a=>a.id===bestArea.id)?.name||bestArea.id;
+                        return ` · Last seen ${areaName}: $${bestArea.price.toLocaleString()}`;
+                      })()}
+                    </div>
                   </div>
                   <div className={`trend trend-${trend.dir==="up"||trend.dir==="up-strong"?"up":trend.dir==="down"||trend.dir==="down-strong"?"down":"flat"}`}>{trend.sym}</div>
                   <div className={`owned-badge${owned>0?" has":""}`}>{owned}</div>
@@ -1152,7 +1307,7 @@ function StashScreen({G,dispatch}) {
 function BankScreen({G,dispatch}) {
   const [dep,setDep]=useState("");
   const [wd,setWd]=useState("");
-  const overdue=G.dre.loan>0&&G.day>=G.dre.deadline;
+  const overdue=G.dre.loan>0&&G.day>G.dre.deadline;
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <PH tab="bank" icon="bank" title="Cash & Bank" sub="2% daily interest"/>
@@ -1208,12 +1363,23 @@ function BankScreen({G,dispatch}) {
 
 // ── SHOP ──────────────────────────────────────────────────────────────────────
 function ShopScreen({G,dispatch}) {
+  const groups=[
+    {id:"carry",label:"Carry / Storage"},
+    {id:"utility",label:"Street Ops / Utility"},
+    {id:"defense",label:"Protection / Defense"},
+    {id:"mobility",label:"Vehicles / Mobility"},
+  ];
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <PH tab="shop" icon="shop" title="Gear Shop" sub="Upgrades persist all run"/>
       <div className="panel-scroll">
         <div className="shop-list">
-          {UPGRADES.map(u=>{
+          {groups.map(group=>{
+            const list=UPGRADES.filter(u=>(u.bucket||"utility")===group.id);
+            if(!list.length) return null;
+            return <div key={group.id} className="shop-group">
+              <div className="shop-group-head">{group.label}</div>
+              {list.map(u=>{
             const owned=G.assets.includes(u.id);
             const locked=u.req?.rep&&G.rep<u.req.rep;
             return (
@@ -1235,6 +1401,8 @@ function ShopScreen({G,dispatch}) {
                 </div>
               </div>
             );
+              })}
+            </div>;
           })}
         </div>
       </div>
@@ -1290,7 +1458,7 @@ function StatsScreen({G}) {
   const cargo=Object.values(G.inventory).reduce((s,v)=>s+v,0);
   const rank=G.rep>=60?"Boss":G.rep>=35?"Shot Caller":G.rep>=18?"Runner":"Hustler";
   const area=AREAS.find(a=>a.id===G.locationId);
-  const netWorth=G.cash+G.bank+DRUGS.reduce((s,d)=>s+(G.inventory[d.id]||0)*(G.prices[d.id]||0),0);
+  const netWorth=netWorthOf(G);
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <PH tab="stats" icon="stats" title="Player Stats" sub={`Rank: ${rank}`}/>
@@ -1325,10 +1493,13 @@ function TravelModal({G,onTravel,onClose}) {
           <div className="area-grid">
             {AREAS.map(area=>{
               const cur=area.id===G.locationId;
+              const biasTop=Object.entries(area.bias||{}).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([id])=>DRUGS.find(d=>d.id===id)?.name).filter(Boolean);
               return (
                 <div key={area.id} className={`area-card${cur?" current":""}`} onClick={()=>!cur&&onTravel(area.id)}>
                   <div className="area-name">{area.name}{cur&&<span style={{color:"var(--gold)",marginLeft:8,fontSize:".65rem",fontFamily:"var(--font-ui)",fontWeight:700,letterSpacing:".1em"}}>★ HERE</span>}</div>
                   <div className="area-hint">{area.hint}</div>
+                  <div className="area-meta">Risk {area.risk}/4 · Police {area.police}/3 · Rival {area.rival}/3</div>
+                  {!!biasTop.length&&<div className="area-meta">Best for: {biasTop.join(" · ")}</div>}
                   <div className="area-risk">
                     <span style={{fontFamily:"var(--font-ui)",fontSize:".58rem",fontWeight:700,letterSpacing:".12em",color:"var(--ink-muted)",marginRight:4}}>RISK</span>
                     {Array.from({length:4},(_,i)=><div key={i} className={`risk-dot ${i<area.risk?"r":"e"}`}/>)}
@@ -1423,19 +1594,48 @@ function CombatModal({G,dispatch}) {
   );
 }
 
+function DaySummaryModal({summary,dispatch}) {
+  if(!summary) return null;
+  const pnlTone=summary.pnl>=0?"var(--money2)":"var(--red2)";
+  return (
+    <div className="modal-backdrop">
+      <div className="modal confirm-modal">
+        <div className="confirm-body">
+          <div className="confirm-title">End of Day {summary.day}</div>
+          <div className="confirm-msg" style={{textAlign:"left",lineHeight:1.7}}>
+            <div>Daily P/L: <strong style={{color:pnlTone}}>{summary.pnl>=0?"+":""}${summary.pnl.toLocaleString()}</strong></div>
+            <div>Best Trade: <strong>${summary.bestTrade.toLocaleString()}</strong></div>
+            <div>Net Worth: <strong>${summary.netWorth.toLocaleString()}</strong></div>
+            <div>Debt: <strong>{summary.debt>0?`$${summary.debt.toLocaleString()}`:"Clear"}</strong>{summary.debtOverdue?" · OVERDUE":""}</div>
+            <div>Heat: <strong>{summary.heat}</strong></div>
+            <div style={{marginTop:8,color:"var(--gold2)"}}>{summary.note}</div>
+          </div>
+          <div className="confirm-btns">
+            <button className="btn btn-primary" onClick={()=>dispatch({type:"DISMISS_DAY_SUMMARY"})}>Back to Work</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── GAME OVER ─────────────────────────────────────────────────────────────────
 function GameOverModal({G,dispatch}) {
-  const netWorth=G.cash+G.bank;
+  const netWorth=netWorthOf(G);
   const rank=G.rep>=60?"Boss":G.rep>=35?"Shot Caller":G.rep>=18?"Runner":"Hustler";
   const won=G.day>30&&G.health>0;
+  const tier=G.runSummary?.tier;
+  const title=tier==="boss_tier"?"Boss-Tier Success":tier==="success"?"Run Complete — Success":tier==="survived"?"Survived, Came Up Short":tier==="came_up_short"?"Failed Run":"Game Over";
   return (
     <div className="modal-backdrop">
       <div className="modal confirm-modal">
         <div className="gameover-body">
-          <div className="gameover-title">{won?"Run Complete":"Game Over"}</div>
+          <div className="gameover-title">{won?title:"Game Over"}</div>
           <div className="gameover-sub">
-            {won?`You survived 30 days on the Anchorage streets.`:`You got taken out on Day ${G.day}.`}<br/>
-            Final Cash: ${netWorth.toLocaleString()} · Rep: {G.rep} · Rank: {rank}
+            {won?`Day 30 evaluation complete.`:`You got taken out on Day ${G.day}.`}<br/>
+            Net Worth: ${netWorth.toLocaleString()} · Debt: ${G.dre.loan.toLocaleString()} · Heat: {G.heat}<br/>
+            Target: ${RUN_GOAL_NET_WORTH.toLocaleString()}+ · debt clear · heat under {RUN_GOAL_HEAT_CAP}<br/>
+            Rep: {G.rep} · Rank: {rank}
           </div>
           <button className="btn btn-primary" style={{width:"100%",padding:"14px",flexDirection:"row",fontSize:".88rem"}} onClick={()=>dispatch({type:"NEW_GAME"})}>New Run</button>
         </div>
@@ -1467,6 +1667,9 @@ function App() {
   const cargo=Object.values(G.inventory).reduce((s,v)=>s+v,0);
   const heatHi=G.heat>=7,heatMid=G.heat>=4;
   const hpLow=G.health<40;
+  const worth=netWorthOf(G);
+  const heatBand=getHeatBand(G.heat);
+  const dreOverdue=G.dre.loan>0&&G.day>G.dre.deadline;
 
   return (
     <div className="app">
@@ -1476,13 +1679,14 @@ function App() {
         <div className="chips">
           <Chip icon="cash" label="Cash"  value={`$${G.cash.toLocaleString()}`}     cls="chip-cash"/>
           {G.bank>0&&<Chip icon="bank" label="Bank"  value={`$${G.bank.toLocaleString()}`} cls="chip-bank"/>}
+          <Chip icon="stats" label="Worth" value={`$${worth.toLocaleString()}`} cls={worth>=RUN_GOAL_NET_WORTH?"chip-bank":""}/>
           <Chip icon="bag"  label="Bag"   value={`${cargo}/${G.maxCarry}`}/>
           <Chip icon="day"  label="Day"   value={`${G.day}/30 · ${SLOTS[G.tick-1]}`}/>
           <Chip icon="loc"  label="Area"  value={area?.name}/>
-          <Chip icon="heat" label="Heat"  value={`${G.heat}`} cls={heatHi?"chip-heat chip-heat-hi":heatMid?"chip-heat":""}/>
+          <Chip icon="heat" label="Heat"  value={`${G.heat} · ${heatBand.label}`} cls={heatHi?"chip-heat chip-heat-hi":heatMid?"chip-heat":""}/>
           <Chip icon="hp"   label="HP"    value={`${G.health}`} cls={hpLow?"chip-hp chip-hp-lo":"chip-hp"}/>
           <Chip icon="rep"  label="Rep"   value={`${G.rep}`} cls="chip-rep"/>
-          {G.dre.loan>0&&<Chip icon="warn" label="Dre" value={`$${G.dre.loan}`} cls="chip-warn"/>}
+          {G.dre.loan>0&&<Chip icon="warn" label="Dre" value={`$${G.dre.loan}${dreOverdue?" · OVERDUE":""}`} cls={dreOverdue?"chip-heat chip-heat-hi":"chip-warn"}/>}
         </div>
       </header>
 
@@ -1538,7 +1742,8 @@ function App() {
       {/* MODALS */}
       {travel&&<TravelModal G={G} onTravel={(id)=>{dispatch({type:"TRAVEL",areaId:id});setTravel(false);}} onClose={()=>setTravel(false)}/>}
       {confirm&&<ConfirmModal title={confirm.title} msg={confirm.msg} onConfirm={()=>{confirm.action();setConfirm(null);}} onCancel={()=>setConfirm(null)}/>}
-      {G.pendingEvent&&!G.gameOver&&!G.combatState&&<EventModal ev={G.pendingEvent} dispatch={dispatch}/>}
+      {G.daySummary&&!G.gameOver&&<DaySummaryModal summary={G.daySummary} dispatch={dispatch}/>}
+      {G.pendingEvent&&!G.gameOver&&!G.combatState&&!G.daySummary&&<EventModal ev={G.pendingEvent} dispatch={dispatch}/>}
       {G.combatState&&!G.gameOver&&<CombatModal G={G} dispatch={dispatch}/>}
       {G.gameOver&&<GameOverModal G={G} dispatch={dispatch}/>}
     </div>

@@ -753,6 +753,58 @@ function boostPrices(prices,ids,mult) {
   return p;
 }
 
+// ── INTEL PROGRESSION ────────────────────────────────────────────────────────
+// Central unlock table for market intel. Keep rules here so new gates are easy
+// to add. Each entry returns true when the player has earned access.
+const INTEL = {
+  trend:       G => G.assets.includes("burner_pack") || G.rep >= 8,
+  bestFlipTag: G => G.assets.includes("burner_pack") && G.rep >= 10,
+  bestBuyHint: G => G.assets.includes("burner_pack"),
+  areaPulse:   G => G.assets.includes("burner_pack") || G.rep >= 12,
+  prevPrice:   G => true,
+};
+const hasIntel = (G,key) => (INTEL[key]||(()=>false))(G);
+
+// ── ROBBERY TARGETS ──────────────────────────────────────────────────────────
+// Target-type model — outcomes vary by target. Easy to extend with new types.
+const ROB_TARGETS = [
+  {
+    id:"citizen",
+    name:"Citizen",
+    blurb:"Low stakes. Easy cash, but APD notices.",
+    minRep:0,
+    heatOnWin:2, heatOnFail:1,
+    repOnWin:0,  repOnFail:0,
+    cashRange:[40,110],
+    combatChance:0.08,
+    enemyPool:["mugger"],
+  },
+  {
+    id:"gang",
+    name:"Rival Gang",
+    blurb:"Risky. Street cred + cash, but they'll remember.",
+    minRep:5,
+    heatOnWin:1, heatOnFail:1,
+    repOnWin:2,  repOnFail:1,
+    cashRange:[120,280],
+    combatChance:0.45,
+    enemyPool:["thug","rival"],
+    retaliation:true,
+  },
+  {
+    id:"dealer",
+    name:"Lone Dealer",
+    blurb:"Can lift product. Draws a fight more often than not.",
+    minRep:10,
+    heatOnWin:1, heatOnFail:2,
+    repOnWin:1,  repOnFail:0,
+    cashRange:[60,180],
+    combatChance:0.6,
+    enemyPool:["rival"],
+    lootDrugChance:0.55,
+  },
+];
+
 const SLOTS = ["Morning","Afternoon","Evening","Night"];
 
 function rng(a,b) { return Math.floor(Math.random()*(b-a+1))+a; }
@@ -893,6 +945,7 @@ function initGame() {
     unlockedRoutes:[],
     contacts:{},
     contactLog:[],
+    rivalWatch:0,
     gameOver:false,
   };
 }
@@ -1190,19 +1243,58 @@ function reducer(G,action) {
     }
 
     case "ROB": {
+      const target=ROB_TARGETS.find(t=>t.id===action.targetId)||ROB_TARGETS[0];
+      if(G.rep<(target.minRep||0)) return {...G,feed:addFeed(G,`Need rep ${target.minRep} to rob a ${target.name.toLowerCase()}.`,"bad")};
       const hasMuscle=G.assets.includes("muscle_1");
-      const roll=Math.random();
-      if(roll<.45+hasMuscle*.1){
-        const gain=rng(60,160);
-        return {...G,cash:G.cash+gain,heat:Math.min(15,G.heat+2),rep:G.rep+1,feed:addFeed(G,`Quick lick — scored $${gain}.`,"good")};
-      } else if(roll<.75){
-        const loss=rng(8,22);
-        return {...G,health:Math.max(1,G.health-loss),heat:Math.min(15,G.heat+1),feed:addFeed(G,`Came up short — took ${loss} damage.`,"bad")};
-      } else {
-        // Start combat
-        const enemy=ENEMY_TYPES[rng(0,2)];
-        return {...G,heat:Math.min(15,G.heat+1),combatState:{enemy:{...enemy,curHp:enemy.hp},log:[`${enemy.name} stepped to you.`]},feed:addFeed(G,`${enemy.name} caught you slipping.`,"bad")};
+      // Gang retaliation carries over from past gang hits
+      const retaliationBoost=target.id==="gang"?Math.min(.25,(G.rivalWatch||0)*.08):0;
+      const combatChance=Math.max(0,Math.min(.9,target.combatChance+retaliationBoost-(hasMuscle?.08:0)));
+      if(Math.random()<combatChance){
+        const enemyId=target.enemyPool[rng(0,target.enemyPool.length-1)];
+        const proto=ENEMY_TYPES.find(e=>e.id===enemyId)||ENEMY_TYPES[0];
+        return {...G,
+          heat:Math.min(15,G.heat+1),
+          rivalWatch:target.id==="gang"?Math.min(5,(G.rivalWatch||0)+1):(G.rivalWatch||0),
+          combatState:{enemy:{...proto,curHp:proto.hp},log:[`${proto.name} stepped to you.`]},
+          feed:addFeed(G,`${target.name} hit went loud — ${proto.name} engaged.`,"bad"),
+        };
       }
+      const success=Math.random()<.62+(hasMuscle?.08:0);
+      if(!success){
+        const loss=rng(6,20);
+        return {...G,
+          health:Math.max(1,G.health-loss),
+          heat:Math.min(15,G.heat+target.heatOnFail),
+          rep:Math.max(0,G.rep-(target.repOnFail||0)),
+          rivalWatch:target.id==="gang"?Math.min(5,(G.rivalWatch||0)+1):(G.rivalWatch||0),
+          feed:addFeed(G,`${target.name} hit flopped — took ${loss} damage.`,"bad"),
+        };
+      }
+      const gain=rng(target.cashRange[0],target.cashRange[1]);
+      let next={...G,
+        cash:G.cash+gain,
+        heat:Math.min(15,G.heat+target.heatOnWin),
+        rep:G.rep+(target.repOnWin||0),
+      };
+      if(target.id==="gang"){
+        next={...next,rivalWatch:Math.min(5,(G.rivalWatch||0)+1)};
+      }
+      if(target.lootDrugChance&&Math.random()<target.lootDrugChance){
+        const pool=["crack","weed","bars","xanax","speed"];
+        const dId=pool[rng(0,pool.length-1)];
+        const qty=rng(1,4);
+        const cargo=Object.values(next.inventory).reduce((s,v)=>s+v,0);
+        const room=Math.max(0,next.maxCarry-cargo);
+        const take=Math.min(qty,room);
+        if(take>0){
+          next={...next,inventory:{...next.inventory,[dId]:(next.inventory[dId]||0)+take}};
+        }
+      }
+      next={...next,feed:addFeed(next,`${target.name} hit: +$${gain}${target.repOnWin?` · +${target.repOnWin} rep`:""}.`,"good")};
+      if(target.id==="gang"&&(next.rivalWatch||0)>=3){
+        next={...next,feed:addFeed(next,"Rival crews are watching you now — expect retaliation.","warn")};
+      }
+      return next;
     }
 
     case "DEPOSIT": {
@@ -1416,22 +1508,23 @@ function MarketScreen({G,dispatch}) {
   const debtValue=G.dre.loan>0?`$${G.dre.loan.toLocaleString()}`:"Clear";
   const pressure=pressureLevel(G.day);
 
+  const showPulse=hasIntel(G,"areaPulse");
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <PH tab="market" icon="mkt" title="Drug Market" sub={`${cargo}/${G.maxCarry} bag · ${area?.hint||""} · Risk ${area?.risk||1}/4`}/>
       <div className="panel-scroll">
-        <div className="goal-banner">
-          <strong>Run Goal:</strong> Stack as much money as possible before Day 30 while surviving heat, debt, and health pressure.
-        </div>
-        <div className="goal-banner" style={{marginTop:6,padding:"10px 12px",display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:8}}>
-          <div><div style={{fontSize:".58rem",letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink-muted)"}}>Net Worth</div><strong style={{fontFamily:"var(--font-mono)"}}>${worth.toLocaleString()}</strong></div>
-          <div><div style={{fontSize:".58rem",letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink-muted)"}}>Heat</div><strong style={{color:G.heat>=8?"var(--red2)":"var(--ink)"}}>{G.heat}</strong></div>
-          <div><div style={{fontSize:".58rem",letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink-muted)"}}>Debt</div><strong>{debtValue}</strong></div>
-          <div><div style={{fontSize:".58rem",letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink-muted)"}}>Rep</div><strong>{G.rep}</strong></div>
-        </div>
-        <div className="goal-banner" style={{marginTop:6,padding:"8px 12px"}}>
-          <strong>Area pulse:</strong> {(AREAS.find(a=>a.id===mood.hotAreaId)?.name)||"—"} hot for {mood.hotCategory||"—"} · Crackdown: {(AREAS.find(a=>a.id===mood.crackdownAreaId)?.name)||"—"} · Pressure tier {pressure}/3
-        </div>
+        {showPulse?(
+          <div className="goal-banner" style={{padding:"8px 12px",display:"flex",gap:14,flexWrap:"wrap",alignItems:"center"}}>
+            <span style={{color:"var(--gold2)",fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",fontSize:".6rem"}}>Area Pulse</span>
+            <span><span style={{color:"var(--ink-muted)"}}>Hot:</span> {(AREAS.find(a=>a.id===mood.hotAreaId)?.name)||"—"} / {mood.hotCategory||"—"}</span>
+            <span><span style={{color:"var(--ink-muted)"}}>Crackdown:</span> {(AREAS.find(a=>a.id===mood.crackdownAreaId)?.name)||"—"}</span>
+            <span><span style={{color:"var(--ink-muted)"}}>Pressure:</span> {pressure}/3</span>
+          </div>
+        ):(
+          <div className="goal-banner" style={{padding:"8px 12px",color:"var(--ink-muted)"}}>
+            <strong style={{color:"var(--ink-dim)"}}>No street intel.</strong> Get a burner + rep to hear what's hot and where APD is cracking down.
+          </div>
+        )}
         <div className="mkt-list">
           <div style={{display:"grid",gridTemplateColumns:"1fr 100px 52px 44px 80px",gap:8,padding:"3px 10px 3px 14px"}}>
             {["Drug Name","Price","Trend","Owned",""].map(l=>(
@@ -1442,18 +1535,27 @@ function MarketScreen({G,dispatch}) {
             const buy=G.prices[drug.id]||0;
             const sell=sellP(drug.id);
             const owned=G.inventory[drug.id]||0;
-            const trend=getTrend(drug.id,G.history);
-            const hot=trend.dir==="up-strong"||(trend.dir==="up"&&owned>0);
+            const trendVisible=hasIntel(G,"trend");
+            const trend=trendVisible?getTrend(drug.id,G.history):{dir:"flat",sym:"·"};
+            const hot=trendVisible&&(trend.dir==="up-strong"||(trend.dir==="up"&&owned>0));
             const isOpen=expanded===drug.id;
             const qty=getQ(drug.id);
             const mb=maxBuy(drug.id);
+            const showBestFlip=hasIntel(G,"bestFlipTag")&&drug.id===bestFlip;
+            const showBestBuy=hasIntel(G,"bestBuyHint");
+            const bestAreaRec=showBestBuy&&otherAreas.length>0?otherAreas
+              .map(id=>({id,price:G.seenPrices[id]?.[drug.id]}))
+              .filter(x=>x.price)
+              .sort((a,b)=>a.price-b.price)[0]:null;
+            const bestAreaMeta=bestAreaRec?G.seenMeta?.[bestAreaRec.id]?.[drug.id]:null;
+            const bestAreaAge=bestAreaMeta?toAbsTick(G.day,G.tick)-toAbsTick(bestAreaMeta.day,bestAreaMeta.tick):null;
             return (
               <div key={drug.id} className={`drug-row${isOpen?" expanded":""}${hot?" hot":""}`}>
                 <div className="drug-row-main" onClick={()=>setExpanded(isOpen?null:drug.id)}>
                   <div>
                     <div className="drug-name">
                       {drug.name}
-                      {drug.id===bestFlip&&<span className="tag-hot">Best Flip</span>}
+                      {showBestFlip&&<span className="tag-hot">Best Flip</span>}
                     </div>
                     <div className="drug-cat">{drug.cat} · T{drug.tier}</div>
                   </div>
@@ -1461,21 +1563,15 @@ function MarketScreen({G,dispatch}) {
                     <div className="drug-price">${buy.toLocaleString()}</div>
                     <div className="drug-sell">↑ ${sell.toLocaleString()}</div>
                     <div className="drug-memo">
-                      {G.prevAreaPrices?.[drug.id]?`Prev: $${G.prevAreaPrices[drug.id].toLocaleString()}`:"Prev: —"}
-                      {otherAreas.length>0&&(()=>{
-                        const bestArea=otherAreas
-                          .map(id=>({id,price:G.seenPrices[id]?.[drug.id]}))
-                          .filter(x=>x.price)
-                          .sort((a,b)=>a.price-b.price)[0];
-                        if(!bestArea) return "";
-                        const areaName=AREAS.find(a=>a.id===bestArea.id)?.name||bestArea.id;
-                        const seen=G.seenMeta?.[bestArea.id]?.[drug.id];
-                        const age=seen?toAbsTick(G.day,G.tick)-toAbsTick(seen.day,seen.tick):999;
-                        return ` · Best known buy ${areaName}: $${bestArea.price.toLocaleString()} (${age>8?"intel stale":`seen ${age} ticks ago`})`;
+                      {G.prevAreaPrices?.[drug.id]?`Last seen: $${G.prevAreaPrices[drug.id].toLocaleString()}`:"Last seen: —"}
+                      {bestAreaRec&&(()=>{
+                        const areaName=AREAS.find(a=>a.id===bestAreaRec.id)?.name||bestAreaRec.id;
+                        const ageTxt=bestAreaAge>8?"stale":`${bestAreaAge}t ago`;
+                        return <span> · Best buy: ${bestAreaRec.price.toLocaleString()} @ {areaName} ({ageTxt})</span>;
                       })()}
                     </div>
                   </div>
-                  <div className={`trend trend-${trend.dir==="up"||trend.dir==="up-strong"?"up":trend.dir==="down"||trend.dir==="down-strong"?"down":"flat"}`}>{trend.sym}</div>
+                  <div className={`trend trend-${trend.dir==="up"||trend.dir==="up-strong"?"up":trend.dir==="down"||trend.dir==="down-strong"?"down":"flat"}`} title={trendVisible?"Price trend":"Trends locked — earn rep or get a burner"}>{trend.sym}</div>
                   <div className={`owned-badge${owned>0?" has":""}`}>{owned}</div>
                   <button className="btn-trade" onClick={e=>{e.stopPropagation();setExpanded(isOpen?null:drug.id);}}>Trade</button>
                 </div>
@@ -1486,7 +1582,8 @@ function MarketScreen({G,dispatch}) {
                       <button className="qty-btn" onClick={()=>setQ(drug.id,qty-1)}>−</button>
                       <input className="qty-val" type="number" min="1" value={qty} onChange={e=>setQ(drug.id,parseInt(e.target.value)||1)}/>
                       <button className="qty-btn" onClick={()=>setQ(drug.id,qty+1)}>+</button>
-                      <button className="qty-max" onClick={()=>setQ(drug.id,Math.max(mb,owned))}>Max {Math.max(mb,owned)}</button>
+                      <button className="qty-max" disabled={mb<1} onClick={()=>setQ(drug.id,Math.max(1,mb))} title="Fill with maximum you can afford/carry">Max Buy ({Math.max(0,mb)})</button>
+                      <button className="qty-max" disabled={owned<1} onClick={()=>setQ(drug.id,Math.max(1,owned))} title="Fill with everything you own">Max Sell ({owned})</button>
                     </div>
                     <div className="trade-btns">
                       <button className="btn btn-buy" style={{flex:1}} disabled={mb<qty} onClick={()=>dispatch({type:"BUY",drugId:drug.id,qty})}>
@@ -1549,12 +1646,13 @@ function BankScreen({G,dispatch}) {
   const dreStage=drePressureStage(G);
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
-      <PH tab="bank" icon="bank" title="Cash & Bank" sub="2% daily interest"/>
+      <PH tab="bank" icon="bank" title="Finances" sub="Cash · Bank · Loans"/>
       <div className="panel-scroll">
         <div className="bank-grid">
+          <div style={{fontFamily:"var(--font-ui)",fontSize:".6rem",fontWeight:700,letterSpacing:".14em",textTransform:"uppercase",color:"var(--ink-muted)"}}>Accounts</div>
           <div className="bank-row">
             <div className="bank-card" style={{flex:1,borderLeft:"3px solid var(--money)"}}>
-              <div className="bank-label">On Hand</div>
+              <div className="bank-label">Cash On Hand</div>
               <div className="bank-amount" style={{color:"var(--money2)"}}>${G.cash.toLocaleString()}</div>
               <div className="bank-sub">Street cash · spendable now</div>
             </div>
@@ -1579,19 +1677,28 @@ function BankScreen({G,dispatch}) {
               <button className="btn btn-secondary" style={{padding:"6px 14px",flexDirection:"row",fontSize:".78rem"}} onClick={()=>{const a=parseInt(wd)||0;if(a>0&&a<=G.bank){dispatch({type:"WITHDRAW",amount:a});setWd("");}}}>Withdraw</button>
             </div>
           </div>
+          <div style={{marginTop:6,display:"flex",alignItems:"baseline",justifyContent:"space-between"}}>
+            <div style={{fontFamily:"var(--font-ui)",fontSize:".6rem",fontWeight:700,letterSpacing:".14em",textTransform:"uppercase",color:"var(--ink-muted)"}}>Active Loans</div>
+            <div style={{fontFamily:"var(--font-mono)",fontSize:".72rem",color:G.dre.loan>0?"#e0a030":"var(--ink-muted)"}}>
+              Total Debt: ${G.dre.loan.toLocaleString()}
+            </div>
+          </div>
           <div className="dre-card">
-            <div className="dre-title">⚠ Dre's Corner</div>
+            <div className="dre-title">Dre — Street Lender</div>
             <div style={{fontSize:".68rem",fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:8,color:dreStage.stage>=2?"var(--red2)":"var(--ink-dim)"}}>{dreStage.label}</div>
             {G.dre.loan>0?(
               <div>
-                <div style={{fontFamily:"var(--font-mono)",fontSize:".82rem",color:"var(--ink)",marginBottom:8}}>Outstanding: <span style={{color:"#e0a030"}}>${G.dre.loan.toLocaleString()}</span> · Due Day {G.dre.deadline}</div>
-                {overdue&&<div style={{fontFamily:"var(--font-ui)",fontSize:".72rem",fontWeight:700,letterSpacing:".08em",color:"var(--red2)",marginBottom:8}}>OVERDUE — Dre is collecting.</div>}
-                <div style={{fontSize:".7rem",color:"var(--ink-muted)",marginBottom:8}}>{dreStage.line} Trust {G.dre.trust}.</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8,marginBottom:10}}>
+                  <div><div style={{fontSize:".56rem",color:"var(--ink-muted)",letterSpacing:".12em",textTransform:"uppercase"}}>Balance</div><div style={{fontFamily:"var(--font-mono)",color:"#e0a030",fontSize:".95rem"}}>${G.dre.loan.toLocaleString()}</div></div>
+                  <div><div style={{fontSize:".56rem",color:"var(--ink-muted)",letterSpacing:".12em",textTransform:"uppercase"}}>Due</div><div style={{fontFamily:"var(--font-mono)",fontSize:".95rem",color:overdue?"var(--red2)":"var(--ink)"}}>Day {G.dre.deadline}{overdue?" · OVERDUE":""}</div></div>
+                  <div><div style={{fontSize:".56rem",color:"var(--ink-muted)",letterSpacing:".12em",textTransform:"uppercase"}}>Trust</div><div style={{fontFamily:"var(--font-mono)",fontSize:".95rem"}}>{G.dre.trust}</div></div>
+                </div>
+                <div style={{fontSize:".7rem",color:"var(--ink-muted)",marginBottom:10}}>{dreStage.line}</div>
                 <button className="btn btn-danger" disabled={G.cash<G.dre.loan} style={{flexDirection:"row",padding:"8px 18px",fontSize:".78rem"}} onClick={()=>dispatch({type:"REPAY_DRE"})}>Repay ${G.dre.loan.toLocaleString()}</button>
               </div>
             ):(
               <div>
-                <div style={{fontFamily:"var(--font-ui)",fontSize:".78rem",fontWeight:600,color:"var(--ink-muted)",marginBottom:10,letterSpacing:".04em"}}>Borrow $400 · Owe $480 in 5 days · Trust: {G.dre.trust}</div>
+                <div style={{fontFamily:"var(--font-ui)",fontSize:".72rem",fontWeight:600,color:"var(--ink-muted)",marginBottom:10,letterSpacing:".04em"}}>No active note. Borrow $400 · owe $480 in 5 days. Trust: {G.dre.trust}.</div>
                 <button className="btn btn-primary" style={{flexDirection:"row",padding:"8px 18px",fontSize:".78rem"}} onClick={()=>dispatch({type:"TAKE_DRE_LOAN"})}>Take $400 Loan</button>
               </div>
             )}
@@ -1825,6 +1932,38 @@ function ConfirmModal({title,msg,onConfirm,onCancel}) {
   );
 }
 
+function RobTargetModal({G,onPick,onClose}) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal event-modal" onClick={e=>e.stopPropagation()}>
+        <PH tab="combat" icon="skull" title="Pick a Target" sub="Outcomes scale with who you hit"/>
+        <div className="event-body">
+          <div className="event-choices">
+            {ROB_TARGETS.map(t=>{
+              const locked=G.rep<(t.minRep||0);
+              return (
+                <button key={t.id} className="event-choice" disabled={locked} style={{opacity:locked?.45:1,cursor:locked?"not-allowed":"pointer"}} onClick={()=>!locked&&onPick(t.id)}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
+                    <strong style={{color:"var(--ink)",letterSpacing:".06em"}}>{t.name}</strong>
+                    <span style={{fontSize:".62rem",color:"var(--ink-muted)",letterSpacing:".08em",textTransform:"uppercase"}}>
+                      ${t.cashRange[0]}–${t.cashRange[1]} · Fight {Math.round(t.combatChance*100)}%
+                    </span>
+                  </div>
+                  <div style={{fontSize:".7rem",fontWeight:600,color:"var(--ink-muted)",marginTop:4,letterSpacing:".03em"}}>{t.blurb}</div>
+                  {locked&&<div style={{fontSize:".62rem",fontWeight:700,letterSpacing:".08em",color:"var(--red2)",marginTop:4}}>REQ REP {t.minRep}</div>}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{marginTop:10,fontSize:".62rem",color:"var(--ink-muted)",letterSpacing:".06em"}}>
+            Gang hits raise rival attention — retaliation odds grow with repeated strikes.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MenuModal({onClose,onSave,onLoad,onNew,hasManual}) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -1978,6 +2117,7 @@ function App() {
   const [travel,setTravel]=useState(false);
   const [confirm,setConfirm]=useState(null);
   const [menuOpen,setMenuOpen]=useState(false);
+  const [robOpen,setRobOpen]=useState(false);
 
   useEffect(()=>{try{localStorage.setItem(SAVE_KEY,JSON.stringify(G));}catch{};},[G]);
 
@@ -2056,13 +2196,14 @@ function App() {
         <button className="btn btn-primary" onClick={()=>setConfirm({title:"Lay Low",msg:`Advance time to ${SLOTS[G.tick>=4?0:G.tick]}. Prices shift, events may trigger.`,action:()=>dispatch({type:"LAY_LOW"})})}>
           Lay Low<small>→ {SLOTS[G.tick>=4?0:G.tick]}</small>
         </button>
-        <button className="btn btn-danger" style={{flex:.65}} onClick={()=>setConfirm({title:"Rob Someone",msg:"High risk. You might score cash, take damage, or get jumped.",action:()=>dispatch({type:"ROB"})})}>
-          Rob<small>High risk</small>
+        <button className="btn btn-danger" style={{flex:.65}} onClick={()=>setRobOpen(true)}>
+          Rob<small>Pick target</small>
         </button>
       </div>
 
       {/* MODALS */}
       {travel&&<TravelModal G={G} onTravel={(id)=>{dispatch({type:"TRAVEL",areaId:id});setTravel(false);}} onClose={()=>setTravel(false)}/>}
+      {robOpen&&<RobTargetModal G={G} onPick={(id)=>{dispatch({type:"ROB",targetId:id});setRobOpen(false);}} onClose={()=>setRobOpen(false)}/>}
       {confirm&&<ConfirmModal title={confirm.title} msg={confirm.msg} onConfirm={()=>{confirm.action();setConfirm(null);}} onCancel={()=>setConfirm(null)}/>}
       {menuOpen&&<MenuModal
         hasManual={hasManualSave}

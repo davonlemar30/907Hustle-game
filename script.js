@@ -70,6 +70,7 @@ const GAME = {
   mina: { trust: 0, dealChanceBonus: 0 },
   rook: { attention: 0, warned: false, taxActive: false },
   flags: { robbedRecently: false, retaliationRisk: false },
+  robberyTracker: { lastTargetType: null, gangRetaliation: 0, witnessHeat: 0 },
   assets: [],
   marketState: {},
   lastKnownPrices: {},
@@ -216,6 +217,10 @@ function hasBurnerPhone() {
   return GAME.assets.includes("burner_pack");
 }
 
+function hasCrewMuscle() {
+  return GAME.assets.includes("muscle_1");
+}
+
 function adjustRep(delta, reason = "") {
   if (!delta) return;
   const wasUnlocked = isDreUnlocked();
@@ -359,6 +364,9 @@ function stepTick(reason = "") {
   incrementTick();
   GAME.flags.robbedRecently = false;
   GAME.flags.retaliationRisk = false;
+  GAME.rook.taxActive = false;
+  GAME.robberyTracker.gangRetaliation = Math.max(0, (GAME.robberyTracker.gangRetaliation || 0) - 1);
+  GAME.robberyTracker.witnessHeat = Math.max(0, (GAME.robberyTracker.witnessHeat || 0) - 1);
   if (reason) addFeed(reason);
   generatePrices();
   applyHeatConsequences();
@@ -438,28 +446,187 @@ function travelTo(areaId) {
   render();
 }
 
-function robAction() {
+function buildRobberyEncounter() {
   const area = currentArea();
-  const pressure = rookPressureState();
-  const hotCarry = Math.floor(cargoValue() / 500);
+  const tracker = GAME.robberyTracker || {};
   const targetType = weightedPick([
-    { weight: 6, type: "civilian" },
-    { weight: 3 + area.rivalPressure, type: "gang" },
-    { weight: 2 + Math.floor(GAME.rep / 8), type: "stash" },
+    { weight: 6 + Math.max(0, tracker.witnessHeat || 0), type: "citizen" },
+    { weight: 3 + area.rivalPressure + Math.max(0, tracker.gangRetaliation || 0), type: "gang_runner" },
+    { weight: 3 + Math.floor(GAME.rep / 8), type: "stash_kid" },
+    { weight: area.riskLevel <= 2 ? 2 : 1, type: "store_clerk" },
   ]).type;
 
-  const entries = [
-    { weight: Math.max(8, 30 - GAME.heat - area.policePressure), run: () => { const cash = rng(65, 145); GAME.cash += cash; GAME.heat += 1; adjustRep(1, "clean robbery score"); addFeed(`${targetType} rob hit clean. +$${cash}.`, "good"); } },
-    { weight: 18, run: () => { const cash = rng(20, 65); GAME.cash += cash; GAME.heat += 2; addFeed(`Quick score landed: +$${cash}.`, "good"); } },
-    { weight: 10 + GAME.heat + area.policePressure + hotCarry, run: () => { const dmg = rng(8, 20); GAME.health -= dmg; GAME.heat += 2; addFeed(`Rob went bad. Took ${dmg} damage.`, "bad"); } },
-    { weight: 12 + area.rivalPressure, run: () => addFeed("Target had nothing worth taking.") },
-    { weight: pressure === "Active" ? 13 : 4, run: () => { GAME.health -= rng(6, 16); GAME.rook.attention += 3; GAME.heat += 3; GAME.flags.retaliationRisk = true; addFeed("Wrong person. Retaliation hit you fast.", "bad"); } },
-    { weight: 10 + GAME.heat + area.policePressure * 2, run: () => { GAME.heat += 4; addFeed("Cops lit up the block after that robbery.", "bad"); } },
+  const scenarios = {
+    citizen: {
+      label: "Citizen",
+      text: "Bus stop side lane. Civilian looks spooked and is clutching a wallet.",
+      choices: [
+        { id: "lean", label: "Lean on them", profile: "pressure" },
+        { id: "apd", label: "Act like APD", profile: "deception", requires: () => hasBurnerPhone() || GAME.rep >= 4 },
+        { id: "talk", label: "Talk it down", profile: "soft" },
+        { id: "backoff", label: "Back off", profile: "walkaway" },
+      ],
+    },
+    gang_runner: {
+      label: "Gang Runner",
+      text: "Runner on a fast bike with stamped baggies. Keeps checking corners.",
+      choices: [
+        { id: "lean", label: "Lean on them", profile: "pressure" },
+        { id: "burner", label: "Pull the burner", profile: "threat", requires: () => hasCrewMuscle() },
+        { id: "talk", label: "Talk it down", profile: "soft" },
+        { id: "backoff", label: "Back off", profile: "walkaway" },
+      ],
+    },
+    stash_kid: {
+      label: "Stash Kid",
+      text: "Corner kid near a mailbox stash. Nervous, but knows where product is.",
+      choices: [
+        { id: "lean", label: "Lean on them", profile: "pressure" },
+        { id: "apd", label: "Act like APD", profile: "deception", requires: () => hasBurnerPhone() || GAME.rep >= 6 },
+        { id: "talk", label: "Talk it down", profile: "soft" },
+        { id: "backoff", label: "Back off", profile: "walkaway" },
+      ],
+    },
+    store_clerk: {
+      label: "Store Clerk",
+      text: "Late shift mini-mart clerk. Drawer looks light, cameras look old.",
+      choices: [
+        { id: "lean", label: "Lean on them", profile: "pressure" },
+        { id: "burner", label: "Pull the burner", profile: "threat", requires: () => hasCrewMuscle() },
+        { id: "backoff", label: "Back off", profile: "walkaway" },
+      ],
+    },
+  };
+
+  const base = scenarios[targetType];
+  const choices = base.choices.filter((choice) => !choice.requires || choice.requires());
+  return { targetType, targetLabel: base.label, situation: base.text, choices };
+}
+
+function executeRobberyChoice(encounter, choiceProfile) {
+  const area = currentArea();
+  const pressure = rookPressureState();
+  const tracker = GAME.robberyTracker;
+  const target = encounter.targetType;
+  const hotCarry = Math.floor(cargoValue() / 500);
+  const isGang = target === "gang_runner";
+  const isCitizen = target === "citizen" || target === "store_clerk";
+
+  if (choiceProfile === "walkaway") {
+    GAME.heat = Math.max(0, GAME.heat - 1);
+    addFeed(`You back off the ${encounter.targetLabel.toLowerCase()}. No score, no noise.`, "");
+    return;
+  }
+
+  const outcomePool = [
+    {
+      id: "cash_hit",
+      weight: 18 + (choiceProfile === "pressure" ? 5 : 0) + (choiceProfile === "threat" ? 7 : 0),
+      run: () => {
+        const cash = rng(isGang ? 70 : 45, isGang ? 190 : 130);
+        GAME.cash += cash;
+        GAME.heat += choiceProfile === "soft" ? 1 : 2;
+        adjustRep(isGang ? 2 : 1, "robbery score landed");
+        addFeed(`${encounter.targetLabel} folded. +$${cash}.`, "good");
+      },
+    },
+    {
+      id: "item_hit",
+      weight: 10 + (target === "stash_kid" ? 7 : 0) + (choiceProfile === "deception" ? 4 : 0),
+      run: () => {
+        const room = GAME.maxCarry - cargoCount();
+        if (room <= 0) return addFeed("Score was there, but your bag was full. Wasted chance.", "bad");
+        const picks = DRUGS.filter((drug) => (target === "stash_kid" ? drug.riskTier <= 3 : true));
+        const pick = picks[rng(0, picks.length - 1)];
+        const qty = Math.min(room, rng(1, target === "stash_kid" ? 4 : 2));
+        GAME.inventory[pick.id] += qty;
+        GAME.heat += 1;
+        GAME.rook.attention += target === "stash_kid" ? 1 : 0;
+        addFeed(`Lifted ${qty} ${pick.displayName} off a ${encounter.targetLabel.toLowerCase()}.`, "good");
+      },
+    },
+    {
+      id: "witness_heat",
+      weight: 8 + GAME.heat + area.policePressure + (isCitizen ? 6 : 0),
+      run: () => {
+        const bump = rng(2, 4);
+        GAME.heat += bump;
+        tracker.witnessHeat += 2;
+        addFeed(`Witness called APD. Heat +${bump}.`, "bad");
+      },
+    },
+    {
+      id: "retaliation",
+      weight: 6 + area.rivalPressure + (isGang ? 8 : 0) + (pressure === "Active" ? 4 : 0),
+      run: () => {
+        const dmg = rng(5, 14);
+        GAME.health -= dmg;
+        GAME.heat += 2;
+        GAME.flags.retaliationRisk = true;
+        tracker.gangRetaliation += isGang ? 2 : 1;
+        GAME.rook.attention += 2;
+        addFeed(`Wrong pocket. Retaliation clipped you for ${dmg} damage.`, "bad");
+      },
+    },
+    {
+      id: "combat",
+      weight: 5 + hotCarry + (choiceProfile === "threat" ? 5 : 0) + (isGang ? 4 : 0),
+      run: () => startCombat(isGang ? "rival_crew" : "street_kid", `${encounter.targetLabel} fought back hard.`),
+    },
+    {
+      id: "no_score",
+      weight: 12 + (choiceProfile === "soft" ? 4 : 0),
+      run: () => {
+        GAME.heat += 1;
+        GAME.rook.attention += 1;
+        addFeed(`No score. ${encounter.targetLabel} gave you nothing and burned your time.`, "");
+      },
+    },
   ];
 
-  weightedPick(entries).run();
-  GAME.flags.robbedRecently = true;
-  triggerRandomEvent("rob");
+  weightedPick(outcomePool).run();
+}
+
+function startRobberyEncounter() {
+  const encounter = buildRobberyEncounter();
+  const actionsHtml = encounter.choices.map((choice) => `
+    <button class="btn ${choice.profile === "walkaway" ? "" : "danger"}" data-rob-choice="${choice.profile}" data-rob-target="${encounter.targetType}" type="button">
+      ${choice.label}
+    </button>
+  `).join("");
+
+  openModal(
+    "Robbery Encounter",
+    `<div class="event-body">
+      <p><strong>Target:</strong> ${encounter.targetLabel}</p>
+      <p>${encounter.situation}</p>
+      <div class="event-choices">${actionsHtml}</div>
+    </div>`
+  );
+}
+
+function resolveRobberyChoice(profile, targetType) {
+  const encounter = buildRobberyEncounter();
+  encounter.targetType = targetType || encounter.targetType;
+  encounter.targetLabel = ({
+    citizen: "Citizen",
+    gang_runner: "Gang Runner",
+    stash_kid: "Stash Kid",
+    store_clerk: "Store Clerk",
+  })[encounter.targetType] || "Target";
+
+  executeRobberyChoice(encounter, profile);
+  GAME.flags.robbedRecently = profile !== "walkaway";
+  GAME.robberyTracker.lastTargetType = encounter.targetType;
+
+  if (profile !== "walkaway") {
+    triggerRandomEvent("rob");
+    maybeGenerateDreIntel("heat");
+  }
+
+  GAME.health = Math.max(0, GAME.health);
+  GAME.heat = Math.max(0, GAME.heat);
+  closeModal(true);
   render();
 }
 
@@ -700,6 +867,30 @@ function marketSignals() {
   return { bestMarginId, cheapestId, bestFlipId };
 }
 
+function latestDreMessage() {
+  return (GAME.phone.messages || []).find((message) => message.contactId === "dre") || null;
+}
+
+function marketActionHint() {
+  const area = currentArea();
+  const { bestMarginId, cheapestId } = marketSignals();
+  const pressure = rookPressureState();
+  const bestMarginDrug = DRUGS.find((drug) => drug.id === bestMarginId);
+  const cheapestDrug = DRUGS.find((drug) => drug.id === cheapestId);
+  const threat = GAME.heat + area.policePressure + area.rivalPressure;
+
+  if (pressure === "Active" || threat >= 12) {
+    return `Pressure is high in ${area.displayName}. Consider quick flips, shorter holds, or laying low.`;
+  }
+  if (bestMarginDrug) {
+    return `${bestMarginDrug.displayName} has the best local spread right now.`;
+  }
+  if (cheapestDrug) {
+    return `${cheapestDrug.displayName} is the cheapest entry price this stop.`;
+  }
+  return "Watch trend arrows and move light until a spread opens.";
+}
+
 function categoryMeta(categoryId) {
   return MARKET_CATEGORIES.find((category) => category.id === categoryId)
     || { id: categoryId, label: categoryId, unlock: () => ({ unlocked: true }) };
@@ -937,6 +1128,7 @@ function renderNav() {
 
 function renderMarketScreen() {
   const area = currentArea();
+  const dreMsg = latestDreMessage();
   const grouped = DRUGS.reduce((acc, drug) => {
     acc[drug.category] = acc[drug.category] || [];
     acc[drug.category].push(drug);
@@ -959,10 +1151,8 @@ function renderMarketScreen() {
     const canSell = sellQty > 0;
     const buyCost = buy * qty;
     const sellTotal = sell * sellQty;
-    const lastSeen = lastKnownForDrug(drug.id, area.id) || lastKnownForDrug(drug.id);
-    const delta = lastSeen ? buy - lastSeen.price : 0;
-    const deltaText = !lastSeen || delta === 0 ? "" : delta > 0 ? `UP $${delta}` : `DOWN $${Math.abs(delta)}`;
     const knownEntries = allKnownByDrug(drug.id).slice(0, 4);
+    const trend = getTrend(drug.id);
     const intelHtml = knownEntries.length
       ? `<div class="intel-list">${knownEntries.map((entry) => `<div><strong>${entry.area.displayName}:</strong> last seen $${entry.intel.price} <small>${seenAgoText(entry.intel.seenTurn)}</small></div>`).join("")}</div>`
       : '<small class="muted">No street intel outside this block yet.</small>';
@@ -1000,11 +1190,10 @@ function renderMarketScreen() {
             <small>${drug.category.toUpperCase()} · TIER ${drug.riskTier}</small>
           </div>
           <div class="trade-price">
-            <span>NOW $${buy.toLocaleString()}</span>
-            <small>LAST SEEN ${lastSeen ? `$${lastSeen.price.toLocaleString()}` : "—"}</small>
-            ${deltaText ? `<small class="${delta > 0 ? "warn" : "good"}">${deltaText}</small>` : ""}
+            <span>BUY $${buy.toLocaleString()}</span>
           </div>
           <div class="trade-sell">SELL $${sell.toLocaleString()}</div>
+          <div class="trade-trend trend-${trend.dir}" title="Price trend">${trend.arrow}</div>
           <div class="trade-owned ${owned > 0 ? "has" : ""}"><span>Owned</span><strong>${owned}</strong></div>
           <div class="trade-toggle">
             <button class="trade-btn" data-toggle-trade="${drug.id}" type="button">${expanded ? "Collapse" : "Open Trade"}</button>
@@ -1026,10 +1215,16 @@ function renderMarketScreen() {
 
   el.mainPanel.innerHTML = `
     ${sectionHeader(`Drug Market · ${area.displayName}`, "cash")}
+    <div class="card market-intel-brief">
+      <p class="eyebrow">Street Read</p>
+      <p>${marketActionHint()}</p>
+      <small class="muted">${dreMsg ? `Latest Dre ping: "${dreMsg.text}"` : "No live contact ping yet. Travel or lay low to refresh intel."}</small>
+    </div>
     <div class="market-head">
       <div>Drug</div>
-      <div>Price Intel</div>
+      <div>Buy</div>
       <div>Sell</div>
+      <div>Trend</div>
       <div>Owned</div>
       <div>Trade</div>
     </div>
@@ -1073,6 +1268,8 @@ function renderPhoneScreen() {
   const selectedId = GAME.phone.selectedContactId || "dre";
   const messages = GAME.phone.messages.filter((m) => m.contactId === selectedId);
   const unread = GAME.phone.unreadByContact?.dre || 0;
+  const pressure = rookPressureState();
+  const canCallRoute = unlocked && (GAME.heat >= 6 || pressure === "Active");
 
   const contactsHtml = `
     <button class="row simple ${selectedId === "dre" ? "active-contact" : ""}" data-select-contact="dre" type="button">
@@ -1092,6 +1289,17 @@ function renderPhoneScreen() {
 
   el.mainPanel.innerHTML = `
     ${sectionHeader("Phone · Contacts + Intel", "phone")}
+    <div class="card-grid" style="margin-bottom:10px;">
+      <section class="card">
+        <p class="eyebrow">Actionable Intel</p>
+        <p>${marketActionHint()}</p>
+      </section>
+      <section class="card">
+        <p class="eyebrow">Pressure Line</p>
+        <p>${pressure} · Heat ${GAME.heat}</p>
+        <button class="btn ${canCallRoute ? "primary" : ""}" data-intel-action="route" type="button" ${canCallRoute ? "" : "disabled"}>Call Dre for safer route</button>
+      </section>
+    </div>
     <div class="phone-layout">
       <div class="list-table">${contactsHtml}</div>
       <div>${threadHtml}</div>
@@ -1223,12 +1431,21 @@ function closeModal(force = false) {
 }
 
 function openTravelModal() {
-  const lines = AREAS.map((area) => `
+  const lines = AREAS.map((area) => {
+    const known = Object.entries(GAME.lastKnownPrices?.[area.id] || {})
+      .map(([drugId, intel]) => ({ drug: DRUGS.find((d) => d.id === drugId), intel }))
+      .filter((entry) => entry.drug && entry.intel)
+      .sort((a, b) => b.intel.seenTurn - a.intel.seenTurn)[0];
+    const intelNote = known
+      ? `${known.drug.displayName} last seen $${known.intel.price} (${seenAgoText(known.intel.seenTurn)})`
+      : "No fresh intel";
+    return `
     <div class="row simple">
-      <span>${area.displayName} <small class="muted">(Risk ${areaRiskLabel(area.riskLevel)})</small></span>
+      <span>${area.displayName} <small class="muted">(Risk ${areaRiskLabel(area.riskLevel)})</small><br><small class="muted">${intelNote}</small></span>
       <button class="btn primary" data-travel-go="${area.id}" ${area.id === GAME.locationId ? "disabled" : ""}>Go</button>
     </div>
-  `).join("");
+  `;
+  }).join("");
   openModal("Travel", `<div class="list-table">${lines}</div>`);
 }
 
@@ -1276,6 +1493,7 @@ function bindEvents() {
     const quickAction = t.closest("[data-quick-action]")?.getAttribute("data-quick-action");
     const toggleCategory = t.closest("[data-toggle-category]")?.getAttribute("data-toggle-category");
     const selectContact = t.closest("[data-select-contact]")?.getAttribute("data-select-contact");
+    const intelAction = t.closest("[data-intel-action]")?.getAttribute("data-intel-action");
 
     if (toggleCategory) {
       UI.openCategories[toggleCategory] = !UI.openCategories[toggleCategory];
@@ -1287,6 +1505,10 @@ function bindEvents() {
       GAME.phone.selectedContactId = selectContact;
       GAME.phone.unreadByContact[selectContact] = 0;
       render();
+      return;
+    }
+    if (intelAction) {
+      resolveIntelAction(intelAction);
       return;
     }
 
@@ -1315,7 +1537,7 @@ function bindEvents() {
 
     if (doHeal) { healAtHospital(); return; }
     if (upgradeBuy) { maybeBuyUpgrade(upgradeBuy); return; }
-    if (quickAction === "rob") { robAction(); return; }
+    if (quickAction === "rob") { startRobberyEncounter(); return; }
     if (quickAction === "loan") { takeDreLoan(); return; }
     if (quickAction === "repay") { repayDre(); return; }
     if (financeAction) { moveMoney(financeAction); return; }
@@ -1347,12 +1569,15 @@ function bindEvents() {
     const combatAct = event.target.closest("[data-combat]")?.getAttribute("data-combat");
     const resetRun = event.target.closest("[data-reset-run]")?.getAttribute("data-reset-run");
     const heatChoice = event.target.closest("[data-heat-choice]")?.getAttribute("data-heat-choice");
+    const robChoice = event.target.closest("[data-rob-choice]")?.getAttribute("data-rob-choice");
+    const robTarget = event.target.closest("[data-rob-target]")?.getAttribute("data-rob-target");
     if (go) { closeModal(true); travelTo(go); }
     if (ok) closeModal();
     if (eventChoice !== null && eventChoice !== undefined) resolveEventChoice(Number(eventChoice));
     if (combatAct) combatAction(combatAct);
     if (resetRun) { closeModal(true); resetGame(); }
     if (heatChoice) resolveHeatChoice(heatChoice);
+    if (robChoice) resolveRobberyChoice(robChoice, robTarget);
   });
 }
 
@@ -1386,6 +1611,18 @@ function healAtHospital() {
   render();
 }
 
+function resolveIntelAction(action) {
+  if (action !== "route" || !isDreUnlocked()) return;
+  if (GAME.heat < 4 && rookPressureState() === "None") return addFeed("No need to burn that contact right now.");
+  const cashCost = Math.min(60, GAME.cash);
+  GAME.cash -= cashCost;
+  GAME.heat = Math.max(0, GAME.heat - 2);
+  GAME.rook.attention = Math.max(0, GAME.rook.attention - 1);
+  addContactMessage("dre", "Take 36th, not Tudor. Patrols are stacked the other way.", "intel");
+  addFeed(`Paid $${cashCost} for a cleaner route. Heat eased.`, "good");
+  render();
+}
+
 function openRumorModal() {
   const area = currentArea();
   const rumor = `Word is ${area.hint} in ${area.displayName}. Keep your load light if pressure is rising.`;
@@ -1408,6 +1645,7 @@ function resetGame() {
   GAME.mina = { trust: 0, dealChanceBonus: 0 };
   GAME.rook = { attention: 0, warned: false, taxActive: false };
   GAME.flags = { robbedRecently: false, retaliationRisk: false };
+  GAME.robberyTracker = { lastTargetType: null, gangRetaliation: 0, witnessHeat: 0 };
   GAME.assets = [];
   GAME.modifiers = [];
   GAME.lastKnownPrices = {};
@@ -1434,6 +1672,7 @@ function applyHeatConsequences() {
         <p>APD locked down the main route. Moving tonight is risky.</p>
         <div class="event-choices">
           <button class="btn" data-heat-choice="reroute" type="button">Pay to reroute ($180)</button>
+          <button class="btn" data-heat-choice="call" type="button" ${isDreUnlocked() ? "" : "disabled"}>Call Dre route tip ($60)</button>
           <button class="btn danger" data-heat-choice="risk" type="button">Risk the route</button>
         </div>
       </div>`
@@ -1461,6 +1700,17 @@ function resolveHeatChoice(choice) {
     GAME.cash -= cost;
     GAME.heat = Math.max(0, GAME.heat - 2);
     addFeed(`Paid $${cost} to reroute around APD. Heat eased.`, "bad");
+  } else if (choice === "call") {
+    if (!isDreUnlocked()) {
+      addFeed("No contact line available to dodge this sweep.", "bad");
+    } else {
+      const fee = Math.min(60, GAME.cash);
+      GAME.cash -= fee;
+      GAME.heat = Math.max(0, GAME.heat - 3);
+      GAME.rook.attention = Math.max(0, GAME.rook.attention - 1);
+      addContactMessage("dre", "Checkpoint's facing northbound. Slip the service road and stay invisible.", "warning");
+      addFeed(`Dre cleared a side route for $${fee}.`, "good");
+    }
   } else if (choice === "risk") {
     if (Math.random() < 0.45) {
       const hit = Math.min(GAME.cash, rng(60, 220));

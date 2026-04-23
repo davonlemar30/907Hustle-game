@@ -2043,19 +2043,45 @@ function HospitalScreen({G,dispatch}) {
   );
 }
 
+function intelFreshnessForMeta(G, meta) {
+  if (!meta?.day || !meta?.tick) return { label: "stale", ageTurns: 99 };
+  const nowAbs = toAbsTick(G.day, G.tick);
+  const seenAbs = toAbsTick(meta.day, meta.tick);
+  const ageTurns = Math.max(0, nowAbs - seenAbs);
+  if (ageTurns <= 0) return { label: "fresh", ageTurns };
+  if (ageTurns === 1) return { label: "1 turn old", ageTurns };
+  if (ageTurns === 2) return { label: "2 turns old", ageTurns };
+  return { label: "stale", ageTurns };
+}
+
 function ContactsScreen({G,dispatch}) {
+  const [intelDrugId, setIntelDrugId] = useState(DRUGS[0]?.id || null);
+  useEffect(() => {
+    if (!DRUGS.some((d) => d.id === intelDrugId)) setIntelDrugId(DRUGS[0]?.id || null);
+  }, [intelDrugId]);
   const unlockedContacts=CONTACTS.filter(c=>contactUnlocked(G,c.id));
   const selected=(unlockedContacts.find(c=>c.id===G.contacts?.selected)?.id)||unlockedContacts[0]?.id||"dre";
   const unlockedMap=Object.fromEntries(CONTACTS.map(c=>[c.id,contactUnlocked(G,c.id)]));
   const offers=(G.missions?.offers||[]).filter(m=>m.contactId===selected);
   const active=(G.missions?.active||[]).filter(m=>m.contactId===selected);
   const msgs=(G.contacts?.messages||[]).filter(m=>m.contactId===selected).slice(0,8);
-  const remoteRows=hasRemoteIntel(G)?AREAS.filter(a=>a.id!==G.locationId).map(area=>{
-    const seen=G.seenPrices?.[area.id]||{};
-    const top=Object.entries(seen).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([id,price])=>`${DRUGS.find(d=>d.id===id)?.name}: $${price}`);
-    if(!top.length) return null;
-    return <div key={area.id} style={{fontSize:".72rem",marginBottom:6}}><strong>{area.name}</strong> <span style={{color:"var(--ink-muted)"}}>last known</span><br/>{top.join(" · ")}</div>;
-  }).filter(Boolean):[];
+  const selectedDrug = DRUGS.find(d => d.id === intelDrugId) || DRUGS[0];
+  const intelRows = AREAS
+    .filter(a => a.id !== G.locationId)
+    .map((area) => {
+      const price = G.seenPrices?.[area.id]?.[selectedDrug?.id];
+      if (!price) return null;
+      const meta = G.seenMeta?.[area.id]?.[selectedDrug?.id];
+      const freshness = intelFreshnessForMeta(G, meta);
+      return { area, price, freshness };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      if (a.freshness.ageTurns !== b.freshness.ageTurns) return a.freshness.ageTurns - b.freshness.ageTurns;
+      return a.price - b.price;
+    });
+  const bestBuyPrice = intelRows.length ? Math.min(...intelRows.map(r => r.price)) : null;
+  const bestSellPrice = intelRows.length ? Math.max(...intelRows.map(r => r.price)) : null;
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <PH tab="stats" icon="rep" title="Phone" sub="Contacts · Intel · Missions"/>
@@ -2077,11 +2103,51 @@ function ContactsScreen({G,dispatch}) {
               <div className="bank-label">Intel Thread</div>
               {(msgs.length?msgs.map((m)=> <div key={m.id} style={{fontSize:".75rem",marginBottom:6,color:m.kind==="warning"?"#f09f7f":"var(--ink-dim)"}}>• {m.text}</div>):<div style={{fontSize:".75rem",color:"var(--ink-muted)"}}>No fresh intel yet this cycle.</div>)}
             </div>
-            {hasRemoteIntel(G)&&<div className="bank-card">
-              <div className="bank-label">Remote Intel · Last Known</div>
-              {remoteRows.length?remoteRows:<div style={{fontSize:".75rem",color:"var(--ink-muted)"}}>No outside pings yet. Move and build contact traffic.</div>}
+            <div className="bank-card">
+              <div className="bank-label">Market Intel · Last Known</div>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                <span style={{fontSize:".68rem",color:"var(--ink-muted)",letterSpacing:".08em",textTransform:"uppercase"}}>Drug</span>
+                <select
+                  className="game-input"
+                  value={selectedDrug?.id || ""}
+                  onChange={(e)=>setIntelDrugId(e.target.value)}
+                  style={{maxWidth:220,height:30,padding:"3px 8px",fontSize:".76rem"}}
+                >
+                  {DRUGS.map((drug)=>(
+                    <option key={drug.id} value={drug.id}>{drug.name}</option>
+                  ))}
+                </select>
+              </div>
+              {intelRows.length ? (
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {intelRows.map((row)=> {
+                    const isBuy = row.price === bestBuyPrice;
+                    const isSell = row.price === bestSellPrice;
+                    return (
+                      <div key={row.area.id} className="shop-item" style={{padding:"7px 10px"}}>
+                        <div style={{flex:1}}>
+                          <div className="shop-name">{row.area.name}</div>
+                          <div style={{fontSize:".66rem",color:"var(--ink-muted)"}}>{row.freshness.label}</div>
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{fontFamily:"var(--font-mono)",color:"var(--gold2)",fontSize:".9rem"}}>${row.price}</div>
+                          <div style={{fontSize:".62rem",color:"var(--ink-muted)"}}>
+                            {isBuy ? "Best buy" : isSell ? "Best sell" : "—"}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{fontSize:".75rem",color:"var(--ink-muted)"}}>
+                  No outside reads yet for {selectedDrug?.name || "this item"}. Travel and contact chatter will fill this in.
+                </div>
+              )}
+              <div style={{fontSize:".66rem",color:"var(--ink-muted)",marginTop:8}}>
+                Intel is last-known. Prices can move before you arrive.
+              </div>
             </div>
-            }
             <div className="bank-card">
               <div className="bank-label">Active Jobs</div>
               {active.length?active.map((m)=><div key={m.id} className="shop-item"><div style={{flex:1}}><div className="shop-name">{m.title}</div><div className="shop-desc">{m.progress||0}/{m.qty} · {m.type.replaceAll("_"," ")}</div></div><div style={{fontSize:".64rem",color:"var(--ink-muted)"}}>expires t{m.expires}</div></div>):<div style={{fontSize:".75rem",color:"var(--ink-muted)"}}>No active jobs.</div>}

@@ -40,6 +40,17 @@ const UPGRADES = [
   { id: "muscle_1", displayName: "1 Crew Muscle", cost: 1700, category: "crew", statEffects: { muggingDefense: 18, rookPressureMod: -8 }, unlockRequirements: { money: 1200, rep: 12 } },
 ];
 
+const MARKET_CATEGORIES = [
+  { id: "street", label: "Street", unlock: () => ({ unlocked: true }) },
+  { id: "pill", label: "Pill", unlock: () => ({ unlocked: true }) },
+  { id: "powder", label: "Powder", unlock: (g) => g.rep >= 4 ? ({ unlocked: true }) : ({ unlocked: false, reason: "Build rep to unlock powder routes (4 rep)." }) },
+  { id: "opiate", label: "Opiate", unlock: (g) => g.assets.includes("burner_pack") && g.rep >= 10
+    ? ({ unlocked: true })
+    : ({ unlocked: false, reason: "Need burner + 10 rep for opiate market intel." }) },
+  { id: "party", label: "Party", unlock: () => ({ unlocked: false, reason: "Locked. Future contact unlock (Plug)." }) },
+  { id: "syrup", label: "Syrup", unlock: () => ({ unlocked: false, reason: "Locked. Future contact unlock (Vendor)." }) },
+];
+
 const GAME = {
   day: 1,
   tick: 1,
@@ -58,10 +69,13 @@ const GAME = {
   dre: { loanOutstanding: 0, deadlineDay: null, trust: 0 },
   mina: { trust: 0, dealChanceBonus: 0 },
   rook: { attention: 0, warned: false, taxActive: false },
-  flags: { robbedRecently: false },
+  flags: { robbedRecently: false, retaliationRisk: false },
   assets: [],
   marketState: {},
+  lastKnownPrices: {},
+  phone: { messages: [], unreadByContact: { dre: 0 }, selectedContactId: "dre", lastDreMessageTurn: 0 },
   heatFlags: { checkpointDay: null, raidDay: null, drePressureDay: null },
+  majorEventDay: null,
   endgame: { resolved: false, result: null },
 };
 
@@ -84,6 +98,7 @@ const UI = {
   tab: "market",
   expandedDrug: null,
   qty: {},
+  openCategories: { street: true, pill: true },
 };
 
 const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
@@ -93,6 +108,7 @@ function nextSlotName() { return SLOTS[GAME.tick % 4]; }
 const TABS = [
   { id: "market",   label: "Market", title: "Drug Market", icon: "cash" },
   { id: "stash",    label: "Stash", title: "Bag + Street Intel", icon: "bag" },
+  { id: "phone",    label: "Phone", title: "Contacts + Intel", icon: "phone" },
   { id: "bank",     label: "Cash/Bank", title: "Cash + Bank", icon: "bank" },
   { id: "shop",     label: "Gear", title: "Gear Shop", icon: "shop" },
   { id: "hospital", label: "Clinic", title: "Clinic", icon: "health" },
@@ -108,6 +124,7 @@ function iconSvg(kind = "info") {
     health: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-4.5-7-10a4 4 0 0 1 7-2 4 4 0 0 1 7 2c0 5.5-7 10-7 10z"/></svg>',
     warn: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l10 18H2z"/><path d="M12 9v5M12 17h.01"/></svg>',
     bank: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h18M5 9v9M9 9v9M13 9v9M17 9v9M3 18h18"/><path d="M2 9l10-5 10 5"/></svg>',
+    phone: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><circle cx="12" cy="18" r="1"/></svg>',
     shop: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16l-1 3H5z"/><path d="M6 10h12v10H6z"/></svg>',
     info: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v6M12 7h.01"/></svg>',
   };
@@ -187,6 +204,60 @@ function addFeed(text, tone = "") {
   GAME.events = GAME.events.slice(0, 70);
 }
 
+function turnNumber(day = GAME.day, tick = GAME.tick) {
+  return (day - 1) * 4 + tick;
+}
+
+function repThresholdForDre() {
+  return 8;
+}
+
+function hasBurnerPhone() {
+  return GAME.assets.includes("burner_pack");
+}
+
+function adjustRep(delta, reason = "") {
+  if (!delta) return;
+  const wasUnlocked = isDreUnlocked();
+  GAME.rep = Math.max(0, GAME.rep + delta);
+  if (reason) addFeed(`Rep ${delta > 0 ? "+" : ""}${delta}: ${reason}.`, delta > 0 ? "good" : "bad");
+  if (!wasUnlocked && isDreUnlocked()) {
+    addContactMessage("dre", "Heard your name enough times. Keep that burner close and I'll send intel.", "system");
+  }
+}
+
+function rememberKnownPrice(locationId, drugId, price, source = "seen") {
+  GAME.lastKnownPrices[locationId] = GAME.lastKnownPrices[locationId] || {};
+  GAME.lastKnownPrices[locationId][drugId] = {
+    price,
+    seenTurn: turnNumber(),
+    source,
+  };
+}
+
+function lastKnownForDrug(drugId, locationId = null) {
+  if (locationId && GAME.lastKnownPrices?.[locationId]?.[drugId]) return GAME.lastKnownPrices[locationId][drugId];
+  let best = null;
+  for (const area of AREAS) {
+    const entry = GAME.lastKnownPrices?.[area.id]?.[drugId];
+    if (!entry) continue;
+    if (!best || entry.seenTurn > best.seenTurn) best = { ...entry, locationId: area.id };
+  }
+  return best;
+}
+
+function seenAgoText(seenTurn) {
+  const diff = Math.max(0, turnNumber() - seenTurn);
+  return diff === 0 ? "seen now" : `seen ${diff} turn${diff === 1 ? "" : "s"} ago`;
+}
+
+function allKnownByDrug(drugId) {
+  return AREAS
+    .map((area) => ({ area, intel: GAME.lastKnownPrices?.[area.id]?.[drugId] || null }))
+    .filter((entry) => entry.intel)
+    .sort((a, b) => b.intel.seenTurn - a.intel.seenTurn);
+}
+
 function generatePrices() {
   evolveMarketState();
   const area = currentArea();
@@ -198,6 +269,7 @@ function generatePrices() {
     let scaled = base * minaDiscount * rookTax;
     if (typeof applyModifiers === "function") scaled = applyModifiers(drug.id, scaled);
     GAME.prices[drug.id] = Math.max(5, Math.round(scaled));
+    rememberKnownPrice(area.id, drug.id, GAME.prices[drug.id], "visited");
   }
   recordPriceHistory();
 }
@@ -222,11 +294,13 @@ function evolveMarketState() {
     for (const drug of DRUGS) {
       const prev = GAME.marketState[area.id][drug.id];
       const anchor = ((drug.minPrice + drug.maxPrice) / 2) * (area.marketBias[drug.id] || 1);
-      const meanReversion = prev + (anchor - prev) * 0.18;
-      const intradaySwing = 1 + (Math.random() * 2 - 1) * 0.08;
-      const daySwing = isNewDayTick ? 1 + (Math.random() * 2 - 1) * 0.2 : 1;
-      const volatilitySwing = 1 + (Math.random() * 2 - 1) * Math.max(0.02, drug.volatility * 0.28);
-      const next = meanReversion * intradaySwing * daySwing * volatilitySwing;
+      const isWeed = drug.id === "weed";
+      const meanReversion = prev + (anchor - prev) * (isWeed ? 0.1 : 0.18);
+      const intradaySwing = 1 + (Math.random() * 2 - 1) * (isWeed ? 0.12 : 0.08);
+      const daySwing = isNewDayTick ? 1 + (Math.random() * 2 - 1) * (isWeed ? 0.28 : 0.2) : 1;
+      const volatilitySwing = 1 + (Math.random() * 2 - 1) * Math.max(0.02, drug.volatility * (isWeed ? 0.45 : 0.28));
+      const shockSwing = isWeed && Math.random() < 0.2 ? 1 + (Math.random() * 2 - 1) * 0.2 : 1;
+      const next = meanReversion * intradaySwing * daySwing * volatilitySwing * shockSwing;
       const floor = drug.minPrice * 0.72;
       const ceil = drug.maxPrice * 1.35;
       GAME.marketState[area.id][drug.id] = Math.max(5, Math.round(Math.min(ceil, Math.max(floor, next))));
@@ -284,9 +358,11 @@ function incrementTick() {
 function stepTick(reason = "") {
   incrementTick();
   GAME.flags.robbedRecently = false;
+  GAME.flags.retaliationRisk = false;
   if (reason) addFeed(reason);
   generatePrices();
   applyHeatConsequences();
+  maybeGenerateDreIntel("tick");
   const popped = (typeof tryPopupEvent === "function") && tryPopupEvent("laylow");
   if (!popped) triggerRandomEvent("tick");
   render();
@@ -313,7 +389,7 @@ function buyDrug(drugId, qty = 1, anchor = null) {
 
   if (["mdma", "cocaine", "heroin", "fentanyl", "meth"].includes(drugId)) {
     GAME.heat += Math.max(1, Math.floor(amount / 2));
-    GAME.rep += Math.max(1, Math.floor(amount / 2));
+    adjustRep(Math.max(1, Math.floor(amount / 2)), "high-risk buy moved on street");
     GAME.rook.attention += 1;
   }
 
@@ -334,7 +410,7 @@ function sellDrug(drugId, qty = 1, anchor = null) {
   const total = salePrice * actual;
   GAME.inventory[drugId] -= actual;
   GAME.cash += total;
-  GAME.rep += Math.max(1, Math.floor(actual / 2));
+  adjustRep(Math.max(1, Math.floor(actual / 2)), "profitable sale completed");
   GAME.rook.attention += currentArea().riskLevel >= 3 ? 1 : 0;
 
   playChaChing();
@@ -356,6 +432,7 @@ function travelTo(areaId) {
   addFeed(`Moved to ${target.displayName}.`, "");
   generatePrices();
   applyHeatConsequences();
+  maybeGenerateDreIntel("travel");
   const popped = (typeof tryPopupEvent === "function") && tryPopupEvent("travel");
   if (!popped) triggerRandomEvent("travel");
   render();
@@ -365,13 +442,18 @@ function robAction() {
   const area = currentArea();
   const pressure = rookPressureState();
   const hotCarry = Math.floor(cargoValue() / 500);
+  const targetType = weightedPick([
+    { weight: 6, type: "civilian" },
+    { weight: 3 + area.rivalPressure, type: "gang" },
+    { weight: 2 + Math.floor(GAME.rep / 8), type: "stash" },
+  ]).type;
 
   const entries = [
-    { weight: Math.max(8, 30 - GAME.heat - area.policePressure), run: () => { const cash = rng(65, 145); GAME.cash += cash; GAME.heat += 1; GAME.rep += 1; addFeed(`Rob hit clean. +$${cash}.`, "good"); } },
+    { weight: Math.max(8, 30 - GAME.heat - area.policePressure), run: () => { const cash = rng(65, 145); GAME.cash += cash; GAME.heat += 1; adjustRep(1, "clean robbery score"); addFeed(`${targetType} rob hit clean. +$${cash}.`, "good"); } },
     { weight: 18, run: () => { const cash = rng(20, 65); GAME.cash += cash; GAME.heat += 2; addFeed(`Quick score landed: +$${cash}.`, "good"); } },
     { weight: 10 + GAME.heat + area.policePressure + hotCarry, run: () => { const dmg = rng(8, 20); GAME.health -= dmg; GAME.heat += 2; addFeed(`Rob went bad. Took ${dmg} damage.`, "bad"); } },
     { weight: 12 + area.rivalPressure, run: () => addFeed("Target had nothing worth taking.") },
-    { weight: pressure === "Active" ? 13 : 4, run: () => { GAME.health -= rng(6, 16); GAME.rook.attention += 3; GAME.heat += 3; addFeed("Wrong person. Retaliation hit you fast.", "bad"); } },
+    { weight: pressure === "Active" ? 13 : 4, run: () => { GAME.health -= rng(6, 16); GAME.rook.attention += 3; GAME.heat += 3; GAME.flags.retaliationRisk = true; addFeed("Wrong person. Retaliation hit you fast.", "bad"); } },
     { weight: 10 + GAME.heat + area.policePressure * 2, run: () => { GAME.heat += 4; addFeed("Cops lit up the block after that robbery.", "bad"); } },
   ];
 
@@ -399,7 +481,7 @@ function repayDre() {
   GAME.dre.loanOutstanding = 0;
   GAME.dre.deadlineDay = null;
   GAME.dre.trust += 2;
-  GAME.rep += 2;
+  adjustRep(2, "Dre debt paid in full");
   GAME.mina.trust += 1;
   addFeed("You paid Dre in full. Trust goes up across your circle.", "good");
   render();
@@ -408,17 +490,19 @@ function repayDre() {
 function maybeBuyUpgrade(upgradeId) {
   const upgrade = UPGRADES.find((item) => item.id === upgradeId);
   if (!upgrade || GAME.assets.includes(upgradeId)) return;
+  const wasUnlocked = isDreUnlocked();
   if (GAME.cash < upgrade.cost) return addFeed(`Need $${upgrade.cost} for ${upgrade.displayName}.`, "bad");
   if ((upgrade.unlockRequirements.rep || 0) > GAME.rep) return addFeed(`${upgrade.displayName} requires more reputation.`, "bad");
   GAME.cash -= upgrade.cost;
   GAME.assets.push(upgradeId);
   GAME.maxCarry += upgrade.statEffects.maxCarry || 0;
   addFeed(`Purchased ${upgrade.displayName}.`, "good");
+  if (!wasUnlocked && isDreUnlocked()) addContactMessage("dre", "Now that you got a burner and some rep, I can feed you intel.", "system");
   render();
 }
 
 function triggerRandomEvent(source) {
-  if (Math.random() > 0.62) return;
+  if (Math.random() > 0.72) return;
 
   const area = currentArea();
   const pressure = rookPressureState();
@@ -472,7 +556,7 @@ function triggerRandomEvent(source) {
         const bonus = rng(28, 110);
         GAME.cash += bonus;
         GAME.inventory[pick.id] -= 1;
-        GAME.rep += 2;
+        adjustRep(2, "lucky buyer spread your name");
         addFeed(`Lucky buyer overpaid for ${pick.displayName}. Bonus +$${bonus}.`, "good");
       },
     },
@@ -510,7 +594,7 @@ function triggerRandomEvent(source) {
       run: () => {
         const cash = rng(18, 55);
         GAME.cash += cash;
-        GAME.rep += 1;
+        adjustRep(1, "street tip connected");
         addFeed(`Random tip cashes out +$${cash}.`, "good");
       },
     },
@@ -533,7 +617,7 @@ function triggerRandomEvent(source) {
       run: () => {
         const loss = rng(20, 90);
         GAME.cash = Math.max(0, GAME.cash - loss);
-        GAME.rep = Math.max(0, GAME.rep - 1);
+        adjustRep(-1, "bad batch hurt your credibility");
         addFeed(`Bad batch burns your rep and costs $${loss}.`, "bad");
       },
     },
@@ -542,7 +626,7 @@ function triggerRandomEvent(source) {
   if (source === "rob") {
     pool.push({
       id: "robbery_blowback",
-      weight: 10 + area.rivalPressure,
+      weight: 8 + area.rivalPressure + (GAME.flags.retaliationRisk ? 5 : 0),
       run: () => {
         GAME.heat += 2;
         GAME.health -= rng(3, 9);
@@ -614,6 +698,58 @@ function marketSignals() {
   }
 
   return { bestMarginId, cheapestId, bestFlipId };
+}
+
+function categoryMeta(categoryId) {
+  return MARKET_CATEGORIES.find((category) => category.id === categoryId)
+    || { id: categoryId, label: categoryId, unlock: () => ({ unlocked: true }) };
+}
+
+function categoryStatus(categoryId) {
+  const meta = categoryMeta(categoryId);
+  return { ...meta, ...(meta.unlock?.(GAME) || { unlocked: true }) };
+}
+
+function isDreUnlocked() {
+  return hasBurnerPhone() && GAME.rep >= repThresholdForDre();
+}
+
+function addContactMessage(contactId, text, kind = "intel", intel = null) {
+  const message = { id: `${contactId}-${Date.now()}-${Math.random()}`, contactId, text, kind, turn: turnNumber(), intel };
+  GAME.phone.messages.unshift(message);
+  GAME.phone.messages = GAME.phone.messages.slice(0, 80);
+  GAME.phone.unreadByContact[contactId] = (GAME.phone.unreadByContact[contactId] || 0) + 1;
+  if (intel) rememberKnownPrice(intel.locationId, intel.drugId, intel.price, "dre");
+  addFeed(`Phone: ${text}`, kind === "warning" ? "bad" : "good");
+}
+
+function maybeGenerateDreIntel(trigger = "tick") {
+  if (!isDreUnlocked()) return;
+  const now = turnNumber();
+  const last = GAME.phone.lastDreMessageTurn || 0;
+  if (now - last < 2) return;
+
+  const triggerBoost = trigger === "travel" ? 0.44 : trigger === "heat" ? 0.4 : 0.28;
+  const repBoost = Math.min(0.25, GAME.rep * 0.008);
+  if (Math.random() > triggerBoost + repBoost) return;
+
+  const area = AREAS[rng(0, AREAS.length - 1)];
+  const drug = DRUGS[rng(0, DRUGS.length - 1)];
+  const known = GAME.marketState?.[area.id]?.[drug.id];
+  if (!known) return;
+  const swing = 1 + (Math.random() * 2 - 1) * 0.06;
+  const hinted = Math.max(5, Math.round(known * swing));
+  const templates = [
+    `${area.displayName}'s drying up on ${drug.displayName.toLowerCase()}. Move fast if you got stock.`,
+    `${drug.displayName} moving high in ${area.displayName} tonight.`,
+    `APD leaning heavy on ${area.displayName}. Stay clean if you slide through.`,
+    `${area.displayName} flooded with ${drug.displayName.toLowerCase()}. Don't expect top dollar.`,
+    `${drug.displayName} moving quiet. Keep your eyes on ${area.displayName}.`,
+  ];
+  const text = templates[rng(0, templates.length - 1)];
+  const kind = text.includes("APD") ? "warning" : "intel";
+  addContactMessage("dre", text, kind, { locationId: area.id, drugId: drug.id, price: hinted });
+  GAME.phone.lastDreMessageTurn = now;
 }
 
 function currentRank() {
@@ -789,25 +925,33 @@ function renderHud() {
 }
 
 function renderNav() {
+  const unread = Object.values(GAME.phone.unreadByContact || {}).reduce((sum, count) => sum + count, 0);
   el.mainNav.innerHTML = TABS
     .map((t) => `
       <button class="tab ${UI.tab === t.id ? "active" : ""}" data-tab="${t.id}" type="button">
         ${iconSvg(t.icon)}
-        <span class="tab-text">${t.label}</span>
+        <span class="tab-text">${t.label}${t.id === "phone" && unread > 0 ? ` (${unread})` : ""}</span>
       </button>`)
     .join("");
 }
 
 function renderMarketScreen() {
   const area = currentArea();
+  const grouped = DRUGS.reduce((acc, drug) => {
+    acc[drug.category] = acc[drug.category] || [];
+    acc[drug.category].push(drug);
+    return acc;
+  }, {});
 
-  const rowsHtml = DRUGS.map((drug) => {
+  const sectionsHtml = Object.keys(grouped).map((categoryId) => {
+    const status = categoryStatus(categoryId);
+    const isOpen = UI.openCategories[categoryId] ?? categoryId === "street";
+    const lockBadge = status.unlocked ? "" : '<span class="tag-locked">Locked</span>';
+    const rowsHtml = status.unlocked ? grouped[categoryId].map((drug) => {
     const buy = GAME.prices[drug.id] || 0;
     const sell = sellPriceFor(drug.id);
     const owned = GAME.inventory[drug.id] || 0;
     const expanded = UI.expandedDrug === drug.id;
-    const trend = getTrend(drug.id);
-    const hot = isHotDrug(drug.id);
     const qty = Math.max(1, UI.qty[drug.id] || 1);
     const maxBuy = maxBuyQty(drug.id);
     const canBuy = maxBuyQty(drug.id) >= qty && buy > 0;
@@ -815,9 +959,20 @@ function renderMarketScreen() {
     const canSell = sellQty > 0;
     const buyCost = buy * qty;
     const sellTotal = sell * sellQty;
+    const lastSeen = lastKnownForDrug(drug.id, area.id) || lastKnownForDrug(drug.id);
+    const delta = lastSeen ? buy - lastSeen.price : 0;
+    const deltaText = !lastSeen || delta === 0 ? "" : delta > 0 ? `UP $${delta}` : `DOWN $${Math.abs(delta)}`;
+    const knownEntries = allKnownByDrug(drug.id).slice(0, 4);
+    const intelHtml = knownEntries.length
+      ? `<div class="intel-list">${knownEntries.map((entry) => `<div><strong>${entry.area.displayName}:</strong> last seen $${entry.intel.price} <small>${seenAgoText(entry.intel.seenTurn)}</small></div>`).join("")}</div>`
+      : '<small class="muted">No street intel outside this block yet.</small>';
 
     const expandedHtml = expanded ? `
       <div class="trade-row-expand">
+        <div class="intel-panel">
+          <p class="eyebrow">Last Known Around Town</p>
+          ${intelHtml}
+        </div>
         <div class="trade-expand-head">Trade Quantity</div>
         <div class="qty-stepper">
           <button class="stepper" data-qty-minus="${drug.id}" type="button">−</button>
@@ -838,36 +993,47 @@ function renderMarketScreen() {
       </div>` : "";
 
     return `
-      <div class="trade-row ${expanded ? "expanded" : ""} ${hot ? "hot" : ""}" data-drug-id="${drug.id}">
+      <div class="trade-row ${expanded ? "expanded" : ""}" data-drug-id="${drug.id}">
         <div class="trade-row-main" data-toggle-row="${drug.id}">
           <div class="trade-drug">
             <strong>${drug.displayName}</strong>
             <small>${drug.category.toUpperCase()} · TIER ${drug.riskTier}</small>
-            ${hot ? '<span class="tag-hot">Hot</span>' : ""}
           </div>
-          <div class="trade-price">$${buy.toLocaleString()}<small>sell $${sell.toLocaleString()}</small></div>
-          <div class="trend-wrap">
-            <span class="trend ${trend.dir}" title="${trend.dir.replace("-", " ")}">${trend.arrow}</span>
+          <div class="trade-price">
+            <span>NOW $${buy.toLocaleString()}</span>
+            <small>LAST SEEN ${lastSeen ? `$${lastSeen.price.toLocaleString()}` : "—"}</small>
+            ${deltaText ? `<small class="${delta > 0 ? "warn" : "good"}">${deltaText}</small>` : ""}
           </div>
+          <div class="trade-sell">SELL $${sell.toLocaleString()}</div>
           <div class="trade-owned ${owned > 0 ? "has" : ""}"><span>Owned</span><strong>${owned}</strong></div>
           <div class="trade-toggle">
             <button class="trade-btn" data-toggle-trade="${drug.id}" type="button">${expanded ? "Collapse" : "Open Trade"}</button>
           </div>
         </div>
         ${expandedHtml}
-      </div>`;
+      </div>`; }).join("")
+      : `<div class="category-locked">${status.reason || "Unavailable."}</div>`;
+
+    return `
+      <section class="market-category">
+        <button class="category-head" data-toggle-category="${categoryId}" type="button">
+          <span>${status.label}</span>${lockBadge}
+          <small>${status.unlocked ? `${grouped[categoryId].length} items` : "Unavailable"}</small>
+        </button>
+        ${isOpen ? `<div class="trade-list">${rowsHtml}</div>` : ""}
+      </section>`;
   }).join("");
 
   el.mainPanel.innerHTML = `
     ${sectionHeader(`Drug Market · ${area.displayName}`, "cash")}
     <div class="market-head">
       <div>Drug</div>
-      <div>Price</div>
-      <div>Trend</div>
+      <div>Price Intel</div>
+      <div>Sell</div>
       <div>Owned</div>
       <div>Trade</div>
     </div>
-    <div class="trade-list">${rowsHtml}</div>
+    ${sectionsHtml}
     <div class="quick-strip">
       <button class="btn danger" data-quick-action="rob" type="button">Rob for Cash</button>
       <button class="btn" data-quick-action="loan" type="button">Ask Dre for Loan</button>
@@ -897,6 +1063,38 @@ function renderBankScreen() {
       <div class="row simple"><span><strong>Dre</strong><br><small class="muted">Primary street credit line</small></span><span>${GAME.dre.loanOutstanding > 0 ? `$${GAME.dre.loanOutstanding.toLocaleString()} due Day ${GAME.dre.deadlineDay}` : "No active loan"}</span></div>
       <div class="row simple"><span><strong>Mina</strong><br><small class="muted">Insider discounts unlock with trust</small></span><span>${GAME.mina.trust >= 5 ? "Discounts active" : `Trust ${GAME.mina.trust}/5`}</span></div>
       <div class="row simple"><span><strong>Rook</strong><br><small class="muted">Territory tax pressure</small></span><span>${GAME.rook.taxActive ? "Tax active" : "No current tax"}</span></div>
+    </div>
+  `;
+}
+
+function renderPhoneScreen() {
+  const unlocked = isDreUnlocked();
+  const repNeed = repThresholdForDre();
+  const selectedId = GAME.phone.selectedContactId || "dre";
+  const messages = GAME.phone.messages.filter((m) => m.contactId === selectedId);
+  const unread = GAME.phone.unreadByContact?.dre || 0;
+
+  const contactsHtml = `
+    <button class="row simple ${selectedId === "dre" ? "active-contact" : ""}" data-select-contact="dre" type="button">
+      <span><strong>Dre Holloway</strong><br><small class="muted">${unlocked ? "Street Intel" : "Locked"}</small></span>
+      <span>${unread > 0 ? `${unread} new` : "—"}</span>
+    </button>
+    <div class="row simple locked-contact"><span><strong>Plug</strong><br><small class="muted">Category unlocks</small></span><span>Locked</span></div>
+    <div class="row simple locked-contact"><span><strong>Lookout</strong><br><small class="muted">APD forecasting</small></span><span>Locked</span></div>
+    <div class="row simple locked-contact"><span><strong>Debt Line</strong><br><small class="muted">Extensions / pressure</small></span><span>Locked</span></div>
+  `;
+
+  const threadHtml = !unlocked
+    ? `<div class="card"><p><strong>No street intel yet.</strong></p><p class="muted">Get a burner and build enough rep to get on Dre's radar.</p><p class="muted">Requirements: Burner ${hasBurnerPhone() ? "✅" : "❌"} · Rep ${GAME.rep}/${repNeed}</p></div>`
+    : messages.length
+      ? `<div class="phone-thread">${messages.map((m) => `<div class="msg inbound"><strong>Dre</strong><p>${m.text}</p><small>${seenAgoText(m.turn)}</small></div>`).join("")}</div>`
+      : `<div class="card"><p class="muted">No messages yet. Keep moving and watch your heat.</p></div>`;
+
+  el.mainPanel.innerHTML = `
+    ${sectionHeader("Phone · Contacts + Intel", "phone")}
+    <div class="phone-layout">
+      <div class="list-table">${contactsHtml}</div>
+      <div>${threadHtml}</div>
     </div>
   `;
 }
@@ -995,6 +1193,7 @@ function renderMainPanel() {
   switch (UI.tab) {
     case "market":   return renderMarketScreen();
     case "stash":    return renderStashScreen();
+    case "phone":    return renderPhoneScreen();
     case "bank":     return renderBankScreen();
     case "shop":     return renderShopScreen();
     case "hospital": return renderHospitalScreen();
@@ -1054,6 +1253,10 @@ function bindEvents() {
     const tabId = event.target.closest("[data-tab]")?.getAttribute("data-tab");
     if (!tabId) return;
     UI.tab = tabId;
+    if (tabId === "phone") {
+      const selected = GAME.phone.selectedContactId || "dre";
+      GAME.phone.unreadByContact[selected] = 0;
+    }
     playClick();
     render();
   });
@@ -1071,6 +1274,21 @@ function bindEvents() {
     const doHeal = t.closest("[data-heal]")?.getAttribute("data-heal");
     const upgradeBuy = t.closest("[data-upgrade-buy]")?.getAttribute("data-upgrade-buy");
     const quickAction = t.closest("[data-quick-action]")?.getAttribute("data-quick-action");
+    const toggleCategory = t.closest("[data-toggle-category]")?.getAttribute("data-toggle-category");
+    const selectContact = t.closest("[data-select-contact]")?.getAttribute("data-select-contact");
+
+    if (toggleCategory) {
+      UI.openCategories[toggleCategory] = !UI.openCategories[toggleCategory];
+      playClick();
+      render();
+      return;
+    }
+    if (selectContact) {
+      GAME.phone.selectedContactId = selectContact;
+      GAME.phone.unreadByContact[selectContact] = 0;
+      render();
+      return;
+    }
 
     // Trade button or row-body click toggles expansion
     const toToggle = toggleTrade || (toggleRow && !qMinus && !qPlus && !qMax && !doBuy && !doSell ? toggleRow : null);
@@ -1128,11 +1346,13 @@ function bindEvents() {
     const eventChoice = event.target.closest("[data-event-choice]")?.getAttribute("data-event-choice");
     const combatAct = event.target.closest("[data-combat]")?.getAttribute("data-combat");
     const resetRun = event.target.closest("[data-reset-run]")?.getAttribute("data-reset-run");
+    const heatChoice = event.target.closest("[data-heat-choice]")?.getAttribute("data-heat-choice");
     if (go) { closeModal(true); travelTo(go); }
     if (ok) closeModal();
     if (eventChoice !== null && eventChoice !== undefined) resolveEventChoice(Number(eventChoice));
     if (combatAct) combatAction(combatAct);
     if (resetRun) { closeModal(true); resetGame(); }
+    if (heatChoice) resolveHeatChoice(heatChoice);
   });
 }
 
@@ -1187,10 +1407,13 @@ function resetGame() {
   GAME.dre = { loanOutstanding: 0, deadlineDay: null, trust: 0 };
   GAME.mina = { trust: 0, dealChanceBonus: 0 };
   GAME.rook = { attention: 0, warned: false, taxActive: false };
-  GAME.flags = { robbedRecently: false };
+  GAME.flags = { robbedRecently: false, retaliationRisk: false };
   GAME.assets = [];
   GAME.modifiers = [];
+  GAME.lastKnownPrices = {};
+  GAME.phone = { messages: [], unreadByContact: { dre: 0 }, selectedContactId: "dre", lastDreMessageTurn: 0 };
   GAME.heatFlags = { checkpointDay: null, raidDay: null, drePressureDay: null };
+  GAME.majorEventDay = null;
   GAME.endgame = { resolved: false, result: null };
   GAME.friendRepayDay = null;
   GAME.lastPromotion = currentRank();
@@ -1203,12 +1426,21 @@ function resetGame() {
 }
 
 function applyHeatConsequences() {
-  if (GAME.heat >= 5 && GAME.heatFlags.checkpointDay !== GAME.day) {
+  if (GAME.heat >= 7 && GAME.heatFlags.checkpointDay !== GAME.day) {
     GAME.heatFlags.checkpointDay = GAME.day;
-    addFeed("Heat 5+: forced APD checkpoint pressure this day.", "bad");
-    if (Math.random() < 0.45) startCombat("patrol", "Checkpoint stop escalates fast.");
+    openModal(
+      "Checkpoint Sweep",
+      `<div class="event-body">
+        <p>APD locked down the main route. Moving tonight is risky.</p>
+        <div class="event-choices">
+          <button class="btn" data-heat-choice="reroute" type="button">Pay to reroute ($180)</button>
+          <button class="btn danger" data-heat-choice="risk" type="button">Risk the route</button>
+        </div>
+      </div>`
+    );
+    addFeed("Major heat event: checkpoint sweep.", "bad");
   }
-  if (GAME.heat >= 10 && GAME.heatFlags.raidDay !== GAME.day) {
+  if (GAME.heat >= 12 && GAME.heatFlags.raidDay !== GAME.day && Math.random() < 0.45) {
     GAME.heatFlags.raidDay = GAME.day;
     const invOptions = DRUGS.filter((drug) => GAME.inventory[drug.id] > 0);
     if (invOptions.length) {
@@ -1216,10 +1448,32 @@ function applyHeatConsequences() {
       const pct = rng(25, 50) / 100;
       const seized = Math.max(1, Math.floor(GAME.inventory[pick.id] * pct));
       GAME.inventory[pick.id] = Math.max(0, GAME.inventory[pick.id] - seized);
-      addFeed(`Heat 10+: police raid seized ${seized} ${pick.displayName}.`, "bad");
+      addFeed(`Heat 12+: police raid seized ${seized} ${pick.displayName}.`, "bad");
     }
     GAME.cash = Math.max(0, GAME.cash - rng(40, 160));
   }
+  if (GAME.heat >= 8) maybeGenerateDreIntel("heat");
+}
+
+function resolveHeatChoice(choice) {
+  if (choice === "reroute") {
+    const cost = Math.min(180, GAME.cash);
+    GAME.cash -= cost;
+    GAME.heat = Math.max(0, GAME.heat - 2);
+    addFeed(`Paid $${cost} to reroute around APD. Heat eased.`, "bad");
+  } else if (choice === "risk") {
+    if (Math.random() < 0.45) {
+      const hit = Math.min(GAME.cash, rng(60, 220));
+      GAME.cash -= hit;
+      GAME.heat += 2;
+      addFeed(`Route got clipped. Lost $${hit} and heat climbed.`, "bad");
+    } else {
+      adjustRep(1, "kept moving through APD sweep");
+      addFeed("You slid through the sweep clean.", "good");
+    }
+  }
+  closeModal(true);
+  render();
 }
 
 function maybeResolveRunGoal() {

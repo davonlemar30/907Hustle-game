@@ -95,7 +95,8 @@ function endCombat(result, extra = {}) {
   if (result === "win") {
     const loot = rng(40, 120) + Math.floor(e.hpMax * 0.6);
     GAME.cash += loot;
-    GAME.rep += 2;
+    if (typeof adjustRep === "function") adjustRep(2, "won a fight");
+    else GAME.rep += 2;
     let msg = `${e.name} down. +$${loot}.`;
 
     if (e.lootDrug && hasRoomFor(e.lootDrug, 1)) {

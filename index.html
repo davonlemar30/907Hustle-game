@@ -505,6 +505,13 @@ body {
 .bank-label { font-family:var(--font-ui);font-size:.62rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-muted);margin-bottom:4px; }
 .bank-amount { font-family:var(--font-mono);font-size:1.6rem;color:var(--gold2);line-height:1; }
 .bank-sub { font-size:.62rem;color:var(--ink-muted);margin-top:3px;font-family:var(--font-ui); }
+.phone-layout { display:grid;grid-template-columns:minmax(190px,240px) 1fr;gap:10px;align-items:start; }
+.phone-section { border:1px solid var(--border2);border-radius:var(--r);background:repeating-linear-gradient(155deg,rgba(255,255,255,0.02) 0 1px,transparent 1px 5px),var(--surf2); }
+.phone-section > summary { list-style:none;cursor:pointer;padding:10px 12px;font-family:var(--font-ui);font-size:.62rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-muted); }
+.phone-section > summary::-webkit-details-marker { display:none; }
+.phone-section > summary::after { content:"▾";float:right;color:var(--ink-muted); }
+.phone-section[open] > summary::after { content:"▴"; }
+.phone-section-body { padding:0 12px 12px; }
 .game-input {
   flex:1;background:var(--plate);border:1px solid var(--border2);border-radius:var(--r);
   color:var(--ink);font-family:var(--font-mono);font-size:.85rem;padding:6px 10px;
@@ -715,13 +722,13 @@ const EVENTS = [
   {id:"dry_market",    title:"Supply Dried Up",       desc:"Word on the block -- can't find product. Hard drugs spiking. Time to move stash.",  trigger:"laylow", choices:[{label:"Lock in the price",fn:G=>{const spiked=["heroin","cocaine","meth","fentanyl","crack"];const sellArea=AREAS.filter(a=>a.id!==G.locationId).find(a=>spiked.some(d=>a.bias[d]>=1.4))||AREAS[1];return {...G,prices:boostPrices(G.prices,spiked,1.45),feed:addFeed(G,`Drought on the block -- prices spiked. ${sellArea.name} is buying at premium right now.`,"warn")};}}]},
   {id:"club_opening",  title:"Club Night",            desc:"Big opening downtown. Party crowd is out, MDMA, Acid, and Coke demand is up. Head downtown if you're holding.",  trigger:"travel",  choices:[{label:"Work the crowd",fn:G=>({...G,prices:boostPrices(G.prices,["mdma","lsd","ketamine","cocaine","dmt"],1.5),feed:addFeed(G,"Club night surge -- party prices popping downtown. Get there now if you're holding.","good")})}]},
   {id:"cop_shakedown", title:"Cop Shakedown",         desc:"Officer catches you slipping. He wants a cut or he's calling it in.",       trigger:"travel",  choices:[{label:"Pay $180",fn:G=>G.cash>=180?{...G,cash:G.cash-180,heat:Math.max(0,G.heat-2),feed:addFeed(G,"Paid off the cop. Heat down.","warn")}:{...G,heat:G.heat+3,feed:addFeed(G,"Couldn't pay -- heat spiked.","bad")}},{label:"Refuse",fn:G=>({...G,heat:G.heat+4,feed:addFeed(G,"Refused the cop. APD on high alert.","bad")})}], cond:G=>G.heat>=3},
-  {id:"lucky_buyer",   title:"Lucky Buyer",           desc:"High-roller needs product fast, paying premium. You have exactly what they want.",           trigger:"deal",   choices:[{label:"Flip it",fn:G=>{const heldDrugs=DRUGS.filter(d=>G.inventory[d.id]>0);const d=heldDrugs.length?heldDrugs[rng(0,heldDrugs.length-1)]:DRUGS[0];const gain=rng(80,220);return {...G,cash:G.cash+gain,rep:G.rep+1,feed:addFeed(G,`Lucky buyer paid over market for ${d.name} -- +$${gain}.`,"good")};}}]},
+  {id:"lucky_buyer",   title:"Lucky Buyer",           desc:"A buyer chases your last handoff and throws extra cash to jump the line.",                 trigger:"sell",   cond:G=>Object.values(G.inventory||{}).some(v=>v>0), choices:[{label:"Take the overpay",fn:G=>{const heldDrugs=DRUGS.filter(d=>G.inventory[d.id]>0);const d=heldDrugs.length?heldDrugs[rng(0,heldDrugs.length-1)]:DRUGS[0];const gain=rng(80,220);const result=`Lucky buyer paid over market for ${d.name} -- +$${gain}.`;return {...G,cash:G.cash+gain,rep:G.rep+1,feed:addFeed(G,result,"good")};}}]},
   {id:"stash_found",   title:"Police Found Your Stash",desc:"APD found some product. They're confiscating and adding to your sheet.", trigger:"laylow",  choices:[{label:"Take the L",fn:G=>{const d=Object.keys(G.inventory).find(k=>G.inventory[k]>0);if(!d)return {...G,feed:addFeed(G,"APD found nothing.","")};const lost=Math.min(G.inventory[d],rng(2,8));const inv={...G.inventory,[d]:G.inventory[d]-lost};return {...G,inventory:inv,heat:G.heat+2,feed:addFeed(G,`APD seized ${lost}x ${DRUGS.find(x=>x.id===d)?.name}.`,"bad")};}}], cond:G=>{const cargo=Object.values(G.inventory).reduce((s,v)=>s+v,0);return cargo>0&&G.heat>=5;}},
-  {id:"mina_tip",      title:"Mina's Tip",            desc:"Mina slides you market intel. A specific area has product moving fast right now.",          trigger:"laylow",  choices:[{label:"Thanks, Mina",fn:G=>{const tipArea=AREAS.filter(a=>a.id!==G.locationId)[rng(0,AREAS.length-2)];const topBias=Object.entries(tipArea.bias).sort((a,b)=>b[1]-a[1])[0];const tipDrug=topBias?DRUGS.find(d=>d.id===topBias[0]):DRUGS[0];const gain=rng(50,120);return {...G,cash:G.cash+gain,feed:addFeed(G,`Mina: "${tipDrug?.name} is running fast in ${tipArea.name}. Get there." +$${gain} hand-off.`,"good")};}}]},
+  {id:"mina_tip",      title:"Mina's Tip",            desc:"A trusted contact sends a location-specific demand tip and a tiny hand-off bonus.",        trigger:"laylow",  cond:G=>contactUnlocked(G,"mina"), choices:[{label:"Read it",fn:G=>{const tipArea=AREAS.filter(a=>a.id!==G.locationId)[rng(0,AREAS.length-2)];const topBias=Object.entries(tipArea.bias).sort((a,b)=>b[1]-a[1])[0];const tipDrug=topBias?DRUGS.find(d=>d.id===topBias[0]):DRUGS[0];const gain=rng(50,120);const result=`Mina: "${tipDrug?.name} is running fast in ${tipArea.name}. Get there." +$${gain} hand-off.`;return {...G,cash:G.cash+gain,feed:addFeed(G,result,"good")};}}]},
   {id:"good_samaritan",title:"Random Windfall",        desc:"Found a dropped wallet. Take it or leave it.",                             trigger:"travel",  choices:[{label:"Take it",fn:G=>{const c=rng(40,130);return {...G,cash:G.cash+c,feed:addFeed(G,`Pocketed $${c} from a lost wallet.`,"good")}}},{label:"Leave it",fn:G=>({...G,rep:G.rep+1,feed:addFeed(G,"You leave it. Word gets around -- +1 rep.","good")})}]},
   {id:"rival_warning", title:"Rook's Warning",        desc:"Someone from Rook's crew steps to you. He's watching your moves.",        trigger:"travel",  choices:[{label:"Play it cool",fn:G=>({...G,heat:G.heat+1,feed:addFeed(G,"Rook's crew clocks you. Stay low.","warn")})}], cond:G=>G.rep>=8},
   {id:"bad_batch",     title:"Bad Batch",             desc:"Product on the block is cut bad. Prices crash here as buyers scatter -- good product elsewhere is moving.",  trigger:"laylow",  choices:[{label:"Cut losses -- move product",fn:G=>{const crashDrug=["crack","heroin","meth","fentanyl"][rng(0,3)];const safeDrug=["cocaine","lsd","mdma","ketamine"][rng(0,3)];return {...G,prices:{...G.prices,[crashDrug]:Math.max(5,Math.floor((G.prices[crashDrug]||50)*.58)),[safeDrug]:Math.round((G.prices[safeDrug]||80)*1.3)},feed:addFeed(G,`Bad batch -- ${DRUGS.find(x=>x.id===crashDrug)?.name} crashes here. Clean ${DRUGS.find(x=>x.id===safeDrug)?.name} spiking elsewhere.`,"bad")};}}]},
-  {id:"price_spike",   title:"Price Spike Alert",     desc:"Street buzz spreading fast -- a hot area is paying top dollar for specific product right now.",  trigger:"travel",  choices:[{label:"Note it",fn:G=>{const hotArea=AREAS.filter(a=>a.id!==G.locationId&&a.risk<=3).sort(()=>Math.random()-.5)[0]||AREAS[1];const topEntry=Object.entries(hotArea.bias).filter(([_,v])=>v>1.3).sort((a,b)=>b[1]-a[1])[0];const hotDrug=topEntry?DRUGS.find(d=>d.id===topEntry[0]):DRUGS[rng(0,DRUGS.length-1)];const spikedPrices={...G.prices};if(hotDrug) spikedPrices[hotDrug.id]=Math.round((G.prices[hotDrug.id]||hotDrug.min)*1.55);return {...G,prices:spikedPrices,feed:addFeed(G,`BUZZ: ${hotDrug?.name} prices surging in ${hotArea.name} -- buyers paying over market right now.`,"good")};}}]},
+  {id:"price_spike",   title:"Price Spike Alert",     desc:"Street buzz flags one area where a specific product is paying above market for a short window.", trigger:"travel", choices:[{label:"Mark it",fn:G=>{const hotArea=AREAS.filter(a=>a.id!==G.locationId&&a.risk<=3).sort(()=>Math.random()-.5)[0]||AREAS[1];const topEntry=Object.entries(hotArea.bias).filter(([_,v])=>v>1.3).sort((a,b)=>b[1]-a[1])[0];const hotDrug=topEntry?DRUGS.find(d=>d.id===topEntry[0]):DRUGS[rng(0,DRUGS.length-1)];const nowAbs=toAbsTick(G.day,G.tick);const spike={areaId:hotArea.id,drugId:hotDrug.id,mult:1.45,expiresAt:nowAbs+4};const result=`BUZZ: ${hotDrug?.name} spiking in ${hotArea.name} for about 1 day.`;return {...G,areaSpikes:[...(G.areaSpikes||[]).filter(sp=>!(sp.areaId===spike.areaId&&sp.drugId===spike.drugId)),spike],feed:addFeed(G,result,"good")};}}]},
   {id:"buy_window",    title:"Cheap Supply Window",   desc:"A contact spotted a glut. Prices dipping in a specific area -- tight window to stock up cheap.",  trigger:"laylow",  choices:[{label:"Move fast",fn:G=>{const cheapArea=AREAS.filter(a=>a.id!==G.locationId).find(a=>Object.values(a.bias).some(v=>v<0.82))||AREAS[5];const cheapEntry=Object.entries(cheapArea.bias).filter(([_,v])=>v<0.82).sort((a,b)=>a[1]-b[1])[0];const cheapDrug=cheapEntry?DRUGS.find(d=>d.id===cheapEntry[0]):DRUGS[0];return {...G,feed:addFeed(G,`Supply glut: ${cheapDrug?.name} priced low in ${cheapArea.name}. Head there before it corrects.`,"warn")};}}]},
   {id:"rook_table",    title:"Rook at the Back Table",desc:"You walk into a quiet room and Rook is already there, coffee untouched.", trigger:"laylow", cond:G=>G.rep>=14&&!G.flags?.rookMet, choices:[{label:"Keep it brief", fn:G=>({...G, flags:{...(G.flags||{}),rookMet:true}, feed:addFeed(G,`Rook nods once. "Stay professional, ${G.playerHandle}."`,"warn")})}]},
   {id:"bank_run",      title:"Street Tax",            desc:"Someone's been watching your stash. They want 10% as protection.",      trigger:"laylow",  choices:[{label:"Pay up",fn:G=>{const tax=Math.max(20,Math.floor(G.cash*.1));return G.cash>=tax?{...G,cash:G.cash-tax,feed:addFeed(G,`Paid $${tax} street tax.`,"bad")}:{...G,feed:addFeed(G,"No cash to tax -- they'll remember.","warn")};}},{label:"Refuse",fn:G=>({...G,heat:G.heat+2,feed:addFeed(G,"Refused the tax -- they marked you.","bad")})}], cond:G=>G.cash>100},
@@ -859,6 +866,11 @@ function genPrices(locationId,previous={},tick=1,G=null) {
     const fatigue=Math.max(0.88,1-(farmCount*0.015));
     p[d.id] = Math.max(5, Math.round(Math.min(d.max*1.38,Math.max(d.min*0.72,b*s*moodBoost*crackdown*fatigue))));
   }
+  const spikes=(G?.areaSpikes||[]).filter(sp=>sp.areaId===locationId && sp.expiresAt>=toAbsTick(G.day,G.tick));
+  for(const sp of spikes){
+    if(!p[sp.drugId]) continue;
+    p[sp.drugId]=Math.max(5,Math.round(p[sp.drugId]*(sp.mult||1.45)));
+  }
   return p;
 }
 
@@ -976,6 +988,7 @@ function initGame() {
     rivalWatch:0,
     flags:{lookoutMet:false},
     cooldowns:{raidDay:null,checkpointTurn:0},
+    areaSpikes:[],
     gameOver:false,
   };
 }
@@ -1009,6 +1022,7 @@ function advanceMeaningfulAction(base, trigger="deal", note="") {
     cash:base.cash+interest,
     seenPrices:{...(base.seenPrices||{}),[base.locationId]:{...nPrices}},
     seenMeta:{...(base.seenMeta||{}),[base.locationId]:Object.fromEntries(DRUGS.map(d=>[d.id,{day:nDay,tick:nTick,source:"local"}]))},
+    areaSpikes:(base.areaSpikes||[]).filter(sp=>sp.expiresAt>=toAbsTick(nDay,nTick)),
   };
   if(interest>0) next={...next,feed:addFeed(stamped,`The bank quietly adds $${interest}.`,"good")};
   if(note) next={...next,feed:addFeed(next,note)};
@@ -1112,7 +1126,7 @@ function reducer(G,action) {
         }
         next={...next,feed:rewardsFeed,missions:{...(next.missions||{}),active:ongoing}};
       }
-      return advanceMeaningfulAction(next,"deal");
+      return advanceMeaningfulAction(next,"buy");
     }
 
     case "SELL": {
@@ -1170,13 +1184,14 @@ function reducer(G,action) {
         const sting=Math.min(next.cash,rng(35,120));
         next={...next,cash:next.cash-sting,heat:Math.min(15,next.heat+1),feed:addFeed(next,`Undercover sting tax: burned $${sting} on a hot handoff.`,"bad")};
       }
-      return advanceMeaningfulAction(next,"deal");
+      return advanceMeaningfulAction(next,"sell");
     }
 
     case "TRAVEL": {
       const target=AREAS.find(a=>a.id===action.areaId);
       if(!target||target.id===G.locationId) return G;
-      const {nTick,nDay,nPrices,nHist,nAreaState}=advanceTime(G);
+      const {nTick,nDay,nHist,nAreaState}=advanceTime(G);
+      const nPrices=genPrices(action.areaId,G.prices,nTick,{...G,day:nDay,tick:nTick,locationId:action.areaId,areaState:nAreaState});
       const runPressure=pressureLevel(G.day);
       const travelReduction=(G.assets.includes("beater")?2:0)+(G.assets.includes("fake_plates")?1:0);
       const heatDelta=target.risk-1-travelReduction+runPressure;
@@ -1592,10 +1607,14 @@ function reducer(G,action) {
     case "RESOLVE_EVENT": {
       const ev=G.pendingEvent;
       if(!ev) return {...G,pendingEvent:null};
+      if(ev.result) return G;
       const choice=ev.choices[action.choiceIdx];
       if(!choice) return {...G,pendingEvent:null};
+      const beforeTop=(G.feed||[])[0]?.text;
       const next=choice.fn({...G,pendingEvent:null});
-      return {...next,pendingEvent:null};
+      const afterFeed=next.feed||[];
+      const result=afterFeed[0]?.text&&afterFeed[0].text!==beforeTop?afterFeed[0].text:"Done.";
+      return {...next,pendingEvent:{...ev,result}};
     }
 
     case "COMBAT_ACTION": {
@@ -1803,7 +1822,6 @@ function MarketScreen({G,dispatch}) {
                   </div>
                   <div>
                     <div className="drug-price">${buy.toLocaleString()}</div>
-                    <div className="drug-sell">↑ ${sell.toLocaleString()}</div>
                     {bestAreaRec&&<div className="drug-memo">{(()=>{
                         const areaName=AREAS.find(a=>a.id===bestAreaRec.id)?.name||bestAreaRec.id;
                         const ageTxt=bestAreaAge>8?"stale":`${bestAreaAge}t ago`;
@@ -2100,12 +2118,15 @@ function ContactsScreen({G,dispatch}) {
             ))}
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <div className="bank-card">
-              <div className="bank-label">Intel Thread</div>
-              {(msgs.length?msgs.map((m)=> <div key={m.id} style={{fontSize:".75rem",marginBottom:6,color:m.kind==="warning"?"#f09f7f":"var(--ink-dim)"}}>• {m.text}</div>):<div style={{fontSize:".75rem",color:"var(--ink-muted)"}}>No fresh intel yet this cycle.</div>)}
-            </div>
-            <div className="bank-card">
-              <div className="bank-label">Market Intel · Last Known</div>
+            <details className="phone-section" open>
+              <summary>Intel Thread</summary>
+              <div className="phone-section-body">
+                {(msgs.length?msgs.map((m)=> <div key={m.id} style={{fontSize:".75rem",marginBottom:6,color:m.kind==="warning"?"#f09f7f":"var(--ink-dim)"}}>• {m.text}</div>):<div style={{fontSize:".75rem",color:"var(--ink-muted)"}}>No fresh intel yet this cycle.</div>)}
+              </div>
+            </details>
+            <details className="phone-section" open>
+              <summary>Market Intel · Last Known</summary>
+              <div className="phone-section-body">
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
                 <span style={{fontSize:".68rem",color:"var(--ink-muted)",letterSpacing:".08em",textTransform:"uppercase"}}>Drug</span>
                 <select
@@ -2148,15 +2169,20 @@ function ContactsScreen({G,dispatch}) {
               <div style={{fontSize:".66rem",color:"var(--ink-muted)",marginTop:8}}>
                 Intel is last-known. Prices can move before you arrive.
               </div>
-            </div>
-            <div className="bank-card">
-              <div className="bank-label">Active Jobs</div>
-              {active.length?active.map((m)=><div key={m.id} className="shop-item"><div style={{flex:1}}><div className="shop-name">{m.title}</div><div className="shop-desc">{m.progress||0}/{m.qty} · {m.type.replaceAll("_"," ")}</div></div><div style={{fontSize:".64rem",color:"var(--ink-muted)"}}>expires t{m.expires}</div></div>):<div style={{fontSize:".75rem",color:"var(--ink-muted)"}}>No active jobs.</div>}
-            </div>
-            <div className="bank-card">
-              <div className="bank-label">Mission Offers</div>
-              {offers.length?offers.map((m)=><div key={m.id} className="shop-item"><div style={{flex:1}}><div className="shop-name">{m.title}</div><div className="shop-desc">Target: {m.type==="buy_cat"||m.type==="sell_cat"?m.category:m.drugId} · Qty {m.qty}</div><div style={{fontSize:".62rem",color:"var(--ink-muted)"}}>Reward +${m.reward.cash} · +{m.reward.rep||0} rep</div></div><div style={{display:"flex",gap:4}}><button className="btn btn-primary" style={{padding:"4px 8px",fontSize:".66rem"}} onClick={()=>dispatch({type:"ACCEPT_MISSION",id:m.id})}>Accept</button><button className="btn btn-secondary" style={{padding:"4px 8px",fontSize:".66rem"}} onClick={()=>dispatch({type:"DECLINE_MISSION",id:m.id})}>Decline</button></div></div>):<div style={{fontSize:".75rem",color:"var(--ink-muted)"}}>No offers right now. New offers roll daily.</div>}
-            </div>
+              </div>
+            </details>
+            <details className="phone-section">
+              <summary>Active Jobs</summary>
+              <div className="phone-section-body">
+                {active.length?active.map((m)=><div key={m.id} className="shop-item"><div style={{flex:1}}><div className="shop-name">{m.title}</div><div className="shop-desc">{m.progress||0}/{m.qty} · {m.type.replaceAll("_"," ")}</div></div><div style={{fontSize:".64rem",color:"var(--ink-muted)"}}>expires t{m.expires}</div></div>):<div style={{fontSize:".75rem",color:"var(--ink-muted)"}}>No active jobs.</div>}
+              </div>
+            </details>
+            <details className="phone-section">
+              <summary>Mission Offers</summary>
+              <div className="phone-section-body">
+                {offers.length?offers.map((m)=><div key={m.id} className="shop-item"><div style={{flex:1}}><div className="shop-name">{m.title}</div><div className="shop-desc">Target: {m.type==="buy_cat"||m.type==="sell_cat"?m.category:m.drugId} · Qty {m.qty}</div><div style={{fontSize:".62rem",color:"var(--ink-muted)"}}>Reward +${m.reward.cash} · +{m.reward.rep||0} rep</div></div><div style={{display:"flex",gap:4}}><button className="btn btn-primary" style={{padding:"4px 8px",fontSize:".66rem"}} onClick={()=>dispatch({type:"ACCEPT_MISSION",id:m.id})}>Accept</button><button className="btn btn-secondary" style={{padding:"4px 8px",fontSize:".66rem"}} onClick={()=>dispatch({type:"DECLINE_MISSION",id:m.id})}>Decline</button></div></div>):<div style={{fontSize:".75rem",color:"var(--ink-muted)"}}>No offers right now. New offers roll daily.</div>}
+              </div>
+            </details>
           </div>
         </div>
       </div>
@@ -2314,20 +2340,28 @@ function MenuModal({onClose,onSave,onLoad,onNew,hasManual}) {
 
 // ── EVENT MODAL ───────────────────────────────────────────────────────────────
 function EventModal({ev,dispatch}) {
+  const hasResult=!!ev?.result;
   return (
     <div className="modal-backdrop">
       <div className="modal event-modal" onClick={e=>e.stopPropagation()}>
-        <PH tab="event" icon="warn" title="Street Event" sub="Choose your move"/>
+        <PH tab="event" icon="warn" title="Street Event" sub={hasResult?"Outcome":"Choose your move"}/>
         <div className="event-body">
           <div className="event-title">{ev.title}</div>
           <div className="event-desc">{ev.desc}</div>
-          <div className="event-choices">
-            {ev.choices.map((c,i)=>(
-              <button key={i} className="event-choice" onClick={()=>dispatch({type:"RESOLVE_EVENT",choiceIdx:i})}>
-                → {c.label}
-              </button>
-            ))}
-          </div>
+          {hasResult?(
+            <div className="event-choices">
+              <div className="event-choice" style={{cursor:"default",opacity:1}}>→ {ev.result}</div>
+              <button className="event-choice" onClick={()=>dispatch({type:"DISMISS_EVENT"})}>Close</button>
+            </div>
+          ):(
+            <div className="event-choices">
+              {ev.choices.map((c,i)=>(
+                <button key={i} className="event-choice" onClick={()=>dispatch({type:"RESOLVE_EVENT",choiceIdx:i})}>
+                  → {c.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

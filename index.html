@@ -838,11 +838,31 @@ function categoryStatus(G,cat){
 }
 
 function getHeatBand(heat) {
-  if(heat>=12) return {id:"raid",label:"RAID BAND",tone:"bad",note:"Major raids possible. Keep cooldown between hits."};
-  if(heat>=10) return {id:"critical",label:"CRITICAL",tone:"bad",note:"Forced movement pressure and squeezes start."};
-  if(heat>=7) return {id:"hot",label:"HOT",tone:"warn",note:"Checkpoint decisions can trigger now."};
-  if(heat>=4) return {id:"warm",label:"WARM",tone:"warn",note:"Police weight climbing. Warning band."};
-  return {id:"low",label:"LOW",tone:"",note:"Light pressure. Mostly background noise."};
+  if(heat>=11) return {id:"critical",label:"CRITICAL",tone:"bad",range:"11-15",note:"Major raids and seizures are live. Make emergency moves only."};
+  if(heat>=8) return {id:"high",label:"HIGH",tone:"bad",range:"8-10",note:"Stops and checkpoint pressure are common. Plan routes carefully."};
+  if(heat>=4) return {id:"mid",label:"MID",tone:"warn",range:"4-7",note:"Tactical friction: occasional delays and minor costs."};
+  return {id:"low",label:"LOW",tone:"",range:"0-3",note:"Warning lane: mostly flavor and caution, low direct punishment."};
+}
+
+function debtEscalationStatus(G){
+  if(G.dre.loan<=0 || !G.dre.deadline){
+    return {stage:0,label:"No active debt",short:"Clear",detail:"No debt pressure active."};
+  }
+  const dueIn=G.dre.deadline-G.day;
+  const overdueDays=Math.max(0,G.day-G.dre.deadline+1);
+  if(overdueDays<=0){
+    return {stage:0,label:"On the clock",short:`Due Day ${G.dre.deadline}`,detail:dueIn===0?"Due today. Pay before day rollover to avoid overdue pressure.":`Due in ${dueIn} day${dueIn===1?"":"s"}.`};
+  }
+  if(overdueDays<=2){
+    return {stage:1,label:"Collection Warning",short:`Overdue ${overdueDays}d`,detail:"Warning stage: Dre is pressing calls. Light pressure starts next cycle."};
+  }
+  if(overdueDays<=4){
+    return {stage:2,label:"Soft Collections",short:`Overdue ${overdueDays}d`,detail:"Small cash pulls and heat bumps can happen each lay-low cycle."};
+  }
+  if(overdueDays<=6){
+    return {stage:3,label:"Hard Collections",short:`Overdue ${overdueDays}d`,detail:"Bigger cash pulls and stronger heat pressure are active."};
+  }
+  return {stage:4,label:"Severe Collections",short:`Overdue ${overdueDays}d`,detail:"Heavy collections active. Expect consistent losses until paid."};
 }
 
 // ── ROBBERY TARGETS ──────────────────────────────────────────────────────────
@@ -944,14 +964,12 @@ function pressureLevel(day){
 }
 
 function drePressureStage(G){
-  if(G.dre.loan<=0||!G.dre.deadline) return {stage:0,label:"Square",line:"No active note."};
-  const overdue=Math.max(0,G.day-G.dre.deadline+1);
-  const trustMod=G.dre.trust>=4?-1:G.dre.trust<=-2?1:0;
-  const score=overdue+trustMod;
-  if(score>=4) return {stage:3,label:"Dre's done asking",line:"Harsh collections active."};
-  if(score>=2) return {stage:2,label:"Out of favors",line:"Aggressive pressure this cycle."};
-  if(overdue>=1) return {stage:1,label:"Dre's getting impatient",line:"Warning stage — pay soon."};
-  return {stage:0,label:"On the clock",line:`Due Day ${G.dre.deadline}.`};
+  const debtState=debtEscalationStatus(G);
+  if(debtState.stage===0) return {stage:0,label:G.dre.loan>0?"On the clock":"Square",line:debtState.detail};
+  if(debtState.stage===1) return {stage:1,label:"Dre's getting impatient",line:debtState.detail};
+  if(debtState.stage===2) return {stage:2,label:"Out of favors",line:debtState.detail};
+  if(debtState.stage===3) return {stage:3,label:"Dre's done asking",line:debtState.detail};
+  return {stage:4,label:"Collections fully active",line:debtState.detail};
 }
 
 function areaMoodForDay(day) {
@@ -1272,9 +1290,9 @@ function reducer(G,action) {
         next={...next,feed:rewardsFeed,missions:{...(next.missions||{}),active:ongoing}};
       }
       if(total>(G.runStats?.biggestSale||0)) next={...next,feed:addFeed(next,`Record set: biggest sale $${total.toLocaleString()}. Big Flip.`,"good")};
-      if(next.heat>=8&&DRUGS.find(d=>d.id===drugId)?.tier>=4&&Math.random()<0.32){
+      if(next.heat>=10&&DRUGS.find(d=>d.id===drugId)?.tier>=4&&Math.random()<0.2){
         const sting=Math.min(next.cash,rng(35,120));
-        next={...next,cash:next.cash-sting,heat:Math.min(15,next.heat+1),feed:addFeed(next,`Undercover sting tax: burned $${sting} on a hot handoff.`,"bad")};
+        next={...next,cash:next.cash-sting,heat:Math.min(15,next.heat+1),feed:addFeed(next,`High-heat handoff got squeezed: burned $${sting}.`,"bad")};
       }
       return advanceMeaningfulAction(next,"sell");
     }
@@ -1291,23 +1309,27 @@ function reducer(G,action) {
       let cashPenalty=0;
       let inv={...G.inventory};
       let heatFeed=null;
+      let seizureInc=0;
       const checkpointShield=G.assets.includes("fake_plates")?0.75:1;
-      if(nextHeat>=10){
+      if(nextHeat>=11){
         const loaded=DRUGS.filter(d=>inv[d.id]>0);
-        if(loaded.length){
+        if(loaded.length&&Math.random()<0.45){
           const pick=loaded[rng(0,loaded.length-1)];
           const guard=G.assets.includes("saferoom")?0.7:1;
-          const seized=Math.max(1,Math.floor(inv[pick.id]*rng(20,45 + runPressure*8)*guard/100));
+          const seized=Math.max(1,Math.floor(inv[pick.id]*rng(14,28 + runPressure*6)*guard/100));
           inv[pick.id]=Math.max(0,inv[pick.id]-seized);
-          heatFeed=`Heat 10+ raid pressure: seized ${seized}× ${pick.name} in transit.`;
+          heatFeed=`Critical heat transit hit: APD seized ${seized}× ${pick.name}.`;
+          seizureInc+=1;
+        } else {
+          cashPenalty=Math.min(G.cash,Math.floor(rng(55,145 + runPressure*28)*checkpointShield));
+          heatFeed=`Critical heat transit squeeze cost $${cashPenalty}.`;
         }
-        cashPenalty=Math.min(G.cash,Math.floor(rng(90,220 + runPressure*40)*checkpointShield));
-      } else if(nextHeat>=8){
-        cashPenalty=Math.min(G.cash,Math.floor(rng(35,120 + runPressure*25)*checkpointShield));
-        heatFeed=`Heat 8+ pressure: checkpoints burned $${cashPenalty} to move.`;
-      } else if(nextHeat>=5&&Math.random()<0.45){
-        cashPenalty=Math.min(G.cash,Math.floor(rng(20,70)*checkpointShield));
-        heatFeed=`Heat 5+ checkpoint friction cost you $${cashPenalty}.`;
+      } else if(nextHeat>=8 && Math.random()<0.5){
+        cashPenalty=Math.min(G.cash,Math.floor(rng(20,85 + runPressure*16)*checkpointShield));
+        heatFeed=`High heat checkpoint friction cost $${cashPenalty}.`;
+      } else if(nextHeat>=4&&Math.random()<0.22){
+        cashPenalty=Math.min(G.cash,Math.floor(rng(8,30)*checkpointShield));
+        heatFeed=`Mid heat delay fees cost $${cashPenalty}.`;
       }
       const locked=(G.lockdowns||[]).find(x=>x.areaId===action.areaId&&x.untilDay>=G.day);
       if(locked) return {...G,feed:addFeed(G,`${target.name} is on APD lockdown until Day ${locked.untilDay}.`,"bad")};
@@ -1315,7 +1337,6 @@ function reducer(G,action) {
       const prevBand=getHeatBand(G.heat).id;
       const nextBand=getHeatBand(nextHeat).id;
       const bandAlert=prevBand!==nextBand?`Heat status now ${getHeatBand(nextHeat).label}.`:null;
-      let seizureInc=0;
       let next={...G,
         locationId:action.areaId,
         day:nDay,tick:nTick,
@@ -1352,21 +1373,20 @@ function reducer(G,action) {
         next={...next,missions:{...next.missions,active:keep}};
       }
       const thisTurn=toAbsTick(nDay,nTick);
-      if(nextHeat>=7 && thisTurn-(G.cooldowns?.checkpointTurn||0)>=3){
+      if(nextHeat>=8 && thisTurn-(G.cooldowns?.checkpointTurn||0)>=5){
         next={...next,cooldowns:{...(next.cooldowns||{}),checkpointTurn:thisTurn},pendingEvent:{
           title:"Checkpoint Sweep",
           desc:"APD checkpoint grid just lit up. Reroute, risk it, or lay low now.",
           choices:[
-            {label:"Pay to reroute ($180)",fn:(S)=>({...S,cash:Math.max(0,S.cash-180),heat:Math.max(0,S.heat-2),feed:addFeed(S,"Paid to reroute around checkpoint grid.","warn")})},
-            {label:"Take the risk",fn:(S)=>Math.random()<0.45?({...S,cash:Math.max(0,S.cash-rng(70,190)),heat:Math.min(15,S.heat+2),feed:addFeed(S,"Route got clipped at checkpoint. Cash burned.","bad")}):({...S,rep:S.rep+1,feed:addFeed(S,"You slipped through the checkpoint lane clean.","good")})},
+            {label:"Pay to reroute ($120)",fn:(S)=>({...S,cash:Math.max(0,S.cash-120),heat:Math.max(0,S.heat-1),feed:addFeed(S,"Paid to reroute around checkpoint grid.","warn")})},
+            {label:"Take the risk",fn:(S)=>Math.random()<0.4?({...S,cash:Math.max(0,S.cash-rng(45,130)),heat:Math.min(15,S.heat+1),feed:addFeed(S,"Route got clipped at checkpoint. Cash burned.","bad")}):({...S,rep:S.rep+1,feed:addFeed(S,"You slipped through the checkpoint lane clean.","good")})},
             {label:"Lay low this slot",fn:(S)=>({...S,heat:Math.max(0,S.heat-1),feed:addFeed(S,"You iced movement and let APD pressure pass.","warn")})},
           ],
         }};
       }
       if(heatFeed) next={...next,feed:addFeed(next,heatFeed,"bad")};
-      if((heatFeed||"").includes("seized")) seizureInc+=1;
       if(bandAlert) next={...next,feed:addFeed(next,bandAlert,getHeatBand(nextHeat).tone)};
-      if(nextHeat>=9&&Math.random()<(0.25 + runPressure*0.05)){
+      if(nextHeat>=11&&Math.random()<(0.18 + runPressure*0.04)){
         const lockArea=AREAS.filter(a=>a.id!==action.areaId)[rng(0,AREAS.length-2)];
         next={...next,lockdowns:[...(next.lockdowns||[]),{areaId:lockArea.id,untilDay:nDay+1}],feed:addFeed(next,`APD attention makes ${lockArea.name} too hot through Day ${nDay+1}.`,"warn")};
       }
@@ -1399,35 +1419,54 @@ function reducer(G,action) {
       let inv={...G.inventory};
       let invAge={...G.inventoryAge};
       if(dre.loan>0&&G.day>=dre.deadline){
+        const debtState=debtEscalationStatus(G);
         const overdueDays=Math.max(1,G.day-dre.deadline+1);
-        const stage=drePressureStage(G).stage;
-        const trustSoftener=dre.trust>=4?0.75:dre.trust<=-2?1.2:1;
-        const penalty=Math.min(G.cash,Math.round((rng(35,90)+(overdueDays*20)+(stage*20)+(runPressure*35))*trustSoftener));
-        extraCash=-penalty;
-        dre.trust-=1;
-        extraHeat=Math.min(5,1+Math.floor(overdueDays/2)+stage);
-        const lines=["Dre's getting impatient.","You're out of favors.","Dre's done asking."];
-        newFeed=[{text:`${lines[Math.min(2,stage)]} Collection hit -$${penalty}. Overdue day ${overdueDays}.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
+        const trustSoftener=dre.trust>=4?0.8:dre.trust<=-2?1.15:1;
+        let penalty=0;
+        let debtHeat=0;
+        if(debtState.stage===1){
+          debtHeat=1;
+          newFeed=[{text:`Debt warning: overdue day ${overdueDays}. Dre is calling in pressure.`,tone:"warn",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
+        } else if(debtState.stage===2){
+          penalty=Math.min(G.cash,Math.round((rng(20,65)+(runPressure*15))*trustSoftener));
+          debtHeat=1;
+        } else if(debtState.stage===3){
+          penalty=Math.min(G.cash,Math.round((rng(45,110)+(runPressure*22))*trustSoftener));
+          debtHeat=2;
+        } else {
+          penalty=Math.min(G.cash,Math.round((rng(80,170)+(runPressure*30))*trustSoftener));
+          debtHeat=3;
+        }
+        if(penalty>0){
+          extraCash=-penalty;
+          dre.trust-=1;
+          newFeed=[{text:`${debtState.label}: collection hit -$${penalty}. Overdue day ${overdueDays}.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
+        }
+        extraHeat=Math.min(4,debtHeat);
       }
       let nextHeat=Math.max(0,Math.min(15,G.heat-1+extraHeat+runPressure));
       let seizureInc=0;
-      if(nextHeat>=10){
+      if(nextHeat>=11){
         const loaded=DRUGS.filter(d=>inv[d.id]>0);
-        if(loaded.length){
+        if(loaded.length && Math.random()<0.45){
           const pick=loaded[rng(0,loaded.length-1)];
           const guard=G.assets.includes("saferoom")?0.65:1;
-          const lost=Math.max(1,Math.floor(inv[pick.id]*rng(18,35 + runPressure*7)*guard/100));
+          const lost=Math.max(1,Math.floor(inv[pick.id]*rng(12,24 + runPressure*6)*guard/100));
           inv[pick.id]=Math.max(0,inv[pick.id]-lost);
           if(inv[pick.id]===0) invAge[pick.id]=null;
-          newFeed=[{text:`Heat 10+ raid: APD seized ${lost}× ${pick.name} from stash movement.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
+          newFeed=[{text:`Critical heat raid: APD seized ${lost}× ${pick.name} from stash movement.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
           seizureInc+=1;
+        } else if(Math.random()<0.6){
+          const sweep=Math.min(Math.max(0,G.cash+extraCash),rng(30,105 + runPressure*16));
+          extraCash-=Math.max(0,sweep);
+          newFeed=[{text:`Critical heat sweep burned $${Math.max(0,sweep)} in hush money.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
         }
-      } else if(nextHeat>=8 && Math.random()<0.65){
-        const sweep=Math.min(Math.max(0,G.cash+extraCash),rng(25,95 + runPressure*18));
+      } else if(nextHeat>=8 && Math.random()<0.42){
+        const sweep=Math.min(Math.max(0,G.cash+extraCash),rng(18,70 + runPressure*12));
         extraCash-=Math.max(0,sweep);
-        newFeed=[{text:`Heat 8+ sweep burned another $${Math.max(0,sweep)} in hush money.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
-      } else if(nextHeat>=5 && Math.random()<0.4){
-        newFeed=[{text:`Heat 5+ checkpoints slowed your day.`,tone:"warn",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
+        newFeed=[{text:`High heat sweep burned $${Math.max(0,sweep)} in hush money.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
+      } else if(nextHeat>=4 && Math.random()<0.25){
+        newFeed=[{text:`Mid heat friction slowed your day.`,tone:"warn",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
       }
       let staleHeat=0;
       let staleDrops=0;
@@ -1476,7 +1515,7 @@ function reducer(G,action) {
       }
       const decayedAreaCounts=Object.fromEntries(Object.entries(G.areaTradeCounts||{}).map(([k,v])=>[k,Math.max(0,v-(nTick===1?1:0))]));
       next={...next,areaTradeCounts:decayedAreaCounts,runStats:{...next.runStats,hottestDay:Math.max(next.runStats?.hottestDay||0,next.heat),seizures:(next.runStats?.seizures||0)+seizureInc}};
-      if(next.heat>=12 && (next.cooldowns?.raidDay!==nDay) && Math.random()<0.42){
+      if(next.heat>=11 && (next.cooldowns?.raidDay!==nDay) && Math.random()<0.34){
         next={...next,cooldowns:{...(next.cooldowns||{}),raidDay:nDay},pendingEvent:{
           title:"Raid Pressure",
           desc:"APD raid band is active. Pick your response now.",
@@ -2009,6 +2048,7 @@ function BankScreen({G,dispatch}) {
   const [wd,setWd]=useState("");
   const overdue=G.dre.loan>0&&G.day>G.dre.deadline;
   const dreStage=drePressureStage(G);
+  const debtState=debtEscalationStatus(G);
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <PH tab="bank" icon="bank" title="Finances" sub="Cash · Bank · Loans"/>
@@ -2050,7 +2090,7 @@ function BankScreen({G,dispatch}) {
           </div>
           <div className="dre-card">
             <div className="dre-title">Dre — Street Lender</div>
-            <div style={{fontSize:".68rem",fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:8,color:dreStage.stage>=2?"var(--red2)":"var(--ink-dim)"}}>{dreStage.label}</div>
+            <div style={{fontSize:".68rem",fontWeight:700,letterSpacing:".1em",textTransform:"uppercase",marginBottom:8,color:debtState.stage>=2?"var(--red2)":debtState.stage>=1?"#e0a030":"var(--ink-dim)"}}>{debtState.label}</div>
             {G.dre.loan>0?(
               <div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8,marginBottom:10}}>
@@ -2058,7 +2098,14 @@ function BankScreen({G,dispatch}) {
                   <div><div style={{fontSize:".56rem",color:"var(--ink-muted)",letterSpacing:".12em",textTransform:"uppercase"}}>Due</div><div style={{fontFamily:"var(--font-mono)",fontSize:".95rem",color:overdue?"var(--red2)":"var(--ink)"}}>Day {G.dre.deadline}{overdue?" · OVERDUE":""}</div></div>
                   <div><div style={{fontSize:".56rem",color:"var(--ink-muted)",letterSpacing:".12em",textTransform:"uppercase"}}>Trust</div><div style={{fontFamily:"var(--font-mono)",fontSize:".95rem"}}>{G.dre.trust}</div></div>
                 </div>
-                <div style={{fontSize:".7rem",color:"var(--ink-muted)",marginBottom:10}}>{dreStage.line}</div>
+                <div style={{fontSize:".7rem",color:"var(--ink-muted)",marginBottom:6}}>{dreStage.line}</div>
+                <div style={{fontSize:".68rem",color:debtState.stage>=2?"var(--red2)":"var(--ink-muted)",marginBottom:10}}>
+                  <strong style={{color:"var(--ink-dim)"}}>Expected next consequence:</strong>{" "}
+                  {debtState.stage<=1?"Heat warning only; collections start if debt stays overdue.":
+                   debtState.stage===2?"Small cash collections + mild heat bump each lay-low cycle.":
+                   debtState.stage===3?"Bigger cash collections + stronger heat pressure.":
+                   "Heavy recurring collections + major heat pressure until paid."}
+                </div>
                 <button className="btn btn-danger" disabled={G.cash<G.dre.loan} style={{flexDirection:"row",padding:"8px 18px",fontSize:".78rem"}} onClick={()=>dispatch({type:"REPAY_DRE"})}>Repay ${G.dre.loan.toLocaleString()}</button>
               </div>
             ):(
@@ -2380,7 +2427,7 @@ function StatsScreen({G}) {
           <div className="stat-card"><div className="stat-label">Cash on Hand</div><div className="stat-val" style={{color:"var(--money2)",fontFamily:"var(--font-mono)",fontSize:"1.2rem"}}>${G.cash.toLocaleString()}</div></div>
           <div className="stat-card"><div className="stat-label">Bank Balance</div><div className="stat-val" style={{color:"var(--gold2)",fontFamily:"var(--font-mono)",fontSize:"1.2rem"}}>${G.bank.toLocaleString()}</div></div>
           <div className="stat-card"><div className="stat-label">Health</div><div className="stat-val" style={{color:G.health>65?"var(--money2)":"var(--red2)"}}>{G.health}<span style={{fontSize:".8rem",color:"var(--ink-muted)"}}>/100</span></div></div>
-          <div className="stat-card"><div className="stat-label">Heat Level</div><div className="stat-val" style={{color:G.heat>=7?"var(--red2)":G.heat>=4?"#e0a030":"var(--ink)"}}>{G.heat}<span style={{display:"block",fontSize:".65rem",color:"var(--ink-muted)",marginTop:2,fontFamily:"var(--font-mono)"}}>{"■".repeat(Math.min(G.heat,10))}{"□".repeat(Math.max(0,10-Math.min(G.heat,10)))}</span></div></div>
+          <div className="stat-card"><div className="stat-label">Heat Level</div><div className="stat-val" style={{color:G.heat>=8?"var(--red2)":G.heat>=4?"#e0a030":"var(--ink)"}}>{G.heat}<span style={{display:"block",fontSize:".65rem",color:"var(--ink-muted)",marginTop:2,fontFamily:"var(--font-mono)"}}>{"■".repeat(Math.min(G.heat,10))}{"□".repeat(Math.max(0,10-Math.min(G.heat,10)))}</span><span style={{display:"block",fontSize:".58rem",color:"var(--ink-muted)",letterSpacing:".08em",fontFamily:"var(--font-ui)",fontWeight:700}}>{getHeatBand(G.heat).label} ({getHeatBand(G.heat).range})</span></div></div>
           <div className="stat-card"><div className="stat-label">Reputation</div><div className="stat-val">{G.rep}<div style={{marginTop:5}}><span className="rank-badge">{rank}</span></div></div></div>
           <div className="stat-card"><div className="stat-label">Day / Slot</div><div className="stat-val">{G.day}<span style={{fontSize:".7rem",color:"var(--ink-muted)"}}>/30</span><div style={{fontSize:".7rem",color:"var(--ink-muted)",marginTop:2,fontFamily:"var(--font-ui)",fontWeight:700,letterSpacing:".08em"}}>{SLOTS[G.tick-1]}</div></div></div>
           <div className="stat-card"><div className="stat-label">Location</div><div className="stat-val" style={{fontSize:"1rem"}}>{area?.name}</div><div style={{fontSize:".62rem",color:"var(--ink-muted)",marginTop:4,fontFamily:"var(--font-ui)",fontWeight:700,letterSpacing:".08em"}}>RISK {area?.risk}/4 · PD {area?.police}/3</div></div>
@@ -2388,7 +2435,7 @@ function StatsScreen({G}) {
         </div>
         {G.dre.loan>0&&(
           <div style={{marginTop:10,padding:"10px 12px",background:"rgba(192,128,32,.08)",border:"1px solid #604010",borderLeft:"3px solid var(--gold)",borderRadius:"var(--r)",fontFamily:"var(--font-mono)",fontSize:".78rem",color:"#d09030"}}>
-            DRE LOAN: ${G.dre.loan.toLocaleString()} · DUE DAY {G.dre.deadline}
+            DRE LOAN: ${G.dre.loan.toLocaleString()} · DUE DAY {G.dre.deadline}{(G.day>G.dre.deadline)?" · OVERDUE":""} · {debtEscalationStatus(G).label}
           </div>
         )}
         <div style={{marginTop:10}} className="bank-card">
@@ -2404,11 +2451,16 @@ function StatsScreen({G}) {
 // ── TRAVEL MODAL ──────────────────────────────────────────────────────────────
 function TravelModal({G,onTravel,onClose}) {
   const mood=G.areaState||{};
+  const heatBand=getHeatBand(G.heat);
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={e=>e.stopPropagation()}>
         <PH tab="travel" icon="travel" title="Travel" sub="Costs 1 time slot"/>
         <div className="modal-body">
+          <div className="goal-banner" style={{marginBottom:10,padding:"8px 10px",fontSize:".68rem"}}>
+            <strong style={{color:heatBand.tone==="bad"?"var(--red2)":heatBand.tone==="warn"?"#d9a03a":"var(--ink-dim)"}}>Current Heat: {G.heat} · {heatBand.label} ({heatBand.range})</strong>
+            <div style={{marginTop:4,color:"var(--ink-muted)"}}>{heatBand.note}</div>
+          </div>
           <div className="area-grid">
             {AREAS.map(area=>{
               const cur=area.id===G.locationId;
@@ -2671,11 +2723,12 @@ function App() {
   useEffect(()=>{try{localStorage.setItem(SAVE_KEY,JSON.stringify(G));}catch{};},[G]);
   const area=AREAS.find(a=>a.id===G.locationId);
   const cargo=Object.values(G.inventory).reduce((s,v)=>s+v,0);
-  const heatHi=G.heat>=7,heatMid=G.heat>=4;
+  const heatHi=G.heat>=8,heatMid=G.heat>=4;
   const hpLow=G.health<40;
   const worth=netWorthOf(G);
   const heatBand=getHeatBand(G.heat);
   const dreOverdue=G.dre.loan>0&&G.day>G.dre.deadline;
+  const debtState=debtEscalationStatus(G);
   const hasManualSave=(()=>{try{return !!localStorage.getItem(MANUAL_SAVE_KEY);}catch{return false;}})();
   const daysLeft=Math.max(0,31-G.day);
   const nextContact=!isDreUnlocked(G)?"Dre @ 4 rep or first loan":!isPlugUnlocked(G)?"Plug @ 8 rep + $500 bank":!isLookoutUnlocked(G)?"Lookout @ heat 4 or rep 6":"All contacts online";
@@ -2709,8 +2762,12 @@ function App() {
           <Chip icon="cash" label="Cash"  value={`$${G.cash.toLocaleString()}`}     cls="chip-cash"/>
           <Chip icon="day"  label="Day"   value={`${G.day}/30 · ${SLOTS[G.tick-1]}`}/>
           <Chip icon="loc"  label="Area"  value={area?.name}/>
-          <Chip icon="heat" label="Heat"  value={`${G.heat} · ${heatBand.label}`} cls={heatHi?"chip-heat chip-heat-hi":heatMid?"chip-heat":""}/>
+          <Chip icon="heat" label="Heat"  value={`${G.heat} · ${heatBand.label} (${heatBand.range})`} cls={heatHi?"chip-heat chip-heat-hi":heatMid?"chip-heat":""}/>
+          <Chip icon="bank" label="Debt" value={G.dre.loan>0?`$${G.dre.loan.toLocaleString()} · ${debtState.short}`:"Clear"} cls={dreOverdue?"chip-heat":""}/>
           <Chip icon="rep"  label="Rep"   value={`${G.rep}`} cls="chip-rep"/>
+        </div>
+        <div style={{gridColumn:"1/-1",marginTop:6,fontSize:".64rem",color:heatBand.tone==="bad"?"var(--red2)":heatBand.tone==="warn"?"#d9a03a":"var(--ink-muted)",fontFamily:"var(--font-ui)",fontWeight:700,letterSpacing:".08em",textTransform:"uppercase"}}>
+          Heat status: {heatBand.label} ({heatBand.range}) · {heatBand.note}
         </div>
       </header>
 

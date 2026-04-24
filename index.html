@@ -395,6 +395,15 @@ body {
 }
 .qty-max:hover { border-color:var(--edge);color:var(--ink); }
 .trade-btns { display:flex;gap:8px; }
+.market-micro-note {
+  margin-top:8px;
+  padding-top:7px;
+  border-top:1px dashed rgba(255,255,255,0.08);
+  font-size:.64rem;
+  color:var(--ink-dim);
+  letter-spacing:.04em;
+  font-family:var(--font-ui);
+}
 
 /* BUTTONS */
 .btn {
@@ -457,6 +466,31 @@ body {
   font-size:.68rem;padding:4px 10px;font-family:var(--font-ui);font-weight:700;letter-spacing:.08em;
 }
 .btn-ghost:hover { border-color:var(--border2);color:var(--ink-dim); }
+
+.nav-wrap { display:flex; flex-direction:column; gap:4px; }
+.nav-submenu-row {
+  display:flex;
+  gap:4px;
+  padding:4px;
+  border:1px solid var(--border2);
+  border-radius:var(--r);
+  background:linear-gradient(180deg,#1b150f,#110d09);
+}
+.nav-submenu-item {
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  padding:5px 8px;
+  background:var(--surf2);
+  color:var(--ink-dim);
+  font-family:var(--font-ui);
+  font-size:.68rem;
+  font-weight:700;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  cursor:pointer;
+}
+.nav-submenu-item:hover { border-color:var(--edge); color:var(--ink); background:var(--surf3); }
+.nav-submenu-item.active { border-color:var(--gold); color:var(--gold2); }
 
 /* STREET FEED */
 .feed-panel { display:flex;flex-direction:column;overflow:hidden; }
@@ -783,6 +817,14 @@ function hasRealGun(G){ return G.assets.includes("real_gun"); }
 function pickFlavor(lines=[]){ return lines.length ? lines[rng(0,lines.length-1)] : ""; }
 
 const CATEGORY_ORDER = ["STREET","PILL","POWDER","OPIATE","PARTY","SYRUP"];
+const CATEGORY_LABELS = {
+  STREET: "Street",
+  PILL: "Pills",
+  POWDER: "Powder",
+  OPIATE: "Opiates",
+  PARTY: "Party",
+  SYRUP: "Syrup",
+};
 function isDreUnlocked(G){ return hasPhoneAccess(G) && (G.dre.loan > 0 || G.rep >= 4); }
 function isPlugUnlocked(G){ return G.rep >= 8 && G.bank >= 500; }
 function isLookoutUnlocked(G){ return G.rep >= 6 || G.heat >= 4 || !!G.flags?.lookoutMet; }
@@ -941,7 +983,15 @@ function getSellPrice(G,id) {
 function avgCostFor(G,id){
   const fromBook=G.avgCostBasis?.[id];
   if(Number.isFinite(fromBook)&&fromBook>0) return fromBook;
-  return G.prices?.[id]||0;
+  return 0;
+}
+
+function expectedProfitForQty(G,id,qty){
+  const units=Math.max(0,qty||0);
+  if(!units) return 0;
+  const sell=getSellPrice(G,id);
+  const avg=avgCostFor(G,id);
+  return (sell-avg)*units;
 }
 
 function projectedNextPriceRange(G,drugId){
@@ -961,7 +1011,9 @@ function projectedNextPriceRange(G,drugId){
   const max=Math.max(min,Math.round(now*(1+baseVol+drift)));
   const center=Math.round((min+max)/2);
   const dir=center>now*1.02?"up":center<now*0.98?"down":"flat";
-  return {min,max,center,dir};
+  const spread=Math.max(0,max-min);
+  const confidence=spread<=Math.max(12,Math.round(now*0.22))?"tight":spread<=Math.max(28,Math.round(now*0.48))?"mixed":"wide";
+  return {min,max,center,dir,confidence};
 }
 
 function inventoryValue(G) {
@@ -1125,7 +1177,7 @@ function reducer(G,action) {
       const prevQty=G.inventory[drugId]||0;
       const prevAvg=avgCostFor(G,drugId);
       const newQty=prevQty+qty;
-      const nextAvg=newQty>0?Math.round(((prevAvg*prevQty)+cost)/newQty):0;
+      const nextAvg=newQty>0?(((prevAvg*prevQty)+cost)/newQty):0;
       let next={...G,
         cash:G.cash-cost,
         inventory:{...G.inventory,[drugId]:newQty},
@@ -1172,7 +1224,7 @@ function reducer(G,action) {
       const repBonus=Math.min(0.14,G.rep*0.003);
       const sell=Math.max(1,Math.round((G.prices[drugId]||0)*(1.04+repBonus)));
       const total=sell*actual;
-      const avgCost=Math.round(avgCostFor(G,drugId));
+      const avgCost=avgCostFor(G,drugId);
       const unitProfit=sell-avgCost;
       const totalProfit=unitProfit*actual;
       // trigger deal event
@@ -1193,7 +1245,7 @@ function reducer(G,action) {
         areaTradeCounts:{...G.areaTradeCounts,[G.locationId]:(G.areaTradeCounts?.[G.locationId]||0)+1},
         feed:addFeed(
           G,
-          `You move ${actual} of ${DRUGS.find(d=>d.id===drugId)?.name} for $${total.toLocaleString()} (${unitProfit>=0?"+":"-"}$${Math.abs(unitProfit).toLocaleString()}/unit, ${totalProfit>=0?"+":"-"}$${Math.abs(totalProfit).toLocaleString()} est profit).`,
+          `You move ${actual} of ${DRUGS.find(d=>d.id===drugId)?.name} for $${total.toLocaleString()} (${unitProfit>=0?"+":"-"}$${Math.abs(Math.round(unitProfit)).toLocaleString()}/unit, ${totalProfit>=0?"+":"-"}$${Math.abs(Math.round(totalProfit)).toLocaleString()} vs avg buy).`,
           unitProfit>=0?"good":"bad"
         ),
       };
@@ -1823,7 +1875,7 @@ function MarketScreen({G,dispatch}) {
         )}
         <div className="mkt-list">
           <div style={{display:"grid",gridTemplateColumns:"1fr 100px 52px 44px 80px",gap:8,padding:"3px 10px 3px 14px"}}>
-            {["Drug Name","Price","Trend","Owned",""].map(l=>(
+            {["Drug","Now","Trend","Own",""].map(l=>(
               <div key={l} style={{fontSize:".58rem",fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink-muted)",fontFamily:"var(--font-ui)"}}>{l}</div>
             ))}
           </div>
@@ -1831,12 +1883,12 @@ function MarketScreen({G,dispatch}) {
             const lock=categoryStatus(G,cat);
             const drugs=DRUGS.filter(d=>d.cat===cat);
             return <div key={cat} style={{marginBottom:6}}>
-              <div className="goal-banner" style={{margin:"4px 0",padding:"6px 10px"}}><strong>{cat}</strong><span style={{marginLeft:8,color:"var(--ink-muted)"}}>{drugs.length} items</span></div>
+              <div className="goal-banner" style={{margin:"4px 0",padding:"6px 10px"}}><strong>{CATEGORY_LABELS[cat]||cat}</strong><span style={{marginLeft:8,color:"var(--ink-muted)"}}>{drugs.length} items</span></div>
               {drugs.map(drug=>{
             const buy=G.prices[drug.id]||0;
             const sell=sellP(drug.id);
             const owned=G.inventory[drug.id]||0;
-            const avgCost=Math.round(avgCostFor(G,drug.id));
+            const avgCost=avgCostFor(G,drug.id);
             const perUnitProfit=sell-avgCost;
             const forecast=projectedNextPriceRange(G,drug.id);
             const trendVisible=hasIntel(G,"trend");
@@ -1844,6 +1896,7 @@ function MarketScreen({G,dispatch}) {
             const hot=trendVisible&&(trend.dir==="up-strong"||(trend.dir==="up"&&owned>0));
             const isOpen=expanded===drug.id;
             const qty=getQ(drug.id);
+            const qtyProfit=expectedProfitForQty(G,drug.id,Math.min(qty,owned));
             const mb=maxBuy(drug.id);
             const showBestFlip=hasIntel(G,"bestFlipTag")&&drug.id===bestFlip;
             const showBestBuy=hasIntel(G,"bestBuyHint");
@@ -1861,10 +1914,11 @@ function MarketScreen({G,dispatch}) {
                       {drug.name}
                       {showBestFlip&&<span className="tag-hot">Best Flip</span>}
                     </div>
-                    <div className="drug-cat">{owned>0?`Avg cost: $${avgCost.toLocaleString()} · Est +/unit: ${perUnitProfit>=0?"+":"-"}$${Math.abs(perUnitProfit).toLocaleString()}`:"Tap Trade for actions"}</div>
+                    <div className="drug-cat">{owned>0?`Avg buy $${Math.round(avgCost).toLocaleString()} · ${perUnitProfit>=0?"+":"-"}$${Math.abs(Math.round(perUnitProfit)).toLocaleString()}/unit`:"Tap Trade"}</div>
                   </div>
                   <div>
                     <div className="drug-price">${buy.toLocaleString()}</div>
+                    <div className="drug-sell">Sell ${sell.toLocaleString()}</div>
                     {bestAreaRec&&<div className="drug-memo">{(()=>{
                         const areaName=AREAS.find(a=>a.id===bestAreaRec.id)?.name||bestAreaRec.id;
                         const ageTxt=bestAreaAge>8?"stale":`${bestAreaAge}t ago`;
@@ -1890,12 +1944,17 @@ function MarketScreen({G,dispatch}) {
                         Buy {qty}<small>Pay ${ (buy*qty).toLocaleString()}</small>
                       </button>
                       <button className="btn btn-sell" style={{flex:1}} disabled={owned<1} onClick={()=>dispatch({type:"SELL",drugId:drug.id,qty:Math.min(qty,owned)})}>
-                        Sell {Math.min(qty,owned)}<small>Take ${ (sell*Math.min(qty,owned)).toLocaleString()} · {perUnitProfit>=0?"+":"-"}${Math.abs(perUnitProfit*Math.min(qty,owned)).toLocaleString()} est</small>
+                        Sell {Math.min(qty,owned)}<small>Take ${ (sell*Math.min(qty,owned)).toLocaleString()} · {qtyProfit>=0?"+":"-"}${Math.abs(Math.round(qtyProfit)).toLocaleString()} est</small>
                       </button>
                     </div>
+                    {owned>0&&(
+                      <div className="market-micro-note">
+                        Est for {Math.min(qty,owned)} now: {qtyProfit>=0?"+":"-"}${Math.abs(Math.round(qtyProfit)).toLocaleString()} vs avg buy.
+                      </div>
+                    )}
                     {forecast&&(
                       <div style={{marginTop:8,fontSize:".64rem",color:"var(--ink-muted)",letterSpacing:".04em"}}>
-                        Tomorrow outlook: {forecast.dir==="up"?"↑ likely up":forecast.dir==="down"?"↓ likely down":"→ likely flat"} · ~${forecast.min.toLocaleString()}–${forecast.max.toLocaleString()}
+                        Next slot outlook: {forecast.dir==="up"?"↑ likely up":forecast.dir==="down"?"↓ likely down":"→ likely flat"} · ~${forecast.min.toLocaleString()}–${forecast.max.toLocaleString()} · {forecast.confidence} confidence
                       </div>
                     )}
                   </div>
@@ -2167,18 +2226,18 @@ function ContactsScreen({G,dispatch}) {
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
             <div className="goal-banner" style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8,padding:"8px 10px"}}>
-              <div><strong style={{display:"block"}}>Messages</strong><span style={{fontSize:".64rem",color:"var(--ink-muted)"}}>Contact chatter + warnings</span></div>
-              <div><strong style={{display:"block"}}>Market Intel</strong><span style={{fontSize:".64rem",color:"var(--ink-muted)"}}>Last known prices by city</span></div>
-              <div><strong style={{display:"block"}}>Operations</strong><span style={{fontSize:".64rem",color:"var(--ink-muted)"}}>Active jobs + mission offers</span></div>
+              <div><strong style={{display:"block"}}>Messages</strong><span style={{fontSize:".64rem",color:"var(--ink-muted)"}}>Fresh warnings + route chatter</span></div>
+              <div><strong style={{display:"block"}}>Intel Board</strong><span style={{fontSize:".64rem",color:"var(--ink-muted)"}}>Last seen prices across town</span></div>
+              <div><strong style={{display:"block"}}>Jobs</strong><span style={{fontSize:".64rem",color:"var(--ink-muted)"}}>Active work + new offers</span></div>
             </div>
             <details className="phone-section" open>
-              <summary>Messages · Intel Thread</summary>
+              <summary>Messages</summary>
               <div className="phone-section-body">
                 {(msgs.length?msgs.map((m)=> <div key={m.id} style={{fontSize:".75rem",marginBottom:6,color:m.kind==="warning"?"#f09f7f":"var(--ink-dim)"}}>• {m.text}</div>):<div style={{fontSize:".75rem",color:"var(--ink-muted)"}}>No fresh intel yet this cycle.</div>)}
               </div>
             </details>
             <details className="phone-section" open>
-              <summary>Market Intel Board</summary>
+              <summary>Price Intel</summary>
               <div className="phone-section-body">
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
                 <span style={{fontSize:".68rem",color:"var(--ink-muted)",letterSpacing:".08em",textTransform:"uppercase"}}>Drug</span>
@@ -2220,18 +2279,18 @@ function ContactsScreen({G,dispatch}) {
                 </div>
               )}
               <div style={{fontSize:".66rem",color:"var(--ink-muted)",marginTop:8}}>
-                Intel is last-known. Prices can move before you arrive.
+                Intel is last seen, not live. Use freshness first, then price.
               </div>
               </div>
             </details>
             <details className="phone-section">
-              <summary>Operations · Active Jobs</summary>
+              <summary>Active Jobs</summary>
               <div className="phone-section-body">
                 {active.length?active.map((m)=><div key={m.id} className="shop-item"><div style={{flex:1}}><div className="shop-name">{m.title}</div><div className="shop-desc">{m.progress||0}/{m.qty} · {m.type.replaceAll("_"," ")}</div></div><div style={{fontSize:".64rem",color:"var(--ink-muted)"}}>expires t{m.expires}</div></div>):<div style={{fontSize:".75rem",color:"var(--ink-muted)"}}>No active jobs.</div>}
               </div>
             </details>
             <details className="phone-section">
-              <summary>Operations · Mission Offers</summary>
+              <summary>Job Offers</summary>
               <div className="phone-section-body">
                 {offers.length?offers.map((m)=><div key={m.id} className="shop-item"><div style={{flex:1}}><div className="shop-name">{m.title}</div><div className="shop-desc">Target: {m.type==="buy_cat"||m.type==="sell_cat"?m.category:m.drugId} · Qty {m.qty}</div><div style={{fontSize:".62rem",color:"var(--ink-muted)"}}>Reward +${m.reward.cash} · +{m.reward.rep||0} rep</div></div><div style={{display:"flex",gap:4}}><button className="btn btn-primary" style={{padding:"4px 8px",fontSize:".66rem"}} onClick={()=>dispatch({type:"ACCEPT_MISSION",id:m.id})}>Accept</button><button className="btn btn-secondary" style={{padding:"4px 8px",fontSize:".66rem"}} onClick={()=>dispatch({type:"DECLINE_MISSION",id:m.id})}>Decline</button></div></div>):<div style={{fontSize:".75rem",color:"var(--ink-muted)"}}>No offers right now. New offers roll daily.</div>}
               </div>
@@ -2297,15 +2356,22 @@ function TravelModal({G,onTravel,onClose}) {
             {AREAS.map(area=>{
               const cur=area.id===G.locationId;
               const biasTop=Object.entries(area.bias||{}).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([id])=>DRUGS.find(d=>d.id===id)?.name).filter(Boolean);
+              const seen = Object.entries(G.seenPrices?.[area.id] || {});
+              const bestBuySeen = seen.length ? seen.slice().sort((a,b)=>a[1]-b[1])[0] : null;
+              const bestSellSeen = seen.length ? seen.slice().sort((a,b)=>b[1]-a[1])[0] : null;
+              const bestBuyName = bestBuySeen ? (DRUGS.find(d=>d.id===bestBuySeen[0])?.name || bestBuySeen[0]) : null;
+              const bestSellName = bestSellSeen ? (DRUGS.find(d=>d.id===bestSellSeen[0])?.name || bestSellSeen[0]) : null;
               return (
                 <div key={area.id} className={`area-card${cur?" current":""}`}>
                   <div className="area-name">{area.name}{cur&&<span style={{color:"var(--gold)",marginLeft:8,fontSize:".65rem",fontFamily:"var(--font-ui)",fontWeight:700,letterSpacing:".1em"}}>★ HERE</span>}</div>
                   <div className="area-hint">{area.hint}</div>
                   <div className="area-meta"><strong style={{color:"var(--ink-dim)"}}>Route Profile:</strong> Risk {area.risk}/4 · Police {area.police}/3 · Rival {area.rival}/3</div>
                   {mood.hotAreaId===area.id&&<div className="area-meta" style={{color:"var(--money2)"}}>Hot lane: {mood.hotCategory} demand spike</div>}
-                  {mood.crackdownAreaId===area.id&&<div className="area-meta" style={{color:"var(--red2)"}}>APD spotlight: high-tier trades riskier</div>}
+                  {mood.crackdownAreaId===area.id&&<div className="area-meta" style={{color:"var(--red2)"}}>APD spotlight: riskier while heat is high</div>}
                   {(G.areaTradeCounts?.[area.id]||0)>=6&&<div className="area-meta" style={{color:"#d09030"}}>Route fatigued: margins cooling from overfarming</div>}
                   {!!biasTop.length&&<div className="area-meta"><strong style={{color:"var(--ink-dim)"}}>Best Moves:</strong> {biasTop.join(" · ")}</div>}
+                  {!!bestBuySeen&&<div className="area-meta"><strong style={{color:"var(--ink-dim)"}}>Known cheap:</strong> {bestBuyName} @ ${bestBuySeen[1].toLocaleString()}</div>}
+                  {!!bestSellSeen&&<div className="area-meta"><strong style={{color:"var(--ink-dim)"}}>Known rich:</strong> {bestSellName} @ ${bestSellSeen[1].toLocaleString()}</div>}
                   <div className="area-risk">
                     <span style={{fontFamily:"var(--font-ui)",fontSize:".58rem",fontWeight:700,letterSpacing:".12em",color:"var(--ink-muted)",marginRight:4}}>RISK</span>
                     {Array.from({length:4},(_,i)=><div key={i} className={`risk-dot ${i<area.risk?"r":"e"}`}/>)}
@@ -2522,16 +2588,6 @@ function GameOverModal({G,dispatch}) {
   );
 }
 
-// ── APP ───────────────────────────────────────────────────────────────────────
-const TABS=[
-  {id:"market",   label:"Market", icon:"mkt"},
-  {id:"stash",    label:"Stash",  icon:"bag"},
-  {id:"bank",     label:"Bank",   icon:"bank"},
-  {id:"shop",     label:"Shop",   icon:"shop"},
-  {id:"hospital", label:"Clinic", icon:"hosp"},
-  {id:"stats",    label:"Stats",  icon:"stats"},
-];
-
 function App() {
   const saved=()=>{try{
     const s=localStorage.getItem(SAVE_KEY); if(!s) return null;
@@ -2539,6 +2595,11 @@ function App() {
     if(data?.assets?.includes("burner_pack")){
       data.assets=data.assets.filter(x=>x!=="burner_pack");
       if(!data.assets.includes("burner_phone")) data.assets.push("burner_phone");
+    }
+    data.avgCostBasis = data.avgCostBasis || Object.fromEntries(DRUGS.map(d=>[d.id,0]));
+    for (const drug of DRUGS) {
+      const v = Number(data.avgCostBasis?.[drug.id] || 0);
+      data.avgCostBasis[drug.id] = Number.isFinite(v) && v >= 0 ? v : 0;
     }
     return data;
   }catch{return null;}};
@@ -2548,8 +2609,10 @@ function App() {
   const [confirm,setConfirm]=useState(null);
   const [menuOpen,setMenuOpen]=useState(false);
   const [robOpen,setRobOpen]=useState(false);
+  const [topSubmenu,setTopSubmenu]=useState(null);
 
   useEffect(()=>{try{localStorage.setItem(SAVE_KEY,JSON.stringify(G));}catch{};},[G]);
+  useEffect(()=>{ setTopSubmenu(null); },[tab]);
 
   const area=AREAS.find(a=>a.id===G.locationId);
   const cargo=Object.values(G.inventory).reduce((s,v)=>s+v,0);
@@ -2558,12 +2621,18 @@ function App() {
   const worth=netWorthOf(G);
   const heatBand=getHeatBand(G.heat);
   const dreOverdue=G.dre.loan>0&&G.day>G.dre.deadline;
-  const tabs=hasPhoneAccess(G)?[...TABS.slice(0,5),{id:"contacts",label:"Phone",icon:"rep"},...TABS.slice(5)]:TABS;
   const hasManualSave=(()=>{try{return !!localStorage.getItem(MANUAL_SAVE_KEY);}catch{return false;}})();
   const daysLeft=Math.max(0,31-G.day);
   const nextContact=!isDreUnlocked(G)?"Dre @ 4 rep or first loan":!isPlugUnlocked(G)?"Plug @ 8 rep + $500 bank":!isLookoutUnlocked(G)?"Lookout @ heat 4 or rep 6":"All contacts online";
   const nextCat=!categoryStatus(G,"POWDER").unlocked?"Powder @ 4 rep":!categoryStatus(G,"OPIATE").unlocked?"Opiate @ rep 6 + Dre":!categoryStatus(G,"PARTY").unlocked?"Party/Syrup via Plug":"All categories open";
   const nextUpgrade=UPGRADES.filter(u=>!G.assets.includes(u.id)).sort((a,b)=>a.cost-b.cost)[0];
+  const topTabs = [
+    { id:"market", label:"Market", icon:"mkt", direct:true },
+    { id:"places", label:"Places", icon:"travel", group:["stash","bank","shop","hospital"] },
+    ...(hasPhoneAccess(G) ? [{ id:"contacts", label:"Phone", icon:"rep", direct:true }] : []),
+    { id:"stats", label:"Stats", icon:"stats", direct:true },
+  ];
+  const placesActive = ["stash","bank","shop","hospital"].includes(tab);
 
   return (
     <div className="app">
@@ -2581,13 +2650,44 @@ function App() {
       </header>
 
       {/* NAV */}
-      <nav className="nav">
-        {tabs.map(t=>(
-          <button key={t.id} className={`tab${tab===t.id?" active":""}`} onClick={()=>setTab(t.id)}>
-            <Ic n={t.icon} sz={14}/>{t.label}
-          </button>
-        ))}
-      </nav>
+      <div className="nav-wrap">
+        <nav className="nav">
+          {topTabs.map((t)=>(
+            <button
+              key={t.id}
+              className={`tab${(t.id==="places"?placesActive:tab===t.id)?" active":""}`}
+              onClick={()=>{
+                if (t.group) {
+                  setTopSubmenu(topSubmenu===t.id ? null : t.id);
+                  if (!placesActive) setTab(t.group[0]);
+                  return;
+                }
+                setTab(t.id);
+              }}
+            >
+              <Ic n={t.icon} sz={14}/>{t.label}
+            </button>
+          ))}
+        </nav>
+        {topSubmenu==="places" && (
+          <div className="nav-submenu-row">
+            {[
+              { id:"stash", label:"Stash" },
+              { id:"bank", label:"Finances" },
+              { id:"shop", label:"Shopping" },
+              { id:"hospital", label:"Clinic" },
+            ].map((item)=>(
+              <button
+                key={item.id}
+                className={`nav-submenu-item${tab===item.id?" active":""}`}
+                onClick={()=>setTab(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* MAIN */}
       <main className="main-panel panel">
@@ -2627,6 +2727,9 @@ function App() {
         </button>
         <button className="btn btn-danger" style={{flex:.65}} onClick={()=>setRobOpen(true)}>
           Rob<small>Pick a target</small>
+        </button>
+        <button className="btn btn-secondary" style={{flex:.8}} onClick={()=>setMenuOpen(true)}>
+          Menu<small>Save / Load / New</small>
         </button>
       </div>
 

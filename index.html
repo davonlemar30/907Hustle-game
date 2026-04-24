@@ -672,14 +672,14 @@ const DRUGS = [
 ];
 
 const AREAS = [
-  {id:"north_star_lot",     name:"North Star Lot",      risk:1,police:1,rival:0,hint:"Cheap street stock",      bias:{weed:.85,shrooms:.9,bars:.85}},
-  {id:"spenard",            name:"Spenard",              risk:2,police:2,rival:1,hint:"Powder demand",           bias:{cocaine:1.2,meth:1.15,coke_rock:1.12}},
-  {id:"mountain_view",      name:"Mountain View",        risk:3,police:2,rival:2,hint:"Hard market",             bias:{crack:1.2,heroin:1.16,fentanyl:1.2,pcp:1.18}},
-  {id:"downtown",           name:"Downtown",             risk:2,police:3,rival:1,hint:"Club flips",              bias:{adderall:1.17,cocaine:1.22,mdma:1.16,dmt:1.15}},
-  {id:"muldoon",            name:"Muldoon",              risk:3,police:2,rival:3,hint:"Rival corners",           bias:{meth:1.22,lean:1.15,speed:1.18}},
-  {id:"midtown",            name:"Midtown",              risk:2,police:2,rival:1,hint:"Pill discounts",          bias:{adderall:.86,xanax:.9,percocet:.9,oxy:.88}},
-  {id:"southside",          name:"Southside",            risk:1,police:1,rival:1,hint:"Party crowd",             bias:{shrooms:1.15,lsd:1.2,ketamine:1.1,mdma:1.1}},
-  {id:"airport_industrial", name:"Airport / Industrial", risk:4,police:3,rival:2,hint:"High margin, high heat",  bias:{ketamine:1.24,fentanyl:1.26,dmt:1.2,heroin:1.22}},
+  {id:"north_star_lot",     name:"North Star Lot",      risk:1,police:1,rival:0,hint:"Cheap street stock — buy low here",      bias:{weed:.62,shrooms:.72,bars:.68,xanax:.75,speed:.78}},
+  {id:"spenard",            name:"Spenard",              risk:2,police:2,rival:1,hint:"Powder demand — sell powder here",       bias:{cocaine:1.48,meth:1.42,coke_rock:1.38,crack:1.28}},
+  {id:"mountain_view",      name:"Mountain View",        risk:3,police:2,rival:2,hint:"Hard market — opiates and rock sell",    bias:{crack:1.50,heroin:1.44,fentanyl:1.52,pcp:1.40}},
+  {id:"downtown",           name:"Downtown",             risk:2,police:3,rival:1,hint:"Club money — sell uppers and party",     bias:{adderall:1.42,cocaine:1.55,mdma:1.48,dmt:1.40,lsd:1.30}},
+  {id:"muldoon",            name:"Muldoon",              risk:3,police:2,rival:3,hint:"Rival corners — meth and syrup move",    bias:{meth:1.52,lean:1.42,speed:1.45,pcp:1.35}},
+  {id:"midtown",            name:"Midtown",              risk:2,police:2,rival:1,hint:"Pill discounts — buy scripts cheap",     bias:{adderall:.60,xanax:.68,percocet:.72,oxy:.65,bars:.62,ritalin:.66}},
+  {id:"southside",          name:"Southside",            risk:1,police:1,rival:1,hint:"Party crowd — sell party drugs here",   bias:{shrooms:1.45,lsd:1.52,ketamine:1.38,mdma:1.35,weed:1.28,dmt:1.32}},
+  {id:"airport_industrial", name:"Airport / Industrial", risk:4,police:3,rival:2,hint:"High margin, high heat — top prices",   bias:{ketamine:1.62,fentanyl:1.68,dmt:1.52,heroin:1.48,cocaine:1.38}},
 ];
 
 const UPGRADES = [
@@ -712,17 +712,19 @@ const ENEMY_TYPES = [
 ];
 
 const EVENTS = [
-  {id:"dry_market",    title:"Supply Dried Up",       desc:"Word on the block — can't find product nowhere. Prices spiking.",            trigger:"laylow", choices:[{label:"Wait it out",fn:G=>({...G,prices:boostPrices(G.prices,["heroin","cocaine","meth"],1.35),feed:addFeed(G,"Drought hits the block — prices spiked.","warn")})}]},
-  {id:"club_opening",  title:"Club Night",            desc:"Big opening downtown. Party crowd is out, demand for product is up.",        trigger:"travel",  choices:[{label:"Work the crowd",fn:G=>({...G,prices:boostPrices(G.prices,["mdma","lsd","ketamine","cocaine"],1.4),rep:G.rep,feed:addFeed(G,"Club night surges and everybody eats.","good")})}], cond:G=>G.locationId==="downtown"},
-  {id:"cop_shakedown", title:"Cop Shakedown",         desc:"Officer catches you slipping. He wants a cut or he's calling it in.",       trigger:"travel",  choices:[{label:"Pay $200",fn:G=>G.cash>=200?{...G,cash:G.cash-200,heat:Math.max(0,G.heat-2),feed:addFeed(G,"Paid off the cop. Heat down.","warn")}:{...G,heat:G.heat+3,feed:addFeed(G,"Couldn't pay — heat spiked.","bad")}},{label:"Refuse",fn:G=>({...G,heat:G.heat+4,feed:addFeed(G,"Refused the cop. APD on high alert.","bad")})}], cond:G=>G.heat>=3},
-  {id:"lucky_buyer",   title:"Lucky Buyer",           desc:"High-roller needs product fast, paying premium.",                           trigger:"deal",   choices:[{label:"Flip it",fn:G=>{const d=DRUGS[Math.floor(Math.random()*DRUGS.length)];const gain=rng(60,180);return {...G,cash:G.cash+gain,rep:G.rep+1,feed:addFeed(G,`A lucky buyer pays heavy — +$${gain}.`,"good")};}}]},
-  {id:"stash_found",   title:"Police Found Your Stash",desc:"APD found some product. They're confiscating and adding to your sheet.", trigger:"laylow",  choices:[{label:"Take the L",fn:G=>{const d=Object.keys(G.inventory).find(k=>G.inventory[k]>0);if(!d)return {...G,feed:addFeed(G,"APD found nothing.","")};const lost=Math.min(G.inventory[d],rng(2,8));const inv={...G.inventory,[d]:G.inventory[d]-lost};return {...G,inventory:inv,heat:G.heat+2,feed:addFeed(G,`APD seized ${lost}× ${DRUGS.find(x=>x.id===d)?.name}.`,"bad")};}}], cond:G=>{const cargo=Object.values(G.inventory).reduce((s,v)=>s+v,0);return cargo>0&&G.heat>=5;}},
-  {id:"mina_tip",      title:"Mina's Tip",            desc:"Mina slides you a hot location. Prices look good there right now.",        trigger:"laylow",  choices:[{label:"Thanks, Mina",fn:G=>{const gain=rng(30,90);return {...G,cash:G.cash+gain,feed:addFeed(G,`Mina's tip pays out — +$${gain}.`,"good")};}}]},
-  {id:"good_samaritan",title:"Random Windfall",        desc:"Found a dropped wallet. Take it or leave it.",                             trigger:"travel",  choices:[{label:"Take it",fn:G=>{const c=rng(40,120);return {...G,cash:G.cash+c,feed:addFeed(G,`Pocketed $${c} from a lost wallet.`,"good")}}},{label:"Leave it",fn:G=>({...G,feed:addFeed(G,"You leave it where it fell.","good")})}]},
+  {id:"dry_market",    title:"Supply Dried Up",       desc:"Word on the block -- can't find product. Hard drugs spiking. Time to move stash.",  trigger:"laylow", choices:[{label:"Lock in the price",fn:G=>{const spiked=["heroin","cocaine","meth","fentanyl","crack"];const sellArea=AREAS.filter(a=>a.id!==G.locationId).find(a=>spiked.some(d=>a.bias[d]>=1.4))||AREAS[1];return {...G,prices:boostPrices(G.prices,spiked,1.45),feed:addFeed(G,`Drought on the block -- prices spiked. ${sellArea.name} is buying at premium right now.`,"warn")};}}]},
+  {id:"club_opening",  title:"Club Night",            desc:"Big opening downtown. Party crowd is out, MDMA, Acid, and Coke demand is up. Head downtown if you're holding.",  trigger:"travel",  choices:[{label:"Work the crowd",fn:G=>({...G,prices:boostPrices(G.prices,["mdma","lsd","ketamine","cocaine","dmt"],1.5),feed:addFeed(G,"Club night surge -- party prices popping downtown. Get there now if you're holding.","good")})}]},
+  {id:"cop_shakedown", title:"Cop Shakedown",         desc:"Officer catches you slipping. He wants a cut or he's calling it in.",       trigger:"travel",  choices:[{label:"Pay $180",fn:G=>G.cash>=180?{...G,cash:G.cash-180,heat:Math.max(0,G.heat-2),feed:addFeed(G,"Paid off the cop. Heat down.","warn")}:{...G,heat:G.heat+3,feed:addFeed(G,"Couldn't pay -- heat spiked.","bad")}},{label:"Refuse",fn:G=>({...G,heat:G.heat+4,feed:addFeed(G,"Refused the cop. APD on high alert.","bad")})}], cond:G=>G.heat>=3},
+  {id:"lucky_buyer",   title:"Lucky Buyer",           desc:"High-roller needs product fast, paying premium. You have exactly what they want.",           trigger:"deal",   choices:[{label:"Flip it",fn:G=>{const heldDrugs=DRUGS.filter(d=>G.inventory[d.id]>0);const d=heldDrugs.length?heldDrugs[rng(0,heldDrugs.length-1)]:DRUGS[0];const gain=rng(80,220);return {...G,cash:G.cash+gain,rep:G.rep+1,feed:addFeed(G,`Lucky buyer paid over market for ${d.name} -- +$${gain}.`,"good")};}}]},
+  {id:"stash_found",   title:"Police Found Your Stash",desc:"APD found some product. They're confiscating and adding to your sheet.", trigger:"laylow",  choices:[{label:"Take the L",fn:G=>{const d=Object.keys(G.inventory).find(k=>G.inventory[k]>0);if(!d)return {...G,feed:addFeed(G,"APD found nothing.","")};const lost=Math.min(G.inventory[d],rng(2,8));const inv={...G.inventory,[d]:G.inventory[d]-lost};return {...G,inventory:inv,heat:G.heat+2,feed:addFeed(G,`APD seized ${lost}x ${DRUGS.find(x=>x.id===d)?.name}.`,"bad")};}}], cond:G=>{const cargo=Object.values(G.inventory).reduce((s,v)=>s+v,0);return cargo>0&&G.heat>=5;}},
+  {id:"mina_tip",      title:"Mina's Tip",            desc:"Mina slides you market intel. A specific area has product moving fast right now.",          trigger:"laylow",  choices:[{label:"Thanks, Mina",fn:G=>{const tipArea=AREAS.filter(a=>a.id!==G.locationId)[rng(0,AREAS.length-2)];const topBias=Object.entries(tipArea.bias).sort((a,b)=>b[1]-a[1])[0];const tipDrug=topBias?DRUGS.find(d=>d.id===topBias[0]):DRUGS[0];const gain=rng(50,120);return {...G,cash:G.cash+gain,feed:addFeed(G,`Mina: "${tipDrug?.name} is running fast in ${tipArea.name}. Get there." +$${gain} hand-off.`,"good")};}}]},
+  {id:"good_samaritan",title:"Random Windfall",        desc:"Found a dropped wallet. Take it or leave it.",                             trigger:"travel",  choices:[{label:"Take it",fn:G=>{const c=rng(40,130);return {...G,cash:G.cash+c,feed:addFeed(G,`Pocketed $${c} from a lost wallet.`,"good")}}},{label:"Leave it",fn:G=>({...G,rep:G.rep+1,feed:addFeed(G,"You leave it. Word gets around -- +1 rep.","good")})}]},
   {id:"rival_warning", title:"Rook's Warning",        desc:"Someone from Rook's crew steps to you. He's watching your moves.",        trigger:"travel",  choices:[{label:"Play it cool",fn:G=>({...G,heat:G.heat+1,feed:addFeed(G,"Rook's crew clocks you. Stay low.","warn")})}], cond:G=>G.rep>=8},
-  {id:"bad_batch",     title:"Bad Batch",             desc:"Product on the block is cut bad. Prices crash as buyers disappear.",       trigger:"laylow",  choices:[{label:"Sit tight",fn:G=>{const d=["crack","heroin","meth","fentanyl"][Math.floor(Math.random()*4)];return {...G,prices:{...G.prices,[d]:Math.max(5,Math.floor((G.prices[d]||50)*.6))},feed:addFeed(G,`Bad batch — ${DRUGS.find(x=>x.id===d)?.name} prices crash.`,"bad")};}}]},
-  {id:"rook_table", title:"Rook at the Back Table", desc:"You walk into a quiet room and Rook is already there, coffee untouched.", trigger:"laylow", cond:G=>G.rep>=14&&!G.flags?.rookMet, choices:[{label:"Keep it brief", fn:G=>({...G, flags:{...(G.flags||{}),rookMet:true}, feed:addFeed(G,`Rook nods once. "Stay professional, ${G.playerHandle}."`,"warn")})}]},
-  {id:"bank_run",      title:"Street Tax",            desc:"Someone's been watching your stash. They want 10% as 'protection'.",      trigger:"laylow",  choices:[{label:"Pay up",fn:G=>{const tax=Math.max(20,Math.floor(G.cash*.1));return G.cash>=tax?{...G,cash:G.cash-tax,feed:addFeed(G,`Paid $${tax} street tax.`,"bad")}:{...G,feed:addFeed(G,"No cash to tax — they'll remember.","warn")};}},{label:"Refuse",fn:G=>({...G,heat:G.heat+2,feed:addFeed(G,"Refused the tax — they marked you.","bad")})}], cond:G=>G.cash>100},
+  {id:"bad_batch",     title:"Bad Batch",             desc:"Product on the block is cut bad. Prices crash here as buyers scatter -- good product elsewhere is moving.",  trigger:"laylow",  choices:[{label:"Cut losses -- move product",fn:G=>{const crashDrug=["crack","heroin","meth","fentanyl"][rng(0,3)];const safeDrug=["cocaine","lsd","mdma","ketamine"][rng(0,3)];return {...G,prices:{...G.prices,[crashDrug]:Math.max(5,Math.floor((G.prices[crashDrug]||50)*.58)),[safeDrug]:Math.round((G.prices[safeDrug]||80)*1.3)},feed:addFeed(G,`Bad batch -- ${DRUGS.find(x=>x.id===crashDrug)?.name} crashes here. Clean ${DRUGS.find(x=>x.id===safeDrug)?.name} spiking elsewhere.`,"bad")};}}]},
+  {id:"price_spike",   title:"Price Spike Alert",     desc:"Street buzz spreading fast -- a hot area is paying top dollar for specific product right now.",  trigger:"travel",  choices:[{label:"Note it",fn:G=>{const hotArea=AREAS.filter(a=>a.id!==G.locationId&&a.risk<=3).sort(()=>Math.random()-.5)[0]||AREAS[1];const topEntry=Object.entries(hotArea.bias).filter(([_,v])=>v>1.3).sort((a,b)=>b[1]-a[1])[0];const hotDrug=topEntry?DRUGS.find(d=>d.id===topEntry[0]):DRUGS[rng(0,DRUGS.length-1)];const spikedPrices={...G.prices};if(hotDrug) spikedPrices[hotDrug.id]=Math.round((G.prices[hotDrug.id]||hotDrug.min)*1.55);return {...G,prices:spikedPrices,feed:addFeed(G,`BUZZ: ${hotDrug?.name} prices surging in ${hotArea.name} -- buyers paying over market right now.`,"good")};}}]},
+  {id:"buy_window",    title:"Cheap Supply Window",   desc:"A contact spotted a glut. Prices dipping in a specific area -- tight window to stock up cheap.",  trigger:"laylow",  choices:[{label:"Move fast",fn:G=>{const cheapArea=AREAS.filter(a=>a.id!==G.locationId).find(a=>Object.values(a.bias).some(v=>v<0.82))||AREAS[5];const cheapEntry=Object.entries(cheapArea.bias).filter(([_,v])=>v<0.82).sort((a,b)=>a[1]-b[1])[0];const cheapDrug=cheapEntry?DRUGS.find(d=>d.id===cheapEntry[0]):DRUGS[0];return {...G,feed:addFeed(G,`Supply glut: ${cheapDrug?.name} priced low in ${cheapArea.name}. Head there before it corrects.`,"warn")};}}]},
+  {id:"rook_table",    title:"Rook at the Back Table",desc:"You walk into a quiet room and Rook is already there, coffee untouched.", trigger:"laylow", cond:G=>G.rep>=14&&!G.flags?.rookMet, choices:[{label:"Keep it brief", fn:G=>({...G, flags:{...(G.flags||{}),rookMet:true}, feed:addFeed(G,`Rook nods once. "Stay professional, ${G.playerHandle}."`,"warn")})}]},
+  {id:"bank_run",      title:"Street Tax",            desc:"Someone's been watching your stash. They want 10% as protection.",      trigger:"laylow",  choices:[{label:"Pay up",fn:G=>{const tax=Math.max(20,Math.floor(G.cash*.1));return G.cash>=tax?{...G,cash:G.cash-tax,feed:addFeed(G,`Paid $${tax} street tax.`,"bad")}:{...G,feed:addFeed(G,"No cash to tax -- they'll remember.","warn")};}},{label:"Refuse",fn:G=>({...G,heat:G.heat+2,feed:addFeed(G,"Refused the tax -- they marked you.","bad")})}], cond:G=>G.cash>100},
 ];
 
 function boostPrices(prices,ids,mult) {
@@ -735,10 +737,10 @@ function boostPrices(prices,ids,mult) {
 // Central unlock table for market intel. Keep rules here so new gates are easy
 // to add. Each entry returns true when the player has earned access.
 const INTEL = {
-  trend:       G => hasRemoteIntel(G) || G.rep >= 10,
-  bestFlipTag: G => hasRemoteIntel(G) && G.rep >= 12,
-  bestBuyHint: G => hasRemoteIntel(G),
-  areaPulse:   G => hasRemoteIntel(G) || G.rep >= 14,
+  trend:       G => G.rep >= 3 || hasRemoteIntel(G),
+  bestFlipTag: G => hasRemoteIntel(G) && G.rep >= 8,
+  bestBuyHint: G => hasRemoteIntel(G) || G.rep >= 10,
+  areaPulse:   G => hasRemoteIntel(G) || G.rep >= 10,
   prevPrice:   G => true,
 };
 const hasIntel = (G,key) => (INTEL[key]||(()=>false))(G);
@@ -781,7 +783,8 @@ function categoryStatus(G,cat){
   if(cat==="STREET"||cat==="PILL") return {unlocked:true};
   if(cat==="POWDER") return G.rep>=4 ? {unlocked:true} : {unlocked:false,reason:"Need 4 rep to open powder routes."};
   if(cat==="OPIATE") return (G.rep>=6&&isDreUnlocked(G)) ? {unlocked:true} : {unlocked:false,reason:"Need 6 rep and Dre unlocked for opiate lanes."};
-  if(cat==="PARTY"||cat==="SYRUP") return isPlugUnlocked(G) ? {unlocked:true} : {unlocked:false,reason:`Need 8 rep and $500 in the bank to get introduced to a Plug. (${G.rep}/8 rep · $${G.bank}/$500 bank)`};
+  if(cat==="PARTY") return G.rep>=6 ? {unlocked:true} : {unlocked:false,reason:`Need 6 rep to tap party market routes. (${G.rep}/6 rep)`};
+  if(cat==="SYRUP") return G.rep>=5 ? {unlocked:true} : {unlocked:false,reason:`Need 5 rep for syrup connections. (${G.rep}/5 rep)`};
   return {unlocked:true};
 }
 
@@ -846,11 +849,11 @@ function genPrices(locationId,previous={},tick=1,G=null) {
     const anchor=(d.min+d.max)/2;
     const bias = area.bias[d.id]||1;
     const prev=previous[d.id]||(anchor*bias);
-    const drift=prev+(anchor*bias-prev)*0.22;
-    const daySwing=tick===1?(1+(Math.random()*2-1)*(d.vol*0.38)):1;
-    const intraday=1+(Math.random()*2-1)*Math.max(0.03,d.vol*0.2);
+    const drift=prev+(anchor*bias-prev)*0.42;
+    const daySwing=tick===1?(1+(Math.random()*2-1)*(d.vol*0.65)):1;
+    const intraday=1+(Math.random()*2-1)*Math.max(0.05,d.vol*0.38);
     const b = drift*daySwing*intraday;
-    const s = 1+(Math.random()*2-1)*(d.vol*0.16);
+    const s = 1+(Math.random()*2-1)*(d.vol*0.24);
     const moodBoost=(mood.hotAreaId===locationId&&d.cat===mood.hotCategory)?1.16:1;
     const crackdown=(mood.crackdownAreaId===locationId&&d.tier>=3)?1.08:1;
     const fatigue=Math.max(0.88,1-(farmCount*0.015));
@@ -946,7 +949,7 @@ function initGame() {
   const seenPrices={north_star_lot:{...prices}};
   return {
     day:1, tick:1, locationId:"north_star_lot",
-    cash:200, bank:0, heat:0, rep:0, health:100, maxCarry:30,
+    cash:350, bank:0, heat:0, rep:0, health:100, maxCarry:30,
     inventory:Object.fromEntries(DRUGS.map(d=>[d.id,0])),
     prices, history, seenPrices, prevAreaPrices:{}, localLastSeen:{},
     dre:{loan:0, deadline:null, trust:0},
@@ -1076,7 +1079,7 @@ function reducer(G,action) {
       const cargo=Object.values(G.inventory).reduce((s,v)=>s+v,0);
       if(G.cash<cost) return {...G,feed:addFeed(G,"Not enough cash.","bad")};
       if(cargo+qty>G.maxCarry) return {...G,feed:addFeed(G,"Bag is full.","bad")};
-      const hAdd=["cocaine","heroin","fentanyl","meth","pcp"].includes(drugId)?Math.max(1,Math.floor(qty/2)):0;
+      const hAdd=["cocaine","heroin","fentanyl","meth","pcp"].includes(drugId)?Math.floor(qty/3):0;
       const firstHeld=(G.inventoryAge?.[drugId]===null||G.inventory[drugId]===0)?G.day:G.inventoryAge?.[drugId];
       let next={...G,
         cash:G.cash-cost,
@@ -1225,6 +1228,12 @@ function reducer(G,action) {
       if(areaLine) next={...next,feed:addFeed(next,areaLine)};
       const slotLine=pickFlavor(TIME_FLAVOR[SLOTS[nTick-1]]||[]);
       if(slotLine) next={...next,feed:addFeed(next,slotLine)};
+      const arrivalSignals=Object.entries(target.bias)
+        .filter(([id,v])=>{const d=DRUGS.find(x=>x.id===id);return d&&(v>1.25||v<0.82);})
+        .sort((a,b)=>Math.abs(b[1]-1)-Math.abs(a[1]-1))
+        .slice(0,3)
+        .map(([id,bias])=>{const d=DRUGS.find(x=>x.id===id);const pr=nPrices[id]||0;return bias>1?`${d.name} $${pr} ↑`:`${d.name} $${pr} ↓`;});
+      if(arrivalSignals.length) next={...next,feed:addFeed(next,`Market: ${arrivalSignals.join(' · ')}`,"warn")};
       const nowAbs=toAbsTick(next.day,next.tick);
       if((next.missions?.active||[]).length){
         const expired=next.missions.active.filter(m=>nowAbs>m.expires && (m.progress||0)<m.qty);
@@ -1817,10 +1826,10 @@ function MarketScreen({G,dispatch}) {
                     </div>
                     <div className="trade-btns">
                       <button className="btn btn-buy" style={{flex:1}} disabled={mb<qty} onClick={()=>dispatch({type:"BUY",drugId:drug.id,qty})}>
-                        Move {qty}<small>Pay ${ (buy*qty).toLocaleString()}</small>
+                        Buy {qty}<small>Pay ${ (buy*qty).toLocaleString()}</small>
                       </button>
                       <button className="btn btn-sell" style={{flex:1}} disabled={owned<1} onClick={()=>dispatch({type:"SELL",drugId:drug.id,qty:Math.min(qty,owned)})}>
-                        Dump {Math.min(qty,owned)}<small>Take ${ (sell*Math.min(qty,owned)).toLocaleString()}</small>
+                        Sell {Math.min(qty,owned)}<small>Take ${ (sell*Math.min(qty,owned)).toLocaleString()}</small>
                       </button>
                     </div>
                   </div>

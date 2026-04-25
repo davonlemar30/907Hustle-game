@@ -1082,7 +1082,16 @@ function initGame() {
   const prices=genPrices("north_star_lot",{},1,null);
   const history={};
   for(const d of DRUGS) history[d.id]=[prices[d.id]];
-  const seenPrices={north_star_lot:{...prices}};
+  const seededSeenPrices=Object.fromEntries(
+    AREAS.map(area=>[area.id, genPrices(area.id,{},1,null)])
+  );
+  const seenPrices={...seededSeenPrices, north_star_lot:{...prices}};
+  const seededSeenMeta=Object.fromEntries(
+    AREAS.map(area=>[
+      area.id,
+      Object.fromEntries(DRUGS.map(d=>[d.id,{day:1,tick:1,source:"seed"}]))
+    ])
+  );
   return {
     day:1, tick:1, locationId:"north_star_lot",
     cash:350, bank:0, heat:0, rep:0, health:100, maxCarry:30,
@@ -1097,7 +1106,10 @@ function initGame() {
     combatState:null,
     dayStats:{startWorth:200,startHeat:0,bestTrade:0,biggestSale:0,areaSales:{}},
     runStats:{bestTrade:0,biggestSale:0,hottestDay:0,cleanProfitDay:0,bestArea:{id:"north_star_lot",total:0},areaTotals:{},seizures:0,forcedDumps:0,records:[]},
-    seenMeta:{north_star_lot:Object.fromEntries(DRUGS.map(d=>[d.id,{day:1,tick:1,source:"local"}]))},
+    seenMeta:{
+      ...seededSeenMeta,
+      north_star_lot:Object.fromEntries(DRUGS.map(d=>[d.id,{day:1,tick:1,source:"local"}]))
+    },
     inventoryAge:Object.fromEntries(DRUGS.map(d=>[d.id,null])),
     carryStreak:0,
     areaTradeCounts:Object.fromEntries(AREAS.map(a=>[a.id,0])),

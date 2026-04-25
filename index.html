@@ -597,7 +597,7 @@ body {
 }
 .shop-item.owned { border-color:#305020;border-left:3px solid var(--money); }
 .shop-item.locked { opacity:.45; }
-.shop-name { font-family:var(--font-ui);font-weight:700;font-size:.88rem;text-transform:uppercase;letter-spacing:.06em; }
+.shop-name { font-family:var(--font-ui);font-weight:700;font-size:.88rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink); }
 .shop-desc { font-size:.68rem;color:var(--ink-muted);margin-top:3px; }
 .shop-cost { font-family:var(--font-mono);font-size:1.1rem;color:var(--gold2); }
 
@@ -611,7 +611,7 @@ body {
   border:1px solid var(--border2);border-radius:var(--r);
   padding:10px 12px;display:flex;align-items:center;gap:10px;
 }
-.heal-name { font-family:var(--font-ui);font-weight:700;font-size:.88rem;text-transform:uppercase;letter-spacing:.06em; }
+.heal-name { font-family:var(--font-ui);font-weight:700;font-size:.88rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink); }
 .heal-desc { font-size:.68rem;color:var(--ink-muted);margin-top:2px; }
 
 /* STATS */
@@ -658,7 +658,7 @@ body {
 }
 .area-card:hover { border-color:var(--edge);background:var(--surf3); }
 .area-card.current { border-color:var(--gold);border-left:3px solid var(--gold);background:rgba(200,160,32,.06); }
-.area-name { font-family:var(--font-head);font-size:.95rem;letter-spacing:.1em;text-transform:uppercase; }
+.area-name { font-family:var(--font-head);font-size:.95rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink); }
 .area-hint { font-size:.65rem;font-weight:600;letter-spacing:.08em;color:var(--ink-muted);text-transform:uppercase;margin-top:3px; }
 .area-meta { font-size:.62rem;font-family:var(--font-ui);font-weight:700;letter-spacing:.08em;color:var(--ink-dim);margin-top:4px;text-transform:uppercase;line-height:1.35; }
 .area-risk { display:flex;gap:3px;margin-top:8px;align-items:center; }
@@ -2427,45 +2427,48 @@ function ContactsScreen({G,dispatch}) {
 }
 
 function WorldPricesScreen({G}) {
-  const rows=DRUGS.map(drug=>{
-    const seenRows=AREAS
-      .map(area=>{
-        const price=G.seenPrices?.[area.id]?.[drug.id];
-        return price?{area,price}:null;
-      })
-      .filter(Boolean)
-      .sort((a,b)=>a.price-b.price);
-    const low=seenRows[0]||null;
-    const high=seenRows[seenRows.length-1]||null;
-    return {drug,low,high};
-  });
+  const [selId,setSel]=useState(DRUGS[0].id);
+  const drug=DRUGS.find(d=>d.id===selId)||DRUGS[0];
+  const areaRows=AREAS.map(area=>{
+    const price=G.seenPrices?.[area.id]?.[drug.id]||null;
+    return {area,price};
+  }).sort((a,b)=>(a.price||0)-(b.price||0));
+  const seenCount=areaRows.filter(r=>r.price).length;
   return (
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
-      <PH tab="stats" icon="stats" title="World Drug Prices" sub="Reference ranges + your last seen reads"/>
-      <div className="panel-scroll">
-        <div className="goal-banner" style={{padding:"8px 10px"}}>
-          This board is for quick world reference. Main market stays clean; compare routes here before you move.
+      <PH tab="stats" icon="stats" title="World Drug Prices" sub={`Base: $${drug.min.toLocaleString()} – $${drug.max.toLocaleString()}`}/>
+      <div style={{display:"flex",flex:1,overflow:"hidden",minHeight:0}}>
+        <div style={{width:148,borderRight:"1px solid var(--border2)",overflowY:"auto",flexShrink:0}}>
+          {DRUGS.map(d=>(
+            <div key={d.id} onClick={()=>setSel(d.id)} style={{
+              padding:"9px 12px",cursor:"pointer",
+              background:d.id===selId?"rgba(200,160,32,.10)":"transparent",
+              borderLeft:d.id===selId?"3px solid var(--gold)":"3px solid transparent",
+              borderBottom:"1px solid var(--border2)",
+              fontFamily:"var(--font-ui)",fontWeight:700,fontSize:".78rem",
+              letterSpacing:".06em",textTransform:"uppercase",
+              color:d.id===selId?"var(--gold2)":"var(--ink-dim)",
+              transition:"color .1s,background .1s",
+            }}>{d.name}</div>
+          ))}
         </div>
-        <div className="mkt-list">
-          <div style={{display:"grid",gridTemplateColumns:"1fr 120px 1fr 1fr",gap:8,padding:"3px 10px 3px 12px"}}>
-            {["Drug","Base Range","Last Seen Low","Last Seen High"].map(l=>(
-              <div key={l} style={{fontSize:".58rem",fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink-muted)",fontFamily:"var(--font-ui)"}}>{l}</div>
+        <div style={{flex:1,overflowY:"auto",minWidth:0}}>
+          <div style={{padding:"6px 14px",borderBottom:"1px solid var(--border2)",display:"grid",gridTemplateColumns:"1fr 110px",gap:8,background:"#120f0b"}}>
+            {["Location","Last Seen"].map(l=>(
+              <div key={l} style={{fontSize:".56rem",fontWeight:700,letterSpacing:".12em",textTransform:"uppercase",color:"var(--ink-muted)",fontFamily:"var(--font-ui)"}}>{l}</div>
             ))}
           </div>
-          {rows.map(({drug,low,high})=>(
-            <div key={drug.id} className="drug-row">
-              <div className="drug-row-main" style={{gridTemplateColumns:"1fr 120px 1fr 1fr"}}>
-                <div>
-                  <div className="drug-name">{drug.name}</div>
-                </div>
-                <div className="drug-price">${drug.min.toLocaleString()} - ${drug.max.toLocaleString()}</div>
-                <div style={{fontSize:".72rem",color:low?"var(--money2)":"var(--ink-muted)"}}>
-                  {low?`${low.area.name} · $${low.price.toLocaleString()}`:"No intel yet"}
-                </div>
-                <div style={{fontSize:".72rem",color:high?"#f1a08d":"var(--ink-muted)"}}>
-                  {high?`${high.area.name} · $${high.price.toLocaleString()}`:"No intel yet"}
-                </div>
-              </div>
+          {seenCount===0&&(
+            <div style={{padding:"20px 14px",fontSize:".72rem",color:"var(--ink-muted)",fontFamily:"var(--font-ui)"}}>No intel yet — visit locations to see prices.</div>
+          )}
+          {areaRows.map(({area,price},i)=>(
+            <div key={area.id} style={{
+              display:"grid",gridTemplateColumns:"1fr 110px",gap:8,
+              padding:"10px 14px",borderBottom:"1px solid var(--border2)",alignItems:"center",
+              background:i%2===0?"transparent":"rgba(255,255,255,.012)",
+            }}>
+              <div style={{fontFamily:"var(--font-ui)",fontWeight:700,fontSize:".78rem",letterSpacing:".06em",textTransform:"uppercase",color:"var(--ink-dim)"}}>{area.name}</div>
+              <div style={{fontFamily:"var(--font-mono)",fontSize:".9rem",color:price?"var(--money2)":"var(--ink-muted)"}}>{price?`$${price.toLocaleString()}`:"—"}</div>
             </div>
           ))}
         </div>
@@ -2535,16 +2538,8 @@ function TravelModal({G,onTravel,onClose}) {
               return (
                 <div key={area.id} className={`area-card${cur?" current":""}`}>
                   <div className="area-name">{area.name}{cur&&<span style={{color:"var(--gold)",marginLeft:8,fontSize:".65rem",fontFamily:"var(--font-ui)",fontWeight:700,letterSpacing:".1em"}}>★ HERE</span>}</div>
-                  <div className="area-hint">{area.hint}</div>
-                  <div className="area-meta"><strong style={{color:"var(--ink-dim)"}}>Route Profile:</strong> Risk {area.risk}/4 · Police {area.police}/3 · Rival {area.rival}/3</div>
                   {mood.hotAreaId===area.id&&<div className="area-meta" style={{color:"var(--money2)"}}>Hot lane: {mood.hotCategory} demand spike</div>}
                   {mood.crackdownAreaId===area.id&&<div className="area-meta" style={{color:"var(--red2)"}}>APD spotlight: riskier while heat is high</div>}
-                  <div className="area-risk">
-                    <span style={{fontFamily:"var(--font-ui)",fontSize:".58rem",fontWeight:700,letterSpacing:".12em",color:"var(--ink-muted)",marginRight:4}}>RISK</span>
-                    {Array.from({length:4},(_,i)=><div key={i} className={`risk-dot ${i<area.risk?"r":"e"}`}/>)}
-                    <span style={{fontFamily:"var(--font-ui)",fontSize:".58rem",fontWeight:700,letterSpacing:".12em",color:"var(--ink-muted)",marginLeft:6,marginRight:4}}>PD</span>
-                    {Array.from({length:3},(_,i)=><div key={i} className={`risk-dot ${i<area.police?"p":"e"}`}/>)}
-                  </div>
                   <div style={{display:"flex",justifyContent:"flex-end",marginTop:8}}>
                     <button className="btn btn-primary" style={{padding:"6px 12px",fontSize:".68rem",flexDirection:"row"}} disabled={cur} onClick={()=>!cur&&onTravel(area.id)}>
                       {cur?"Current Location":"Travel Here"}

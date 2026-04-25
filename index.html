@@ -781,15 +781,15 @@ const ENEMY_TYPES = [
 ];
 
 const EVENTS = [
-  {id:"dry_market",    title:"Supply Dried Up",       desc:"Word on the block -- can't find product. Hard drugs spiking. Time to move stash.",  trigger:"laylow", choices:[{label:"Lock in the price",fn:G=>{const spiked=["heroin","cocaine","meth","fentanyl","crack"];const sellArea=AREAS.filter(a=>a.id!==G.locationId).find(a=>spiked.some(d=>a.bias[d]>=1.4))||AREAS[1];return {...G,prices:boostPrices(G.prices,spiked,1.45),feed:addFeed(G,`Drought on the block -- prices spiked. ${sellArea.name} is buying at premium right now.`,"warn")};}}]},
-  {id:"club_opening",  title:"Club Night",            desc:"Big opening downtown. Party crowd is out, MDMA, Acid, and Coke demand is up. Head downtown if you're holding.",  trigger:"travel",  choices:[{label:"Work the crowd",fn:G=>({...G,prices:boostPrices(G.prices,["mdma","lsd","ketamine","cocaine","dmt"],1.5),feed:addFeed(G,"Club night surge -- party prices popping downtown. Get there now if you're holding.","good")})}]},
+  {id:"dry_market",    title:"Supply Dried Up",       desc:"Word on the block -- can't find product. Hard drugs spiking. Time to move stash.",  trigger:"laylow", choices:[{label:"Lock in the price",fn:G=>{const spiked=["heroin","cocaine","meth","fentanyl","crack"];const sellArea=AREAS.filter(a=>a.id!==G.locationId).find(a=>spiked.some(d=>a.bias[d]>=1.4))||AREAS[1];const prices=boostPrices(G.prices,spiked,1.45);return {...G,prices,worldPrices:{...(G.worldPrices||{}),[G.locationId]:prices},feed:addFeed(G,`Drought on the block -- prices spiked. ${sellArea.name} is buying at premium right now.`,"warn")};}}]},
+  {id:"club_opening",  title:"Club Night",            desc:"Big opening downtown. Party crowd is out, MDMA, Acid, and Coke demand is up. Head downtown if you're holding.",  trigger:"travel",  choices:[{label:"Work the crowd",fn:G=>{const prices=boostPrices(G.prices,["mdma","lsd","ketamine","cocaine","dmt"],1.5);return {...G,prices,worldPrices:{...(G.worldPrices||{}),[G.locationId]:prices},feed:addFeed(G,"Club night surge -- party prices popping downtown. Get there now if you're holding.","good")};}}]},
   {id:"cop_shakedown", title:"Cop Shakedown",         desc:"Officer catches you slipping. He wants a cut or he's calling it in.",       trigger:"travel",  choices:[{label:"Pay $180",fn:G=>G.cash>=180?{...G,cash:G.cash-180,heat:Math.max(0,G.heat-2),feed:addFeed(G,"Paid off the cop. Heat down.","warn")}:{...G,heat:G.heat+3,feed:addFeed(G,"Couldn't pay -- heat spiked.","bad")}},{label:"Refuse",fn:G=>({...G,heat:G.heat+4,feed:addFeed(G,"Refused the cop. APD on high alert.","bad")})}], cond:G=>G.heat>=3},
   {id:"lucky_buyer",   title:"Lucky Buyer",           desc:"A buyer chases your last handoff and throws extra cash to jump the line.",                 trigger:"sell",   cond:G=>Object.values(G.inventory||{}).some(v=>v>0), choices:[{label:"Take the overpay",fn:G=>{const heldDrugs=DRUGS.filter(d=>G.inventory[d.id]>0);const d=heldDrugs.length?heldDrugs[rng(0,heldDrugs.length-1)]:DRUGS[0];const gain=rng(80,220);const result=`Lucky buyer paid over market for ${d.name} -- +$${gain}.`;return {...G,cash:G.cash+gain,rep:G.rep+1,feed:addFeed(G,result,"good")};}}]},
   {id:"stash_found",   title:"Police Found Your Stash",desc:"APD found some product. They're confiscating and adding to your sheet.", trigger:"laylow",  choices:[{label:"Take the L",fn:G=>{const d=Object.keys(G.inventory).find(k=>G.inventory[k]>0);if(!d)return {...G,feed:addFeed(G,"APD found nothing.","")};const lost=Math.min(G.inventory[d],rng(2,8));const inv={...G.inventory,[d]:G.inventory[d]-lost};return {...G,inventory:inv,heat:G.heat+2,feed:addFeed(G,`APD seized ${lost}x ${DRUGS.find(x=>x.id===d)?.name}.`,"bad")};}}], cond:G=>{const cargo=Object.values(G.inventory).reduce((s,v)=>s+v,0);return cargo>0&&G.heat>=5;}},
-  {id:"mina_tip",      title:"Mina's Tip",            desc:"A trusted contact sends a location-specific demand tip and a tiny hand-off bonus.",        trigger:"laylow",  cond:G=>contactUnlocked(G,"mina"), choices:[{label:"Read it",fn:G=>{const tipArea=AREAS.filter(a=>a.id!==G.locationId)[rng(0,AREAS.length-2)];const topBias=Object.entries(tipArea.bias).sort((a,b)=>b[1]-a[1])[0];const tipDrug=topBias?DRUGS.find(d=>d.id===topBias[0]):DRUGS[0];const gain=rng(50,120);const result=`Mina: "${tipDrug?.name} is running fast in ${tipArea.name}. Get there." +$${gain} hand-off.`;return {...G,cash:G.cash+gain,feed:addFeed(G,result,"good")};}}]},
-  {id:"good_samaritan",title:"Random Windfall",        desc:"Found a dropped wallet. Take it or leave it.",                             trigger:"travel",  choices:[{label:"Take it",fn:G=>{const c=rng(40,130);return {...G,cash:G.cash+c,feed:addFeed(G,`Pocketed $${c} from a lost wallet.`,"good")}}},{label:"Leave it",fn:G=>({...G,rep:G.rep+1,feed:addFeed(G,"You leave it. Word gets around -- +1 rep.","good")})}]},
+  {id:"mina_tip",      title:"Mina's Tip",            desc:"A trusted contact sends a location-specific demand tip and a tiny hand-off bonus.",        trigger:"laylow",  cond:G=>contactUnlocked(G,"mina"), choices:[{label:"Read it",fn:G=>{const tipArea=AREAS.filter(a=>a.id!==G.locationId)[rng(0,AREAS.length-2)];const topBias=Object.entries(tipArea.bias).sort((a,b)=>b[1]-a[1])[0];const tipDrug=topBias?DRUGS.find(d=>d.id===topBias[0]):DRUGS[0];const gain=rng(900,2200);const result=`Mina: "${tipDrug?.name} is running fast in ${tipArea.name}. Get there." +$${gain} hand-off.`;return {...G,cash:G.cash+gain,feed:addFeed(G,result,"good")};}}]},
+  {id:"good_samaritan",title:"Random Windfall",        desc:"Found a dropped wallet. Take it or leave it.",                             trigger:"travel",  choices:[{label:"Take it",fn:G=>{const c=rng(750,2400);return {...G,cash:G.cash+c,feed:addFeed(G,`Pocketed $${c} from a lost wallet.`,"good")}}},{label:"Leave it",fn:G=>({...G,rep:G.rep+1,feed:addFeed(G,"You leave it. Word gets around -- +1 rep.","good")})}]},
   {id:"rival_warning", title:"Rook's Warning",        desc:"Someone from Rook's crew steps to you. He's watching your moves.",        trigger:"travel",  choices:[{label:"Play it cool",fn:G=>({...G,heat:G.heat+1,feed:addFeed(G,"Rook's crew clocks you. Stay low.","warn")})}], cond:G=>G.rep>=8},
-  {id:"bad_batch",     title:"Bad Batch",             desc:"Product on the block is cut bad. Prices crash here as buyers scatter -- good product elsewhere is moving.",  trigger:"laylow",  choices:[{label:"Cut losses -- move product",fn:G=>{const crashDrug=["crack","heroin","meth","fentanyl"][rng(0,3)];const safeDrug=["cocaine","lsd","mdma","ketamine"][rng(0,3)];return {...G,prices:{...G.prices,[crashDrug]:Math.max(5,Math.floor((G.prices[crashDrug]||50)*.58)),[safeDrug]:Math.round((G.prices[safeDrug]||80)*1.3)},feed:addFeed(G,`Bad batch -- ${DRUGS.find(x=>x.id===crashDrug)?.name} crashes here. Clean ${DRUGS.find(x=>x.id===safeDrug)?.name} spiking elsewhere.`,"bad")};}}]},
+  {id:"bad_batch",     title:"Bad Batch",             desc:"Product on the block is cut bad. Prices crash here as buyers scatter -- good product elsewhere is moving.",  trigger:"laylow",  choices:[{label:"Cut losses -- move product",fn:G=>{const crashDrug=["crack","heroin","meth","fentanyl"][rng(0,3)];const safeDrug=["cocaine","lsd","mdma","ketamine"][rng(0,3)];const prices={...G.prices,[crashDrug]:Math.max(5,Math.floor((G.prices[crashDrug]||1200)*.58)),[safeDrug]:Math.round((G.prices[safeDrug]||1500)*1.3)};return {...G,prices,worldPrices:{...(G.worldPrices||{}),[G.locationId]:prices},feed:addFeed(G,`Bad batch -- ${DRUGS.find(x=>x.id===crashDrug)?.name} crashes here. Clean ${DRUGS.find(x=>x.id===safeDrug)?.name} spiking elsewhere.`,"bad")};}}]},
   {id:"price_spike",   title:"Price Spike Alert",     desc:"Street buzz flags one area where a specific product is paying above market for a short window.", trigger:"travel", choices:[{label:"Mark it",fn:G=>{const hotArea=AREAS.filter(a=>a.id!==G.locationId&&a.risk<=3).sort(()=>Math.random()-.5)[0]||AREAS[1];const topEntry=Object.entries(hotArea.bias).filter(([_,v])=>v>1.3).sort((a,b)=>b[1]-a[1])[0];const hotDrug=topEntry?DRUGS.find(d=>d.id===topEntry[0]):DRUGS[rng(0,DRUGS.length-1)];const nowAbs=toAbsTick(G.day,G.tick);const spike={areaId:hotArea.id,drugId:hotDrug.id,mult:1.45,expiresAt:nowAbs+4};const result=`BUZZ: ${hotDrug?.name} spiking in ${hotArea.name} for about 1 day.`;return {...G,areaSpikes:[...(G.areaSpikes||[]).filter(sp=>!(sp.areaId===spike.areaId&&sp.drugId===spike.drugId)),spike],feed:addFeed(G,result,"good")};}}]},
   {id:"buy_window",    title:"Cheap Supply Window",   desc:"A contact spotted a glut. Prices dipping in a specific area -- tight window to stock up cheap.",  trigger:"laylow",  choices:[{label:"Move fast",fn:G=>{const cheapArea=AREAS.filter(a=>a.id!==G.locationId).find(a=>Object.values(a.bias).some(v=>v<0.82))||AREAS[5];const cheapEntry=Object.entries(cheapArea.bias).filter(([_,v])=>v<0.82).sort((a,b)=>a[1]-b[1])[0];const cheapDrug=cheapEntry?DRUGS.find(d=>d.id===cheapEntry[0]):DRUGS[0];return {...G,feed:addFeed(G,`Supply glut: ${cheapDrug?.name} priced low in ${cheapArea.name}. Head there before it corrects.`,"warn")};}}]},
   {id:"rook_table",    title:"Rook at the Back Table",desc:"You walk into a quiet room and Rook is already there, coffee untouched.", trigger:"laylow", cond:G=>G.rep>=14&&!G.flags?.rookMet, choices:[{label:"Keep it brief", fn:G=>({...G, flags:{...(G.flags||{}),rookMet:true}, feed:addFeed(G,`Rook nods once. "Stay professional, ${G.playerHandle}."`,"warn")})}]},
@@ -977,8 +977,8 @@ function getTrend(id,hist) {
 
 const RUN_GOAL_NET_WORTH = 10000;
 const RUN_GOAL_HEAT_CAP = 7;
-const SAVE_KEY = "907g3";
-const MANUAL_SAVE_KEY = "907g3_manual";
+const SAVE_KEY = "907g4";
+const MANUAL_SAVE_KEY = "907g4_manual";
 
 const START_DAY_TICKS = 4;
 
@@ -1190,9 +1190,9 @@ function repDeltaForTrade(drugId, qty, mode="sell"){
 function missionTemplates(G){
   const area=AREAS.find(a=>a.id===G.locationId)||AREAS[0];
   return [
-    {id:`dre_delivery_${G.day}_${G.tick}`,contactId:"dre",title:"Delivery Job",type:"sell_qty",drugId:["meth","cocaine","crack"][rng(0,2)],qty:rng(4,8),areaId:area.id,expires:toAbsTick(G.day,G.tick)+4,reward:{cash:rng(140,230),rep:2},fail:{rep:1}},
-    {id:`mina_source_${G.day}_${G.tick}`,contactId:"mina",title:"Source Run",type:"buy_cat",category:["PILL","POWDER"][rng(0,1)],qty:rng(4,7),areaId:area.id,expires:toAbsTick(G.day,G.tick)+5,reward:{cash:rng(90,170),rep:1,minaTrust:1,discountTurns:2},fail:{rep:0}},
-    {id:`plug_flip_${G.day}_${G.tick}`,contactId:"plug",title:"Flip Window",type:"sell_cat",category:["PARTY","SYRUP"][rng(0,1)],qty:rng(5,9),areaId:area.id,expires:toAbsTick(G.day,G.tick)+4,reward:{cash:rng(220,360),rep:3,plugStanding:1},fail:{rep:1}},
+    {id:`dre_delivery_${G.day}_${G.tick}`,contactId:"dre",title:"Delivery Job",type:"sell_qty",drugId:["meth","cocaine","crack"][rng(0,2)],qty:rng(4,8),areaId:area.id,expires:toAbsTick(G.day,G.tick)+4,reward:{cash:rng(2500,4200),rep:2},fail:{rep:1}},
+    {id:`mina_source_${G.day}_${G.tick}`,contactId:"mina",title:"Source Run",type:"buy_cat",category:["PILL","POWDER"][rng(0,1)],qty:rng(4,7),areaId:area.id,expires:toAbsTick(G.day,G.tick)+5,reward:{cash:rng(1700,3100),rep:1,minaTrust:1,discountTurns:2},fail:{rep:0}},
+    {id:`plug_flip_${G.day}_${G.tick}`,contactId:"plug",title:"Flip Window",type:"sell_cat",category:["PARTY","SYRUP"][rng(0,1)],qty:rng(5,9),areaId:area.id,expires:toAbsTick(G.day,G.tick)+4,reward:{cash:rng(4000,6500),rep:3,plugStanding:1},fail:{rep:1}},
   ];
 }
 
@@ -1319,7 +1319,7 @@ function reducer(G,action) {
       }
       if(total>(G.runStats?.biggestSale||0)) next={...next,feed:addFeed(next,`Record set: biggest sale $${total.toLocaleString()}. Big Flip.`,"good")};
       if(next.heat>=10&&DRUGS.find(d=>d.id===drugId)?.tier>=4&&Math.random()<0.2){
-        const sting=Math.min(next.cash,rng(35,120));
+        const sting=Math.min(next.cash,rng(650,2200));
         next={...next,cash:next.cash-sting,heat:Math.min(15,next.heat+1),feed:addFeed(next,`High-heat handoff got squeezed: burned $${sting}.`,"bad")};
       }
       return advanceMeaningfulAction(next,"sell");
@@ -1349,14 +1349,14 @@ function reducer(G,action) {
           heatFeed=`Critical heat transit hit: APD seized ${seized}× ${pick.name}.`;
           seizureInc+=1;
         } else {
-          cashPenalty=Math.min(G.cash,Math.floor(rng(55,145 + runPressure*28)*checkpointShield));
+          cashPenalty=Math.min(G.cash,Math.floor(rng(1000,2600 + runPressure*500)*checkpointShield));
           heatFeed=`Critical heat transit squeeze cost $${cashPenalty}.`;
         }
       } else if(nextHeat>=8 && Math.random()<0.5){
-        cashPenalty=Math.min(G.cash,Math.floor(rng(20,85 + runPressure*16)*checkpointShield));
+        cashPenalty=Math.min(G.cash,Math.floor(rng(380,1550 + runPressure*290)*checkpointShield));
         heatFeed=`High heat checkpoint friction cost $${cashPenalty}.`;
       } else if(nextHeat>=4&&Math.random()<0.22){
-        cashPenalty=Math.min(G.cash,Math.floor(rng(8,30)*checkpointShield));
+        cashPenalty=Math.min(G.cash,Math.floor(rng(150,550)*checkpointShield));
         heatFeed=`Mid heat delay fees cost $${cashPenalty}.`;
       }
       const locked=(G.lockdowns||[]).find(x=>x.areaId===action.areaId&&x.untilDay>=G.day);
@@ -1406,8 +1406,8 @@ function reducer(G,action) {
           title:"Checkpoint Sweep",
           desc:"APD checkpoint grid just lit up. Reroute, risk it, or lay low now.",
           choices:[
-            {label:"Pay to reroute ($120)",fn:(S)=>({...S,cash:Math.max(0,S.cash-120),heat:Math.max(0,S.heat-1),feed:addFeed(S,"Paid to reroute around checkpoint grid.","warn")})},
-            {label:"Take the risk",fn:(S)=>Math.random()<0.4?({...S,cash:Math.max(0,S.cash-rng(45,130)),heat:Math.min(15,S.heat+1),feed:addFeed(S,"Route got clipped at checkpoint. Cash burned.","bad")}):({...S,rep:S.rep+1,feed:addFeed(S,"You slipped through the checkpoint lane clean.","good")})},
+            {label:"Pay to reroute ($2,200)",fn:(S)=>({...S,cash:Math.max(0,S.cash-2200),heat:Math.max(0,S.heat-1),feed:addFeed(S,"Paid to reroute around checkpoint grid.","warn")})},
+            {label:"Take the risk",fn:(S)=>Math.random()<0.4?({...S,cash:Math.max(0,S.cash-rng(800,2400)),heat:Math.min(15,S.heat+1),feed:addFeed(S,"Route got clipped at checkpoint. Cash burned.","bad")}):({...S,rep:S.rep+1,feed:addFeed(S,"You slipped through the checkpoint lane clean.","good")})},
             {label:"Lay low this slot",fn:(S)=>({...S,heat:Math.max(0,S.heat-1),feed:addFeed(S,"You iced movement and let APD pressure pass.","warn")})},
           ],
         }};
@@ -1456,13 +1456,13 @@ function reducer(G,action) {
           debtHeat=1;
           newFeed=[{text:`Debt warning: overdue day ${overdueDays}. Dre is calling in pressure.`,tone:"warn",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
         } else if(debtState.stage===2){
-          penalty=Math.min(G.cash,Math.round((rng(20,65)+(runPressure*15))*trustSoftener));
+          penalty=Math.min(G.cash,Math.round((rng(380,1200)+(runPressure*270))*trustSoftener));
           debtHeat=1;
         } else if(debtState.stage===3){
-          penalty=Math.min(G.cash,Math.round((rng(45,110)+(runPressure*22))*trustSoftener));
+          penalty=Math.min(G.cash,Math.round((rng(820,2000)+(runPressure*400))*trustSoftener));
           debtHeat=2;
         } else {
-          penalty=Math.min(G.cash,Math.round((rng(80,170)+(runPressure*30))*trustSoftener));
+          penalty=Math.min(G.cash,Math.round((rng(1450,3100)+(runPressure*550))*trustSoftener));
           debtHeat=3;
         }
         if(penalty>0){
@@ -1485,12 +1485,12 @@ function reducer(G,action) {
           newFeed=[{text:`Critical heat raid: APD seized ${lost}× ${pick.name} from stash movement.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
           seizureInc+=1;
         } else if(Math.random()<0.6){
-          const sweep=Math.min(Math.max(0,G.cash+extraCash),rng(30,105 + runPressure*16));
+          const sweep=Math.min(Math.max(0,G.cash+extraCash),rng(550,1900 + runPressure*290));
           extraCash-=Math.max(0,sweep);
           newFeed=[{text:`Critical heat sweep burned $${Math.max(0,sweep)} in hush money.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
         }
       } else if(nextHeat>=8 && Math.random()<0.42){
-        const sweep=Math.min(Math.max(0,G.cash+extraCash),rng(18,70 + runPressure*12));
+        const sweep=Math.min(Math.max(0,G.cash+extraCash),rng(330,1280 + runPressure*220));
         extraCash-=Math.max(0,sweep);
         newFeed=[{text:`High heat sweep burned $${Math.max(0,sweep)} in hush money.`,tone:"bad",stamp:`Day ${nDay} · ${SLOTS[nTick-1]}`},...newFeed].slice(0,70);
       } else if(nextHeat>=4 && Math.random()<0.25){
@@ -1548,7 +1548,7 @@ function reducer(G,action) {
           title:"Raid Pressure",
           desc:"APD raid band is active. Pick your response now.",
           choices:[
-            {label:"Lock it down (cash hit)",fn:(S)=>({...S,cash:Math.max(0,S.cash-rng(80,160)),heat:Math.max(0,S.heat-1),feed:addFeed(S,"Paid for a hard lockdown to reduce exposure.","bad")})},
+            {label:"Lock it down (cash hit)",fn:(S)=>({...S,cash:Math.max(0,S.cash-rng(1500,3000)),heat:Math.max(0,S.heat-1),feed:addFeed(S,"Paid for a hard lockdown to reduce exposure.","bad")})},
             {label:"Ride it out",fn:(S)=>({...S,heat:Math.min(15,S.heat+1),feed:addFeed(S,"Stayed active during raid pressure. Heat climbed.","bad")})},
           ],
         }};
@@ -1791,7 +1791,7 @@ function reducer(G,action) {
         newEnemy.curHp-=pDmg;
         newLog.push(`You hit for ${pDmg} dmg.`);
         if(newEnemy.curHp<=0){
-          const loot=rng(40,120);
+          const loot=rng(750,2200);
           const drugLoot=enemy.loot?Object.entries(enemy.loot):[null];
           let extra="";
           if(enemy.loot){
@@ -1817,7 +1817,7 @@ function reducer(G,action) {
         newLog.push(`You pull the burner — ${pDmg} damage.`);
         newG.heat=Math.min(15,newG.heat+2);
         if(newEnemy.curHp<=0){
-          const loot=rng(60,140);
+          const loot=rng(1100,2600);
           return {...newG,combatState:null,cash:newG.cash+loot,rep:newG.rep+2,feed:addFeed(newG,`Dropped the ${enemy.name}. +$${loot}.`,"good")};
         }
       } else if(action.act==="draw_real"&&hasReal){
@@ -1826,7 +1826,7 @@ function reducer(G,action) {
         newLog.push(`You draw the real piece — ${pDmg} damage.`);
         newG.heat=Math.min(15,newG.heat+3);
         if(newEnemy.curHp<=0){
-          const loot=rng(75,165);
+          const loot=rng(1400,3000);
           return advanceMeaningfulAction({...newG,combatState:null,cash:newG.cash+loot,rep:newG.rep+3,feed:addFeed(newG,`The block goes quiet. You take $${loot}.`,"good")},"travel");
         }
       }

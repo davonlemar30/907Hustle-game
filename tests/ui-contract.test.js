@@ -15,7 +15,7 @@ test("six approved navigation labels are explicit", () => {
   assert.doesNotMatch(ui, /Cash \+ Dre|Services/);
 });
 test("backgrounds, robbery, territory, and safe payoff surfaces are wired", () => {
-  for (const token of ["background.combat", "background.charisma", "background.intelligence", 'type: "ROBBERY"', 'type: "TAKEOVER"', "safeDebtPayment", "window.confirm"]) assert.ok(ui.includes(token), token);
+  for (const token of ["background.combat", "background.charisma", "background.intelligence", 'type: "ROBBERY"', 'type: "TAKEOVER"', 'type: "PAY_CREW"', "safeDebtPayment", "window.confirm"]) assert.ok(ui.includes(token), token);
 });
 test("event and operation results expose decisions and consequences", () => {
   for (const token of ["event.who", "event.where", "event.stakes", "choice.preview", "result.rounds", "result.effects"]) assert.ok(ui.includes(token), token);

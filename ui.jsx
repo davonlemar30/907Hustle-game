@@ -97,7 +97,7 @@ function CrewCard({ state, dispatch, person }) {
   const crew = state.people.crew[person.id];
   const cost = C.selectors.recruitmentCost(state, person.id);
   return <div className={`card${crew.introduced ? "" : " locked"}`}><div className="card-title">{person.name}<small>{crew.status === "gone" ? "PERMANENTLY OUT" : `${person.role} · Power ${person.power}`}</small></div><p className="compact muted">{person.description}</p>
-    {!crew.introduced ? <span className="tag">Not introduced</span> : !crew.recruited ? <button className="btn full good-btn" disabled={!state.base.visiting || state.player.cash < cost || C.selectors.recruitedCrew(state).length >= 2} onClick={() => dispatch({ type: "RECRUIT_CREW", crewId: person.id })}>Recruit · {money(cost)} · 1 slot</button> : <p className="compact">Loyalty {crew.loyalty} · wages {money(crew.wageDue)} · {crew.status}</p>}
+    {!crew.introduced ? <span className="tag">Not introduced</span> : !crew.recruited ? <button className="btn full good-btn" disabled={!state.base.visiting || state.player.cash < cost || C.selectors.recruitedCrew(state).length >= 2} onClick={() => dispatch({ type: "RECRUIT_CREW", crewId: person.id })}>Recruit · {money(cost)} · 1 slot</button> : <><p className="compact">Loyalty {crew.loyalty} · wages {money(crew.wageDue)} · {crew.status}</p>{crew.status === "active" && crew.wageDue > 0 && <button className="btn full secondary" disabled={!state.base.visiting || state.player.cash < crew.wageDue} onClick={() => dispatch({ type: "PAY_CREW", crewId: person.id })}>Pay wages · {money(crew.wageDue)}<span className="action-copy">Clears the unpaid Power penalty without spending a slot</span></button>}</>}
   </div>;
 }
 

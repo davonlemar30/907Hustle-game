@@ -1,14 +1,22 @@
-# The-Anchorage-Hustle
+# 907Hustle: One Good Run
 
-Fast-loop 907 drug trade sim prototype.
+A mobile-first, seven-day Anchorage street-market strategy game.
 
-## Current Loop
+## Run the game
 
-1. Check prices for a full visible drug roster.
-2. Buy product with limited carry capacity.
-3. Travel between Anchorage-flavored areas with different risk/price bias.
-4. Sell for profit.
-5. Survive weighted RNG events (police, muggings, dry supply, lucky buyers, rival pressure).
-6. Use Dre loan / repayment pressure and reinvest into upgrades.
+Serve this directory with any static HTTP server, then open `index.html`:
 
-Run by opening `index.html`.
+```sh
+python3 -m http.server 4173
+```
+
+The active runtime is `index.html` plus the pure domain module in `game-core.js`. React and Babel are currently loaded from CDNs, so the browser needs network access on first load.
+
+## Test the core
+
+```sh
+node --test tests/game-core.test.js tests/ui-contract.test.js
+node tests/simulate-runs.js 200
+```
+
+See `PROJECT_STATUS.md` for the technical re-entry status and `PLAYTEST_REVISION_AUDIT.md` for the approved progression, store, stats, and encounter plan.

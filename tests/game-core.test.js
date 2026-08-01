@@ -1,30 +1,140 @@
-const test=require('node:test');
-const assert=require('node:assert/strict');
-const C=require('../game-core.js');
-const clone=value=>JSON.parse(JSON.stringify(value));
-function start(seed=907,backgroundId='runner'){return C.reduceGame(C.createRun({seed}),{type:'CHOOSE_BACKGROUND',backgroundId})}
-function uninterrupted(state){const next=clone(state);next.run.pendingEvent=null;next.run.pendingEncounter=null;next.run.daySummary=null;next.flags.maraIntroResolved=true;next.flags.eliOfferResolved=true;next.flags.earlyThreatResolved=true;next.flags.maraTruthResolved=true;next.flags.courierResolved=true;next.flags.miriOfferResolved=true;next.flags.toneOfferResolved=true;next.flags.midThreatResolved=true;next.flags.baseWatchResolved=true;next.flags.crewCrisisResolved=true;return next}
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const C = require("../game-core.js");
 
-test('v2 run is seeded, isolated, and starts with background selection',()=>{const a=C.createRun({seed:91}),b=C.createRun({seed:91});assert.deepEqual(a,b);assert.equal(C.VERSION,2);assert.equal(C.SAVE_KEY,'907ogr_v2');assert.equal(a.run.status,'choosing_background');assert.equal(a.lender.balance,620);assert.equal(a.base.name,'North Star Garage')});
-test('three backgrounds create distinct valid stat lines',()=>{for(const b of C.BACKGROUNDS){const s=start(9,b.id);assert.equal(s.player.background,b.id);assert.deepEqual(s.player.stats,{aim:b.aim,grit:b.grit,instinct:b.instinct});assert.equal(s.player.cash,b.cash);assert.equal(s.run.status,'playing')}});
-test('buy and sell stay inside one market visit',()=>{let s=start();const before=[s.run.day,s.run.slot,s.stats.pipelineAdvances],price=s.world.markets.north_star_lot.prices.weed;s=C.reduceGame(s,{type:'BUY',productId:'weed',qty:2});assert.deepEqual([s.run.day,s.run.slot,s.stats.pipelineAdvances],before);assert.equal(s.player.cash,375-price*2);assert.equal(s.run.currentVisit.trades,1);s=C.reduceGame(s,{type:'SELL',productId:'weed',qty:1});assert.equal(s.stats.pipelineAdvances,0);assert.equal(s.run.currentVisit.trades,2)});
-test('locked products cannot trade',()=>{const s=start();const next=C.reduceGame(s,{type:'BUY',productId:'cocaine',qty:1});assert.strictEqual(next,s);assert.equal(s.world.productAccess.cocaine,false)});
-test('ending a visit advances exactly once and updates all markets',()=>{let s=uninterrupted(start(22));const before=clone(s.world.markets);s=C.reduceGame(s,{type:'END_MARKET'});assert.equal(s.run.slot,1);assert.equal(s.stats.pipelineAdvances,1);assert.equal(s.stats.marketUpdates,1);for(const a of C.NEIGHBORHOODS){assert.equal(s.world.markets[a.id].updatedAt,1);assert.notDeepEqual(s.world.markets[a.id].prices,before[a.id].prices)}});
-test('valid consuming actions invoke the pipeline once',()=>{const cases=[{a:{type:'END_MARKET'}},{a:{type:'LAY_LOW'}},{a:{type:'TRAVEL',neighborhoodId:'downtown'}},{a:{type:'HEAL',amount:20,cost:25},prep:s=>s.player.health=60},{a:{type:'PAY_DEBT',amount:40}},{a:{type:'VISIT_BASE'}},{a:{type:'VISIT_MARA'},prep:s=>{s.people.mara.met=true}},{a:{type:'INVEST_NEIGHBORHOOD',neighborhoodId:'north_star_lot'}}];for(const {a,prep} of cases){let s=uninterrupted(start(500));if(prep)prep(s);const n=C.reduceGame(s,a);assert.equal(n.stats.pipelineAdvances,1,a.type)}});
-test('invalid actions invoke the pipeline zero times',()=>{const s=start(40);for(const a of [{type:'TRAVEL',neighborhoodId:'north_star_lot'},{type:'HEAL',amount:20,cost:25},{type:'PAY_DEBT',amount:9999},{type:'UPGRADE_BASE',track:'storage'},{type:'RECRUIT_CREW',crewId:'eli'}]){const n=C.reduceGame(s,a);assert.equal(n.stats.pipelineAdvances,0,a.type)}});
-test('four slots roll into next day with summary for every reason',()=>{let s=uninterrupted(start(101));for(let i=0;i<4;i++)s=C.reduceGame(uninterrupted(s),{type:i===1?'LAY_LOW':'END_MARKET'});assert.equal(s.run.day,2);assert.equal(s.run.slot,0);assert.equal(s.stats.pipelineAdvances,4);assert.equal(s.run.daySummary.day,1)});
-test('Day 7 Night ends and never exposes Day 8',()=>{let s=uninterrupted(start(1));s.run.day=7;s.run.slot=3;s=C.reduceGame(s,{type:'END_MARKET'});assert.equal(s.run.status,'ended');assert.equal(s.run.day,7);assert.equal(s.run.slot,3);assert.ok(s.run.ending)});
-test('net worth includes garage and liquidation but subtracts debt',()=>{const s=start(9),price=s.world.markets.north_star_lot.prices.weed;s.player.inventory.weed.qty=2;s.base.storedInventory.weed.qty=1;s.base.storedCash=40;assert.equal(C.selectors.netWorth(s),s.player.cash+40+price*3-s.lender.balance)});
-test('market prices stay bounded over the full clock',()=>{let s=uninterrupted(start(1234));for(let i=0;i<28&&s.run.status==='playing';i++)s=C.reduceGame(uninterrupted(s),{type:'END_MARKET'});for(const a of C.NEIGHBORHOODS)for(const p of C.PRODUCTS){const price=s.world.markets[a.id].prices[p.id];assert.ok(price>=p.min*.72);assert.ok(price<=p.max*1.2)}});
-test('neighborhood and product identities remain distinct',()=>{let homeC=0,downC=0,homeM=0,outerM=0;for(let seed=1;seed<=100;seed++){const s=C.createRun({seed});homeC+=s.world.markets.north_star_lot.prices.cocaine;downC+=s.world.markets.downtown.prices.cocaine;homeM+=s.world.markets.north_star_lot.prices.meth;outerM+=s.world.markets.airport_industrial.prices.meth}assert.ok(downC>homeC*1.2);assert.ok(outerM>homeM*1.35)});
-test('base visit enables non-advancing storage after one tick',()=>{let s=uninterrupted(start(7));s=C.reduceGame(s,{type:'VISIT_BASE'});assert.equal(s.stats.pipelineAdvances,1);assert.equal(s.base.visiting,true);s.base.tracks.storage=1;const before=s.stats.pipelineAdvances,cash=s.player.cash;s=C.reduceGame(s,{type:'STORE_CASH',amount:100});assert.equal(s.stats.pipelineAdvances,before);assert.equal(s.player.cash,cash-100);assert.equal(s.base.storedCash,100)});
-test('each garage upgrade costs one slot and follows track order',()=>{let s=uninterrupted(start(8));s.player.cash=1000;s.base.visiting=true;s=C.reduceGame(s,{type:'UPGRADE_BASE',track:'security'});assert.equal(s.base.tracks.security,1);assert.equal(s.stats.moneySpent.base,140);assert.equal(s.stats.pipelineAdvances,1);s=uninterrupted(s);s.base.visiting=true;s=C.reduceGame(s,{type:'UPGRADE_BASE',track:'security'});assert.equal(s.base.tracks.security,2);assert.equal(s.stats.moneySpent.base,500)});
-test('gear purchase equips persistent gear and advances once',()=>{let s=uninterrupted(start(81));s.player.cash=1000;s.base.visiting=true;s=C.reduceGame(s,{type:'BUY_GEAR',gearId:'reliable_handgun'});assert.ok(s.player.gear.owned.includes('reliable_handgun'));assert.equal(s.player.gear.equipped.weapon,'reliable_handgun');assert.equal(s.stats.pipelineAdvances,1)});
-test('crew roster caps at two and assignments resolve through pipeline',()=>{let s=uninterrupted(start(88));s.player.cash=2000;s.base.visiting=true;for(const id of ['eli','miri','tone'])s.people.crew[id].introduced=true;s=C.reduceGame(s,{type:'RECRUIT_CREW',crewId:'eli'});s=uninterrupted(s);s.base.visiting=true;s=C.reduceGame(s,{type:'RECRUIT_CREW',crewId:'miri'});s=uninterrupted(s);s.base.visiting=true;const rejected=C.reduceGame(s,{type:'RECRUIT_CREW',crewId:'tone'});assert.equal(C.selectors.recruitedCrew(rejected).length,2);s=C.reduceGame(s,{type:'ASSIGN_CREW',crewId:'miri',assignment:'source_cocaine'});assert.equal(s.people.crew.miri.assignment,null);assert.equal(s.world.productAccess.cocaine,true)});
-test('Mara trust and influence are persistent measurable state',()=>{let s=uninterrupted(start(99));s.people.mara.met=true;const cash=s.player.cash;s=C.reduceGame(s,{type:'VISIT_MARA'});assert.equal(s.people.mara.trust,1);assert.equal(s.player.cash,cash-40);s=uninterrupted(s);s.player.cash=200;s=C.reduceGame(s,{type:'INVEST_NEIGHBORHOOD',neighborhoodId:'north_star_lot'});assert.equal(s.world.influence.north_star_lot,1)});
-test('story events do not consume a second slot when resolved',()=>{let s=start(107);s=C.reduceGame(s,{type:'END_MARKET'});assert.equal(s.run.pendingEvent.id,'mara_intro');const ticks=s.stats.pipelineAdvances,slot=s.run.slot;s=C.reduceGame(s,{type:'RESOLVE_EVENT',choiceIndex:0});assert.equal(s.stats.pipelineAdvances,ticks);assert.equal(s.run.slot,slot);assert.equal(s.people.mara.met,true)});
-test('recent-event control prevents an immediate generic repeat',()=>{let s=uninterrupted(start(119));s.run.recentEvents=['buyer_hurry'];s.player.heat=0;s.world.currentNeighborhoodId='north_star_lot';for(let i=0;i<4;i++){s=C.reduceGame(uninterrupted(s),{type:'END_MARKET'});assert.notEqual(s.run.pendingEvent?.id,'buyer_hurry')}});
-test('early confrontation appears by Day 2 and resolving it adds no clock tick',()=>{let s=start(31);for(let i=0;i<6&&!s.run.pendingEncounter;i++){s=C.reduceGame(s,{type:'END_MARKET'});if(s.run.pendingEvent)s=C.reduceGame(s,{type:'RESOLVE_EVENT',choiceIndex:0});if(s.run.daySummary)s=C.reduceGame(s,{type:'DISMISS_DAY_SUMMARY'})}assert.equal(s.run.pendingEncounter.id,'early');const before=s.stats.pipelineAdvances;s=C.reduceGame(s,{type:'RESOLVE_ENCOUNTER',choiceId:'pay'});assert.equal(s.stats.pipelineAdvances,before);assert.equal(s.flags.earlyThreatResolved,true)});
-test('encounter results are seeded reproducibly',()=>{function play(){let s=start(222,'enforcer');s.run.pendingEncounter={id:'early',title:'Test',description:'Test',enemyName:'Collector',enemyHealth:24,guard:.08,evasion:.05,pursuit:.1,attack:[5,10],pay:85,step:1,feedback:'Test',finishAfter:false};return C.reduceGame(s,{type:'RESOLVE_ENCOUNTER',choiceId:'fight'})}assert.deepEqual(play(),play())});
-test('payoff unlocks a persistent post-debt decision',()=>{let s=uninterrupted(start(65));s.player.cash=1000;s=C.reduceGame(s,{type:'PAY_DEBT',amount:620});assert.equal(s.lender.balance,0);assert.equal(s.lender.afterPayoffOffer,'available');s=uninterrupted(s);s.run.pendingEvent={id:'dre_after_payoff',title:'Door',description:'Door',choices:[{label:'Supplier',effect:{access:'cocaine',lenderTrust:1},result:'Open'}]};s=C.reduceGame(s,{type:'RESOLVE_EVENT',choiceIndex:0});assert.equal(s.world.productAccess.cocaine,true)});
-test('final plan creates late encounter and expanded summary',()=>{let s=uninterrupted(start(404));s.run.day=6;s.run.slot=0;s=C.reduceGame(s,{type:'PREPARE_FINAL_PLAN',planId:'escape'});assert.equal(s.run.finalPlan,'escape');s=uninterrupted(s);s.run.day=7;s=C.reduceGame(s,{type:'EXECUTE_FINAL_PLAN'});assert.equal(s.run.pendingEncounter.id,'late');s.people.mara.trust=4;s.run.pendingEncounter.finishAfter=true;s=C.reduceGame(s,{type:'RESOLVE_ENCOUNTER',choiceId:'pay'});assert.equal(s.run.status,'ended');assert.equal(s.run.ending,'mara_escape');const summary=C.selectRunSummary(s);assert.equal(summary.maraStatus,'trusted');assert.ok(Number.isFinite(summary.operationScore))});
+function run(seed = 907) {
+  return C.reduceGame(C.createRun({ seed }), { type: "CHOOSE_BACKGROUND", backgroundId: "shooter" });
+}
+function quietAdvance(state, reason = "END_MARKET") {
+  state.run.pendingEvent = null; state.run.pendingEncounter = null; state.run.pendingOperationResult = null;
+  return C.advanceRun(state, { reason, suppressStory: true });
+}
+
+test("v3 run uses an isolated save and approved equal-resource backgrounds", () => {
+  assert.equal(C.VERSION, 3); assert.equal(C.SAVE_KEY, "907ogr_v3");
+  assert.equal(C.BACKGROUNDS.length, 3);
+  assert.deepEqual(C.BACKGROUNDS.map((item) => item.name), ["Shooter", "Hustler", "Strategist"]);
+  assert.ok(C.BACKGROUNDS.every((item) => item.cash === 375 && item.heat === 1));
+});
+
+test("backgrounds create the approved stat identities", () => {
+  const expected = { shooter: [3, 1, 2], hustler: [1, 3, 2], strategist: [2, 1, 3] };
+  for (const [id, values] of Object.entries(expected)) {
+    const state = C.reduceGame(C.createRun({ seed: 4 }), { type: "CHOOSE_BACKGROUND", backgroundId: id });
+    assert.deepEqual(Object.values(state.player.stats), values);
+    assert.equal(state.player.cash, 375);
+  }
+});
+
+test("buy and sell stay in one locked market visit", () => {
+  let state = run(); const product = C.PRODUCTS[0]; const beforeSlot = state.run.slot;
+  state.player.cash = 5000; state.world.markets.north_star_lot.availability[product.id] = 5;
+  const buyPrice = C.selectors.tradeUnitPrices(state, product.id).buy;
+  state = C.reduceGame(state, { type: "BUY", productId: product.id, qty: 2 });
+  assert.equal(state.run.slot, beforeSlot); assert.equal(state.player.inventory[product.id].qty, 2); assert.equal(state.run.currentVisit.grossBuy, buyPrice * 2);
+  state = C.reduceGame(state, { type: "SELL", productId: product.id, qty: 1 });
+  assert.equal(state.run.slot, beforeSlot); assert.equal(state.run.currentVisit.trades, 2);
+});
+
+test("end market is the single clock and world pipeline", () => {
+  const state = run(); const next = quietAdvance(state);
+  assert.equal(next.run.slot, 1); assert.equal(next.stats.pipelineAdvances, 1); assert.equal(next.stats.marketUpdates, 1);
+  for (const area of C.NEIGHBORHOODS) assert.equal(next.world.markets[area.id].updatedAt, 1);
+});
+
+test("four slots roll over and every action can produce a summary", () => {
+  for (const reason of ["END_MARKET", "TRAVEL", "LAY_LOW", "HEAL", "PAY_DEBT", "ROBBERY", "TAKEOVER"]) {
+    let state = run(); state.run.day = 1; state.run.slot = 3;
+    state = quietAdvance(state, reason);
+    assert.equal(state.run.day, 2, reason); assert.equal(state.run.slot, 0, reason); assert.equal(state.run.daySummary.day, 1, reason);
+  }
+});
+
+test("Day 7 Night ends without exposing Day 8", () => {
+  let state = run(); state.run.day = 7; state.run.slot = 3; state = quietAdvance(state);
+  assert.equal(state.run.status, "ended"); assert.equal(state.run.day, 7); assert.equal(state.run.slot, 3);
+});
+
+test("seeded markets and operation outcomes are reproducible", () => {
+  const a = C.createRun({ seed: 1122 }); const b = C.createRun({ seed: 1122 });
+  assert.deepEqual(a.world.markets, b.world.markets); assert.equal(a.run.rngState, b.run.rngState);
+  let x = run(99); x.player.cash = 1000; x.people.crew.eli = { ...x.people.crew.eli, introduced: true, recruited: true, status: "active", loyalty: 2 };
+  const y = structuredClone(x);
+  const one = C.reduceGame(x, { type: "TAKEOVER", neighborhoodId: "north_star_lot", includePlayer: true });
+  const two = C.reduceGame(y, { type: "TAKEOVER", neighborhoodId: "north_star_lot", includePlayer: true });
+  assert.deepEqual(one.run.pendingOperationResult, two.run.pendingOperationResult);
+});
+
+test("market prices remain bounded and persistent", () => {
+  let state = run(44); const seen = new Set();
+  for (let index = 0; index < 20; index += 1) { state = quietAdvance(state); seen.add(state.world.markets.downtown.prices.shrooms); }
+  assert.ok(seen.size > 2);
+  for (const area of C.NEIGHBORHOODS) for (const product of C.PRODUCTS) {
+    const price = state.world.markets[area.id].prices[product.id];
+    assert.ok(price >= product.min * 0.72 && price <= product.max * 1.2);
+  }
+});
+
+test("net worth subtracts Dre debt", () => {
+  const state = run(); state.player.cash = 500; state.base.storedCash = 100; state.lender.balance = 300;
+  assert.equal(C.selectors.netWorth(state), 300 + C.selectors.inventoryValue(state));
+});
+
+test("safe debt payment leaves the approved $150 reserve", () => {
+  const state = run(); state.player.cash = 375;
+  assert.equal(C.selectors.safeDebtPayment(state), 225);
+  state.player.cash = 100; assert.equal(C.selectors.safeDebtPayment(state), 0);
+});
+
+test("debt payment advances once and full payoff unlocks Dre's offer", () => {
+  let state = run(); state.player.cash = 1000; state.run.pendingEvent = null;
+  state = C.reduceGame(state, { type: "PAY_DEBT", amount: 620 });
+  assert.equal(state.lender.balance, 0); assert.equal(state.lender.afterPayoffOffer, "available"); assert.equal(state.stats.pipelineAdvances, 1);
+});
+
+test("robbery is gated by working capital and can be used once", () => {
+  let state = run(123); assert.equal(C.selectors.robberyAvailability(state).available, false);
+  state.player.cash = 100; state.base.storedCash = 0; state.run.pendingEvent = null;
+  state = C.reduceGame(state, { type: "ROBBERY" });
+  assert.equal(state.stats.robbery.attempted, true); assert.equal(state.stats.pipelineAdvances, 1); assert.ok(state.run.pendingOperationResult || state.run.status === "ended");
+  if (state.run.status === "playing") { state = C.reduceGame(state, { type: "ACKNOWLEDGE_OPERATION_RESULT" }); const again = C.reduceGame(state, { type: "ROBBERY" }); assert.deepEqual(again, state); }
+});
+
+test("all three territories start under Rook with exact approved values", () => {
+  const state = run();
+  assert.deepEqual(C.TERRITORIES.map((item) => [item.power, item.attackCost, item.dailyIncome]), [[12, 100, 45], [18, 150, 75], [24, 200, 110]]);
+  assert.ok(C.TERRITORIES.every((item) => state.world.territories[item.areaId].owner === "rook"));
+});
+
+test("Intelligence controls territory estimate precision", () => {
+  const state = run(); state.player.stats.intelligence = 1; assert.equal(C.selectors.territoryPowerEstimate(state, "north_star_lot").label, "9–15");
+  state.player.stats.intelligence = 2; assert.equal(C.selectors.territoryPowerEstimate(state, "north_star_lot").label, "11–13");
+  state.player.stats.intelligence = 3; assert.equal(C.selectors.territoryPowerEstimate(state, "north_star_lot").label, "12");
+});
+
+test("takeover consumes one slot and records automatic narrated rounds", () => {
+  let state = run(88); state.player.cash = 1000; state.player.gear.owned = ["reliable_handgun", "protective_vest"]; state.player.gear.equipped.weapon = "reliable_handgun"; state.player.gear.equipped.armor = "protective_vest";
+  for (const id of ["eli", "tone"]) state.people.crew[id] = { ...state.people.crew[id], introduced: true, recruited: true, status: "active", loyalty: 3 };
+  state = C.reduceGame(state, { type: "TAKEOVER", neighborhoodId: "north_star_lot", includePlayer: true });
+  assert.equal(state.stats.pipelineAdvances, 1); assert.equal(state.stats.takeovers.attempts, 1); assert.ok(state.run.pendingOperationResult.rounds.length >= 2); assert.ok(state.run.pendingOperationResult.rounds.length <= 3);
+});
+
+test("controlled territory improves trade and pays once after Night", () => {
+  let state = run(); state.world.territories.north_star_lot.owner = "player";
+  const controlledPrice = C.selectors.tradeUnitPrices(state, "weed"); state.world.territories.north_star_lot.owner = "rook"; const rookPrice = C.selectors.tradeUnitPrices(state, "weed");
+  assert.ok(controlledPrice.buy < rookPrice.buy); assert.ok(controlledPrice.sell > rookPrice.sell);
+  state.world.territories.north_star_lot.owner = "player"; state.run.slot = 3; const cash = state.player.cash; state = quietAdvance(state);
+  assert.equal(state.player.cash, cash + 45); assert.equal(state.stats.takeovers.income, 45);
+});
+
+test("event contract explains who, where, stakes, action, preview, and result", () => {
+  let state = run(); state = C.reduceGame(state, { type: "END_MARKET" }); const event = state.run.pendingEvent;
+  assert.ok(event.who && event.where && event.stakes && event.description);
+  for (const choice of event.choices) assert.ok(choice.label && choice.preview && choice.result);
+  const slot = state.run.slot; state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 }); assert.equal(state.run.slot, slot);
+});
+
+test("summary includes robbery and territory history", () => {
+  const summary = C.selectRunSummary(run());
+  assert.equal(summary.territories.length, 3); assert.equal(summary.robbery.attempted, false); assert.equal(summary.takeovers.attempts, 0);
+});

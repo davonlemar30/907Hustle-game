@@ -5,10 +5,11 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const VERSION = 2;
+  const VERSION = 3;
   const RUN_DAYS = 7;
   const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
-  const SAVE_KEY = "907ogr_v2";
+  const SAVE_KEY = "907ogr_v3";
+  const WORKING_CAPITAL_RESERVE = 150;
 
   const PRODUCTS = [
     { id: "weed", name: "Weed", role: "Dependable", base: 34, min: 18, max: 68, volatility: 0.12, heat: 0, access: "open" },
@@ -39,9 +40,9 @@
   ];
 
   const BACKGROUNDS = [
-    { id: "runner", name: "Runner", aim: 1, grit: 2, instinct: 3, cash: 375, heat: 1, description: "You see exits early and travel light." },
-    { id: "enforcer", name: "Enforcer", aim: 2, grit: 3, instinct: 1, cash: 400, heat: 3, description: "You hold ground, and people remember it." },
-    { id: "shooter", name: "Shooter", aim: 3, grit: 1, instinct: 2, cash: 325, heat: 1, description: "Your advantage matters once you can afford a firearm." },
+    { id: "shooter", name: "Shooter", combat: 3, charisma: 1, intelligence: 2, cash: 375, heat: 1, description: "Best at weapons, direct fights, and joining a territory attack." },
+    { id: "hustler", name: "Hustler", combat: 1, charisma: 3, intelligence: 2, cash: 375, heat: 1, description: "Best at trade margins, negotiation, and bringing people into the operation." },
+    { id: "strategist", name: "Strategist", combat: 2, charisma: 1, intelligence: 3, cash: 375, heat: 1, description: "Best at reading danger, intimidation, and judging territory strength." },
   ];
 
   const GEAR = [
@@ -67,9 +68,15 @@
   ];
 
   const CREW = [
-    { id: "eli", name: "Eli ‘Shortcut’ Ward", role: "Runner", recruitCost: 120, wage: 45, description: "Moves small bundles and knows service-road exits." },
-    { id: "miri", name: "Samira ‘Miri’ Cole", role: "Connector", recruitCost: 180, wage: 60, description: "Opens buyers and supply through an aging Downtown list." },
-    { id: "tone", name: "Anton ‘Tone’ Bell", role: "Enforcer / Lookout", recruitCost: 250, wage: 85, description: "Protects the garage and changes confrontation choices." },
+    { id: "eli", name: "Eli ‘Shortcut’ Ward", role: "Runner", power: 3, recruitCost: 120, wage: 45, description: "Moves small bundles and knows service-road exits." },
+    { id: "miri", name: "Samira ‘Miri’ Cole", role: "Connector", power: 2, recruitCost: 180, wage: 60, description: "Opens buyers and supply through an aging Downtown list." },
+    { id: "tone", name: "Anton ‘Tone’ Bell", role: "Enforcer / Lookout", power: 5, recruitCost: 250, wage: 85, description: "Protects the garage and changes confrontation choices." },
+  ];
+
+  const TERRITORIES = [
+    { areaId: "north_star_lot", power: 12, attackCost: 100, dailyIncome: 45, special: "Recruitment costs 10% less." },
+    { areaId: "downtown", power: 18, attackCost: 150, dailyIncome: 75, special: "Cocaine access opens." },
+    { areaId: "airport_industrial", power: 24, attackCost: 200, dailyIncome: 110, special: "Meth access opens." },
   ];
 
   const PRODUCT_BY_ID = Object.fromEntries(PRODUCTS.map((item) => [item.id, item]));
@@ -78,7 +85,9 @@
   const CREW_BY_ID = Object.fromEntries(CREW.map((item) => [item.id, item]));
 
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
-  function copyState(state) { return JSON.parse(JSON.stringify(state)); }
+  function copyState(state) {
+    return typeof structuredClone === "function" ? structuredClone(state) : JSON.parse(JSON.stringify(state));
+  }
   function slotNumber(day, slot) { return (day - 1) * 4 + slot; }
   function normalizeSeed(seed) {
     const numeric = Number(seed);
@@ -135,13 +144,13 @@
       version: VERSION,
       run: {
         status: "choosing_background", day: 1, slot: 0, seed, rngState: random.state,
-        ending: null, pendingEvent: null, pendingEncounter: null, daySummary: null,
+        ending: null, pendingEvent: null, pendingEncounter: null, pendingOperationResult: null, daySummary: null,
         currentVisit: { trades: 0, grossBuy: 0, grossSell: 0, startedAt: 0 },
         recentEvents: [], encounterCount: 0, finalPlan: null, finalPlanPrepared: false,
       },
       player: {
         background: null, cash: 0, health: 100, heat: 1, cargoCapacity: 10,
-        stats: { aim: 0, grit: 0, instinct: 0 }, inventory,
+        stats: { combat: 0, charisma: 0, intelligence: 0 }, inventory,
         gear: { owned: [], equipped: { weapon: null, armor: null, utility: null, tool: null }, consumables: { medical_kit: 0 } },
       },
       world: {
@@ -149,6 +158,9 @@
         influence: { north_star_lot: 0, downtown: 0, airport_industrial: 0 },
         tradeInfluenceGranted: { north_star_lot: false, downtown: false, airport_industrial: false },
         productAccess: { weed: true, shrooms: true, cocaine: false, meth: false },
+        territories: Object.fromEntries(TERRITORIES.map((territory) => [territory.areaId, {
+          owner: "rook", power: territory.power, capturedDay: null, incomeCollected: 0, attempts: 0,
+        }])),
       },
       base: {
         name: "North Star Garage", visiting: false,
@@ -174,6 +186,8 @@
         decisions: 0, pipelineAdvances: 0, marketUpdates: 0, visits: [], majorDecisions: [],
         moneySpent: { debt: 0, base: 0, gear: 0, crew: 0, healing: 0, relationships: 0, events: 0 },
         encounterChoices: { fight: 0, run: 0, talk: 0, pay: 0, other: 0 },
+        robbery: { attempted: false, success: false, payout: 0 },
+        takeovers: { attempts: 0, wins: 0, losses: 0, crewLost: 0, income: 0 },
       },
       log: [],
     };
@@ -188,7 +202,7 @@
   function storedCargoUsed(state) { return PRODUCTS.reduce((sum, item) => sum + (state.base.storedInventory[item.id]?.qty || 0), 0); }
   function storageCapacity(state) { return 2 + state.base.tracks.storage * 6; }
   function storedCashCapacity(state) { return state.base.tracks.storage === 0 ? 0 : state.base.tracks.storage === 1 ? 300 : 1200; }
-  function recruitedCrew(state) { return CREW.filter((person) => state.people.crew[person.id].recruited); }
+  function recruitedCrew(state) { return CREW.filter((person) => state.people.crew[person.id].recruited && state.people.crew[person.id].status === "active"); }
   function influenceLabel(value) { return ["Unknown", "Active", "Established", "Contested", "Controlled"][clamp(value, 0, 4)]; }
   function inventoryValue(state) {
     const market = state.world.markets[state.world.currentNeighborhoodId];
@@ -203,6 +217,80 @@
     return BASE_UPGRADES.filter((item) => state.base.tracks[item.track] >= item.level).reduce((sum, item) => sum + item.cost, 0);
   }
   function netWorth(state) { return state.player.cash + state.base.storedCash + inventoryValue(state) - state.lender.balance; }
+  function workingCapital(state) { return state.player.cash + state.base.storedCash + inventoryValue(state); }
+  function safeDebtPayment(state) { return Math.min(state.lender.balance, Math.max(0, state.player.cash - WORKING_CAPITAL_RESERVE)); }
+  function controlled(state, areaId) { return state.world.territories[areaId]?.owner === "player"; }
+  function recruitmentCost(state, crewId) {
+    const person = CREW_BY_ID[crewId];
+    if (!person) return 0;
+    const charismaDiscount = Math.max(0, state.player.stats.charisma - 1) * 0.05;
+    const territoryDiscount = controlled(state, "north_star_lot") ? 0.10 : 0;
+    return Math.max(1, Math.round(person.recruitCost * (1 - charismaDiscount - territoryDiscount)));
+  }
+  function operationGearPower(state) {
+    const weapon = equippedWeapon(state);
+    const weaponPower = weapon?.id === "reliable_handgun" ? 4 : weapon?.id === "cheap_handgun" ? 3 : weapon ? 1 : 0;
+    return weaponPower + (state.player.gear.equipped.armor ? 2 : 0) + (state.player.gear.equipped.utility ? 1 : 0) + (state.player.gear.equipped.tool ? 1 : 0);
+  }
+  function crewPower(state, includePlayer) {
+    let power = operationGearPower(state) + state.base.tracks.operations;
+    for (const person of recruitedCrew(state)) {
+      const crew = state.people.crew[person.id];
+      power += person.power + clamp(crew.loyalty, 0, 3) - (crew.wageDue > 0 ? 2 : 0);
+    }
+    if (includePlayer) {
+      power += state.player.stats.combat * 2 + state.player.stats.charisma + state.player.stats.intelligence;
+      if (state.player.health > 80) power += 1;
+      if (state.player.health < 50) power -= 2;
+    }
+    return Math.max(0, power);
+  }
+  function territoryPowerEstimate(state, areaId) {
+    const exact = state.world.territories[areaId]?.power || 0;
+    const intelligence = state.player.stats.intelligence;
+    const spread = intelligence >= 3 ? 0 : intelligence === 2 ? 1 : 3;
+    return { exact: spread === 0, min: Math.max(0, exact - spread), max: exact + spread, label: spread ? `${Math.max(0, exact - spread)}–${exact + spread}` : String(exact) };
+  }
+  function territoryBenefits(state, areaId) {
+    const territory = TERRITORIES.find((item) => item.areaId === areaId);
+    if (!territory || !controlled(state, areaId)) return null;
+    return { buyDiscount: 0.04, sellBonus: 0.04, riskReduction: 1, dailyIncome: territory.dailyIncome, special: territory.special };
+  }
+  function tradeUnitPrices(state, productId) {
+    const areaId = state.world.currentNeighborhoodId;
+    const marketPriceValue = state.world.markets[areaId]?.prices[productId] || 0;
+    const control = controlled(state, areaId);
+    const buy = Math.round(marketPriceValue * (control ? 0.96 : 1));
+    const charismaBonus = Math.max(0, state.player.stats.charisma - 1) * 0.015;
+    const influenceBonus = Math.min(0.02, state.world.influence[areaId] * 0.005);
+    const sell = Math.round(marketPriceValue * (0.96 + charismaBonus + influenceBonus + (control ? 0.04 : 0)));
+    return { market: marketPriceValue, buy, sell };
+  }
+  function takeoverReadiness(state, areaId, includePlayer) {
+    const definition = TERRITORIES.find((item) => item.areaId === areaId);
+    const territory = state.world.territories[areaId];
+    if (!definition || !territory) return { available: false, reason: "Unknown territory." };
+    if (territory.owner === "player") return { available: false, reason: "Your crew already controls this neighborhood." };
+    if (state.run.status !== "playing") return { available: false, reason: "The run is not active." };
+    if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
+    if (!recruitedCrew(state).length) return { available: false, reason: "Recruit at least one active crew member." };
+    if (state.player.cash < definition.attackCost) return { available: false, reason: `The operation requires $${definition.attackCost}.` };
+    if (includePlayer && state.player.health <= 30) return { available: false, reason: "You need more than 30 health to join the attack." };
+    return {
+      available: true, reason: "The crew can launch the operation.", attackCost: definition.attackCost,
+      crewPower: crewPower(state, includePlayer), defender: territoryPowerEstimate(state, areaId), includePlayer: !!includePlayer,
+    };
+  }
+  function robberyAvailability(state) {
+    if (state.run.status !== "playing") return { available: false, reason: "The run is not active." };
+    if (state.stats.robbery.attempted) return { available: false, reason: "You already used the emergency robbery." };
+    if (state.run.day >= 7) return { available: false, reason: "There is no time left to recover from this." };
+    if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
+    const capital = workingCapital(state);
+    if (capital >= WORKING_CAPITAL_RESERVE) return { available: false, reason: `Working capital must fall below $${WORKING_CAPITAL_RESERVE}.` };
+    const chance = clamp(0.35 + state.player.stats.combat * 0.07 + state.player.stats.intelligence * 0.04 - state.player.heat * 0.015, 0.35, 0.75);
+    return { available: true, reason: "One emergency score remains.", chance, chanceLabel: `${Math.round(chance * 100)}%`, workingCapital: capital };
+  }
   function operationScore(state) {
     const crew = recruitedCrew(state).reduce((sum, person) => sum + Math.max(0, state.people.crew[person.id].loyalty + 2) * 35, 0);
     const influence = Object.values(state.world.influence).reduce((sum, value) => sum + value * 70, 0);
@@ -295,7 +383,7 @@
       crew.assignment = null;
       const loyaltyBonus = clamp(crew.loyalty, -2, 4) * 0.04;
       if (person.id === "eli") {
-        const success = random.next() < 0.58 + state.player.stats.instinct * 0.05 + loyaltyBonus - (assignment === "outer_run" ? 0.14 : 0);
+        const success = random.next() < 0.58 + state.player.stats.intelligence * 0.05 + loyaltyBonus - (assignment === "outer_run" ? 0.14 : 0);
         if (success) {
           const gain = random.int(85, assignment === "outer_run" ? 210 : 145);
           state.player.cash += gain;
@@ -333,7 +421,8 @@
   function applyPressure(state, context, crossedDay) {
     const area = AREA_BY_ID[state.world.currentNeighborhoodId];
     if (context.reason === "TRAVEL") {
-      state.player.heat = clamp(state.player.heat + Math.max(0, area.risk - 1), 0, 15);
+      const riskReduction = territoryBenefits(state, area.id)?.riskReduction || 0;
+      state.player.heat = clamp(state.player.heat + Math.max(0, area.risk - 1 - riskReduction), 0, 15);
       state.rival.pressure = clamp(state.rival.pressure + Math.max(0, area.rival - Math.floor(state.world.influence[area.id] / 2)), 0, 15);
     } else if (context.reason === "LAY_LOW") {
       const baseBonus = state.world.currentNeighborhoodId === "north_star_lot" ? state.base.tracks.security : 0;
@@ -345,6 +434,17 @@
     }
 
     if (crossedDay) {
+      let territoryIncome = 0;
+      for (const definition of TERRITORIES) {
+        if (!controlled(state, definition.areaId)) continue;
+        territoryIncome += definition.dailyIncome;
+        state.world.territories[definition.areaId].incomeCollected += definition.dailyIncome;
+      }
+      if (territoryIncome) {
+        state.player.cash += territoryIncome;
+        state.stats.takeovers.income += territoryIncome;
+        logEntry(state, `The controlled neighborhoods deliver $${territoryIncome} in daily income.`, "good");
+      }
       for (const person of recruitedCrew(state)) {
         const crew = state.people.crew[person.id];
         if (crew.wageDue > 0) {
@@ -375,7 +475,41 @@
     state.stats.highestHeat = Math.max(state.stats.highestHeat, state.player.heat);
   }
 
-  function event(id, title, description, choices) { return { id, title, description, choices }; }
+  const EVENT_CONTEXT = {
+    mara_intro: { who: "Mara Velez and a circling sedan", where: "Late-Night Mini-Mart", stakes: "Trust Mara with the garage or keep her outside the risk." },
+    eli_offer: { who: "Eli Ward, an unemployed runner", where: "North Star Garage", stakes: "A future crew route—and whether Eli remembers the rejection." },
+    miri_offer: { who: "Miri Cole, a connected supplier", where: "Downtown corner booth", stakes: "Supplier access, loyalty, and how much ownership you are willing to share." },
+    tone_offer: { who: "Anton Bell, a former security worker", where: "North Star Garage", stakes: "Protection against Rook at the cost of another wage." },
+    mara_truth: { who: "Mara and whoever followed her home", where: "Mini-Mart after closing", stakes: "Her safety, her trust, and whether you use her name without consent." },
+    courier: { who: "An injured courier and approaching drivers", where: "Airport / Industrial, Bay Twelve", stakes: "Cash, Heat, and who controls the courier's route information." },
+    dre_after_payoff: { who: "Dre Holloway", where: "Behind the Mini-Mart", stakes: "A new debt, premium supply access, or independence." },
+    base_watch: { who: "Rook's watcher and a possible plainclothes officer", where: "Across from North Star Garage", stakes: "Your stored operation and whether the watcher identifies its value." },
+    crew_crisis: { who: "A jailed crew member and APD", where: "North Star Garage burner line", stakes: "$180 or the loyalty of everyone working for you." },
+    buyer_hurry: { who: "A hurried buyer, Mara, and an observer", where: "Mini-Mart parking lot", stakes: "Fast cash against Heat and exposure near Mara's job." },
+    checkpoint: { who: "APD officers and a tow driver", where: "Airport service road", stakes: "$90 or a risky inspection of your vehicle and cargo." },
+    rook_cut: { who: "Rook's driver", where: "Downtown exit lane", stakes: "$120, physical injury, and Rook's respect." },
+    rough_night: { who: "Three people tied to Rook", where: "Industrial Bay Nine", stakes: "$80 or a dangerous attempt to hold your ground." },
+    dre_warning: { who: "Dre Holloway", where: "Behind the Mini-Mart", stakes: "Dre's patience and the pressure attached to the unpaid balance." },
+  };
+  function effectPreview(effect) {
+    const parts = [];
+    if (effect.cash) parts.push(`${effect.cash > 0 ? "+" : "−"}$${Math.abs(effect.cash)} cash`);
+    if (effect.health) parts.push(`${effect.health > 0 ? "+" : "−"}${Math.abs(effect.health)} Health`);
+    if (effect.heat) parts.push(`${effect.heat > 0 ? "+" : "−"}${Math.abs(effect.heat)} Heat`);
+    if (effect.maraTrust) parts.push(`${effect.maraTrust > 0 ? "+" : "−"}${Math.abs(effect.maraTrust)} Mara trust`);
+    if (effect.lenderTrust) parts.push(`${effect.lenderTrust > 0 ? "+" : "−"}${Math.abs(effect.lenderTrust)} Dre trust`);
+    if (effect.rivalPressure) parts.push(`${effect.rivalPressure > 0 ? "+" : "−"}${Math.abs(effect.rivalPressure)} Rook pressure`);
+    if (effect.rivalRespect) parts.push(`${effect.rivalRespect > 0 ? "+" : "−"}${Math.abs(effect.rivalRespect)} Rook respect`);
+    if (effect.loseRandomInventory) parts.push(`risk ${effect.loseRandomInventory} cargo`);
+    if (effect.secondLoan) parts.push("take $500 cash and owe $600 by Day 7");
+    if (effect.access) parts.push(`unlock ${effect.access} access`);
+    if (effect.introduceCrew) parts.push("opens a future recruitment option");
+    return parts.length ? parts.join(" · ") : "Relationship and story consequences carry forward.";
+  }
+  function event(id, title, description, choices) {
+    const context = EVENT_CONTEXT[id] || { who: "People in the current situation", where: AREA_BY_ID.north_star_lot.name, stakes: "The result changes this run." };
+    return { id, title, ...context, description, choices: choices.map((choice) => ({ ...choice, preview: choice.preview || effectPreview(choice.effect || {}) })) };
+  }
   function setPendingEvent(state, item) { state.run.pendingEvent = item; }
   function activeEvent(id, state) {
     const events = {
@@ -563,13 +697,14 @@
     state.run.status = "ended";
     state.run.pendingEvent = null;
     state.run.pendingEncounter = null;
+    state.run.pendingOperationResult = null;
     state.run.ending = chooseEnding(state, forced);
     logEntry(state, `By sunrise, the week has a name: ${endingLabel(state.run.ending)}.`, state.run.ending === "one_good_run" ? "good" : "warn");
   }
 
   function advanceRun(inputState, context) {
     const state = copyState(inputState);
-    if (state.run.status !== "playing" || state.run.pendingEvent || state.run.pendingEncounter) return state;
+    if (state.run.status !== "playing" || state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return state;
     const random = makeRandom(state.run.rngState);
     const oldDay = state.run.day, oldSlot = state.run.slot;
     closeVisit(state, context.reason);
@@ -588,7 +723,7 @@
     if (crossedDay) state.run.daySummary = { day: oldDay, netWorth: netWorth(state), operationScore: operationScore(state), heat: state.player.heat, debt: state.lender.balance, health: state.player.health, baseValue: baseValue(state), crew: recruitedCrew(state).length };
     if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
     else if (finalSlot) endRun(state);
-    else scheduleStory(state, context, random);
+    else if (!context.suppressStory) scheduleStory(state, context, random);
     state.run.rngState = random.state;
     return state;
   }
@@ -599,14 +734,15 @@
     const encounter = state.run.pendingEncounter;
     if (!encounter) return [];
     const choices = [
-      { id: "talk", label: "Talk", description: "Use instinct, influence, and relationships." },
-      { id: "run", label: "Run", description: "Health, Instinct, shoes, and a light bag matter." },
+      { id: "talk", label: "Talk them down", description: "Use Charisma, influence, and relationships." },
+      { id: "run", label: "Break for an exit", description: "Health, Intelligence, shoes, and a light bag matter." },
     ];
     if (state.player.cash >= encounter.pay) choices.push({ id: "pay", label: `Pay $${encounter.pay}`, description: "Keep the bag and accept the cost." });
     if (cargoUsed(state) > 0) choices.push({ id: "surrender", label: "Surrender product", description: "Protect health by giving up part of the bag." });
     const weapon = equippedWeapon(state);
-    if (weapon?.type === "close" || state.player.stats.grit >= 3) choices.push({ id: "fight", label: weapon ? `Fight with ${weapon.name}` : "Fight", description: "Grit, health, armor, and close protection matter." });
-    if (weapon?.type === "firearm") choices.push({ id: "draw", label: `Draw ${weapon.name}`, description: "Aim and accuracy matter. Firing raises heat." });
+    if (weapon?.type === "close" || state.player.stats.combat >= 3) choices.push({ id: "fight", label: weapon ? `Fight with ${weapon.name}` : "Stand and fight", description: "Combat, health, armor, and close protection matter." });
+    if (weapon?.type === "firearm") choices.push({ id: "draw", label: `Draw ${weapon.name}`, description: "Combat and weapon accuracy matter. Firing raises heat." });
+    if (state.player.stats.intelligence >= 3) choices.push({ id: "intimidate", label: "Name their weak position", description: "Use Intelligence to make the threat feel too expensive." });
     const tone = state.people.crew.tone;
     if (tone.recruited && tone.loyalty >= 0) choices.push({ id: "call_tone", label: "Call Tone", description: "Spend crew loyalty to end this on his terms." });
     if (encounter.id === "early" && state.people.mara.trust >= 2 && state.people.mara.met) choices.push({ id: "call_mara", label: "Signal Mara", description: "Let her trigger the Mini-Mart alarm." });
@@ -637,7 +773,7 @@
     const encounter = state.run.pendingEncounter;
     const armor = GEAR_BY_ID[state.player.gear.equipped.armor]?.armor || 0;
     const raw = random.int(encounter.attack[0], encounter.attack[1]);
-    const damage = Math.max(1, raw - armor - Math.floor(state.player.stats.grit / 2));
+    const damage = Math.max(1, raw - armor - Math.floor(state.player.stats.combat / 2));
     state.player.health = clamp(state.player.health - damage, 0, 100);
     encounter.step += 1;
     encounter.feedback = `${action} fails. ${encounter.enemyName} closes the distance and you lose ${damage} health.`;
@@ -684,17 +820,21 @@
       state.player.health = clamp(state.player.health + GEAR_BY_ID.medical_kit.heal, 0, 100);
       encounter.step += 1;
       encounter.feedback = "You seal the worst injury and force your hands steady. One decision remains.";
+    } else if (choice === "intimidate") {
+      const chance = clamp(0.38 + state.player.stats.intelligence * 0.1 + state.rival.respect * 0.03 - encounter.guard, 0.15, 0.9);
+      if (random.next() < chance) finishEncounter(state, "talk", "You name the cameras, exits, and people they failed to count. Their threat collapses under its own cost.");
+      else failEncounterStep(state, random, "The calculation");
     } else if (choice === "talk") {
       const influence = state.world.influence[state.world.currentNeighborhoodId] * 0.04;
       const relationship = encounter.id === "mid" ? state.rival.respect * 0.035 : state.people.mara.trust * 0.02;
-      const chance = clamp(0.28 + state.player.stats.instinct * 0.08 + influence + relationship - encounter.guard, 0.10, 0.90);
+      const chance = clamp(0.28 + state.player.stats.charisma * 0.08 + influence + relationship - encounter.guard, 0.10, 0.90);
       if (random.next() < chance) {
         if (encounter.id === "mid") state.rival.respect += 1;
         finishEncounter(state, "talk", "You name the people and consequences they forgot to count. The lane opens without anybody reaching for a weapon.");
       } else failEncounterStep(state, random, "The explanation");
     } else if (choice === "run") {
       const gearBonus = GEAR_BY_ID[state.player.gear.equipped.utility]?.escape || 0;
-      const chance = clamp(0.24 + state.player.stats.instinct * 0.09 + gearBonus + 0.18 * freeCargoRatio(state) + healthModifier(state.player.health) - encounter.pursuit, 0.10, 0.90);
+      const chance = clamp(0.24 + state.player.stats.intelligence * 0.09 + gearBonus + 0.18 * freeCargoRatio(state) + healthModifier(state.player.health) - encounter.pursuit, 0.10, 0.90);
       if (random.next() < chance) {
         const lost = encounter.id === "early" ? null : loseInventory(state, 1);
         finishEncounter(state, "escape", lost ? `You clear the lane but drop ${lost.lost} ${lost.product.name} under the fence.` : "You saw the open lane before they did and reach the street with the bag intact.");
@@ -702,13 +842,13 @@
     } else if (choice === "fight" || choice === "draw") {
       const weapon = equippedWeapon(state);
       const firearm = choice === "draw";
-      const chance = clamp((firearm ? 0.28 + state.player.stats.aim * 0.09 : 0.30 + state.player.stats.grit * 0.09) + (weapon?.accuracy || 0) + healthModifier(state.player.health) - (firearm ? encounter.evasion : encounter.guard), 0.10, 0.90);
+      const chance = clamp((firearm ? 0.28 + state.player.stats.combat * 0.09 : 0.30 + state.player.stats.combat * 0.09) + (weapon?.accuracy || 0) + healthModifier(state.player.health) - (firearm ? encounter.evasion : encounter.guard), 0.10, 0.90);
       if (firearm) {
         state.player.heat = clamp(state.player.heat + weapon.heat, 0, 15);
         state.flags.firedWeaponDowntown = state.world.currentNeighborhoodId === "downtown";
       }
       if (random.next() < chance) {
-        const damage = weapon ? random.int(weapon.damage[0], weapon.damage[1]) + (firearm ? 0 : Math.floor(state.player.stats.grit / 2)) : random.int(4, 8) + state.player.stats.grit;
+        const damage = weapon ? random.int(weapon.damage[0], weapon.damage[1]) + (firearm ? 0 : Math.floor(state.player.stats.combat / 2)) : random.int(4, 8) + state.player.stats.combat;
         encounter.enemyHealth -= damage;
         if (encounter.enemyHealth <= 0) {
           if (firearm || encounter.id === "late") state.flags.seriousViolence = true;
@@ -726,6 +866,132 @@
     return state;
   }
 
+  function removeEquippedGear(state, slot) {
+    const gearId = state.player.gear.equipped[slot];
+    if (!gearId) return null;
+    state.player.gear.equipped[slot] = null;
+    state.player.gear.owned = state.player.gear.owned.filter((id) => id !== gearId);
+    return GEAR_BY_ID[gearId] || null;
+  }
+
+  function executeRobbery(inputState) {
+    const availability = robberyAvailability(inputState);
+    if (!availability.available) return inputState;
+    const state = copyState(inputState);
+    const random = makeRandom(state.run.rngState);
+    const success = random.next() < availability.chance;
+    state.stats.robbery.attempted = true;
+    let result;
+    if (success) {
+      const payout = random.int(180, 300);
+      state.player.cash += payout;
+      state.player.heat = clamp(state.player.heat + 2, 0, 15);
+      state.rival.pressure = clamp(state.rival.pressure + 1, 0, 15);
+      state.stats.robbery.success = true;
+      state.stats.robbery.payout = payout;
+      result = {
+        kind: "robbery", tone: "good", title: "The Emergency Score Works",
+        summary: `The Mini-Mart tip leads to an unattended contractor envelope. You clear $${payout} before the owner returns, but APD now has the vehicle description.`,
+        effects: [`+$${payout} cash`, "+2 Heat", "+1 Rook pressure"],
+      };
+    } else {
+      const damage = random.int(10, 18);
+      state.player.health = clamp(state.player.health - damage, 0, 100);
+      state.player.heat = clamp(state.player.heat + 3, 0, 15);
+      state.rival.pressure = clamp(state.rival.pressure + 2, 0, 15);
+      result = {
+        kind: "robbery", tone: "bad", title: "The Emergency Score Falls Apart",
+        summary: `The register is empty and the owner is waiting behind the stockroom door. You escape hurt, recognized, and without recovery money.`,
+        effects: [`-${damage} Health`, "+3 Heat", "+2 Rook pressure", "$0 payout"],
+      };
+    }
+    state.stats.majorDecisions.push(`Emergency robbery: ${success ? "success" : "failure"}`);
+    state.run.rngState = random.state;
+    logEntry(state, result.summary, result.tone);
+    const advanced = advanceRun(state, { reason: "ROBBERY", suppressStory: true });
+    if (advanced.run.status === "playing") advanced.run.pendingOperationResult = result;
+    return advanced;
+  }
+
+  function executeTakeover(inputState, areaId, includePlayer) {
+    const readiness = takeoverReadiness(inputState, areaId, includePlayer);
+    if (!readiness.available) return inputState;
+    const definition = TERRITORIES.find((item) => item.areaId === areaId);
+    const state = copyState(inputState);
+    const random = makeRandom(state.run.rngState);
+    const attackPower = crewPower(state, includePlayer);
+    const defensePower = state.world.territories[areaId].power;
+    const rounds = [];
+    let attackerWins = 0;
+    let defenderWins = 0;
+    for (let round = 1; round <= 3 && attackerWins < 2 && defenderWins < 2; round += 1) {
+      const attackRoll = random.int(-3, 3);
+      const defenseRoll = random.int(-3, 3);
+      const attackTotal = attackPower + attackRoll;
+      const defenseTotal = defensePower + defenseRoll;
+      const attackerWon = attackTotal > defenseTotal;
+      if (attackerWon) attackerWins += 1;
+      else defenderWins += 1;
+      rounds.push({ round, attackRoll, defenseRoll, attackTotal, defenseTotal, winner: attackerWon ? "player" : "rook" });
+    }
+    const won = attackerWins >= 2;
+    state.player.cash -= definition.attackCost;
+    state.stats.moneySpent.base += definition.attackCost;
+    state.stats.takeovers.attempts += 1;
+    state.world.territories[areaId].attempts += 1;
+    let title;
+    let summary;
+    const effects = [`-$${definition.attackCost} operation cost`];
+    if (won) {
+      state.stats.takeovers.wins += 1;
+      state.world.territories[areaId].owner = "player";
+      state.world.territories[areaId].capturedDay = state.run.day;
+      state.world.influence[areaId] = 4;
+      state.rival.pressure = clamp(state.rival.pressure - 2, 0, 15);
+      if (areaId === "downtown") state.world.productAccess.cocaine = true;
+      if (areaId === "airport_industrial") state.world.productAccess.meth = true;
+      title = `${AREA_BY_ID[areaId].name} Changes Hands`;
+      summary = `Your crew wins ${attackerWins}–${defenderWins}. Rook's people leave the block, and the neighborhood starts paying your operation.`;
+      effects.push("Influence set to Controlled", `+$${definition.dailyIncome} after each Night`, "4% better buying and selling", definition.special);
+    } else {
+      state.stats.takeovers.losses += 1;
+      state.player.heat = clamp(state.player.heat + 3, 0, 15);
+      state.rival.pressure = clamp(state.rival.pressure + 2, 0, 15);
+      effects.push("+3 Heat", "+2 Rook pressure");
+      const participants = recruitedCrew(state);
+      if (participants.length) {
+        const lowest = Math.min(...participants.map((person) => state.people.crew[person.id].loyalty));
+        const tied = participants.filter((person) => state.people.crew[person.id].loyalty === lowest);
+        const lost = random.pick(tied);
+        state.people.crew[lost.id].status = "gone";
+        state.people.crew[lost.id].assignment = null;
+        state.stats.takeovers.crewLost += 1;
+        effects.push(`${lost.name} is permanently out`);
+      }
+      if (includePlayer) {
+        const damage = random.int(20, 30);
+        state.player.health = clamp(state.player.health - damage, 0, 100);
+        effects.push(`-${damage} Health`);
+      }
+      if (defenderWins === 2 && attackerWins === 0) {
+        const destroyable = ["weapon", "armor"].filter((slot) => state.player.gear.equipped[slot]);
+        if (destroyable.length) {
+          const destroyed = removeEquippedGear(state, random.pick(destroyable));
+          effects.push(`${destroyed.name} destroyed in the shutout`);
+        }
+      }
+      title = `${AREA_BY_ID[areaId].name} Holds`;
+      summary = `Rook's crew wins ${defenderWins}–${attackerWins}. Your operation pays the cost, loses a person, and leaves the neighborhood under Rook.`;
+    }
+    const result = { kind: "takeover", tone: won ? "good" : "bad", title, summary, rounds, effects, areaId, won, attackPower, defensePower };
+    state.stats.majorDecisions.push(`${AREA_BY_ID[areaId].name} takeover: ${won ? "won" : "lost"}`);
+    state.run.rngState = random.state;
+    logEntry(state, summary, result.tone);
+    const advanced = advanceRun(state, { reason: "TAKEOVER", suppressStory: true });
+    if (advanced.run.status === "playing") advanced.run.pendingOperationResult = result;
+    return advanced;
+  }
+
   function reduceGame(inputState, action) {
     if (!inputState || !action || !action.type) return inputState;
     if (action.type === "NEW_RUN") return createRun({ seed: action.seed });
@@ -737,7 +1003,7 @@
       state.player.background = background.id;
       state.player.cash = background.cash;
       state.player.heat = background.heat;
-      state.player.stats = { aim: background.aim, grit: background.grit, instinct: background.instinct };
+      state.player.stats = { combat: background.combat, charisma: background.charisma, intelligence: background.intelligence };
       state.run.status = "playing";
       state.stats.startingNetWorth = background.cash - state.lender.balance;
       state.log = [];
@@ -745,10 +1011,14 @@
       return state;
     }
     if (action.type === "RESOLVE_ENCOUNTER") return reduceEncounter(inputState, action);
+    if (action.type === "ROBBERY") return executeRobbery(inputState);
+    if (action.type === "TAKEOVER") return executeTakeover(inputState, action.neighborhoodId, !!action.includePlayer);
 
     const state = copyState(inputState);
     if (state.run.status !== "playing" && action.type !== "DISMISS_DAY_SUMMARY") return inputState;
     if (action.type === "DISMISS_DAY_SUMMARY") { state.run.daySummary = null; return state; }
+    if (action.type === "ACKNOWLEDGE_OPERATION_RESULT") { state.run.pendingOperationResult = null; return state; }
+    if (state.run.pendingOperationResult) return inputState;
     if (state.run.pendingEncounter) return inputState;
     if (state.run.pendingEvent && action.type !== "RESOLVE_EVENT") return inputState;
 
@@ -781,7 +1051,7 @@
       const product = PRODUCT_BY_ID[action.productId], market = state.world.markets[state.world.currentNeighborhoodId];
       const qty = Math.max(0, Math.floor(action.qty || 0));
       if (!product || qty < 1 || !state.world.productAccess[product.id]) return inputState;
-      const cost = market.prices[product.id] * qty, available = market.availability[product.id] || 0;
+      const cost = tradeUnitPrices(state, product.id).buy * qty, available = market.availability[product.id] || 0;
       if (qty > available || cost > state.player.cash || cargoUsed(state) + qty > cargoCapacity(state)) return inputState;
       const item = state.player.inventory[product.id], totalQty = item.qty + qty;
       item.avgCost = ((item.avgCost * item.qty) + cost) / totalQty;
@@ -799,8 +1069,7 @@
       const qty = Math.max(0, Math.floor(action.qty || 0));
       if (!product || qty < 1 || state.player.inventory[product.id].qty < qty) return inputState;
       const item = state.player.inventory[product.id];
-      const influenceBonus = Math.min(0.04, state.world.influence[state.world.currentNeighborhoodId] * 0.01);
-      const unitPrice = Math.round(market.prices[product.id] * (0.95 + influenceBonus));
+      const unitPrice = tradeUnitPrices(state, product.id).sell;
       const total = unitPrice * qty, profit = total - item.avgCost * qty;
       item.qty -= qty;
       if (!item.qty) item.avgCost = 0;
@@ -930,9 +1199,9 @@
     }
     if (action.type === "RECRUIT_CREW") {
       if (!state.base.visiting || !CREW_BY_ID[action.crewId] || recruitedCrew(state).length >= 2) return inputState;
-      const person = CREW_BY_ID[action.crewId], crew = state.people.crew[action.crewId];
-      if (!crew.introduced || crew.recruited || state.player.cash < person.recruitCost) return inputState;
-      base.player.cash -= person.recruitCost; crew.recruited = true; crew.status = "active"; crew.loyalty += 1; crew.wageDue = person.wage; base.stats.moneySpent.crew += person.recruitCost;
+      const person = CREW_BY_ID[action.crewId], crew = state.people.crew[action.crewId], cost = recruitmentCost(state, action.crewId);
+      if (!crew.introduced || crew.recruited || state.player.cash < cost) return inputState;
+      base.player.cash -= cost; crew.recruited = true; crew.status = "active"; crew.loyalty += 1; crew.wageDue = person.wage; base.stats.moneySpent.crew += cost;
       logEntry(base, `${person.name} takes the chair at the garage table. The operation has another person to answer for.`, "good");
       return advanceRun(base, { reason: "RECRUIT_CREW" });
     }
@@ -980,6 +1249,12 @@
   }
 
   function selectRunSummary(state) {
+    const territories = TERRITORIES.map((definition) => ({
+      ...definition,
+      owner: state.world.territories[definition.areaId].owner,
+      capturedDay: state.world.territories[definition.areaId].capturedDay,
+      incomeCollected: state.world.territories[definition.areaId].incomeCollected,
+    }));
     return {
       ending: state.run.ending, endingLabel: endingLabel(state.run.ending), cash: state.player.cash,
       storedCash: state.base.storedCash, debt: state.lender.balance, inventoryValue: inventoryValue(state),
@@ -989,16 +1264,18 @@
       lenderRelationship: state.lender.relationship, rivalRelationship: state.rival.relationship,
       bestTrade: state.stats.bestTrade, largestLoss: state.stats.largestLoss, highestHeat: state.stats.highestHeat,
       productsMoved: { ...state.stats.productsMoved }, majorDecisions: [...state.stats.majorDecisions],
+      territories, robbery: { ...state.stats.robbery }, takeovers: { ...state.stats.takeovers },
     };
   }
 
   return {
-    VERSION, RUN_DAYS, SLOTS, SAVE_KEY, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, GEAR, BASE_UPGRADES, CREW,
+    VERSION, RUN_DAYS, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
     createRun, reduceGame, advanceRun, selectRunSummary,
     selectors: {
       cargoUsed, cargoCapacity, storedCargoUsed, storageCapacity, storedCashCapacity, inventoryValue, netWorth,
       operationScore, baseValue, gearValue, heatBand, priceSignal, influenceLabel, encounterChoices, endingLabel,
-      recruitedCrew,
+      recruitedCrew, workingCapital, safeDebtPayment, controlled, recruitmentCost, operationGearPower, crewPower,
+      territoryPowerEstimate, territoryBenefits, tradeUnitPrices, takeoverReadiness, robberyAvailability,
     },
   };
 });

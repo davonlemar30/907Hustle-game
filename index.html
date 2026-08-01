@@ -123,6 +123,16 @@
     .outcome { border:1px solid var(--line);padding:9px; }.outcome b { display:block;font-family:var(--mono);font-size:1.05rem; }
     .ending-title { color:var(--red2);font-size:1.8rem!important;text-align:center; }
     .recap { font-size:.72rem;color:#aaa;border-left:3px solid var(--red);padding-left:9px;margin:10px 0; }
+    .locked { opacity:.52;filter:grayscale(.6); }
+    .tag { display:inline-block;border:1px solid var(--line);padding:2px 6px;margin:2px;color:var(--muted);font-size:.62rem;text-transform:uppercase; }
+    .stat-grid,.track-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0; }
+    .track-grid { grid-template-columns:repeat(2,1fr); }
+    .stat-grid > div,.track-grid > div { border:1px solid var(--line);padding:8px;text-align:center; }
+    .stat-grid b,.track-grid b { display:block;font-family:var(--mono);font-size:1.05rem; }
+    .choice { text-align:left;margin-top:7px; }
+    .choice span { display:block;color:#aaa;font-size:.68rem;text-transform:none;letter-spacing:.02em;margin-top:3px; }
+    .section-label { margin:15px 2px 7px;color:var(--amber);font-weight:700;letter-spacing:.12em;text-transform:uppercase; }
+    .compact { margin:3px 0;font-size:.72rem; }
     @media (max-width:520px) {
       .top { padding:8px 8px 6px; }
       .brand { font-size:1.08rem; }
@@ -147,7 +157,8 @@
 </head>
 <body>
 <div id="root"></div>
-<script type="text/babel">
+<script type="text/babel" src="./ui.jsx"></script>
+<script type="text/plain" id="legacy-v1-ui-reference">
 const {useEffect,useMemo,useReducer,useState} = React;
 const C = window.GameCore;
 

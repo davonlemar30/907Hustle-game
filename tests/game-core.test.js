@@ -1,235 +1,30 @@
-const test = require("node:test");
-const assert = require("node:assert/strict");
-const GameCore = require("../game-core.js");
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const C=require('../game-core.js');
+const clone=value=>JSON.parse(JSON.stringify(value));
+function start(seed=907,backgroundId='runner'){return C.reduceGame(C.createRun({seed}),{type:'CHOOSE_BACKGROUND',backgroundId})}
+function uninterrupted(state){const next=clone(state);next.run.pendingEvent=null;next.run.pendingEncounter=null;next.run.daySummary=null;next.flags.maraIntroResolved=true;next.flags.eliOfferResolved=true;next.flags.earlyThreatResolved=true;next.flags.maraTruthResolved=true;next.flags.courierResolved=true;next.flags.miriOfferResolved=true;next.flags.toneOfferResolved=true;next.flags.midThreatResolved=true;next.flags.baseWatchResolved=true;next.flags.crewCrisisResolved=true;return next}
 
-function clearInterruptions(state) {
-  const next = JSON.parse(JSON.stringify(state));
-  next.run.pendingEvent = null;
-  next.run.daySummary = null;
-  return next;
-}
-
-test("seeded runs are reproducible", () => {
-  assert.deepEqual(GameCore.createRun({ seed: 907 }), GameCore.createRun({ seed: 907 }));
-  assert.notDeepEqual(GameCore.createRun({ seed: 907 }), GameCore.createRun({ seed: 908 }));
-});
-
-test("buy and sell stay inside a market visit", () => {
-  let state = GameCore.createRun({ seed: 907 });
-  const before = { day: state.run.day, slot: state.run.slot, advances: state.stats.pipelineAdvances };
-  const price = state.world.markets.north_star_lot.prices.weed;
-  state = GameCore.reduceGame(state, { type: "BUY", productId: "weed", qty: 2 });
-  assert.equal(state.run.day, before.day);
-  assert.equal(state.run.slot, before.slot);
-  assert.equal(state.stats.pipelineAdvances, before.advances);
-  assert.equal(state.player.cash, 350 - price * 2);
-  assert.equal(state.run.currentVisit.trades, 1);
-  state = GameCore.reduceGame(state, { type: "SELL", productId: "weed", qty: 1 });
-  assert.equal(state.run.slot, before.slot);
-  assert.equal(state.run.currentVisit.trades, 2);
-});
-
-test("ending a market visit advances once and updates every market", () => {
-  let state = GameCore.createRun({ seed: 22 });
-  const before = Object.fromEntries(GameCore.NEIGHBORHOODS.map((area) => [area.id, { ...state.world.markets[area.id].prices }]));
-  state = GameCore.reduceGame(state, { type: "END_MARKET" });
-  assert.equal(state.run.slot, 1);
-  assert.equal(state.stats.pipelineAdvances, 1);
-  assert.equal(state.stats.marketUpdates, 1);
-  for (const area of GameCore.NEIGHBORHOODS) {
-    assert.equal(state.world.markets[area.id].updatedAt, 1);
-    assert.notDeepEqual(state.world.markets[area.id].prices, before[area.id]);
-  }
-});
-
-test("all consuming actions route through the pipeline exactly once", () => {
-  const cases = [
-    [{ type: "END_MARKET" }, null],
-    [{ type: "LAY_LOW" }, null],
-    [{ type: "TRAVEL", neighborhoodId: "downtown" }, null],
-    [{ type: "HEAL", amount: 20, cost: 25 }, (s) => { s.player.health = 70; }],
-    [{ type: "PAY_DEBT", amount: 40 }, null],
-    [{ type: "BANK", amount: 40 }, null],
-    [{ type: "UNBANK", amount: 40 }, (s) => { s.player.banked = 50; }],
-    [{ type: "VISIT_SOCIAL" }, null],
-  ];
-  for (const [action, prepare] of cases) {
-    let state = GameCore.createRun({ seed: 500 });
-    if (prepare) prepare(state);
-    const next = GameCore.reduceGame(state, action);
-    assert.equal(next.stats.pipelineAdvances, 1, action.type);
-  }
-});
-
-test("invalid consuming actions do not advance", () => {
-  const state = GameCore.createRun({ seed: 40 });
-  const invalid = [
-    { type: "TRAVEL", neighborhoodId: "north_star_lot" },
-    { type: "HEAL", amount: 20, cost: 25 },
-    { type: "PAY_DEBT", amount: 9999 },
-    { type: "BANK", amount: 9999 },
-    { type: "UNBANK", amount: 10 },
-  ];
-  for (const action of invalid) {
-    const next = GameCore.reduceGame(state, action);
-    assert.equal(next.stats.pipelineAdvances, 0, action.type);
-  }
-});
-
-test("four advances roll into the next day with a summary", () => {
-  let state = GameCore.createRun({ seed: 101 });
-  for (let i = 0; i < 4; i += 1) {
-    state = clearInterruptions(GameCore.reduceGame(state, { type: "END_MARKET" }));
-  }
-  assert.equal(state.run.day, 2);
-  assert.equal(state.run.slot, 0);
-  assert.equal(state.stats.pipelineAdvances, 4);
-});
-
-test("Day 7 Night ends without exposing Day 8", () => {
-  let state = GameCore.createRun({ seed: 1 });
-  state.run.day = 7;
-  state.run.slot = 3;
-  state.player.heat = 1;
-  state.rival.pressure = 1;
-  state = GameCore.reduceGame(state, { type: "END_MARKET" });
-  assert.equal(state.run.status, "ended");
-  assert.equal(state.run.day, 7);
-  assert.equal(state.run.slot, 3);
-  assert.ok(state.run.ending);
-});
-
-test("net worth subtracts debt and includes local liquidation value", () => {
-  const state = GameCore.createRun({ seed: 9 });
-  const market = state.world.markets[state.world.currentNeighborhoodId];
-  state.player.inventory.weed.qty = 2;
-  assert.equal(
-    GameCore.selectors.netWorth(state),
-    state.player.cash + state.player.banked + market.prices.weed * 2 - state.lender.balance,
-  );
-});
-
-test("event resolution never advances time a second time", () => {
-  let state = GameCore.createRun({ seed: 7 });
-  state.run.pendingEvent = {
-    id: "test", title: "Test", description: "Test",
-    choices: [{ label: "Choose", effect: { cash: 5 }, result: "Done" }],
-  };
-  const before = state.stats.pipelineAdvances;
-  state = GameCore.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
-  assert.equal(state.stats.pipelineAdvances, before);
-  assert.equal(state.run.pendingEvent, null);
-});
-
-test("prices remain inside configured bounds over a full run", () => {
-  let state = GameCore.createRun({ seed: 1234 });
-  for (let i = 0; i < 27 && state.run.status === "playing"; i += 1) {
-    state = GameCore.reduceGame(clearInterruptions(state), { type: "END_MARKET" });
-  }
-  for (const area of GameCore.NEIGHBORHOODS) {
-    for (const product of GameCore.PRODUCTS) {
-      const price = state.world.markets[area.id].prices[product.id];
-      assert.ok(price >= product.min * 0.72, `${area.id}/${product.id} lower bound`);
-      assert.ok(price <= product.max * 1.2, `${area.id}/${product.id} upper bound`);
-    }
-  }
-});
-
-test("banking moves money once and never creates interest", () => {
-  let state = GameCore.createRun({ seed: 55 });
-  state = GameCore.reduceGame(state, { type: "BANK", amount: 100 });
-  assert.equal(state.player.cash, 250);
-  assert.equal(state.player.banked, 100);
-  state = clearInterruptions(state);
-  state = GameCore.reduceGame(state, { type: "UNBANK", amount: 40 });
-  assert.equal(state.player.cash, 290);
-  assert.equal(state.player.banked, 60);
-});
-
-test("crossing the overdue deadline applies one lender penalty", () => {
-  let state = GameCore.createRun({ seed: 91 });
-  state.run.day = 4;
-  state.run.slot = 3;
-  const heatBefore = state.player.heat;
-  state = GameCore.reduceGame(state, { type: "END_MARKET" });
-  assert.equal(state.run.day, 5);
-  assert.equal(state.lender.balance, 518);
-  assert.equal(state.lender.lastPenaltyDay, 5);
-  assert.equal(state.player.heat, heatBefore + 1);
-  assert.equal(state.lender.relationship, "demanding");
-  assert.equal(state.lender.feesAdded, 38);
-  assert.deepEqual(state.lender.penaltyHistory, [{ day: 5, slot: 0, amount: 38 }]);
-});
-
-test("loan details record partial payments and the payoff moment", () => {
-  let state = GameCore.createRun({ seed: 907 });
-  state.player.cash = 700;
-  state = GameCore.reduceGame(state, { type: "PAY_DEBT", amount: 180 });
-  state = clearInterruptions(state);
-  state = GameCore.reduceGame(state, { type: "PAY_DEBT", amount: 300 });
-  const details = GameCore.selectors.loanDetails(state);
-  assert.equal(state.lender.balance, 0);
-  assert.equal(details.principal, 480);
-  assert.equal(details.repaid, 480);
-  assert.equal(details.paymentCount, 2);
-  assert.deepEqual(details.paymentHistory.map((entry) => entry.amount), [180, 300]);
-  assert.deepEqual(details.clearedAt, { day: 1, slot: 1 });
-});
-
-test("additive loan ledger fields hydrate safely from an earlier One Good Run save", () => {
-  const state = GameCore.createRun({ seed: 12 });
-  delete state.lender.principal;
-  delete state.lender.feesAdded;
-  delete state.lender.paymentCount;
-  delete state.lender.paymentHistory;
-  delete state.lender.penaltyHistory;
-  delete state.lender.clearedAt;
-  const next = GameCore.reduceGame(state, { type: "PAY_DEBT", amount: 40 });
-  const details = GameCore.selectors.loanDetails(next);
-  assert.equal(details.principal, 480);
-  assert.equal(details.repaid, 40);
-  assert.equal(details.paymentCount, 1);
-  assert.equal(details.paymentHistory[0].amount, 40);
-});
-
-test("expired modifiers are removed by the unified pipeline", () => {
-  let state = GameCore.createRun({ seed: 77 });
-  state.effects.modifiers.push({ areaId: "downtown", productId: "cocaine", multiplier: 2, expiresAt: 0 });
-  state = GameCore.reduceGame(state, { type: "END_MARKET" });
-  assert.equal(state.effects.modifiers.length, 0);
-});
-
-test("critical heat produces an early Caught ending", () => {
-  let state = GameCore.createRun({ seed: 81 });
-  state.player.heat = 14;
-  state = GameCore.reduceGame(state, { type: "TRAVEL", neighborhoodId: "downtown" });
-  assert.equal(state.run.status, "ended");
-  assert.equal(state.run.ending, "caught");
-});
-
-test("a strong debt-free final slot earns One Good Run", () => {
-  let state = GameCore.createRun({ seed: 82 });
-  state.run.day = 7;
-  state.run.slot = 3;
-  state.lender.balance = 0;
-  state.player.cash = 800;
-  state.player.heat = 2;
-  state = GameCore.reduceGame(state, { type: "END_MARKET" });
-  assert.equal(state.run.ending, "one_good_run");
-});
-
-test("neighborhood product identities remain statistically distinct", () => {
-  let homeCocaine = 0;
-  let downtownCocaine = 0;
-  let homeMeth = 0;
-  let outerMeth = 0;
-  for (let seed = 1; seed <= 100; seed += 1) {
-    const state = GameCore.createRun({ seed });
-    homeCocaine += state.world.markets.north_star_lot.prices.cocaine;
-    downtownCocaine += state.world.markets.downtown.prices.cocaine;
-    homeMeth += state.world.markets.north_star_lot.prices.meth;
-    outerMeth += state.world.markets.airport_industrial.prices.meth;
-  }
-  assert.ok(downtownCocaine > homeCocaine * 1.2);
-  assert.ok(outerMeth > homeMeth * 1.35);
-});
+test('v2 run is seeded, isolated, and starts with background selection',()=>{const a=C.createRun({seed:91}),b=C.createRun({seed:91});assert.deepEqual(a,b);assert.equal(C.VERSION,2);assert.equal(C.SAVE_KEY,'907ogr_v2');assert.equal(a.run.status,'choosing_background');assert.equal(a.lender.balance,620);assert.equal(a.base.name,'North Star Garage')});
+test('three backgrounds create distinct valid stat lines',()=>{for(const b of C.BACKGROUNDS){const s=start(9,b.id);assert.equal(s.player.background,b.id);assert.deepEqual(s.player.stats,{aim:b.aim,grit:b.grit,instinct:b.instinct});assert.equal(s.player.cash,b.cash);assert.equal(s.run.status,'playing')}});
+test('buy and sell stay inside one market visit',()=>{let s=start();const before=[s.run.day,s.run.slot,s.stats.pipelineAdvances],price=s.world.markets.north_star_lot.prices.weed;s=C.reduceGame(s,{type:'BUY',productId:'weed',qty:2});assert.deepEqual([s.run.day,s.run.slot,s.stats.pipelineAdvances],before);assert.equal(s.player.cash,375-price*2);assert.equal(s.run.currentVisit.trades,1);s=C.reduceGame(s,{type:'SELL',productId:'weed',qty:1});assert.equal(s.stats.pipelineAdvances,0);assert.equal(s.run.currentVisit.trades,2)});
+test('locked products cannot trade',()=>{const s=start();const next=C.reduceGame(s,{type:'BUY',productId:'cocaine',qty:1});assert.strictEqual(next,s);assert.equal(s.world.productAccess.cocaine,false)});
+test('ending a visit advances exactly once and updates all markets',()=>{let s=uninterrupted(start(22));const before=clone(s.world.markets);s=C.reduceGame(s,{type:'END_MARKET'});assert.equal(s.run.slot,1);assert.equal(s.stats.pipelineAdvances,1);assert.equal(s.stats.marketUpdates,1);for(const a of C.NEIGHBORHOODS){assert.equal(s.world.markets[a.id].updatedAt,1);assert.notDeepEqual(s.world.markets[a.id].prices,before[a.id].prices)}});
+test('valid consuming actions invoke the pipeline once',()=>{const cases=[{a:{type:'END_MARKET'}},{a:{type:'LAY_LOW'}},{a:{type:'TRAVEL',neighborhoodId:'downtown'}},{a:{type:'HEAL',amount:20,cost:25},prep:s=>s.player.health=60},{a:{type:'PAY_DEBT',amount:40}},{a:{type:'VISIT_BASE'}},{a:{type:'VISIT_MARA'},prep:s=>{s.people.mara.met=true}},{a:{type:'INVEST_NEIGHBORHOOD',neighborhoodId:'north_star_lot'}}];for(const {a,prep} of cases){let s=uninterrupted(start(500));if(prep)prep(s);const n=C.reduceGame(s,a);assert.equal(n.stats.pipelineAdvances,1,a.type)}});
+test('invalid actions invoke the pipeline zero times',()=>{const s=start(40);for(const a of [{type:'TRAVEL',neighborhoodId:'north_star_lot'},{type:'HEAL',amount:20,cost:25},{type:'PAY_DEBT',amount:9999},{type:'UPGRADE_BASE',track:'storage'},{type:'RECRUIT_CREW',crewId:'eli'}]){const n=C.reduceGame(s,a);assert.equal(n.stats.pipelineAdvances,0,a.type)}});
+test('four slots roll into next day with summary for every reason',()=>{let s=uninterrupted(start(101));for(let i=0;i<4;i++)s=C.reduceGame(uninterrupted(s),{type:i===1?'LAY_LOW':'END_MARKET'});assert.equal(s.run.day,2);assert.equal(s.run.slot,0);assert.equal(s.stats.pipelineAdvances,4);assert.equal(s.run.daySummary.day,1)});
+test('Day 7 Night ends and never exposes Day 8',()=>{let s=uninterrupted(start(1));s.run.day=7;s.run.slot=3;s=C.reduceGame(s,{type:'END_MARKET'});assert.equal(s.run.status,'ended');assert.equal(s.run.day,7);assert.equal(s.run.slot,3);assert.ok(s.run.ending)});
+test('net worth includes garage and liquidation but subtracts debt',()=>{const s=start(9),price=s.world.markets.north_star_lot.prices.weed;s.player.inventory.weed.qty=2;s.base.storedInventory.weed.qty=1;s.base.storedCash=40;assert.equal(C.selectors.netWorth(s),s.player.cash+40+price*3-s.lender.balance)});
+test('market prices stay bounded over the full clock',()=>{let s=uninterrupted(start(1234));for(let i=0;i<28&&s.run.status==='playing';i++)s=C.reduceGame(uninterrupted(s),{type:'END_MARKET'});for(const a of C.NEIGHBORHOODS)for(const p of C.PRODUCTS){const price=s.world.markets[a.id].prices[p.id];assert.ok(price>=p.min*.72);assert.ok(price<=p.max*1.2)}});
+test('neighborhood and product identities remain distinct',()=>{let homeC=0,downC=0,homeM=0,outerM=0;for(let seed=1;seed<=100;seed++){const s=C.createRun({seed});homeC+=s.world.markets.north_star_lot.prices.cocaine;downC+=s.world.markets.downtown.prices.cocaine;homeM+=s.world.markets.north_star_lot.prices.meth;outerM+=s.world.markets.airport_industrial.prices.meth}assert.ok(downC>homeC*1.2);assert.ok(outerM>homeM*1.35)});
+test('base visit enables non-advancing storage after one tick',()=>{let s=uninterrupted(start(7));s=C.reduceGame(s,{type:'VISIT_BASE'});assert.equal(s.stats.pipelineAdvances,1);assert.equal(s.base.visiting,true);s.base.tracks.storage=1;const before=s.stats.pipelineAdvances,cash=s.player.cash;s=C.reduceGame(s,{type:'STORE_CASH',amount:100});assert.equal(s.stats.pipelineAdvances,before);assert.equal(s.player.cash,cash-100);assert.equal(s.base.storedCash,100)});
+test('each garage upgrade costs one slot and follows track order',()=>{let s=uninterrupted(start(8));s.player.cash=1000;s.base.visiting=true;s=C.reduceGame(s,{type:'UPGRADE_BASE',track:'security'});assert.equal(s.base.tracks.security,1);assert.equal(s.stats.moneySpent.base,140);assert.equal(s.stats.pipelineAdvances,1);s=uninterrupted(s);s.base.visiting=true;s=C.reduceGame(s,{type:'UPGRADE_BASE',track:'security'});assert.equal(s.base.tracks.security,2);assert.equal(s.stats.moneySpent.base,500)});
+test('gear purchase equips persistent gear and advances once',()=>{let s=uninterrupted(start(81));s.player.cash=1000;s.base.visiting=true;s=C.reduceGame(s,{type:'BUY_GEAR',gearId:'reliable_handgun'});assert.ok(s.player.gear.owned.includes('reliable_handgun'));assert.equal(s.player.gear.equipped.weapon,'reliable_handgun');assert.equal(s.stats.pipelineAdvances,1)});
+test('crew roster caps at two and assignments resolve through pipeline',()=>{let s=uninterrupted(start(88));s.player.cash=2000;s.base.visiting=true;for(const id of ['eli','miri','tone'])s.people.crew[id].introduced=true;s=C.reduceGame(s,{type:'RECRUIT_CREW',crewId:'eli'});s=uninterrupted(s);s.base.visiting=true;s=C.reduceGame(s,{type:'RECRUIT_CREW',crewId:'miri'});s=uninterrupted(s);s.base.visiting=true;const rejected=C.reduceGame(s,{type:'RECRUIT_CREW',crewId:'tone'});assert.equal(C.selectors.recruitedCrew(rejected).length,2);s=C.reduceGame(s,{type:'ASSIGN_CREW',crewId:'miri',assignment:'source_cocaine'});assert.equal(s.people.crew.miri.assignment,null);assert.equal(s.world.productAccess.cocaine,true)});
+test('Mara trust and influence are persistent measurable state',()=>{let s=uninterrupted(start(99));s.people.mara.met=true;const cash=s.player.cash;s=C.reduceGame(s,{type:'VISIT_MARA'});assert.equal(s.people.mara.trust,1);assert.equal(s.player.cash,cash-40);s=uninterrupted(s);s.player.cash=200;s=C.reduceGame(s,{type:'INVEST_NEIGHBORHOOD',neighborhoodId:'north_star_lot'});assert.equal(s.world.influence.north_star_lot,1)});
+test('story events do not consume a second slot when resolved',()=>{let s=start(107);s=C.reduceGame(s,{type:'END_MARKET'});assert.equal(s.run.pendingEvent.id,'mara_intro');const ticks=s.stats.pipelineAdvances,slot=s.run.slot;s=C.reduceGame(s,{type:'RESOLVE_EVENT',choiceIndex:0});assert.equal(s.stats.pipelineAdvances,ticks);assert.equal(s.run.slot,slot);assert.equal(s.people.mara.met,true)});
+test('recent-event control prevents an immediate generic repeat',()=>{let s=uninterrupted(start(119));s.run.recentEvents=['buyer_hurry'];s.player.heat=0;s.world.currentNeighborhoodId='north_star_lot';for(let i=0;i<4;i++){s=C.reduceGame(uninterrupted(s),{type:'END_MARKET'});assert.notEqual(s.run.pendingEvent?.id,'buyer_hurry')}});
+test('early confrontation appears by Day 2 and resolving it adds no clock tick',()=>{let s=start(31);for(let i=0;i<6&&!s.run.pendingEncounter;i++){s=C.reduceGame(s,{type:'END_MARKET'});if(s.run.pendingEvent)s=C.reduceGame(s,{type:'RESOLVE_EVENT',choiceIndex:0});if(s.run.daySummary)s=C.reduceGame(s,{type:'DISMISS_DAY_SUMMARY'})}assert.equal(s.run.pendingEncounter.id,'early');const before=s.stats.pipelineAdvances;s=C.reduceGame(s,{type:'RESOLVE_ENCOUNTER',choiceId:'pay'});assert.equal(s.stats.pipelineAdvances,before);assert.equal(s.flags.earlyThreatResolved,true)});
+test('encounter results are seeded reproducibly',()=>{function play(){let s=start(222,'enforcer');s.run.pendingEncounter={id:'early',title:'Test',description:'Test',enemyName:'Collector',enemyHealth:24,guard:.08,evasion:.05,pursuit:.1,attack:[5,10],pay:85,step:1,feedback:'Test',finishAfter:false};return C.reduceGame(s,{type:'RESOLVE_ENCOUNTER',choiceId:'fight'})}assert.deepEqual(play(),play())});
+test('payoff unlocks a persistent post-debt decision',()=>{let s=uninterrupted(start(65));s.player.cash=1000;s=C.reduceGame(s,{type:'PAY_DEBT',amount:620});assert.equal(s.lender.balance,0);assert.equal(s.lender.afterPayoffOffer,'available');s=uninterrupted(s);s.run.pendingEvent={id:'dre_after_payoff',title:'Door',description:'Door',choices:[{label:'Supplier',effect:{access:'cocaine',lenderTrust:1},result:'Open'}]};s=C.reduceGame(s,{type:'RESOLVE_EVENT',choiceIndex:0});assert.equal(s.world.productAccess.cocaine,true)});
+test('final plan creates late encounter and expanded summary',()=>{let s=uninterrupted(start(404));s.run.day=6;s.run.slot=0;s=C.reduceGame(s,{type:'PREPARE_FINAL_PLAN',planId:'escape'});assert.equal(s.run.finalPlan,'escape');s=uninterrupted(s);s.run.day=7;s=C.reduceGame(s,{type:'EXECUTE_FINAL_PLAN'});assert.equal(s.run.pendingEncounter.id,'late');s.people.mara.trust=4;s.run.pendingEncounter.finishAfter=true;s=C.reduceGame(s,{type:'RESOLVE_ENCOUNTER',choiceId:'pay'});assert.equal(s.run.status,'ended');assert.equal(s.run.ending,'mara_escape');const summary=C.selectRunSummary(s);assert.equal(summary.maraStatus,'trusted');assert.ok(Number.isFinite(summary.operationScore))});

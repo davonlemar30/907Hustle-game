@@ -23,3 +23,7 @@ test("event and operation results expose decisions and consequences", () => {
 test("mobile primary controls retain a 44px target and six-column navigation", () => {
   assert.match(css, /min-height:44px/); assert.match(css, /grid-template-columns:repeat\(6,1fr\)/);
 });
+test("shared trade modal exposes signed transaction projections", () => {
+  for (const token of ["tradeProjection", "Total cost", "Revenue", "Cost basis", "Profit", "Loss", "Cash after", "Cargo after", "Recent local context", "signedMoney"]) assert.ok(ui.includes(token), token);
+  assert.match(css, /trade-projection/); assert.match(css, /trade-result\.profit/); assert.match(css, /trade-result\.loss/);
+});

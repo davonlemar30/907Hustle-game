@@ -1,6 +1,7 @@
 const { useEffect, useReducer, useState } = React;
 const C = window.GameCore;
 const money = (value) => `$${Math.round(value || 0)}`;
+const signedMoney = (value) => `${value >= 0 ? "+" : "−"}$${Math.abs(Math.round(value || 0))}`;
 const areaOf = (state) => C.NEIGHBORHOODS.find((area) => area.id === state.world.currentNeighborhoodId);
 
 function loadRun() {
@@ -138,11 +139,40 @@ function Recovery({ state, dispatch }) {
 
 function Modal({ title, children }) { return <div className="modal-backdrop"><div className="modal"><h2>{title}</h2>{children}</div></div>; }
 function TradeModal({ state, productId, dispatch, onClose }) {
-  const [mode, setMode] = useState("buy"); const [qty, setQty] = useState(1);
-  const product = C.PRODUCTS.find((item) => item.id === productId); const market = state.world.markets[state.world.currentNeighborhoodId]; const item = state.player.inventory[productId]; const prices = C.selectors.tradeUnitPrices(state, productId);
+  const [mode, setMode] = useState("buy");
+  const [qty, setQty] = useState(1);
+  const product = C.PRODUCTS.find((item) => item.id === productId);
+  const market = state.world.markets[state.world.currentNeighborhoodId];
+  const item = state.player.inventory[productId];
+  const prices = C.selectors.tradeUnitPrices(state, productId);
   const maxBuy = Math.min(market.availability[productId], C.selectors.cargoCapacity(state) - C.selectors.cargoUsed(state), Math.floor(state.player.cash / prices.buy));
-  const max = mode === "buy" ? maxBuy : item.qty; const selected = Math.max(0, Math.min(qty, max));
-  return <Modal title={`${product.name} trade`}><p>Prices stay locked until you end this market visit.</p><div className="btn-row"><button className={`btn ${mode === "buy" ? "good-btn" : "secondary"}`} onClick={() => { setMode("buy"); setQty(1); }}>Buy</button><button className={`btn ${mode === "sell" ? "primary" : "secondary"}`} onClick={() => { setMode("sell"); setQty(1); }}>Sell</button></div><div className="trade-stats"><div className="trade-stat"><small>Unit price</small><b>{money(mode === "buy" ? prices.buy : prices.sell)}</b></div><div className="trade-stat"><small>Maximum</small><b>{max}</b></div></div><div className="qty"><button className="btn secondary qty-wide" onClick={() => setQty(Math.max(1, selected - 5))}>−5</button><button className="btn secondary" onClick={() => setQty(Math.max(1, selected - 1))}>−</button><input type="number" min="1" max={max} value={selected} onChange={(event) => setQty(Number(event.target.value))} /><button className="btn secondary" onClick={() => setQty(Math.min(max, selected + 1))}>+</button><button className="btn secondary" onClick={() => setQty(Math.min(max, selected + 5))}>+5</button><button className="btn secondary" onClick={() => setQty(max)}>MAX</button></div><div className="btn-row"><button className="btn secondary" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!selected} onClick={() => { dispatch({ type: mode === "buy" ? "BUY" : "SELL", productId, qty: selected }); onClose(); }}>{mode} {selected}</button></div></Modal>;
+  const max = mode === "buy" ? maxBuy : item.qty;
+  const selected = Math.max(0, Math.min(qty, max));
+  const projection = C.selectors.tradeProjection(state, productId, selected, mode);
+  const resultIsProfit = projection.profitLoss >= 0;
+  return <Modal title={`${product.name} trade`}>
+    <p>Prices stay locked until you end this market visit.</p>
+    <div className="btn-row">
+      <button className={`btn ${mode === "buy" ? "good-btn" : "secondary"}`} onClick={() => { setMode("buy"); setQty(1); }}>Buy</button>
+      <button className={`btn ${mode === "sell" ? "primary" : "secondary"}`} onClick={() => { setMode("sell"); setQty(1); }}>Sell</button>
+    </div>
+    <div className="trade-stats"><div className="trade-stat"><small>Unit price</small><b>{money(projection.unitPrice)}</b></div><div className="trade-stat"><small>Maximum</small><b>{max}</b></div></div>
+    <div className="trade-projection" aria-live="polite">
+      {mode === "buy" ? <>
+        <Outcome label="Total cost" value={money(projection.purchaseCost)} />
+        <Outcome label="Cash after" value={money(projection.cashAfter)} />
+        <Outcome label="Cargo after" value={`${projection.cargoAfter}/${projection.cargoCapacity}`} />
+        <div className="trade-context"><span>Recent local context</span><b>{projection.localContext.label}</b></div>
+      </> : <>
+        <Outcome label="Revenue" value={money(projection.revenue)} />
+        <Outcome label="Cost basis" value={money(projection.costBasis)} />
+        <div className={`trade-result ${resultIsProfit ? "profit" : "loss"}`}><span>{resultIsProfit ? "Profit" : "Loss"}</span><b>{signedMoney(projection.profitLoss)}</b></div>
+        <Outcome label="Cash after" value={money(projection.cashAfter)} />
+      </>}
+    </div>
+    <div className="qty"><button className="btn secondary qty-wide" onClick={() => setQty(Math.max(1, selected - 5))}>−5</button><button className="btn secondary" onClick={() => setQty(Math.max(1, selected - 1))}>−</button><input aria-label="Trade quantity" type="number" min="1" max={max} value={selected} onChange={(event) => setQty(Number(event.target.value))} /><button className="btn secondary" onClick={() => setQty(Math.min(max, selected + 1))}>+</button><button className="btn secondary" onClick={() => setQty(Math.min(max, selected + 5))}>+5</button><button className="btn secondary" onClick={() => setQty(max)}>MAX</button></div>
+    <div className="btn-row trade-confirm"><button className="btn secondary" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!selected} onClick={() => { dispatch({ type: mode === "buy" ? "BUY" : "SELL", productId, qty: selected }); onClose(); }}>{mode} {selected}</button></div>
+  </Modal>;
 }
 function BackgroundModal({ dispatch }) { return <Modal title="Choose your background"><p>Every background starts with $375, 10 cargo, and the same debt. Your strengths change how you solve the week.</p>{C.BACKGROUNDS.map((background) => <button className="btn full choice secondary" key={background.id} onClick={() => dispatch({ type: "CHOOSE_BACKGROUND", backgroundId: background.id })}>{background.name}<span>Combat {background.combat} · Charisma {background.charisma} · Intelligence {background.intelligence}. {background.description}</span></button>)}</Modal>; }
 function EventModal({ event, dispatch }) { return <Modal title={event.title}><div className="outcome-grid"><Outcome label="Who" value={event.who} /><Outcome label="Where" value={event.where} /></div><p>{event.description}</p><p className="warn"><b>Stakes:</b> {event.stakes}</p>{event.choices.map((choice, index) => <button className="btn full choice secondary" key={choice.label} onClick={() => dispatch({ type: "RESOLVE_EVENT", choiceIndex: index })}>{choice.label}<span>{choice.preview}</span></button>)}</Modal>; }

@@ -266,6 +266,48 @@
     const sell = Math.round(marketPriceValue * (0.96 + charismaBonus + influenceBonus + (control ? 0.04 : 0)));
     return { market: marketPriceValue, buy, sell };
   }
+  // Inventory uses weighted-average cost. This pure projection is shared by the
+  // UI and reducer so confirmation totals cannot drift from settled trades.
+  function tradeProjection(state, productId, quantity, mode) {
+    const product = PRODUCT_BY_ID[productId];
+    const item = state.player.inventory[productId];
+    const qty = Math.max(0, Math.floor(Number(quantity) || 0));
+    if (!product || !item || (mode !== "buy" && mode !== "sell")) return null;
+    const prices = tradeUnitPrices(state, productId);
+    const unitPrice = mode === "buy" ? prices.buy : prices.sell;
+    const total = unitPrice * qty;
+    const costBasis = item.avgCost * qty;
+    const market = state.world.markets[state.world.currentNeighborhoodId];
+    const history = market.history[productId] || [];
+    const previous = history.length > 1 ? history[history.length - 2] : null;
+    const localContext = previous == null ? {
+      available: false,
+      label: "No earlier local price recorded",
+      previous: null,
+      delta: null,
+    } : {
+      available: true,
+      label: prices.market === previous ? `Steady from the prior local price of $${previous}` : `${prices.market > previous ? "Up" : "Down"} $${Math.abs(prices.market - previous)} from the prior local price of $${previous}`,
+      previous,
+      delta: prices.market - previous,
+    };
+    return {
+      mode,
+      productId,
+      quantity: qty,
+      unitPrice,
+      total,
+      purchaseCost: mode === "buy" ? total : 0,
+      revenue: mode === "sell" ? total : 0,
+      averageCost: item.avgCost,
+      costBasis: mode === "sell" ? costBasis : 0,
+      profitLoss: mode === "sell" ? total - costBasis : 0,
+      cashAfter: state.player.cash + (mode === "sell" ? total : -total),
+      cargoAfter: cargoUsed(state) + (mode === "buy" ? qty : -qty),
+      cargoCapacity: cargoCapacity(state),
+      localContext,
+    };
+  }
   function takeoverReadiness(state, areaId, includePlayer) {
     const definition = TERRITORIES.find((item) => item.areaId === areaId);
     const territory = state.world.territories[areaId];
@@ -1051,7 +1093,8 @@
       const product = PRODUCT_BY_ID[action.productId], market = state.world.markets[state.world.currentNeighborhoodId];
       const qty = Math.max(0, Math.floor(action.qty || 0));
       if (!product || qty < 1 || !state.world.productAccess[product.id]) return inputState;
-      const cost = tradeUnitPrices(state, product.id).buy * qty, available = market.availability[product.id] || 0;
+      const projection = tradeProjection(state, product.id, qty, "buy");
+      const cost = projection.purchaseCost, available = market.availability[product.id] || 0;
       if (qty > available || cost > state.player.cash || cargoUsed(state) + qty > cargoCapacity(state)) return inputState;
       const item = state.player.inventory[product.id], totalQty = item.qty + qty;
       item.avgCost = ((item.avgCost * item.qty) + cost) / totalQty;
@@ -1069,8 +1112,9 @@
       const qty = Math.max(0, Math.floor(action.qty || 0));
       if (!product || qty < 1 || state.player.inventory[product.id].qty < qty) return inputState;
       const item = state.player.inventory[product.id];
-      const unitPrice = tradeUnitPrices(state, product.id).sell;
-      const total = unitPrice * qty, profit = total - item.avgCost * qty;
+      const projection = tradeProjection(state, product.id, qty, "sell");
+      const unitPrice = projection.unitPrice;
+      const total = projection.revenue, profit = projection.profitLoss;
       item.qty -= qty;
       if (!item.qty) item.avgCost = 0;
       state.player.cash += total;
@@ -1275,7 +1319,7 @@
       cargoUsed, cargoCapacity, storedCargoUsed, storageCapacity, storedCashCapacity, inventoryValue, netWorth,
       operationScore, baseValue, gearValue, heatBand, priceSignal, influenceLabel, encounterChoices, endingLabel,
       recruitedCrew, workingCapital, safeDebtPayment, controlled, recruitmentCost, operationGearPower, crewPower,
-      territoryPowerEstimate, territoryBenefits, tradeUnitPrices, takeoverReadiness, robberyAvailability,
+      territoryPowerEstimate, territoryBenefits, tradeUnitPrices, tradeProjection, takeoverReadiness, robberyAvailability,
     },
   };
 });

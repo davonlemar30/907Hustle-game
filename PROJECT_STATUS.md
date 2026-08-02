@@ -23,6 +23,20 @@ The approved third-playtest pass is complete:
 7. Territory defeat permanently removes a lowest-loyalty participating crew member, adds Heat and Rook pressure, injures a participating player, and can destroy an equipped weapon or vest after a shutout. Retrying remains possible while the territory is uncontrolled.
 8. Territory victory sets influence to Controlled, improves local buy/sell prices by 4%, lowers travel risk by one, pays daily income, and unlocks the approved neighborhood special.
 
+## Fourth playtest contained pass — Phase 1
+
+The fourth mobile playthrough audit is recorded in `FOURTH_PLAYTEST_AUDIT.md`. To avoid combining several unreviewed systems, this code pass implements only transaction clarity:
+
+- Desktop and mobile continue to share one trade modal; the audit confirmed both previously lacked projections.
+- Existing weighted-average inventory accounting is preserved. Purchases merge cost pools; partial sales retain the same average; storage/retrieval also merge by weighted average.
+- A pure `tradeProjection` selector now supplies both the confirmation UI and reducer with the same unit price, total, cost basis, profit/loss, cash-after, cargo-after, and local-history comparison.
+- Buy mode shows total cost, cash after, cargo after, and recent local price context when a prior observation exists.
+- Sell mode shows revenue, weighted-average cost basis, signed and text-labeled Profit or Loss, and cash after. Color is supplemental rather than the only result signal.
+- The confirmation row remains visible with a sticky mobile treatment on short screens.
+- Save version/key remain v3 / `907ogr_v3`; this selector/UI addition requires no migration.
+
+The audit also grounds later proposals for imperfect market intelligence, Mara introduction/invitation/Date Night progression, recruitment summaries, character callbacks, and progressive disclosure. Those systems are not included in this commit.
+
 ## Approved territory values
 
 | Neighborhood | Rook Power | Attack cost | Daily income | Special |
@@ -45,8 +59,8 @@ Every consuming action still follows the single advance pipeline. Buy and sell r
 
 Command: `node --test tests/*.test.js`
 
-- 23 passed, 0 failed.
-- Covers v3/save isolation, exact background lines, non-advancing trade, one-slot pipeline behavior, all-market updates, rollover summaries, Day 7 termination, seeded reproducibility, market bounds and movement, debt-aware net worth, safe debt reserve, payoff behavior, robbery gates, territory constants, Intelligence estimates, takeover rounds, control benefits/income, complete event-writing contract, expanded summaries, v0.5 shell labels, removed legacy UI, and 44px mobile controls.
+- 29 passed, 0 failed.
+- Adds weighted-average accounting, projected buy/sell settlement parity, signed profit/loss, unavailable/directional local price context, v3 JSON hydration, and shared trade-modal contract coverage to the existing clock, market, event, relationship, territory, summary, shell, and touch-target tests.
 
 ### Deterministic simulation
 
@@ -60,9 +74,12 @@ Command: `node tests/simulate-runs.js 200`
 
 ### Browser and mobile QA
 
-- Chrome smoke passed: new v3 run, Hustler selection, buy without a clock tick, End Market with exactly one tick, event context/preview rendering, event resolution without another tick, and Operations/territory visibility.
+- Chrome hydrated the existing v3 autosave and rendered the new shared modal without migration.
+- Buy quantity changed total cost, cash after, and cargo after immediately; recent local context correctly reported a $3 decline from the prior local price.
+- Sell mode displayed revenue, cost basis, `Loss −$3`, and cash after for the hydrated inventory.
 - No application console errors.
-- 320×568, 375×667, 390×844, and 430×932: zero horizontal overflow and zero visible buttons below 44px.
+- 320×568, 375×667, 390×844, and 430×932: zero horizontal overflow, zero visible buttons below 44px, and the confirmation row visible without preliminary scrolling.
+- 375×560 reduced-height Safari-chrome stress check also passed. The 320×568 modal becomes internally scrollable, but its sticky confirmation remains visible.
 
 ## Known limitations
 
@@ -71,8 +88,12 @@ Command: `node tests/simulate-runs.js 200`
 - Robbery and territory operations are intentionally single prototypes, not broad crime or faction systems.
 - Ordinary street confrontations still use the compact three-step encounter model.
 - Crew assignments and the four garage upgrade tracks remain available, but the simplified v0.5 Operations UI prioritizes recovery and territory over exposing every assignment/upgrade control.
+- Travel still lacks last-seen prices, observation age, rendered rumors, and purchasable intelligence; this remains the approved next phase.
+- Mara's introduction gates her deeper scene, but there is no explicit invitation/Date Night state or relationship history surface yet.
+- Crew introduction events still do not expose recruitment cost, recurring wage, crew-slot use, time cost, primary benefit, and liability together.
+- Finance and People do not yet use the proposed one-open-section progressive-disclosure pattern.
 - No telemetry export, screen-reader audit, production bundling, or offline asset packaging has been completed.
 
 ## Next recommended single task
 
-Run three human Alpha v0.5 sessions per background on mobile and desktop, recording whether players can recover working capital, pay Dre, recruit/equip a crew, understand Power, and attempt at least one territory takeover before Day 7. Tune economy and Power constants only after that evidence is collected.
+Implement Phase 2 market intelligence as an isolated schema/test pass: authored neighborhood/product tendencies, last-seen prices, explicit observation age, unknown/unvisited states, and source-labeled expiring rumors. Do not add a guaranteed “best route” answer.

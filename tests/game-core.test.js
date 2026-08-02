@@ -36,6 +36,61 @@ test("buy and sell stay in one locked market visit", () => {
   assert.equal(state.run.slot, beforeSlot); assert.equal(state.run.currentVisit.trades, 2);
 });
 
+test("weighted-average cost remains correct across buys and a partial sale", () => {
+  let state = run(); state.player.cash = 5000; state.world.markets.north_star_lot.availability.weed = 10;
+  state.world.markets.north_star_lot.prices.weed = 20;
+  state = C.reduceGame(state, { type: "BUY", productId: "weed", qty: 2 });
+  const firstCost = C.selectors.tradeUnitPrices(state, "weed").buy;
+  state.world.markets.north_star_lot.prices.weed = 40;
+  state.world.markets.north_star_lot.availability.weed = 10;
+  const secondCost = C.selectors.tradeUnitPrices(state, "weed").buy;
+  state = C.reduceGame(state, { type: "BUY", productId: "weed", qty: 3 });
+  assert.equal(state.player.inventory.weed.avgCost, ((firstCost * 2) + (secondCost * 3)) / 5);
+  const average = state.player.inventory.weed.avgCost;
+  state = C.reduceGame(state, { type: "SELL", productId: "weed", qty: 2 });
+  assert.equal(state.player.inventory.weed.qty, 3);
+  assert.equal(state.player.inventory.weed.avgCost, average);
+});
+
+test("trade projections match settled buy and sell totals", () => {
+  let state = run(); state.player.cash = 500; state.world.markets.north_star_lot.prices.weed = 50; state.world.markets.north_star_lot.availability.weed = 10;
+  const buy = C.selectors.tradeProjection(state, "weed", 3, "buy");
+  assert.equal(buy.purchaseCost, buy.unitPrice * 3); assert.equal(buy.cashAfter, 500 - buy.purchaseCost); assert.equal(buy.cargoAfter, 3);
+  state = C.reduceGame(state, { type: "BUY", productId: "weed", qty: 3 });
+  assert.equal(state.player.cash, buy.cashAfter);
+  state.world.markets.north_star_lot.prices.weed = 80;
+  const sell = C.selectors.tradeProjection(state, "weed", 2, "sell");
+  const cashBefore = state.player.cash;
+  assert.equal(sell.costBasis, state.player.inventory.weed.avgCost * 2);
+  assert.equal(sell.profitLoss, sell.revenue - sell.costBasis);
+  state = C.reduceGame(state, { type: "SELL", productId: "weed", qty: 2 });
+  assert.equal(state.player.cash, cashBefore + sell.revenue);
+});
+
+test("trade projection labels profit and loss through signed numeric results", () => {
+  const state = run(); state.player.inventory.weed = { qty: 5, avgCost: 60 }; state.world.markets.north_star_lot.prices.weed = 100;
+  const profit = C.selectors.tradeProjection(state, "weed", 2, "sell"); assert.ok(profit.profitLoss > 0);
+  state.world.markets.north_star_lot.prices.weed = 20;
+  const loss = C.selectors.tradeProjection(state, "weed", 2, "sell"); assert.ok(loss.profitLoss < 0);
+});
+
+test("recent local price context is unavailable without history and directional when available", () => {
+  const state = run(); state.world.markets.north_star_lot.prices.weed = 40; state.world.markets.north_star_lot.history.weed = [40];
+  let projection = C.selectors.tradeProjection(state, "weed", 1, "buy");
+  assert.equal(projection.localContext.available, false); assert.match(projection.localContext.label, /No earlier/);
+  state.world.markets.north_star_lot.history.weed = [30, 40];
+  projection = C.selectors.tradeProjection(state, "weed", 1, "buy");
+  assert.equal(projection.localContext.available, true); assert.equal(projection.localContext.delta, 10); assert.match(projection.localContext.label, /Up \$10/);
+});
+
+test("v3 autosave state survives JSON hydration without migration", () => {
+  let state = run(5150); state.player.cash = 777; state.player.inventory.weed = { qty: 4, avgCost: 31.25 };
+  const hydrated = JSON.parse(JSON.stringify(state));
+  assert.equal(hydrated.version, C.VERSION); assert.equal(hydrated.player.inventory.weed.avgCost, 31.25);
+  const next = C.reduceGame(hydrated, { type: "SELL", productId: "weed", qty: 1 });
+  assert.equal(next.player.inventory.weed.qty, 3);
+});
+
 test("end market is the single clock and world pipeline", () => {
   const state = run(); const next = quietAdvance(state);
   assert.equal(next.run.slot, 1); assert.equal(next.stats.pipelineAdvances, 1); assert.equal(next.stats.marketUpdates, 1);

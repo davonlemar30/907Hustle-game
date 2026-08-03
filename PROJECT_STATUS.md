@@ -1,45 +1,42 @@
 # 907Hustle: One Good Run — Project Status
 
-Last updated: 2026-08-02 (America/Anchorage)
+Last updated: 2026-08-03 (America/Anchorage)
 
 ## Current baseline
 
-- Alpha v0.6 onboarding and continuity pass is implemented on `agent/alpha-v0-6-onboarding-continuity`, based on merged `main` commit `7084504f` (PR #45).
-- Pre-existing `.DS_Store` modifications remain untouched and outside the project diff.
+- Alpha v0.7 story pass is implemented on `claude/907hustle-story-playstyles-d5huyw`, based on merged `main` commit `0e07a00` (PR #46).
 - Active runtime: `index.html`, `v05.css`, `game-core.js`, and `ui.jsx`.
-- Save schema/key remain version 3 / `907ogr_v3`; older save keys remain untouched.
-- Fifth-playtest decisions and verification are recorded in `FIFTH_PLAYTEST_AUDIT.md`.
+- Save schema/key remain version 3 / `907ogr_v3`. All Alpha v0.7 state is additive.
+- Decisions and verification are recorded in `SIXTH_PLAYTEST_AUDIT.md`; writing reference in `STORY_BIBLE.md`.
+- `events.js`, `script.js`, `style.css`, `combat.js`, and `907hustle/` are legacy and not loaded. See `README.md`.
 
-## Alpha v0.6 implementation
+## Alpha v0.7 implementation
 
-1. A dedicated title screen uses the supplied local artwork and exposes Load Game, New Game, How to Play, valid-save preview, corrupt-save handling, overwrite confirmation, and exact autosave resume.
-2. New players choose Silver-Tongued Hustler or Steady-Hand Shooter. Strategist remains an internal legacy edge and old Strategist saves hydrate normally.
-3. Centralized feature availability opens Travel/Operations after the first market period, People after a recurring introduction, and Recovery when Health, Heat, story, or returning progress makes it relevant.
-4. Primary navigation is Market, Travel, People, and More. The HUD shows Day/Time, Cash, and Heat; a one-tap Status drawer reveals district, debt, Health, cargo, and crew Power.
-5. People is a nested hub for Key People, Crew, and Recent History. Operations is a nested hub for Quick Score, Territory, Gear, and Safehouse.
-6. Mara now receives a clear Night Owl introduction with flirt/friendly/distant history before her parking-lot threat can occur. Runs without that context receive a Mara-free early threat.
-7. Eli now progresses through introduction, contact/test availability, a $35 time-consuming test route, recruitable status, and active crew. Rejection can receive a later callback.
-8. Trade projections remain shared between UI and reducer; empty Recent Local Context is omitted until a prior observation exists.
-9. Player-facing time copy uses parts of day. Internal `run.slot` and equipment-slot identifiers remain unchanged.
-10. Quick Score replaces Emergency Robbery as a sub-$150 comeback action available at most once per in-game day. Repeated weekly attempts become less likely and more dangerous; failures do not permanently remove the option.
-11. Finance includes +$25/+50/+100, Safe Maximum, and Pay Full controls with clamped payment/cash/debt previews and the $150 reserve warning.
-12. Safehouse surfaces protected cash, stored inventory, upgrades, and crew assignments. Recovery reveals treatment progressively and previews Lay Low accurately.
-13. Player-facing locations are Spenard, Downtown, and Industrial Service Roads, with North Star Garage and Night Owl Mini-Mart as named Spenard stops. Internal location IDs remain compatible.
+1. The linear `scheduleStory` ladder is replaced by `STORY_REGISTRY`: 30 declarative descriptors carrying chain, stage, classification, trigger tier, gating, cooldown, weight, and an exit condition.
+2. Selection runs in three tiers. `reactive` beats fire on their cause; `chain` beats roll at 0.30 with a +0.16 pity bonus; `ambient` beats use the existing risk formula plus a +0.16 quiet-week bonus. Opening variance measures 26 of 30 distinct sequences across seeds, against exactly one under v0.6.
+3. An anti-monopoly filter drops a chain from the pool after two consecutive beats whenever anything else is eligible, and `STORY_BEATS_PER_DAY` caps the week at two story beats per day.
+4. Mara has a six-stage arc with a want independent of the player (a Ship Creek dispatch job that public association with the operation would cost her), an optional evening, a boundary scene gated on trust, a threat, and an aftermath that branches on treatment.
+5. The Day 2 threat is now always the Mara-free `early_street`. Her sedan encounter moved to stage 5, Day 5 onward, so the run no longer endangers her before the player has context.
+6. Three Day 7 Mara outcomes: `mara_escape`, the new `mara_clear` (she takes the Monday interview and you go your own way — a separation, not a failure), and the new `mara_gone`.
+7. Nine repeatable one-off street events were added, five of which involve no criminal transaction.
+8. A copy audit scored all 20 active beats against the Task 7A standard; all 14 inherited v0.6 events failed on description and result length and were rewritten. Effects, flags, and gating are unchanged.
+9. An optional Street Name is offered before edge selection: 16 characters, sanitized to `[A-Za-z0-9 '-.]`, with an edge-derived default when skipped and exactly six approved usage sites.
+10. `End Market` became `Finish Trading` with a sub-label naming the part of day it advances to. Nine further player-facing strings were rewritten; `Lay Low` is unchanged.
+11. The title screen gained three aspect-ratio tiers. The portrait tier is byte-identical to v0.6; wide viewports switch to `contain` over a blurred self-backdrop instead of discarding ~65% of the artwork.
 
 ## Architecture
 
-`Title/save inspection → createRun or hydrateRun → React useReducer → reduceGame → single advanceRun pipeline → v3 autosave`
+`Title/save inspection → createRun or hydrateRun → React useReducer → reduceGame → single advanceRun pipeline → scheduleStory → v3 autosave`
 
-`game-core.js` remains a UMD domain module exposed as `window.GameCore` and `module.exports`. Seeded randomness, save normalization, feature availability, markets, events, contacts, Quick Score, takeovers, clock/world pressure, endings, and selectors live in the core. React presentation and screen-local nested navigation remain in `ui.jsx`.
+`game-core.js` remains a UMD domain module exposed as `window.GameCore` and `module.exports`. The story registry, chain definitions, and three-tier selector live in the core alongside markets, contacts, encounters, and endings. `ui.jsx` remains presentation only and renders no registry metadata.
 
-All time-consuming game actions still route through `advanceRun` exactly once. Trades remain non-advancing within a locked market visit; event/encounter/result acknowledgement does not add a second tick.
+All time-consuming actions still route through `advanceRun` exactly once. Story beats are delivered at the end of an advance that has already ticked, so resolving an event never adds a second tick.
 
 ## Save compatibility
 
-- No version bump was required.
-- `hydrateRun` validates v3 structure and fills additive defaults without rewriting the old key.
-- Legacy Strategist, Mara, Eli, and robbery states are covered.
-- Legacy robbery fields normalize into attempts, successes, failures, total payout, and last attempted day while retained summary aliases prevent old surfaces from breaking.
+- No version bump. `run.eventHistory`, `run.lastChainFired`, `run.chainStreak`, `run.lastChainSlot`, `run.lastBeatSlot`, `run.chainBeatsToday`, `run.chainBeatsDay`, `player.streetName`, `player.streetNameChosen`, `people.mara.chainStage`, and `people.mara.jobAtRisk` are additive and fill through `mergeDefaults`.
+- A pre-v0.7 save is constructed and hydrated in `tests/game-core.test.js`; its preview reports `Unnamed run` and the run continues to play.
+- Existing Mara flag names (`toldMaraTruth`, `usedMaraWithoutConsent`, `maraIntroChoice`) are preserved so v0.6 saves keep their history.
 
 ## Verification
 
@@ -47,36 +44,29 @@ All time-consuming game actions still route through `advanceRun` exactly once. T
 
 Command: `node --test tests/*.test.js`
 
-- 40 passed, 0 failed.
-- Covers existing clock, market, trade, debt, territory, encounters, summaries, and endings plus title/save states, legacy hydration, two selectable edges, feature availability, Mara/Eli continuity, Quick Score daily gating, Finance clamping, nested UI contracts, local-context reveal, and time terminology.
+- **68 passed, 0 failed** (was 40).
+- New `tests/story-chains.test.js` validates registry shape, chain stage continuity, out-of-order unreachability, copy length against the writing standard, preview leakage, determinism, opening variance, the anti-monopoly rule, reactive firing, and cooldowns.
 
 ### Deterministic simulation
 
 Command: `node tests/simulate-runs.js 200`
 
 - 600/600 runs terminated; 0 dead ends.
-- Cautious: average cash $100, net worth −$392, debt $782, peak Heat 6, 52 Quick Score attempts / 25 successes.
-- Balanced: average cash $82, net worth −$385, debt $781, peak Heat 11, 72 attempts / 26 successes.
-- Aggressive: average cash $127, net worth −$432, debt $667, peak Heat 14, 207 attempts / 80 successes.
-- Territory attempts were 0 because the simple agents still do not accumulate takeover readiness.
+- cautious: 7.1 story / 5.2 ambient beats, Mara stage 4+ in 42%, quiet runs 9/200.
+- balanced: 6.8 story / 6.6 ambient beats, Mara stage 4+ in 22%, quiet runs 7/200.
+- aggressive: 4.3 story / 3.7 ambient beats, Mara stage 4+ in 0%, quiet runs 161/200.
 
-### Browser and mobile QA
-
-- Verified title/no-save, artwork, edge selection, first-market gating, trade projections, Mara introduction, nested People/Operations, Finance preview, title return, saved-run preview, and exact resume.
-- 320×568, 375×667, 390×844, 430×932, and 375×560 all had 0px horizontal overflow.
-- Smallest visible primary control: 44px; navigation controls: 48px.
-- Load/New Game and bottom actions remained reachable at every size.
-- Browser console errors: 0.
+The aggressive profile never returns to Spenard, so Mara is structurally unreachable for it — the district gate working as intended. Its quiet count is largely an artifact of the bot spamming Quick Score, which passes `suppressStory: true` and therefore rolls no beat. See `SIXTH_PLAYTEST_AUDIT.md` for the full reading and for two measurement errors corrected during the pass.
 
 ## Known limitations
 
-- React, ReactDOM, Babel, and fonts remain CDN-loaded; runtime Babel is not a production/offline build.
-- The packaged title image is 1.9 MB and should be optimized when an asset pipeline is introduced.
-- Deterministic strategies are deliberately simple, report negative average net worth/high remaining debt, and do not exercise territory attacks. Human playtesting is still required for economy and takeover timing.
-- Full cross-district price memory, information age, rumor reliability, scouting, and purchasable market intelligence remain deferred.
-- Mara invitation/Date Night, manual progression, hierarchical statewide travel, banking/laundering, and multiple robbery types remain deferred.
-- Relationship/operation records remain concise rather than exhaustive ledgers.
+- **Browser and mobile QA has not been run.** The three title tiers are asserted by contract test, not by rendering. A ready-to-run checklist covering ten viewports from 320×568 to 2560×1080, the Tier C fix, and the 390×844 parity check is in `SIXTH_PLAYTEST_AUDIT.md`. It has to be run somewhere with normal internet access: `index.html` loads React, ReactDOM, and Babel from `unpkg.com`, which is blocked in the build environment, so the app cannot boot there at all.
+- Mara's true completion rate is unsettled. Simulated bots bracket it between 0% and 64% depending on travel behavior; only human play will settle it.
+- The planned `stickup` simulation profile was dropped because Kip Sallis is deferred to v0.7.1.
+- React, ReactDOM, Babel, and fonts remain CDN-loaded; runtime Babel is not a production build.
+- The packaged title image is still 1.9 MB and should become WebP when an asset pipeline exists.
+- Eli, Dre, and Rook have registered chains with only 2–3 stages each; Kip's chain is registered but unpopulated.
 
 ## Next recommended single task
 
-Run a focused human onboarding/balance playtest of Alpha v0.6 on mobile and desktop. Measure title-to-first-trade comprehension, feature-unlock timing, Mara/Eli continuity, Quick Score discoverability and retry behavior, Finance reserve comprehension, and whether a human can reach territory readiness within seven days before adding cross-district market intelligence.
+Work through the **Manual browser QA checklist** in `SIXTH_PLAYTEST_AUDIT.md` and record the results table. Then play two human runs — one staying in Spenard, one travelling constantly — to settle Mara's real completion rate, which the simulated bots only bracket between 0% and 64%. Both should happen before v0.7.1 starts, because v0.7.1 builds four more chains on top of the selector this build introduced.

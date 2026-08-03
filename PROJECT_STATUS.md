@@ -60,7 +60,7 @@ The aggressive profile never returns to Spenard, so Mara is structurally unreach
 
 ## Known limitations
 
-- **Browser and mobile QA has not been run.** The three title tiers are asserted by contract test, not by rendering. Ten viewports from 320×568 to 2560×1080 need checking before this build is called verified.
+- **Browser and mobile QA has not been run.** The three title tiers are asserted by contract test, not by rendering. A ready-to-run checklist covering ten viewports from 320×568 to 2560×1080, the Tier C fix, and the 390×844 parity check is in `SIXTH_PLAYTEST_AUDIT.md`. It has to be run somewhere with normal internet access: `index.html` loads React, ReactDOM, and Babel from `unpkg.com`, which is blocked in the build environment, so the app cannot boot there at all.
 - Mara's true completion rate is unsettled. Simulated bots bracket it between 0% and 64% depending on travel behavior; only human play will settle it.
 - The planned `stickup` simulation profile was dropped because Kip Sallis is deferred to v0.7.1.
 - React, ReactDOM, Babel, and fonts remain CDN-loaded; runtime Babel is not a production build.
@@ -69,4 +69,4 @@ The aggressive profile never returns to Spenard, so Mara is structurally unreach
 
 ## Next recommended single task
 
-Run the browser and mobile QA pass that this build did not: the three title tiers at 320×568, 375×560, 375×667, 390×844, 430×932, 768×1024, 1280×800, 1440×900, 1920×1080, and 2560×1080, confirming zero horizontal overflow, 44px minimum controls, that the 390×844 title screen is unchanged from v0.6, and that the desktop tier shows the full artwork without bars. Then play two human runs — one staying in Spenard, one travelling constantly — to settle Mara's real frequency before starting v0.7.1.
+Work through the **Manual browser QA checklist** in `SIXTH_PLAYTEST_AUDIT.md` and record the results table. Then play two human runs — one staying in Spenard, one travelling constantly — to settle Mara's real completion rate, which the simulated bots only bracket between 0% and 64%. Both should happen before v0.7.1 starts, because v0.7.1 builds four more chains on top of the selector this build introduced.

@@ -179,7 +179,128 @@ bracket it between 0% and 64% depending on travel behavior.
   not exist would have produced a meaningless number.
 - **Browser/mobile QA across the ten planned viewports has not been run.** The
   CSS tiers are asserted by contract test, not by rendering. This must happen
-  before the build is called verified.
+  before the build is called verified. The checklist below is ready to run.
+
+---
+
+## Manual browser QA checklist
+
+**Not yet run.** This build's title fix is unverified until someone works through
+this. A string-matching contract test is not evidence for a change whose whole
+purpose was visual.
+
+It has to be done on a machine with normal internet access: `index.html` loads
+React, ReactDOM, and Babel from `unpkg.com`, which is unreachable from the build
+environment (`cdn.jsdelivr.net` and `esm.sh` are blocked there too; only
+`registry.npmjs.org` and `fonts.googleapis.com` resolve). Without those three
+scripts the app does not boot at all.
+
+### Setup
+
+```sh
+cd 907Hustle-game
+python3 -m http.server 4173
+# open http://localhost:4173
+```
+
+Use the browser's device-toolbar to set each viewport exactly. Reload between
+sizes — the tiers are media queries and some browsers keep stale layout.
+
+### Which tier each viewport should hit
+
+The artwork is 941×1672, aspect **0.563**. The tier boundaries are viewport
+aspect ratio, not width.
+
+| Viewport | Aspect | Expected tier |
+|---|---|---|
+| 320×568 | 0.56 | **A** — unchanged from v0.6 |
+| 375×560 | 0.67 | **A** (also hits the `max-height:600px` rule) |
+| 375×667 | 0.56 | **A** |
+| 390×844 | 0.46 | **A** — the parity reference |
+| 430×932 | 0.46 | **A** |
+| 768×1024 | 0.75 | **B** — cover, recentred |
+| 1280×800 | 1.60 | **C** — contain over blurred backdrop |
+| 1440×900 | 1.60 | **C** — the original defect case |
+| 1920×1080 | 1.78 | **C** |
+| 2560×1080 | 2.37 | **C** — widest crop risk |
+
+**Tier A** — `.title-art` is `object-fit: cover`, `object-position: center top`.
+`.title-backdrop` is `display: none`. Controls sit at the bottom under a 52vh
+push.
+
+**Tier B** — still `cover`, but `object-position: center 30%` so the crop takes
+from both ends rather than only the bottom. Content padding drops to 34vh.
+
+**Tier C** — `.title-art` becomes `object-fit: contain`, `.title-backdrop`
+becomes `display: block` (the same image, blurred and darkened, filling the
+letterbox). Controls move to a right-anchored 420px column over a scrim.
+
+### Check at every viewport
+
+- [ ] No horizontal scrollbar. `document.documentElement.scrollWidth` equals `clientWidth`.
+- [ ] Load Game, New Game, and How to Play are all fully visible without scrolling.
+- [ ] Every one of those three is at least 44px tall.
+- [ ] The artwork is not stretched — faces and lettering keep their proportions.
+- [ ] Browser console shows zero errors.
+
+### Check at Tier C specifically (this is the fix)
+
+- [ ] **The full composition is visible.** At 1440×900 the v0.6 build discarded
+      roughly 65% of the image, cropping everything below the top third. All of
+      it should now be on screen.
+- [ ] **No black bars.** The letterbox either side is filled by the blurred
+      backdrop drawn from the artwork itself.
+- [ ] The three controls sit in a right-hand column and stay readable against
+      whatever part of the art is behind them.
+
+### Parity check — the constraint on the whole fix
+
+Tier A had to come through untouched.
+
+```sh
+git stash            # or check main out into a second directory
+git checkout main
+# screenshot the title screen at 390x844
+git checkout claude/907hustle-story-playstyles-d5huyw
+# screenshot again at 390x844 and compare
+```
+
+- [ ] The 390×844 title screen is **pixel-identical** between `main` and this branch.
+
+### Worth checking while you are in there
+
+- [ ] Edge screen at 320px wide: the Street Name field does not overflow, is at
+      least 44px tall, and accepts at most 16 characters.
+- [ ] Skipping the name and picking Silver-Tongued Hustler yields "Silver" in the
+      opening log line.
+- [ ] The bottom action button reads **Finish Trading**, and its sub-label names
+      the actual next part of day (Afternoon → Evening → Night → "Day 2, Morning").
+- [ ] Return to title after saving: the saved-run preview shows the street name
+      on its first line.
+
+### Results
+
+Fill in when run.
+
+| Viewport | Tier | No overflow | Controls ≥44px | Art undistorted | Console clean | Notes |
+|---|---|---|---|---|---|---|
+| 320×568 | A | | | | | |
+| 375×560 | A | | | | | |
+| 375×667 | A | | | | | |
+| 390×844 | A | | | | | |
+| 430×932 | A | | | | | |
+| 768×1024 | B | | | | | |
+| 1280×800 | C | | | | | |
+| 1440×900 | C | | | | | |
+| 1920×1080 | C | | | | | |
+| 2560×1080 | C | | | | | |
+
+390×844 parity with `main`: ☐ identical ☐ differs — if it differs, the Tier A
+rule in `v05.css` has been disturbed and that is a regression, not a tuning
+question.
+
+If Tier C still looks wrong after this, the CSS is not the remedy and the
+landscape asset specified below should be commissioned.
 
 ---
 

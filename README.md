@@ -15,8 +15,25 @@ The active runtime is `index.html`, the pure domain module in `game-core.js`, an
 ## Test the core
 
 ```sh
-node --test tests/game-core.test.js tests/ui-contract.test.js
+node --test tests/*.test.js
 node tests/simulate-runs.js 200
 ```
 
-See `PROJECT_STATUS.md` for the verified Alpha v0.4 implementation, test evidence, balance findings, limitations, and next task.
+## Legacy files (not loaded)
+
+`index.html` loads only `v05.css`, `game-core.js`, and `ui.jsx`. The following
+are retained history and are **not** part of the running game — the 42 events in
+`events.js` in particular are not live content:
+
+- `events.js`, `script.js`, `style.css`, `combat.js`
+- `907hustle/` (early HTML prototypes and uploads)
+- `assets/cousins-apt-placeholder.svg`
+
+The live event set is the registry in `game-core.js` (`STORY_REGISTRY`).
+
+## Documentation
+
+- `PROJECT_STATUS.md` — current baseline, architecture, verification, next task
+- `STORY_BIBLE.md` — writing standard, voice guide, chains, event copy
+- `PROGRESSION_DESIGN.md` — Street Read XP spec (design only, not implemented)
+- `SIXTH_PLAYTEST_AUDIT.md` — Alpha v0.7 audit and decisions

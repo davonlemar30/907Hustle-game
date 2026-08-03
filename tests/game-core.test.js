@@ -13,7 +13,8 @@ function quietAdvance(state, reason = "END_MARKET") {
 test("v3 run uses an isolated save and approved equal-resource backgrounds", () => {
   assert.equal(C.VERSION, 3); assert.equal(C.SAVE_KEY, "907ogr_v3");
   assert.equal(C.BACKGROUNDS.length, 3);
-  assert.deepEqual(C.BACKGROUNDS.map((item) => item.name), ["Shooter", "Hustler", "Strategist"]);
+  assert.deepEqual(C.BACKGROUNDS.map((item) => item.name), ["Steady-Hand Shooter", "Silver-Tongued Hustler", "Strategist"]);
+  assert.deepEqual(C.STARTING_EDGES.map((item) => item.id), ["shooter", "hustler"]);
   assert.ok(C.BACKGROUNDS.every((item) => item.cash === 375 && item.heat === 1));
 });
 
@@ -147,12 +148,16 @@ test("debt payment advances once and full payoff unlocks Dre's offer", () => {
   assert.equal(state.lender.balance, 0); assert.equal(state.lender.afterPayoffOffer, "available"); assert.equal(state.stats.pipelineAdvances, 1);
 });
 
-test("robbery is gated by working capital and can be used once", () => {
-  let state = run(123); assert.equal(C.selectors.robberyAvailability(state).available, false);
-  state.player.cash = 100; state.base.storedCash = 0; state.run.pendingEvent = null;
-  state = C.reduceGame(state, { type: "ROBBERY" });
-  assert.equal(state.stats.robbery.attempted, true); assert.equal(state.stats.pipelineAdvances, 1); assert.ok(state.run.pendingOperationResult || state.run.status === "ended");
-  if (state.run.status === "playing") { state = C.reduceGame(state, { type: "ACKNOWLEDGE_OPERATION_RESULT" }); const again = C.reduceGame(state, { type: "ROBBERY" }); assert.deepEqual(again, state); }
+test("Quick Score is available once per day and returns on a later day", () => {
+  let state = run(123); state.player.cash = 100; assert.equal(C.selectors.robberyAvailability(state).available, true);
+  state = C.reduceGame(state, { type: "QUICK_SCORE" });
+  assert.equal(state.stats.robbery.attempts, 1); assert.equal(state.stats.robbery.lastAttemptedDay, 1); assert.equal(state.stats.pipelineAdvances, 1); assert.ok(state.run.pendingOperationResult || state.run.status === "ended");
+  if (state.run.status === "playing") {
+    state = C.reduceGame(state, { type: "ACKNOWLEDGE_OPERATION_RESULT" });
+    assert.equal(C.selectors.robberyAvailability(state).available, false);
+    state.run.day = 2; state.run.slot = 0; state.player.cash = 50; state.base.storedCash = 0;
+    assert.equal(C.selectors.robberyAvailability(state).available, true);
+  }
 });
 
 test("all three territories start under Rook with exact approved values", () => {
@@ -191,5 +196,69 @@ test("event contract explains who, where, stakes, action, preview, and result", 
 
 test("summary includes robbery and territory history", () => {
   const summary = C.selectRunSummary(run());
-  assert.equal(summary.territories.length, 3); assert.equal(summary.robbery.attempted, false); assert.equal(summary.takeovers.attempts, 0);
+  assert.equal(summary.territories.length, 3); assert.equal(summary.robbery.attempts, 0); assert.equal(summary.takeovers.attempts, 0);
+});
+
+test("title save inspection distinguishes missing, valid, and invalid saves", () => {
+  assert.deepEqual(C.inspectSave(null), { exists: false, valid: false, state: null, error: null, preview: null });
+  const valid = C.inspectSave(JSON.stringify(run(77)));
+  assert.equal(valid.valid, true); assert.equal(valid.preview.day, 1); assert.equal(valid.preview.district, "Spenard"); assert.equal(valid.preview.debt, 620);
+  const invalid = C.inspectSave("{not json");
+  assert.equal(invalid.exists, true); assert.equal(invalid.valid, false); assert.match(invalid.error, /could not be read/i);
+});
+
+test("v3 hydration preserves Strategist and normalizes additive fields", () => {
+  const old = run(88); old.player.background = "strategist"; old.player.stats = { combat: 2, charisma: 1, intelligence: 3 };
+  old.people.mara = { met: true, trust: 2, status: "cautious", outcomes: [] };
+  old.people.crew.eli.introduced = true; delete old.people.crew.eli.contactStage;
+  old.stats.robbery = { attempted: true, success: false, payout: 0 };
+  const hydrated = C.hydrateRun(JSON.parse(JSON.stringify(old)));
+  assert.equal(hydrated.player.background, "strategist"); assert.equal(hydrated.people.mara.available, true);
+  assert.equal(hydrated.people.crew.eli.contactStage, "recruitable");
+  assert.deepEqual(hydrated.stats.robbery, { attempts: 1, successes: 0, failures: 1, totalPayout: 0, lastAttemptedDay: 1, attempted: true, success: false, payout: 0 });
+});
+
+test("feature availability follows milestones and returning saves bypass early locks", () => {
+  let state = run(); let features = C.selectors.featureAvailability(state);
+  assert.equal(features.market.available, true); assert.equal(features.finances.available, true); assert.equal(features.help.available, true);
+  assert.equal(features.travel.available, false); assert.equal(features.operations.available, false); assert.equal(features.people.available, false); assert.equal(features.recovery.available, false);
+  state = quietAdvance(state); features = C.selectors.featureAvailability(state);
+  assert.equal(features.travel.available, true); assert.equal(features.operations.available, true);
+  state.run.day = 3; features = C.selectors.featureAvailability(state);
+  assert.equal(features.people.available, true); assert.equal(features.recovery.available, true);
+});
+
+test("Mara introduction resolves once and gates the relationship-dependent threat", () => {
+  let state = run(); assert.equal(C.selectors.maraThreatEligible(state), false);
+  state = C.reduceGame(state, { type: "END_MARKET" }); assert.equal(state.run.pendingEvent.id, "mara_intro");
+  state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
+  assert.equal(state.people.mara.met, true); assert.equal(state.people.mara.introChoice, "flirt"); assert.equal(C.selectors.maraThreatEligible(state), true);
+  state.flags.eliOfferResolved = true; state.run.day = 2; state.run.slot = 0; state.run.pendingEvent = null;
+  state = C.reduceGame(state, { type: "END_MARKET" });
+  assert.equal(state.run.pendingEncounter.id, "early_mara"); assert.match(state.run.pendingEncounter.description, /stayed to flirt/);
+  assert.equal(state.flags.maraIntroResolved, true);
+});
+
+test("Mara-free runs receive a different early threat", () => {
+  let state = run(); state.flags.maraIntroResolved = true; state.flags.eliOfferResolved = true; state.run.day = 2; state.people.mara.met = false;
+  state = C.reduceGame(state, { type: "END_MARKET" });
+  assert.equal(state.run.pendingEncounter.id, "early_street"); assert.doesNotMatch(state.run.pendingEncounter.description, /Mara/);
+});
+
+test("Eli progresses from introduction through a time-consuming test route", () => {
+  let state = run(901); state.flags.maraIntroResolved = true; state.run.slot = 2;
+  state = C.reduceGame(state, { type: "END_MARKET" }); assert.equal(state.run.pendingEvent.id, "eli_offer");
+  state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
+  assert.equal(state.people.crew.eli.contactStage, "test_available");
+  const before = state.stats.pipelineAdvances; state.player.cash = 500;
+  state = C.reduceGame(state, { type: "ELI_TEST_ROUTE" });
+  assert.equal(state.people.crew.eli.contactStage, "recruitable"); assert.equal(state.stats.pipelineAdvances, before + 1); assert.ok(state.run.pendingOperationResult);
+});
+
+test("finance payment preview clamps controls and preserves Safe Maximum", () => {
+  const state = run(); state.player.cash = 375;
+  assert.deepEqual(C.selectors.debtPaymentPreview(state, 999), { amount: 375, maximum: 375, cashAfter: 0, debtAfter: 245, breaksReserve: true });
+  assert.equal(C.selectors.safeDebtPayment(state), 225);
+  const safe = C.selectors.debtPaymentPreview(state, C.selectors.safeDebtPayment(state));
+  assert.equal(safe.cashAfter, 150); assert.equal(safe.breaksReserve, false);
 });

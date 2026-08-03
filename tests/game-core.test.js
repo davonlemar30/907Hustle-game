@@ -9,6 +9,33 @@ function quietAdvance(state, reason = "END_MARKET") {
   state.run.pendingEvent = null; state.run.pendingEncounter = null; state.run.pendingOperationResult = null;
   return C.advanceRun(state, { reason, suppressStory: true });
 }
+// Alpha v0.7 selects story beats by weighted roll rather than a fixed ladder, so
+// tests drive the run forward until the beat under test appears instead of
+// assuming it lands on a particular tick.
+function settleForTest(state) {
+  let guard = 0;
+  while (guard++ < 20) {
+    if (state.run.daySummary) { state = C.reduceGame(state, { type: "DISMISS_DAY_SUMMARY" }); continue; }
+    if (state.run.pendingOperationResult) { state = C.reduceGame(state, { type: "ACKNOWLEDGE_OPERATION_RESULT" }); continue; }
+    break;
+  }
+  return state;
+}
+function driveTo(state, id, limit = 90) {
+  let guard = 0;
+  while (state.run.status === "playing" && guard++ < limit) {
+    state = settleForTest(state);
+    if (state.run.status !== "playing") break;
+    if (state.run.pendingEvent && state.run.pendingEvent.id === id) return state;
+    if (state.run.pendingEvent) { state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 }); continue; }
+    if (state.run.pendingEncounter) {
+      state = C.reduceGame(state, { type: "RESOLVE_ENCOUNTER", choiceId: C.selectors.encounterChoices(state)[0].id });
+      continue;
+    }
+    state = C.reduceGame(state, { type: "END_MARKET" });
+  }
+  return state;
+}
 
 test("v3 run uses an isolated save and approved equal-resource backgrounds", () => {
   assert.equal(C.VERSION, 3); assert.equal(C.SAVE_KEY, "907ogr_v3");
@@ -228,26 +255,45 @@ test("feature availability follows milestones and returning saves bypass early l
   assert.equal(features.people.available, true); assert.equal(features.recovery.available, true);
 });
 
-test("Mara introduction resolves once and gates the relationship-dependent threat", () => {
+test("Mara introduction resolves once and does not by itself arm her threat", () => {
   let state = run(); assert.equal(C.selectors.maraThreatEligible(state), false);
-  state = C.reduceGame(state, { type: "END_MARKET" }); assert.equal(state.run.pendingEvent.id, "mara_intro");
+  state = driveTo(state, "mara_intro"); assert.equal(state.run.pendingEvent.id, "mara_intro");
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
-  assert.equal(state.people.mara.met, true); assert.equal(state.people.mara.introChoice, "flirt"); assert.equal(C.selectors.maraThreatEligible(state), true);
-  state.flags.eliOfferResolved = true; state.run.day = 2; state.run.slot = 0; state.run.pendingEvent = null;
-  state = C.reduceGame(state, { type: "END_MARKET" });
-  assert.equal(state.run.pendingEncounter.id, "early_mara"); assert.match(state.run.pendingEncounter.description, /stayed to flirt/);
-  assert.equal(state.flags.maraIntroResolved, true);
+  assert.equal(state.people.mara.met, true); assert.equal(state.people.mara.introChoice, "flirt");
+  assert.equal(state.flags.maraIntroResolved, true); assert.equal(state.people.mara.chainStage, 1);
+  // Alpha v0.7: the sedan is a stage-5 beat. An introduction alone must not arm it.
+  assert.equal(C.selectors.maraThreatEligible(state), false);
 });
 
-test("Mara-free runs receive a different early threat", () => {
-  let state = run(); state.flags.maraIntroResolved = true; state.flags.eliOfferResolved = true; state.run.day = 2; state.people.mara.met = false;
-  state = C.reduceGame(state, { type: "END_MARKET" });
-  assert.equal(state.run.pendingEncounter.id, "early_street"); assert.doesNotMatch(state.run.pendingEncounter.description, /Mara/);
+test("the Day 2 threat is always the Mara-free service-road encounter", () => {
+  for (let seed = 300; seed < 325; seed += 1) {
+    let state = C.reduceGame(C.createRun({ seed }), { type: "CHOOSE_BACKGROUND", backgroundId: "shooter" });
+    let guard = 0, found = null;
+    while (state.run.status === "playing" && state.run.day <= 4 && guard++ < 40) {
+      if (state.run.pendingEncounter) { found = state.run.pendingEncounter.id; break; }
+      state = settleForTest(state);
+      if (state.run.status !== "playing") break;
+      state = C.reduceGame(state, { type: "END_MARKET" });
+    }
+    if (found) assert.equal(found, "early_street", `seed ${seed} produced ${found}`);
+  }
+});
+
+test("the Mara sedan encounter is unreachable before her boundary scene", () => {
+  let state = run();
+  state.flags.maraIntroResolved = true; state.flags.maraShiftChangeResolved = true;
+  state.people.mara.met = true; state.people.mara.introChoice = "flirt"; state.people.mara.chainStage = 2;
+  state.run.day = 6; state.run.slot = 2;
+  assert.equal(C.selectors.maraThreatEligible(state), false);
+  state.flags.maraBoundaryResolved = true;
+  assert.equal(C.selectors.maraThreatEligible(state), true);
 });
 
 test("Eli progresses from introduction through a time-consuming test route", () => {
-  let state = run(901); state.flags.maraIntroResolved = true; state.run.slot = 2;
-  state = C.reduceGame(state, { type: "END_MARKET" }); assert.equal(state.run.pendingEvent.id, "eli_offer");
+  let state = run(901); state.run.slot = 2;
+  // Close the Mara chain so Eli's introduction is the only story beat competing.
+  state.flags.maraIntroResolved = true; state.people.mara.available = false;
+  state = driveTo(state, "eli_offer"); assert.equal(state.run.pendingEvent.id, "eli_offer");
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
   assert.equal(state.people.crew.eli.contactStage, "test_available");
   const before = state.stats.pipelineAdvances; state.player.cash = 500;
@@ -261,4 +307,132 @@ test("finance payment preview clamps controls and preserves Safe Maximum", () =>
   assert.equal(C.selectors.safeDebtPayment(state), 225);
   const safe = C.selectors.debtPaymentPreview(state, C.selectors.safeDebtPayment(state));
   assert.equal(safe.cashAfter, 150); assert.equal(safe.breaksReserve, false);
+});
+
+// --- Alpha v0.7: identity, save compatibility, and the Mara arc ---------------
+
+test("street names are sanitized to a safe character set and length", () => {
+  assert.equal(C.sanitizeStreetName("  Ice   Box  "), "Ice Box");
+  assert.equal(C.sanitizeStreetName("Nine-Seven"), "Nine-Seven");
+  assert.equal(C.sanitizeStreetName("O'Hara Jr."), "O'Hara Jr.");
+  assert.equal(C.sanitizeStreetName("<script>x</script>"), "scriptxscript");
+  assert.equal(C.sanitizeStreetName("ABCDEFGHIJKLMNOPQRSTUV").length, C.STREET_NAME_MAX);
+  for (const empty of ["", "   ", "!!!", null, undefined, {}]) assert.equal(C.sanitizeStreetName(empty), "");
+});
+
+test("the street name is optional and falls back to an edge default", () => {
+  const skipped = C.reduceGame(C.createRun({ seed: 12 }), { type: "CHOOSE_BACKGROUND", backgroundId: "hustler" });
+  assert.equal(skipped.player.streetName, C.DEFAULT_STREET_NAMES.hustler);
+  assert.equal(skipped.player.streetNameChosen, false);
+  const chosen = C.reduceGame(C.createRun({ seed: 12 }), { type: "CHOOSE_BACKGROUND", backgroundId: "shooter", streetName: "  Kodiak!!  " });
+  assert.equal(chosen.player.streetName, "Kodiak");
+  assert.equal(chosen.player.streetNameChosen, true);
+  assert.match(chosen.log[0].text, /Kodiak/);
+  const blanked = C.reduceGame(C.createRun({ seed: 12 }), { type: "CHOOSE_BACKGROUND", backgroundId: "shooter", streetName: "###" });
+  assert.equal(blanked.player.streetName, C.DEFAULT_STREET_NAMES.shooter);
+  assert.equal(blanked.player.streetNameChosen, false);
+});
+
+test("a pre-v0.7 save hydrates without a version bump and gains the new fields", () => {
+  const state = C.reduceGame(C.createRun({ seed: 77 }), { type: "CHOOSE_BACKGROUND", backgroundId: "shooter" });
+  const legacy = JSON.parse(JSON.stringify(state));
+  delete legacy.player.streetName; delete legacy.player.streetNameChosen;
+  delete legacy.run.eventHistory; delete legacy.run.lastChainFired; delete legacy.run.chainStreak;
+  delete legacy.run.lastChainSlot; delete legacy.run.chainBeatsToday; delete legacy.run.chainBeatsDay;
+  delete legacy.people.mara.chainStage; delete legacy.people.mara.jobAtRisk;
+
+  const inspection = C.inspectSave(JSON.stringify(legacy));
+  assert.equal(inspection.valid, true, inspection.error || "legacy save rejected");
+  assert.equal(C.VERSION, 3); assert.equal(C.SAVE_KEY, "907ogr_v3");
+  const hydrated = inspection.state;
+  assert.equal(hydrated.version, 3);
+  assert.deepEqual(hydrated.run.eventHistory, {});
+  assert.equal(hydrated.run.chainStreak, 0);
+  assert.equal(hydrated.people.mara.chainStage, 0);
+  assert.equal(hydrated.people.mara.jobAtRisk, false);
+  assert.equal(inspection.preview.name, "Unnamed run");
+  // and it still plays
+  const advanced = C.reduceGame(hydrated, { type: "END_MARKET" });
+  assert.equal(advanced.run.status, "playing");
+});
+
+test("the saved-run preview carries the name alongside the run position", () => {
+  const state = C.reduceGame(C.createRun({ seed: 5 }), { type: "CHOOSE_BACKGROUND", backgroundId: "hustler", streetName: "Slush" });
+  const preview = C.inspectSave(JSON.stringify(state)).preview;
+  assert.equal(preview.name, "Slush");
+  assert.equal(preview.day, 1); assert.equal(preview.district, "Spenard");
+});
+
+test("Mara's stages record chain progress without exposing it to the player", () => {
+  let state = run();
+  state = driveTo(state, "mara_intro");
+  const built = state.run.pendingEvent;
+  assert.equal(built.chain, undefined); assert.equal(built.stage, undefined); assert.equal(built.weight, undefined);
+  state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
+  assert.equal(state.people.mara.chainStage, 1);
+  assert.equal(state.people.mara.outcomes.length, 1);
+  assert.equal(state.people.mara.outcomes[0].stage, 1);
+});
+
+test("resolving a Mara scene never consumes a second part of day", () => {
+  let state = run();
+  state = driveTo(state, "mara_intro");
+  const before = state.stats.pipelineAdvances, day = state.run.day, slot = state.run.slot;
+  state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
+  assert.equal(state.stats.pipelineAdvances, before);
+  assert.equal(state.run.day, day); assert.equal(state.run.slot, slot);
+});
+
+test("betraying Mara removes her from the run and names the ending for it", () => {
+  let state = run();
+  state.people.mara.met = true; state.people.mara.trust = 3; state.people.mara.chainStage = 4;
+  state.flags.maraBoundaryResolved = true; state.people.mara.usedWithoutConsent = true;
+  state.run.day = 6; state.run.slot = 0;
+  // Drive the branch directly: scheduling is covered in tests/story-chains.test.js.
+  state.run.pendingEvent = C.buildEventForTest("mara_after", state);
+  assert.equal(state.run.pendingEvent.id, "mara_after");
+  assert.match(state.run.pendingEvent.title, /Lights Off/);
+  state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
+  assert.equal(state.people.mara.available, false);
+  assert.equal(state.people.mara.status, "gone");
+  assert.equal(state.people.mara.chainStage, 6);
+  state.run.day = 7; state.run.slot = 3;
+  const ended = quietAdvance(state);
+  assert.equal(ended.run.ending, "mara_gone");
+  assert.equal(C.selectors.endingLabel("mara_gone"), "Gone Before You Were");
+});
+
+test("all three Day 7 Mara outcomes are reachable and distinct", () => {
+  function endingFor(mutate) {
+    let state = run();
+    state.people.mara.met = true; state.people.mara.trust = 4; state.people.mara.chainStage = 6;
+    state.flags.maraBoundaryResolved = true; state.flags.maraAfterResolved = true;
+    state.lender.balance = 0; state.run.day = 7; state.run.slot = 3;
+    mutate(state);
+    return quietAdvance(state).run.ending;
+  }
+  assert.equal(endingFor((s) => { s.run.finalPlan = "escape"; }), "mara_escape");
+  // A separation is an outcome, not a failure: she takes the Monday interview.
+  assert.equal(endingFor((s) => { s.run.finalPlan = "defend"; s.people.mara.jobAtRisk = false; }), "mara_clear");
+  assert.equal(endingFor((s) => { s.people.mara.available = false; }), "mara_gone");
+  const labels = ["mara_escape", "mara_clear", "mara_gone"].map((id) => C.selectors.endingLabel(id));
+  assert.equal(new Set(labels).size, 3);
+});
+
+test("a full seeded run reaches an ending with a coherent Mara record", () => {
+  let state = C.reduceGame(C.createRun({ seed: 2024 }), { type: "CHOOSE_BACKGROUND", backgroundId: "hustler", streetName: "Berm" });
+  let guard = 0;
+  while (state.run.status === "playing" && guard++ < 220) {
+    state = settleForTest(state);
+    if (state.run.status !== "playing") break;
+    if (state.run.pendingEvent) { state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 }); continue; }
+    if (state.run.pendingEncounter) { state = C.reduceGame(state, { type: "RESOLVE_ENCOUNTER", choiceId: C.selectors.encounterChoices(state)[0].id }); continue; }
+    state = C.reduceGame(state, { type: "END_MARKET" });
+  }
+  assert.equal(state.run.status, "ended");
+  const summary = C.selectRunSummary(state);
+  assert.equal(summary.streetName, "Berm");
+  assert.ok(summary.endingLabel.length > 0);
+  const stages = state.people.mara.outcomes.map((entry) => entry.stage);
+  assert.deepEqual(stages, [...stages].sort((a, b) => a - b), "Mara scenes played out of order");
 });

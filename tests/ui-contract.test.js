@@ -7,8 +7,8 @@ const ui = fs.readFileSync(path.join(root, "ui.jsx"), "utf8");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "v05.css"), "utf8");
 
-test("active shell is Alpha v0.6 with a packaged title asset", () => {
-  assert.match(ui, /Alpha v0\.6/); assert.match(html, /ui\.jsx/); assert.doesNotMatch(html, /legacy-v1-ui-reference|text\/plain/);
+test("active shell is Alpha v0.7 with a packaged title asset", () => {
+  assert.match(ui, /Alpha v0\.7/); assert.match(html, /ui\.jsx/); assert.doesNotMatch(html, /legacy-v1-ui-reference|text\/plain/);
   assert.match(ui, /907hustle-title\.png/); assert.ok(fs.existsSync(path.join(root, "assets", "907hustle-title.png")));
 });
 test("title screen exposes safe load, new-game confirmation, preview, and help", () => {
@@ -43,4 +43,29 @@ test("player-facing time copy avoids ambiguous slot terminology", () => {
 });
 test("mobile controls retain 44px targets and reduced-height title handling", () => {
   assert.match(css, /min-height:44px/); assert.match(css, /@media\(max-height:600px\)/); assert.match(css, /height:100dvh/);
+});
+test("title artwork declares all three aspect tiers and a letterbox backdrop", () => {
+  assert.match(css, /@media\(min-aspect-ratio:3\/4\) and \(max-aspect-ratio:1\/1\)/);
+  assert.match(css, /@media\(min-aspect-ratio:1\/1\)/);
+  assert.match(css, /\.title-backdrop\{display:none\}/);
+  assert.match(css, /object-fit:contain/);
+  assert.match(ui, /className="title-backdrop"/);
+  // Tier A must stay exactly as shipped in v0.6 so mobile does not move.
+  assert.match(css, /\.title-art\{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top\}/);
+});
+test("the market close action names the player action and its destination", () => {
+  assert.match(ui, /Finish Trading/);
+  assert.doesNotMatch(ui, />End Market</);
+  assert.match(ui, /nextPartLabel/);
+  assert.match(ui, /Close this market visit/);
+});
+test("the optional Street Name is offered before edge selection and shown on the save", () => {
+  assert.match(ui, /Street Name/); assert.match(ui, /maxLength=\{C\.STREET_NAME_MAX\}/);
+  assert.match(ui, /What do they call you\?/); assert.match(ui, /streetName \}\)/);
+  assert.match(ui, /\{preview\.name\}/); assert.match(ui, /Seven days as \{summary\.streetName\}/);
+});
+test("registry metadata never reaches the presentation layer", () => {
+  for (const leak of [/event\.stage/, /event\.cooldown/, /event\.weight/, /event\.requires/, /event\.chain/, /chainStage/]) {
+    assert.doesNotMatch(ui, leak, String(leak));
+  }
 });

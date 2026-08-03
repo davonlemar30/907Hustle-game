@@ -20,8 +20,8 @@
 
   const NEIGHBORHOODS = [
     {
-      id: "north_star_lot", name: "North Star Lot", role: "Home", risk: 1, police: 1, rival: 0,
-      accent: "#d7d7d7", blurb: "Familiar blocks, the Mini-Mart glow, and the garage you are trying to hold.",
+      id: "north_star_lot", name: "Spenard", role: "Home", risk: 1, police: 1, rival: 0,
+      accent: "#d7d7d7", blurb: "North Star Garage, the Night Owl Mini-Mart, and familiar blocks that offer the week's safest footing.",
       bias: { weed: 0.78, shrooms: 0.88, cocaine: 1.02, meth: 0.95 },
       availability: { weed: 1, shrooms: 0.88, cocaine: 0.55, meth: 0.48 },
     },
@@ -32,18 +32,19 @@
       availability: { weed: 0.9, shrooms: 0.9, cocaine: 0.78, meth: 0.58 },
     },
     {
-      id: "airport_industrial", name: "Airport / Industrial", role: "Outer", risk: 4, police: 2, rival: 3,
-      accent: "#9a1d18", blurb: "Loading bays, service roads, rare supply, and expensive mistakes.",
+      id: "airport_industrial", name: "Industrial Service Roads", role: "Outer", risk: 4, police: 2, rival: 3,
+      accent: "#9a1d18", blurb: "Loading yards, warehouses, service roads, rare supply, and expensive mistakes.",
       bias: { weed: 1.12, shrooms: 1.18, cocaine: 1.32, meth: 1.62 },
       availability: { weed: 0.72, shrooms: 0.7, cocaine: 0.7, meth: 0.86 },
     },
   ];
 
   const BACKGROUNDS = [
-    { id: "shooter", name: "Shooter", combat: 3, charisma: 1, intelligence: 2, cash: 375, heat: 1, description: "Best at weapons, direct fights, and joining a territory attack." },
-    { id: "hustler", name: "Hustler", combat: 1, charisma: 3, intelligence: 2, cash: 375, heat: 1, description: "Best at trade margins, negotiation, and bringing people into the operation." },
+    { id: "shooter", name: "Steady-Hand Shooter", combat: 3, charisma: 1, intelligence: 2, cash: 375, heat: 1, description: "Weapons, direct confrontation, survival, and joining territory attacks are your strongest opening tools." },
+    { id: "hustler", name: "Silver-Tongued Hustler", combat: 1, charisma: 3, intelligence: 2, cash: 375, heat: 1, description: "Negotiation, trade margins, recruiting, and relationship choices are your strongest opening tools." },
     { id: "strategist", name: "Strategist", combat: 2, charisma: 1, intelligence: 3, cash: 375, heat: 1, description: "Best at reading danger, intimidation, and judging territory strength." },
   ];
+  const STARTING_EDGES = BACKGROUNDS.filter((item) => item.id !== "strategist");
 
   const GEAR = [
     { id: "utility_knife", name: "Utility Knife", cost: 90, slot: "weapon", type: "close", accuracy: 0.04, damage: [8, 14], heat: 0, description: "Concealable close-range protection." },
@@ -129,7 +130,7 @@
   function createCrewState() {
     return Object.fromEntries(CREW.map((person) => [person.id, {
       introduced: false, recruited: false, loyalty: 0, wageDue: 0, assignment: null,
-      crisisResolved: false, status: "outside", outcomes: [],
+      contactStage: "unknown", crisisResolved: false, status: "outside", outcomes: [],
     }]));
   }
 
@@ -175,10 +176,10 @@
       },
       rival: { name: "Rook Mercer", pressure: 1, respect: 0, relationship: "dismissive", recentInterference: null },
       people: {
-        mara: { met: false, trust: 0, truthTold: false, usedWithoutConsent: false, status: "distant", outcomes: [] },
+        mara: { met: false, available: true, trust: 0, introChoice: null, flirtHistory: false, truthTold: false, usedWithoutConsent: false, status: "distant", outcomes: [] },
         crew: createCrewState(),
       },
-      flags: {},
+      flags: { featureNotices: {} },
       effects: { rumors: [], modifiers: [] },
       stats: {
         startingNetWorth: -620, bestTrade: 0, largestLoss: 0, highestHeat: 1,
@@ -186,13 +187,71 @@
         decisions: 0, pipelineAdvances: 0, marketUpdates: 0, visits: [], majorDecisions: [],
         moneySpent: { debt: 0, base: 0, gear: 0, crew: 0, healing: 0, relationships: 0, events: 0 },
         encounterChoices: { fight: 0, run: 0, talk: 0, pay: 0, other: 0 },
-        robbery: { attempted: false, success: false, payout: 0 },
+        robbery: { attempts: 0, successes: 0, failures: 0, totalPayout: 0, lastAttemptedDay: null, attempted: false, success: false, payout: 0 },
         takeovers: { attempts: 0, wins: 0, losses: 0, crewLost: 0, income: 0 },
       },
       log: [],
     };
     logEntry(state, "Choose how you learned to survive before the week begins.", "warn");
     return state;
+  }
+
+  function mergeDefaults(defaults, value) {
+    if (Array.isArray(defaults)) return Array.isArray(value) ? value : defaults;
+    if (!defaults || typeof defaults !== "object") return value === undefined ? defaults : value;
+    const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    const merged = {};
+    for (const key of new Set([...Object.keys(defaults), ...Object.keys(source)])) {
+      merged[key] = key in defaults ? mergeDefaults(defaults[key], source[key]) : source[key];
+    }
+    return merged;
+  }
+
+  function normalizeRobberyStats(value, state) {
+    const old = value && typeof value === "object" ? value : {};
+    const legacyAttempted = !!old.attempted;
+    const legacySuccess = !!old.success;
+    const attempts = Math.max(0, Math.floor(Number(old.attempts ?? (legacyAttempted ? 1 : 0)) || 0));
+    const successes = Math.min(attempts, Math.max(0, Math.floor(Number(old.successes ?? (legacySuccess ? 1 : 0)) || 0)));
+    const failures = Math.max(0, Math.floor(Number(old.failures ?? Math.max(0, attempts - successes)) || 0));
+    const totalPayout = Math.max(0, Math.floor(Number(old.totalPayout ?? old.payout ?? 0) || 0));
+    const lastAttemptedDay = old.lastAttemptedDay == null ? (legacyAttempted ? state.run.day : null) : clamp(Math.floor(Number(old.lastAttemptedDay) || 1), 1, RUN_DAYS);
+    return { attempts, successes, failures, totalPayout, lastAttemptedDay, attempted: attempts > 0, success: successes > 0, payout: totalPayout };
+  }
+
+  function hydrateRun(value) {
+    if (!value || typeof value !== "object" || value.version !== VERSION || !value.run || !value.world || !value.player) return null;
+    const defaults = createRun({ seed: value.run.seed });
+    const state = mergeDefaults(defaults, value);
+    state.version = VERSION;
+    state.stats.robbery = normalizeRobberyStats(value.stats?.robbery, state);
+    state.flags.featureNotices = state.flags.featureNotices && typeof state.flags.featureNotices === "object" ? state.flags.featureNotices : {};
+    state.people.mara.available = state.people.mara.available !== false && state.people.mara.status !== "gone";
+    for (const person of CREW) {
+      const crew = state.people.crew[person.id];
+      if (!value.people?.crew?.[person.id]?.contactStage) {
+        if (!crew.introduced) crew.contactStage = "unknown";
+        else if (crew.recruited) crew.contactStage = "active";
+        else if (person.id === "eli") crew.contactStage = "recruitable";
+        else crew.contactStage = "recruitable";
+      }
+    }
+    return state;
+  }
+
+  function inspectSave(serialized) {
+    if (serialized == null || serialized === "") return { exists: false, valid: false, state: null, error: null, preview: null };
+    try {
+      const state = hydrateRun(JSON.parse(serialized));
+      if (!state) return { exists: true, valid: false, state: null, error: "This save is not a compatible 907Hustle v3 run.", preview: null };
+      const area = AREA_BY_ID[state.world.currentNeighborhoodId] || AREA_BY_ID.north_star_lot;
+      return {
+        exists: true, valid: true, state, error: null,
+        preview: { day: state.run.day, part: SLOTS[state.run.slot] || SLOTS[0], district: area.name, cash: state.player.cash, debt: state.lender.balance },
+      };
+    } catch {
+      return { exists: true, valid: false, state: null, error: "The saved run could not be read. Start a new run to replace it.", preview: null };
+    }
   }
 
   function hasGear(state, id) { return state.player.gear.owned.includes(id); }
@@ -219,6 +278,57 @@
   function netWorth(state) { return state.player.cash + state.base.storedCash + inventoryValue(state) - state.lender.balance; }
   function workingCapital(state) { return state.player.cash + state.base.storedCash + inventoryValue(state); }
   function safeDebtPayment(state) { return Math.min(state.lender.balance, Math.max(0, state.player.cash - WORKING_CAPITAL_RESERVE)); }
+  function debtPaymentPreview(state, requestedAmount) {
+    const maximum = Math.min(state.player.cash, state.lender.balance);
+    const amount = clamp(Math.floor(Number(requestedAmount) || 0), 0, maximum);
+    return { amount, maximum, cashAfter: state.player.cash - amount, debtAfter: state.lender.balance - amount, breaksReserve: amount > safeDebtPayment(state) };
+  }
+  function featureAvailability(state) {
+    const progressed = state.run.day > 1 || state.run.slot > 0 || state.stats.pipelineAdvances > 0;
+    const returning = state.run.day > 1 || state.stats.pipelineAdvances >= 4;
+    const someoneIntroduced = state.people.mara.met || CREW.some((person) => state.people.crew[person.id]?.introduced);
+    return {
+      market: { available: true, hint: "Available now." },
+      finances: { available: true, hint: "Available now." },
+      help: { available: true, hint: "Available now." },
+      travel: { available: progressed, hint: "Close your first market period to unlock Travel." },
+      operations: { available: progressed, hint: "Close your first market period to unlock Operations." },
+      people: { available: someoneIntroduced || returning, hint: "Meet a recurring person to unlock People." },
+      recovery: { available: state.player.health < 100 || state.player.heat > 1 || state.flags.recoveryIntroduced || returning, hint: "Recovery opens when injury, Heat, or a story consequence makes it relevant." },
+    };
+  }
+  function announceFeatureUnlocks(state, before) {
+    const after = featureAvailability(state);
+    const labels = { travel: "Travel", operations: "Operations", people: "People", recovery: "Recovery" };
+    state.flags.featureNotices = state.flags.featureNotices || {};
+    for (const id of Object.keys(labels)) {
+      if (!before[id].available && after[id].available && !state.flags.featureNotices[id]) {
+        state.flags.featureNotices[id] = true;
+        logEntry(state, `${labels[id]} is now available.`, "good");
+      }
+    }
+  }
+  function layLowPreview(state) {
+    const baseBonus = state.world.currentNeighborhoodId === "north_star_lot" ? state.base.tracks.security : 0;
+    const danger = state.base.watched && state.world.currentNeighborhoodId === "north_star_lot" ? 1 : 0;
+    return { heatReduction: Math.min(state.player.heat, Math.max(1, 2 + baseBonus - danger)), advances: true };
+  }
+  function eliTestRouteAvailability(state) {
+    const eli = state.people.crew.eli;
+    if (state.run.status !== "playing") return { available: false, reason: "The run is not active." };
+    if (!eli.introduced) return { available: false, reason: "Meet Eli before offering him a route." };
+    if (eli.recruited || eli.contactStage === "active") return { available: false, reason: "Eli already works with the crew." };
+    if (eli.contactStage === "rejected") return { available: false, reason: "Eli remembers being turned away. A later conversation must reopen the door." };
+    if (eli.contactStage === "recruitable") return { available: false, reason: "The test is complete. Visit the garage to recruit Eli." };
+    if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
+    if (state.player.cash < 35) return { available: false, reason: "The test route needs $35 for fuel and a vehicle." };
+    if (state.run.day === RUN_DAYS && state.run.slot === 3) return { available: false, reason: "There is no part of the week left for the test route." };
+    return { available: true, reason: "Uses one part of day.", cost: 35 };
+  }
+  function maraThreatEligible(state) {
+    const relevantHistory = !!(state.people.mara.introChoice || state.flags.maraFlirted || state.flags.maraFriendlyIntro || state.flags.maraDistantIntro || state.flags.toldMaraAboutGarage || state.stats.moneySpent.relationships > 0);
+    return !!(state.flags.maraIntroResolved && state.people.mara.met && state.people.mara.available !== false && state.people.mara.status !== "gone" && relevantHistory && !state.flags.earlyThreatResolved);
+  }
   function controlled(state, areaId) { return state.world.territories[areaId]?.owner === "player"; }
   function recruitmentCost(state, crewId) {
     const person = CREW_BY_ID[crewId];
@@ -325,13 +435,17 @@
   }
   function robberyAvailability(state) {
     if (state.run.status !== "playing") return { available: false, reason: "The run is not active." };
-    if (state.stats.robbery.attempted) return { available: false, reason: "You already used the emergency robbery." };
-    if (state.run.day >= 7) return { available: false, reason: "There is no time left to recover from this." };
+    const robbery = normalizeRobberyStats(state.stats.robbery, state);
+    if (robbery.lastAttemptedDay === state.run.day) return { available: false, reason: "You already attempted a Quick Score today." };
+    if (state.run.day === RUN_DAYS && state.run.slot === 3) return { available: false, reason: "There is no part of the week left to resolve a score." };
     if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
     const capital = workingCapital(state);
-    if (capital >= WORKING_CAPITAL_RESERVE) return { available: false, reason: `Working capital must fall below $${WORKING_CAPITAL_RESERVE}.` };
-    const chance = clamp(0.35 + state.player.stats.combat * 0.07 + state.player.stats.intelligence * 0.04 - state.player.heat * 0.015, 0.35, 0.75);
-    return { available: true, reason: "One emergency score remains.", chance, chanceLabel: `${Math.round(chance * 100)}%`, workingCapital: capital };
+    if (capital >= WORKING_CAPITAL_RESERVE) return { available: false, reason: `Quick Score is a comeback option when working capital falls below $${WORKING_CAPITAL_RESERVE}.` };
+    const weaponBonus = equippedWeapon(state) ? 0.05 : 0;
+    const crewBonus = Math.min(0.08, recruitedCrew(state).length * 0.04);
+    const repeatPenalty = robbery.attempts * 0.035;
+    const chance = clamp(0.30 + state.player.stats.combat * 0.065 + state.player.stats.intelligence * 0.035 + weaponBonus + crewBonus - state.player.heat * 0.015 - repeatPenalty, 0.22, 0.72);
+    return { available: true, reason: "One attempt is available today. It uses one part of day.", chance, chanceLabel: `${Math.round(chance * 100)}%`, workingCapital: capital, attempts: robbery.attempts };
   }
   function operationScore(state) {
     const crew = recruitedCrew(state).reduce((sum, person) => sum + Math.max(0, state.people.crew[person.id].loyalty + 2) * 35, 0);
@@ -518,12 +632,13 @@
   }
 
   const EVENT_CONTEXT = {
-    mara_intro: { who: "Mara Velez and a circling sedan", where: "Late-Night Mini-Mart", stakes: "Trust Mara with the garage or keep her outside the risk." },
-    eli_offer: { who: "Eli Ward, an unemployed runner", where: "North Star Garage", stakes: "A future crew route—and whether Eli remembers the rejection." },
+    mara_intro: { who: "Mara Velez, the clerk who recognizes you", where: "Night Owl Mini-Mart, Spenard", stakes: "Choose whether this familiar face starts the week as a flirtation, a friend, or someone kept at a distance." },
+    eli_offer: { who: "Eli Ward, a local driver looking for work", where: "Outside North Star Garage, Spenard", stakes: "Decide whether Eli gets a test route, only shares road information, or remembers being turned away." },
+    eli_callback: { who: "Eli Ward, still working the service roads", where: "North Star Garage, Spenard", stakes: "Reopen the door to a test route or confirm that Eli should look elsewhere." },
     miri_offer: { who: "Miri Cole, a connected supplier", where: "Downtown corner booth", stakes: "Supplier access, loyalty, and how much ownership you are willing to share." },
     tone_offer: { who: "Anton Bell, a former security worker", where: "North Star Garage", stakes: "Protection against Rook at the cost of another wage." },
-    mara_truth: { who: "Mara and whoever followed her home", where: "Mini-Mart after closing", stakes: "Her safety, her trust, and whether you use her name without consent." },
-    courier: { who: "An injured courier and approaching drivers", where: "Airport / Industrial, Bay Twelve", stakes: "Cash, Heat, and who controls the courier's route information." },
+    mara_truth: { who: "Mara and whoever followed her home", where: "Night Owl Mini-Mart after closing", stakes: "Her safety, her trust, and whether you use her name without consent." },
+    courier: { who: "An injured courier and approaching drivers", where: "Industrial Service Roads, Bay Twelve", stakes: "Cash, Heat, and who controls the courier's route information." },
     dre_after_payoff: { who: "Dre Holloway", where: "Behind the Mini-Mart", stakes: "A new debt, premium supply access, or independence." },
     base_watch: { who: "Rook's watcher and a possible plainclothes officer", where: "Across from North Star Garage", stakes: "Your stored operation and whether the watcher identifies its value." },
     crew_crisis: { who: "A jailed crew member and APD", where: "North Star Garage burner line", stakes: "$180 or the loyalty of everyone working for you." },
@@ -555,13 +670,19 @@
   function setPendingEvent(state, item) { state.run.pendingEvent = item; }
   function activeEvent(id, state) {
     const events = {
-      mara_intro: () => event("mara_intro", "The Night Clerk", "Mara Velez slides your coffee across the Mini-Mart counter. She looks past you at the same sedan that has circled twice.", [
-        { label: "Tell her about the garage", effect: { maraTrust: 1, setFlags: { toldMaraAboutGarage: true } }, result: "Mara locks the front door for ten seconds and tells you which car has been watching North Star." },
-        { label: "Keep it ordinary", effect: { maraTrust: 0 }, result: "You talk about the weather. Mara watches the sedan instead of believing you." },
+      mara_intro: () => event("mara_intro", "Mara on the Night Shift", "You have seen Mara Velez behind the Night Owl counter for months. Tonight she remembers your coffee before you order. A sedan passes twice beyond the window, but Mara keeps the conversation on you and the week ahead.", [
+        { label: "Flirt and stay a minute", effect: { maraTrust: 1, setFlags: { maraFlirted: true, maraIntroChoice: "flirt" } }, preview: "+1 Mara trust · records a flirtatious first conversation", result: "Mara smiles, refills the coffee, and tells you the late shift feels shorter when you stop pretending to be in a hurry." },
+        { label: "Keep it friendly", effect: { setFlags: { maraFriendlyIntro: true, maraIntroChoice: "friendly" } }, preview: "Establishes a friendly contact · romance remains possible later", result: "You trade neighborhood news until another customer walks in. Mara says your next coffee is still on you." },
+        { label: "Grab the coffee and go", effect: { setFlags: { maraDistantIntro: true, maraIntroChoice: "distant" } }, preview: "Introduces Mara at a distance · she remembers you avoided the conversation", result: "You take the cup and leave. In the mirror, Mara watches the sedan pass a third time." },
       ]),
-      eli_offer: () => event("eli_offer", "A Runner Without a Route", "Eli Ward waits beside an impound notice outside the garage. He knows every service road between North Star and the airport, but he needs paid work.", [
-        { label: "Invite him to the garage", effect: { introduceCrew: "eli", crewLoyalty: { id: "eli", delta: 1 } }, result: "Eli folds the notice into his pocket and asks when the first route leaves." },
-        { label: "Send him away", effect: { introduceCrew: "eli", crewLoyalty: { id: "eli", delta: -1 }, setFlags: { refusedEli: true } }, result: "Eli nods once. By morning, somebody else may own his route." },
+      eli_offer: () => event("eli_offer", "The Impound Notice", "Eli Ward waits outside North Star Garage with an impound notice folded into his jacket. He says he knows the loading yards, service roads, and back routes well enough to move a small package without bringing a tail home.", [
+        { label: "Hear him out", effect: { introduceCrew: "eli", setCrewStage: { id: "eli", stage: "test_available" }, crewLoyalty: { id: "eli", delta: 1 } }, preview: "+1 Eli loyalty · unlocks Give Eli a Test Route in People", result: "Eli marks a short route on the back of the notice. He wants $35 for fuel and one chance to prove it." },
+        { label: "Ask about the service roads", effect: { introduceCrew: "eli", setCrewStage: { id: "eli", stage: "followup_required" }, addRumor: { areaId: "airport_industrial", productId: "shrooms", text: "Eli says construction has pushed patrol traffic away from the east industrial service road for a few hours." } }, preview: "Adds a short-lived Industrial Service Roads clue · recruitment waits for a follow-up", result: "Eli circles the east service road and warns that the shortcut is temporary. He leaves the notice so you know where to find him." },
+        { label: "Turn him away", effect: { introduceCrew: "eli", setCrewStage: { id: "eli", stage: "rejected" }, crewLoyalty: { id: "eli", delta: -1 }, setFlags: { refusedEli: true } }, preview: "Eli leaves · a later callback remembers the rejection", result: "Eli folds the notice into his pocket. ‘I know which doors close,’ he says, and walks toward the service road." },
+      ]),
+      eli_callback: () => event("eli_callback", "Eli Comes Back With a Route", "Eli stops beside North Star Garage without knocking. He heard another driver is asking about your routes. He offers the same test run once, then says he is done asking.", [
+        { label: "Offer the test route", effect: { setCrewStage: { id: "eli", stage: "test_available" }, crewLoyalty: { id: "eli", delta: 1 }, setFlags: { eliRejectionReopened: true } }, preview: "Unlocks Give Eli a Test Route in People", result: "Eli accepts without thanking you. The route and its risks are waiting in People." },
+        { label: "Tell him it is still no", effect: { setFlags: { eliRejectedFinally: true } }, preview: "Eli remains outside this operation", result: "Eli nods and leaves. The next route rumor reaches you through somebody charging more." },
       ]),
       miri_offer: () => event("miri_offer", "The List in Miri's Pocket", "Miri Cole takes the corner booth Downtown and places one torn page between the glasses. Half the names are crossed out; the remaining names still answer.", [
         { label: "Offer her a real share", effect: { introduceCrew: "miri", crewLoyalty: { id: "miri", delta: 2 }, setFlags: { gaveMiriOwnership: true } }, result: "Miri keeps the page and starts talking in terms of ‘we.’" },
@@ -628,13 +749,19 @@
 
   function startEncounter(state, id, finishAfter) {
     const templates = {
-      early: { title: "Mini-Mart Parking Lot Threat", description: "A man from the gray sedan catches the Mini-Mart door before it closes. Mara is behind the counter; your bag is over one shoulder.", enemyName: "Parking Lot Collector", enemyHealth: 24, guard: 0.08, evasion: 0.05, pursuit: 0.10, attack: [5, 10], pay: 85 },
+      early_mara: { title: "The Sedan Comes Back", description: "The gray sedan returns while you are outside the Night Owl. A collector catches the door before it closes, and Mara reaches under the counter without looking away from you.", enemyName: "Parking Lot Collector", enemyHealth: 24, guard: 0.08, evasion: 0.05, pursuit: 0.10, attack: [5, 10], pay: 85 },
+      early_street: { title: "A Tail on the Service Road", description: "A sedan follows you away from Spenard and blocks the narrow service-road exit. No friend is close enough to pull into this decision.", enemyName: "Roadside Collector", enemyHealth: 24, guard: 0.08, evasion: 0.05, pursuit: 0.10, attack: [5, 10], pay: 85 },
       mid: { title: "Rook's Loading-Bay Test", description: "Rook's people close both ends of Bay Nine. They know about the garage, the crew, and which route you used to get here.", enemyName: "Rook's Crew", enemyHealth: 42, guard: 0.14, evasion: 0.10, pursuit: 0.16, attack: [8, 14], pay: 180 },
       late: { title: "The Seventh-Night Consequence", description: "The final plan reaches the garage before you do. Red-and-blue light washes over Rook's sedan while everybody waits to see who you protect.", enemyName: "Final Opposition", enemyHealth: 58, guard: 0.18, evasion: 0.13, pursuit: 0.20, attack: [10, 18], pay: 320 },
     };
     const template = templates[id];
     if (!template) return;
     state.run.pendingEncounter = { id, step: 1, enemyHealth: template.enemyHealth, feedback: template.description, finishAfter: !!finishAfter, ...template };
+    if (id === "early_mara") {
+      const callback = state.people.mara.introChoice === "flirt" ? "Mara taps the coffee lid twice—the same small signal she used while you stayed to flirt." : state.people.mara.introChoice === "friendly" ? "Mara reaches for the alarm after recognizing you from the friendly conversation at her counter." : "Mara recognizes the way you rushed out with the coffee and waits to see whether you will trust her now.";
+      state.run.pendingEncounter.description += ` ${callback}`;
+      state.run.pendingEncounter.feedback = state.run.pendingEncounter.description;
+    }
   }
 
   function eventEligible(state, id) { return !state.run.recentEvents.includes(id); }
@@ -644,7 +771,8 @@
     let id = null;
     if (!state.flags.maraIntroResolved && absolute >= 1) id = "mara_intro";
     else if (!state.flags.eliOfferResolved && absolute >= 3) id = "eli_offer";
-    else if (!state.flags.earlyThreatResolved && state.run.day >= 2) { startEncounter(state, "early", false); return; }
+    else if (!state.flags.earlyThreatResolved && state.run.day >= 2) { startEncounter(state, maraThreatEligible(state) ? "early_mara" : "early_street", false); return; }
+    else if (state.flags.refusedEli && !state.flags.eliCallbackResolved && !state.flags.eliRejectedFinally && state.run.day >= 4) id = "eli_callback";
     else if (state.lender.afterPayoffOffer === "available" && !state.flags.dreAfterPayoffResolved) id = "dre_after_payoff";
     else if (!state.flags.maraTruthResolved && state.people.mara.met && state.run.day >= 3 && random.next() < 0.45) id = "mara_truth";
     else if (!state.flags.courierResolved && state.run.day >= 3 && random.next() < 0.35) id = "courier";
@@ -657,7 +785,7 @@
       const area = AREA_BY_ID[state.world.currentNeighborhoodId];
       const chance = Math.min(0.38, 0.12 + state.player.heat * 0.01 + area.risk * 0.015);
       if (random.next() <= chance) {
-        const eligible = ["buyer_hurry"];
+        const eligible = state.people.mara.met ? ["buyer_hurry"] : [];
         if (state.player.heat >= 5 || area.police >= 3) eligible.push("checkpoint");
         if (state.rival.pressure >= 5 || area.rival >= 3) eligible.push("rook_cut");
         if (area.risk >= 3 || state.player.health < 65) eligible.push("rough_night");
@@ -680,7 +808,12 @@
     state.people.mara.trust += effect.maraTrust || 0;
     if (effect.influence) influenceChange(state, effect.influence.areaId, effect.influence.delta);
     if (effect.setFlags) Object.assign(state.flags, effect.setFlags);
-    if (effect.introduceCrew && state.people.crew[effect.introduceCrew]) state.people.crew[effect.introduceCrew].introduced = true;
+    if (effect.introduceCrew && state.people.crew[effect.introduceCrew]) {
+      state.people.crew[effect.introduceCrew].introduced = true;
+      if (effect.introduceCrew !== "eli" && state.people.crew[effect.introduceCrew].contactStage === "unknown") state.people.crew[effect.introduceCrew].contactStage = "recruitable";
+    }
+    if (effect.setCrewStage && state.people.crew[effect.setCrewStage.id]) state.people.crew[effect.setCrewStage.id].contactStage = effect.setCrewStage.stage;
+    if (effect.addRumor) state.effects.rumors.push({ id: `contact_${state.run.day}_${state.run.slot}_${effect.addRumor.areaId}`, ...effect.addRumor, reliable: true, expiresAt: slotNumber(state.run.day, state.run.slot) + 3 });
     if (effect.crewLoyalty && state.people.crew[effect.crewLoyalty.id]) state.people.crew[effect.crewLoyalty.id].loyalty += effect.crewLoyalty.delta;
     if (effect.crewAllLoyalty) for (const person of recruitedCrew(state)) state.people.crew[person.id].loyalty += effect.crewAllLoyalty;
     if (effect.baseWatched !== undefined) state.base.watched = effect.baseWatched;
@@ -745,6 +878,7 @@
   }
 
   function advanceRun(inputState, context) {
+    const beforeFeatures = featureAvailability(inputState);
     const state = copyState(inputState);
     if (state.run.status !== "playing" || state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return state;
     const random = makeRandom(state.run.rngState);
@@ -762,6 +896,7 @@
     applyPressure(state, context, crossedDay);
     state.stats.pipelineAdvances += 1;
     state.stats.decisions += 1;
+    announceFeatureUnlocks(state, beforeFeatures);
     if (crossedDay) state.run.daySummary = { day: oldDay, netWorth: netWorth(state), operationScore: operationScore(state), heat: state.player.heat, debt: state.lender.balance, health: state.player.health, baseValue: baseValue(state), crew: recruitedCrew(state).length };
     if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
     else if (finalSlot) endRun(state);
@@ -787,7 +922,7 @@
     if (state.player.stats.intelligence >= 3) choices.push({ id: "intimidate", label: "Name their weak position", description: "Use Intelligence to make the threat feel too expensive." });
     const tone = state.people.crew.tone;
     if (tone.recruited && tone.loyalty >= 0) choices.push({ id: "call_tone", label: "Call Tone", description: "Spend crew loyalty to end this on his terms." });
-    if (encounter.id === "early" && state.people.mara.trust >= 2 && state.people.mara.met) choices.push({ id: "call_mara", label: "Signal Mara", description: "Let her trigger the Mini-Mart alarm." });
+    if (encounter.id === "early_mara" && state.people.mara.met) choices.push({ id: "call_mara", label: "Signal Mara", description: "Trust Mara to trigger the Night Owl alarm. This spends some of the trust between you." });
     if (encounter.id === "late" && state.base.tracks.security >= 1) choices.push({ id: "use_base", label: "Fall back to the garage", description: "Security and crew assignments determine the result." });
     if (state.player.gear.consumables.medical_kit > 0 && state.player.health < 100) choices.push({ id: "medical_kit", label: "Use medical kit", description: "Recover before making the next move." });
     return choices;
@@ -806,6 +941,7 @@
     state.run.pendingEncounter = null;
     state.run.encounterCount += 1;
     state.flags[`${encounter.id}ThreatResolved`] = true;
+    if (encounter.id === "early_mara" || encounter.id === "early_street") state.flags.earlyThreatResolved = true;
     state.flags[`${encounter.id}EncounterResult`] = result;
     state.stats.majorDecisions.push(`${encounter.title}: ${result}`);
     logEntry(state, text, result === "win" || result === "escape" || result === "talk" ? "good" : "warn");
@@ -868,7 +1004,7 @@
       else failEncounterStep(state, random, "The calculation");
     } else if (choice === "talk") {
       const influence = state.world.influence[state.world.currentNeighborhoodId] * 0.04;
-      const relationship = encounter.id === "mid" ? state.rival.respect * 0.035 : state.people.mara.trust * 0.02;
+      const relationship = encounter.id === "mid" ? state.rival.respect * 0.035 : encounter.id === "early_mara" ? state.people.mara.trust * 0.02 : 0;
       const chance = clamp(0.28 + state.player.stats.charisma * 0.08 + influence + relationship - encounter.guard, 0.10, 0.90);
       if (random.next() < chance) {
         if (encounter.id === "mid") state.rival.respect += 1;
@@ -878,7 +1014,7 @@
       const gearBonus = GEAR_BY_ID[state.player.gear.equipped.utility]?.escape || 0;
       const chance = clamp(0.24 + state.player.stats.intelligence * 0.09 + gearBonus + 0.18 * freeCargoRatio(state) + healthModifier(state.player.health) - encounter.pursuit, 0.10, 0.90);
       if (random.next() < chance) {
-        const lost = encounter.id === "early" ? null : loseInventory(state, 1);
+        const lost = encounter.id === "early_mara" || encounter.id === "early_street" ? null : loseInventory(state, 1);
         finishEncounter(state, "escape", lost ? `You clear the lane but drop ${lost.lost} ${lost.product.name} under the fence.` : "You saw the open lane before they did and reach the street with the bag intact.");
       } else failEncounterStep(state, random, "The escape");
     } else if (choice === "fight" || choice === "draw") {
@@ -920,37 +1056,78 @@
     const availability = robberyAvailability(inputState);
     if (!availability.available) return inputState;
     const state = copyState(inputState);
+    state.stats.robbery = normalizeRobberyStats(state.stats.robbery, state);
     const random = makeRandom(state.run.rngState);
     const success = random.next() < availability.chance;
+    const attemptNumber = state.stats.robbery.attempts + 1;
+    state.stats.robbery.attempts = attemptNumber;
+    state.stats.robbery.lastAttemptedDay = state.run.day;
     state.stats.robbery.attempted = true;
     let result;
     if (success) {
-      const payout = random.int(180, 300);
+      const payout = random.int(115, 210);
+      const addedHeat = 2 + Math.floor((attemptNumber - 1) / 2);
       state.player.cash += payout;
-      state.player.heat = clamp(state.player.heat + 2, 0, 15);
-      state.rival.pressure = clamp(state.rival.pressure + 1, 0, 15);
+      state.player.heat = clamp(state.player.heat + addedHeat, 0, 15);
+      state.rival.pressure = clamp(state.rival.pressure + Math.min(3, attemptNumber), 0, 15);
+      state.stats.robbery.successes += 1;
+      state.stats.robbery.totalPayout += payout;
       state.stats.robbery.success = true;
-      state.stats.robbery.payout = payout;
+      state.stats.robbery.payout = state.stats.robbery.totalPayout;
       result = {
-        kind: "robbery", tone: "good", title: "The Emergency Score Works",
-        summary: `The Mini-Mart tip leads to an unattended contractor envelope. You clear $${payout} before the owner returns, but APD now has the vehicle description.`,
-        effects: [`+$${payout} cash`, "+2 Heat", "+1 Rook pressure"],
+        kind: "robbery", tone: "good", title: "The Quick Score Pays",
+        summary: `A contractor leaves a cash envelope in an idling truck off the service road. You clear $${payout}, but the driver and nearby cameras get a useful description.`,
+        effects: [`+$${payout} cash`, `+${addedHeat} Heat`, `+${Math.min(3, attemptNumber)} Rook pressure`, `Attempt ${attemptNumber} this week`],
       };
     } else {
-      const damage = random.int(10, 18);
+      const damage = random.int(10 + Math.min(6, attemptNumber - 1), 17 + Math.min(8, attemptNumber - 1));
+      const addedHeat = Math.min(5, 3 + Math.floor((attemptNumber - 1) / 2));
       state.player.health = clamp(state.player.health - damage, 0, 100);
-      state.player.heat = clamp(state.player.heat + 3, 0, 15);
-      state.rival.pressure = clamp(state.rival.pressure + 2, 0, 15);
+      state.player.heat = clamp(state.player.heat + addedHeat, 0, 15);
+      state.rival.pressure = clamp(state.rival.pressure + Math.min(4, attemptNumber + 1), 0, 15);
+      state.stats.robbery.failures += 1;
+      state.stats.robbery.success = state.stats.robbery.successes > 0;
       result = {
-        kind: "robbery", tone: "bad", title: "The Emergency Score Falls Apart",
-        summary: `The register is empty and the owner is waiting behind the stockroom door. You escape hurt, recognized, and without recovery money.`,
-        effects: [`-${damage} Health`, "+3 Heat", "+2 Rook pressure", "$0 payout"],
+        kind: "robbery", tone: "bad", title: "The Quick Score Falls Apart",
+        summary: "The truck is empty and the driver returns with help. You get away hurt and recognized, but another attempt can open on a later day.",
+        effects: [`-${damage} Health`, `+${addedHeat} Heat`, `+${Math.min(4, attemptNumber + 1)} Rook pressure`, "$0 payout", `Attempt ${attemptNumber} this week`],
       };
     }
-    state.stats.majorDecisions.push(`Emergency robbery: ${success ? "success" : "failure"}`);
+    state.stats.majorDecisions.push(`Quick Score ${attemptNumber}: ${success ? "success" : "failure"}`);
     state.run.rngState = random.state;
     logEntry(state, result.summary, result.tone);
-    const advanced = advanceRun(state, { reason: "ROBBERY", suppressStory: true });
+    const advanced = advanceRun(state, { reason: "QUICK_SCORE", suppressStory: true });
+    if (advanced.run.status === "playing") advanced.run.pendingOperationResult = result;
+    return advanced;
+  }
+
+  function executeEliTestRoute(inputState) {
+    const availability = eliTestRouteAvailability(inputState);
+    if (!availability.available) return inputState;
+    const state = copyState(inputState);
+    const random = makeRandom(state.run.rngState);
+    state.player.cash -= availability.cost;
+    state.stats.moneySpent.crew += availability.cost;
+    const successChance = clamp(0.52 + state.player.stats.intelligence * 0.06 + Math.max(0, state.people.crew.eli.loyalty) * 0.03 - state.player.heat * 0.01, 0.42, 0.78);
+    const success = random.next() < successChance;
+    let result;
+    if (success) {
+      const payout = random.int(50, 80);
+      state.player.cash += payout;
+      state.people.crew.eli.loyalty += 1;
+      result = { kind: "eli_test_route", tone: "good", title: "Eli Clears the Test Route", summary: `Eli uses the warehouse access road, delivers the package, and returns with $${payout}. He is now available to recruit at North Star Garage.`, effects: [`-$${availability.cost} route cost`, `+$${payout} delivery cash`, "+1 Eli loyalty", "Eli is recruitable"] };
+    } else {
+      const damage = random.int(5, 9);
+      state.player.health = clamp(state.player.health - damage, 0, 100);
+      state.player.heat = clamp(state.player.heat + 1, 0, 15);
+      result = { kind: "eli_test_route", tone: "warn", title: "The Test Route Draws Attention", summary: `A yard truck blocks Eli's shortcut. You pull the vehicle free, lose ${damage} Health, and pick up Heat, but Eli finishes the route and is available to recruit.`, effects: [`-$${availability.cost} route cost`, `-${damage} Health`, "+1 Heat", "Eli is recruitable"] };
+    }
+    state.people.crew.eli.contactStage = "recruitable";
+    state.flags.eliTestRouteResolved = true;
+    state.stats.majorDecisions.push(`Eli test route: ${success ? "clean" : "compromised"}`);
+    state.run.rngState = random.state;
+    logEntry(state, result.summary, result.tone);
+    const advanced = advanceRun(state, { reason: "ELI_TEST_ROUTE", suppressStory: true });
     if (advanced.run.status === "playing") advanced.run.pendingOperationResult = result;
     return advanced;
   }
@@ -1036,6 +1213,7 @@
 
   function reduceGame(inputState, action) {
     if (!inputState || !action || !action.type) return inputState;
+    if (action.type === "HYDRATE_RUN") return hydrateRun(action.state) || inputState;
     if (action.type === "NEW_RUN") return createRun({ seed: action.seed });
     if (action.type === "CHOOSE_BACKGROUND") {
       if (inputState.run.status !== "choosing_background") return inputState;
@@ -1053,7 +1231,8 @@
       return state;
     }
     if (action.type === "RESOLVE_ENCOUNTER") return reduceEncounter(inputState, action);
-    if (action.type === "ROBBERY") return executeRobbery(inputState);
+    if (action.type === "ROBBERY" || action.type === "QUICK_SCORE") return executeRobbery(inputState);
+    if (action.type === "ELI_TEST_ROUTE") return executeEliTestRoute(inputState);
     if (action.type === "TAKEOVER") return executeTakeover(inputState, action.neighborhoodId, !!action.includePlayer);
 
     const state = copyState(inputState);
@@ -1066,6 +1245,7 @@
 
     const random = makeRandom(state.run.rngState);
     if (action.type === "RESOLVE_EVENT") {
+      const beforeFeatures = featureAvailability(state);
       const current = state.run.pendingEvent;
       const choice = current?.choices?.[action.choiceIndex];
       if (!current || !choice) return inputState;
@@ -1075,7 +1255,12 @@
       state.stats.majorDecisions.push(`${current.title}: ${choice.label}`);
       state.run.recentEvents = [current.id, ...state.run.recentEvents.filter((id) => id !== current.id)].slice(0, 4);
       state.flags[`${current.id.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())}Resolved`] = true;
-      if (current.id === "mara_intro") { state.people.mara.met = true; state.flags.maraIntroResolved = true; }
+      if (current.id === "mara_intro") {
+        state.people.mara.met = true;
+        state.people.mara.introChoice = state.flags.maraIntroChoice || (state.flags.maraFlirted ? "flirt" : state.flags.maraFriendlyIntro ? "friendly" : "distant");
+        state.people.mara.flirtHistory = !!state.flags.maraFlirted;
+        state.flags.maraIntroResolved = true;
+      }
       if (current.id === "eli_offer") state.flags.eliOfferResolved = true;
       if (current.id === "miri_offer") state.flags.miriOfferResolved = true;
       if (current.id === "tone_offer") state.flags.toneOfferResolved = true;
@@ -1085,6 +1270,7 @@
       if (current.id === "base_watch") state.flags.baseWatchResolved = true;
       if (current.id === "crew_crisis") state.flags.crewCrisisResolved = true;
       state.run.rngState = random.state;
+      announceFeatureUnlocks(state, beforeFeatures);
       if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
       return state;
     }
@@ -1244,8 +1430,9 @@
     if (action.type === "RECRUIT_CREW") {
       if (!state.base.visiting || !CREW_BY_ID[action.crewId] || recruitedCrew(state).length >= 2) return inputState;
       const person = CREW_BY_ID[action.crewId], crew = state.people.crew[action.crewId], cost = recruitmentCost(state, action.crewId);
-      if (!crew.introduced || crew.recruited || state.player.cash < cost) return inputState;
+      if (!crew.introduced || crew.recruited || state.player.cash < cost || (person.id === "eli" && crew.contactStage !== "recruitable")) return inputState;
       base.player.cash -= cost; crew.recruited = true; crew.status = "active"; crew.loyalty += 1; crew.wageDue = person.wage; base.stats.moneySpent.crew += cost;
+      crew.contactStage = "active";
       logEntry(base, `${person.name} takes the chair at the garage table. The operation has another person to answer for.`, "good");
       return advanceRun(base, { reason: "RECRUIT_CREW" });
     }
@@ -1313,13 +1500,13 @@
   }
 
   return {
-    VERSION, RUN_DAYS, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
-    createRun, reduceGame, advanceRun, selectRunSummary,
+    VERSION, RUN_DAYS, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
+    createRun, hydrateRun, inspectSave, reduceGame, advanceRun, selectRunSummary,
     selectors: {
       cargoUsed, cargoCapacity, storedCargoUsed, storageCapacity, storedCashCapacity, inventoryValue, netWorth,
       operationScore, baseValue, gearValue, heatBand, priceSignal, influenceLabel, encounterChoices, endingLabel,
-      recruitedCrew, workingCapital, safeDebtPayment, controlled, recruitmentCost, operationGearPower, crewPower,
-      territoryPowerEstimate, territoryBenefits, tradeUnitPrices, tradeProjection, takeoverReadiness, robberyAvailability,
+      recruitedCrew, workingCapital, safeDebtPayment, debtPaymentPreview, featureAvailability, layLowPreview, controlled, recruitmentCost, operationGearPower, crewPower,
+      territoryPowerEstimate, territoryBenefits, tradeUnitPrices, tradeProjection, takeoverReadiness, robberyAvailability, eliTestRouteAvailability, maraThreatEligible,
     },
   };
 });

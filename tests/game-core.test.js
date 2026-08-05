@@ -291,9 +291,8 @@ test("the Mara sedan encounter is unreachable before her boundary scene", () => 
 
 test("Eli progresses from introduction through a time-consuming test route", () => {
   let state = run(901); state.run.slot = 2;
-  // Close the Mara chain so Eli's introduction is the only story beat competing.
-  state.flags.maraIntroResolved = true; state.people.mara.available = false;
-  state = driveTo(state, "eli_offer"); assert.equal(state.run.pendingEvent.id, "eli_offer");
+  state.run.pendingEvent = C.buildEventForTest("eli_offer", state);
+  assert.equal(state.run.pendingEvent.id, "eli_offer");
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
   assert.equal(state.people.crew.eli.contactStage, "test_available");
   const before = state.stats.pipelineAdvances; state.player.cash = 500;
@@ -435,4 +434,143 @@ test("a full seeded run reaches an ending with a coherent Mara record", () => {
   assert.ok(summary.endingLabel.length > 0);
   const stages = state.people.mara.outcomes.map((entry) => entry.stage);
   assert.deepEqual(stages, [...stages].sort((a, b) => a - b), "Mara scenes played out of order");
+});
+
+// --- Alpha v0.7.1: Kip Sallis and the dealer prototype -----------------------
+
+function metKip(seed = 21) {
+  const state = run(seed);
+  state.people.dealers.kip.known = true;
+  state.run.day = 3; state.player.cash = 1500;
+  return state;
+}
+function clearPending(state) {
+  state.run.pendingEvent = null; state.run.pendingEncounter = null;
+  state.run.pendingOperationResult = null; state.run.daySummary = null;
+  return state;
+}
+
+test("a dealer is gated to his own corner and his own hours", () => {
+  const state = metKip();
+  assert.equal(C.selectors.dealerActions(state, "kip").buy.available, true);
+  const away = clearPending(C.reduceGame(state, { type: "TRAVEL", neighborhoodId: "downtown" }));
+  const actions = C.selectors.dealerActions(away, "kip");
+  assert.equal(actions.buy.available, false);
+  assert.match(actions.buy.reason, /Spenard/);
+  const unmet = run(); unmet.run.day = 3;
+  assert.equal(C.selectors.dealerActions(unmet, "kip").rob.available, false);
+});
+
+test("buying off the dealer costs one part of day and builds standing", () => {
+  let state = metKip();
+  const before = state.stats.pipelineAdvances, cash = state.player.cash;
+  state = C.reduceGame(state, { type: "BUY_FROM_DEALER", dealerId: "kip" });
+  assert.equal(state.stats.pipelineAdvances, before + 1, "must advance exactly once");
+  assert.equal(state.people.dealers.kip.standing, 1);
+  assert.ok(state.player.cash < cash, "the purchase costs money");
+  assert.ok(C.selectors.cargoUsed(state) > 0, "the purchase arrives in cargo");
+  // once per day
+  assert.equal(C.selectors.dealerActions(clearPending(state), "kip").buy.available, false);
+});
+
+test("asking the dealer needs standing and yields a reliable lead in his own product", () => {
+  let state = metKip();
+  assert.equal(C.selectors.dealerActions(state, "kip").ask.available, false, "no standing, no conversation");
+  state.people.dealers.kip.standing = 3;
+  const before = state.stats.pipelineAdvances;
+  state = C.reduceGame(state, { type: "ASK_DEALER", dealerId: "kip" });
+  assert.equal(state.stats.pipelineAdvances, before + 1);
+  const rumor = state.effects.rumors[state.effects.rumors.length - 1];
+  assert.equal(rumor.reliable, true);
+  assert.ok(["weed", "shrooms"].includes(rumor.productId), `he tipped ${rumor.productId}`);
+});
+
+test("standing raises the dealer discount", () => {
+  const cold = metKip(); const warm = metKip();
+  warm.people.dealers.kip.standing = 3;
+  assert.ok(C.selectors.dealerActions(warm, "kip").buy.discount > C.selectors.dealerActions(cold, "kip").buy.discount);
+});
+
+test("robbing the dealer is not gated behind the Quick Score comeback threshold", () => {
+  const state = metKip();
+  state.player.cash = 5000; // far above the working-capital reserve
+  assert.equal(C.selectors.robberyAvailability(state).available, false, "Quick Score stays a comeback lever");
+  assert.equal(C.selectors.dealerActions(state, "kip").rob.available, true, "the stickup is a playstyle, not a comeback");
+});
+
+test("a successful dealer robbery pays out and chokes the block's supply", () => {
+  let found = null;
+  for (let seed = 1; seed <= 60 && !found; seed += 1) {
+    const attempt = C.reduceGame(metKip(seed), { type: "ROB_DEALER", dealerId: "kip" });
+    if (attempt.run.pendingOperationResult.tone === "good") found = attempt;
+  }
+  assert.ok(found, "no successful robbery across 60 seeds");
+  const kip = found.people.dealers.kip;
+  assert.equal(kip.robbedCount, 1);
+  assert.equal(kip.supplyChoked, 2);
+  assert.ok(kip.standing < 0, "standing is spent");
+  assert.ok(found.player.heat >= 3, "the robbery is visible");
+  assert.equal(C.selectors.dealerSupplyFactor(found, "north_star_lot", "weed"), 0.6);
+  assert.equal(C.selectors.dealerSupplyFactor(found, "downtown", "weed"), 1, "only his own block is affected");
+});
+
+test("a failed dealer robbery costs health and arms him for next time", () => {
+  let found = null;
+  for (let seed = 1; seed <= 60 && !found; seed += 1) {
+    const attempt = C.reduceGame(metKip(seed), { type: "ROB_DEALER", dealerId: "kip" });
+    if (attempt.run.pendingOperationResult.tone === "bad") found = attempt;
+  }
+  assert.ok(found, "no failed robbery across 60 seeds");
+  assert.equal(found.people.dealers.kip.retaliated, true);
+  assert.ok(found.player.health < 100, "failure hurts");
+  assert.equal(found.people.dealers.kip.robbedCount, 0, "a failure is not a success");
+});
+
+test("the dealer can only be taken twice before he is off the block", () => {
+  const state = metKip();
+  state.people.dealers.kip.robbedCount = 2;
+  const actions = C.selectors.dealerActions(state, "kip");
+  assert.equal(actions.rob.available, false);
+  assert.match(actions.rob.reason, /nothing left/i);
+  state.people.dealers.kip.gone = true;
+  const gone = C.selectors.dealerActions(state, "kip");
+  assert.equal(gone.buy.available, false);
+  assert.equal(gone.ask.available, false);
+  assert.equal(C.selectors.dealerSupplyFactor(state, "north_star_lot", "shrooms"), 0.75, "his absence leaves a smaller permanent dent");
+});
+
+test("the choked supply expires on the daily tick", () => {
+  let state = metKip();
+  state.people.dealers.kip.supplyChoked = 2;
+  state.run.day = 3; state.run.slot = 3;
+  state = quietAdvance(state);
+  assert.equal(state.people.dealers.kip.supplyChoked, 1, "one day burned off");
+  state.run.slot = 3;
+  state = quietAdvance(state);
+  assert.equal(state.people.dealers.kip.supplyChoked, 0);
+  assert.equal(C.selectors.dealerSupplyFactor(state, "north_star_lot", "weed"), 1);
+});
+
+test("Mara hears about a robbery two blocks from her counter", () => {
+  let found = null;
+  for (let seed = 1; seed <= 60 && !found; seed += 1) {
+    const state = metKip(seed);
+    state.people.mara.met = true; state.people.mara.chainStage = 2; state.people.mara.trust = 3;
+    const attempt = C.reduceGame(state, { type: "ROB_DEALER", dealerId: "kip" });
+    if (attempt.run.pendingOperationResult) found = attempt;
+  }
+  assert.ok(found);
+  assert.equal(found.people.mara.trust, 2, "robbing his corner costs a point with her");
+});
+
+test("a pre-v0.7.1 save hydrates and gains the dealer record", () => {
+  const state = metKip();
+  const legacy = JSON.parse(JSON.stringify(state));
+  delete legacy.people.dealers;
+  const inspection = C.inspectSave(JSON.stringify(legacy));
+  assert.equal(inspection.valid, true, inspection.error || "rejected");
+  assert.equal(inspection.state.version, 3);
+  assert.equal(inspection.state.people.dealers.kip.known, false);
+  assert.equal(inspection.state.people.dealers.kip.robbedCount, 0);
+  assert.equal(C.selectors.dealerSupplyFactor(inspection.state, "north_star_lot", "weed"), 1);
 });

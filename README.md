@@ -33,6 +33,8 @@ The live event set is the registry in `game-core.js` (`STORY_REGISTRY`).
 
 ## Documentation
 
+- `VISION.md` — the design target: classless growth, access, obligations
+- `ROADMAP.md` — build order and what each build contains
 - `PROJECT_STATUS.md` — current baseline, architecture, verification, next task
 - `STORY_BIBLE.md` — writing standard, voice guide, chains, event copy
 - `PROGRESSION_DESIGN.md` — Street Read XP spec (design only, not implemented)

@@ -1,6 +1,6 @@
 # 907Hustle: One Good Run — Story Bible
 
-Writer-facing reference for Alpha v0.7. Everything here describes the **active
+Writer-facing reference for Alpha v0.7.1. Everything here describes the **active
 runtime** (`index.html` → `v05.css`, `game-core.js`, `ui.jsx`). The 42 events in
 `events.js` are not loaded and are not canon.
 
@@ -74,7 +74,7 @@ problem. Works through other people, rumors, blocked access, and public
 embarrassment; direct violence arrives only after lesser pressure fails. His
 scenes should show that he has been tracking behavior.
 
-**Kip Sallis** *(v0.7.1)* — Social, opportunistic, alert to shifts in standing.
+**Kip Sallis** — Social, opportunistic, alert to shifts in standing.
 Acts casual while reading weapons, crew, cash, and confidence. Remembers whether
 he was dealt with fairly before he was robbed. Never a disposable target.
 
@@ -124,9 +124,18 @@ against `run.eventHistory`.
 | `chain` | `CHAIN_BASE_CHANCE` 0.30, +0.16 if no chain beat for 3+ slots | Story beats. |
 | `ambient` | `AMBIENT_BASE_CHANCE` 0.20, +0.16 if nothing at all for 5+ slots, + heat and district risk | Street life. |
 
+**Locality preference.** Inside the chain tier, a beat with an `area` outranks
+one without, when the player is standing in that area. Mara's arc is
+district-gated while Eli, Dre, and Rook are not, so without this rule the
+anywhere-chains are eligible in every district and starve her: measured at 9%
+reaching stage 4. With it, 48%. It also makes standing somewhere worth
+something, which is the whole point of a dense Spenard.
+
 **Anti-monopoly.** After two consecutive beats from one chain, that chain is
 dropped from the pool whenever any other candidate exists. A chain with no
-competition is never hard-blocked.
+competition is never hard-blocked. **Reactive beats do not count toward the
+streak** — Dre answering a payment the player just made is the game responding,
+not his storyline hogging the week.
 
 **Per-day cap.** `STORY_BEATS_PER_DAY = 2`. Without it the chain tier consumes
 the registry by Day 4 and every run resolves every storyline — which is how v0.6
@@ -140,13 +149,51 @@ leak into `ui.jsx`.
 
 ## 5. Chains
 
-| Chain | Person | v0.7 stages |
-|---|---|---|
-| `mara_spenard` | Mara Velez | 1–6, complete |
-| `eli_routes` | Eli Ward | 1–2 (5 planned for v0.7.1) |
-| `dre_note` | Dre Holloway | 1–2 (5 planned) |
-| `rook_pressure` | Rook Mercer | 1–3 (6 planned) |
-| `kip_corner` | Kip Sallis | registered, unpopulated (v0.7.1) |
+| Chain | Person | Beats | Stages |
+|---|---|---|---|
+| `mara_spenard` | Mara Velez | 6 | 1–6 |
+| `eli_routes` | Eli Ward | 5 | 1–4 (stage 2 branches) |
+| `dre_note` | Dre Holloway | 6 | 1–5 (stage 3 branches) |
+| `rook_pressure` | Rook Mercer | 6 | 1–6 |
+| `kip_corner` | Kip Sallis | 3 | 1–2 (stage 2 branches) |
+
+**Branch stages.** Two beats may share a stage when they are alternative paths
+through the same point — Eli's rejection reopening against his test-route
+callback, or Kip's retaliation against the person who vouched for you. Stages
+must still cover 1..N with no gaps, because a gap strands every later beat.
+
+### Service Roads — Eli
+
+Introduction, then a branch (the rejection reopening, or the route he changed
+after spotting a tail), then the hand-drawn service-road map he has never shown
+anyone, then the question about whether there is a seat for him after the
+seventh night. He responds to being trusted with judgment; docking his pay for a
+correct call buys punctuality and costs everything else.
+
+### Dre's Note — Dre
+
+The terms stated in dialogue rather than a number on a screen, a **reactive**
+beat that fires on the first payment (and carries one of the six Street Name
+usages), the due day branching across paid-in-full, meaningful partial, token,
+and nothing, the post-payoff offer, and a Day 7 reckoning. He never threatens.
+He uses silence, revised terms, and access.
+
+### Rook's Attention — Rook
+
+Six beats escalating from attention to confrontation: someone repeating a
+private detail back to you, the tail on the service road, Rook arriving in
+person to name a weekly number priced to be paid rather than argued about,
+interference, the loading-bay collision, and a final position that reflects
+respect against pressure. Direct violence only arrives after lesser pressure
+fails.
+
+### The Wash & Go — Kip
+
+Introduction, then a branch between his retaliation and Deshawn — who vouched
+for you before you robbed him — wanting a word. Kip is the object that makes the
+Hustle and Stickup tracks legible against the same person: buy off him, ask him
+what is moving, or take his corner. Robbing him chokes Spenard supply for two
+days, and twice puts him off the block permanently.
 
 ### The Night Owl — Mara's arc
 

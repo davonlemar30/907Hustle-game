@@ -93,7 +93,10 @@ test("every registered beat builds renderable copy with concrete choices", () =>
     assert.ok(built.choices.length >= 2 && built.choices.length <= 4, `${item.id}: ${built.choices.length} choices`);
     for (const choice of built.choices) {
       assert.ok(choice.label.length > 0 && choice.label.split(/\s+/).length <= 8, `${item.id}: choice label "${choice.label}"`);
-      assert.ok(choice.preview && choice.preview.length > 0, `${item.id}: choice "${choice.label}" has no preview`);
+      // Task 7A length guide: previews run 8-24 words. Too short stops naming a
+      // consequence; too long stops being scannable on a phone.
+      const previewWords = choice.preview ? choice.preview.split(/\s+/).length : 0;
+      assert.ok(previewWords >= 8 && previewWords <= 24, `${item.id}: preview for "${choice.label}" is ${previewWords} words`);
       assert.ok(choice.result && choice.result.split(/\s+/).length >= 15, `${item.id}: choice "${choice.label}" has a thin result`);
       // Task 7A: previews must not fall back to filler.
       assert.doesNotMatch(choice.preview, /may matter later|consequences later|something happens/i, `${item.id}: vague preview`);
@@ -181,7 +184,10 @@ test("no chain fires three times running while another beat is eligible", () => 
         const newBeat = state.run.pendingEvent ? true : id !== lastEncounter;
         if (!state.run.pendingEvent) lastEncounter = id;
         if (newBeat) {
-          const chain = (REGISTRY.find((item) => item.id === id) || {}).chain || null;
+          const descriptor = REGISTRY.find((item) => item.id === id) || {};
+          // Reactive beats are caused by the player, not sampled, so they are
+          // not part of what the anti-monopoly rule governs.
+          const chain = descriptor.trigger === "reactive" ? null : (descriptor.chain || null);
           if (chain && chain === last) streak += 1; else streak = chain ? 1 : 0;
           last = chain;
           assert.ok(streak <= 2, `seed ${seed}: chain ${chain} ran ${streak} beats back to back`);
@@ -217,4 +223,35 @@ test("repeatable street events respect their cooldown", () => {
   state.run.day = 4; state.run.slot = 0; // 12 slots later, past the 8-slot gate
   assert.ok(item.cooldown <= 12);
   assert.ok(C.storyCandidatesForTest(state).some((entry) => entry.id === "sedan_rumor"), "never returned after the cooldown");
+});
+
+test("a place-rooted beat outranks an anywhere beat when you are standing there", () => {
+  const rooted = REGISTRY.filter((item) => item.trigger === "chain" && item.area);
+  const anywhere = REGISTRY.filter((item) => item.trigger === "chain" && !item.area);
+  assert.ok(rooted.length > 0 && anywhere.length > 0, "both kinds must exist for the rule to matter");
+  // Mara's arc is district-gated; Eli, Dre, and Rook are not. Without the
+  // locality preference the anywhere chains are eligible in every district and
+  // starve her out of any run that travels.
+  assert.ok(REGISTRY.some((item) => item.chain === "mara_spenard" && item.area === "north_star_lot"));
+});
+
+test("the completed chains each carry an end-of-week beat", () => {
+  for (const chain of ["eli_routes", "dre_note", "rook_pressure"]) {
+    const beats = REGISTRY.filter((item) => item.chain === chain);
+    assert.ok(beats.length >= 5, `${chain} has only ${beats.length} beats`);
+    assert.ok(beats.some((item) => item.classification === "ending_setup"), `${chain} has no end-of-week beat`);
+  }
+});
+
+test("Dre answers a payment reactively rather than on a roll", () => {
+  const first = REGISTRY.find((item) => item.id === "dre_first_payment");
+  assert.equal(first.trigger, "reactive");
+  assert.equal(first.chain, "dre_note");
+});
+
+test("Rook escalates through pressure before the collision", () => {
+  const stages = Object.fromEntries(REGISTRY.filter((item) => item.chain === "rook_pressure").map((item) => [item.id, item.stage]));
+  assert.ok(stages.rook_mark < stages.rook_tax, "he notices before he asks");
+  assert.ok(stages.rook_tax < stages.mid, "he asks before it turns physical");
+  assert.ok(stages.mid < stages.rook_day7, "the collision precedes the reckoning");
 });

@@ -507,9 +507,17 @@
     if (state.run.day === RUN_DAYS && state.run.slot === 3) return blocked("There is no part of the week left for this.");
 
     const discount = record.standing >= 3 ? 0.18 : 0.12;
+    // An offer you cannot take must not present as available: the button would
+    // enable and then do nothing, and an agent would loop on it forever.
+    const cheapest = Math.min(...definition.products.map((id) => Math.round(tradeUnitPrices(state, id).buy * (1 - discount))));
+    const room = cargoCapacity(state) - cargoUsed(state);
     const buy = record.lastTradedDay === state.run.day
       ? { available: false, reason: "You already bought off him today." }
-      : { available: true, reason: `${Math.round(discount * 100)}% under the block price on three units.`, discount, units: 3 };
+      : room <= 0
+        ? { available: false, reason: "You have nothing left to carry it in." }
+        : state.player.cash < cheapest
+          ? { available: false, reason: "You cannot cover even one unit at his price." }
+          : { available: true, reason: `${Math.round(discount * 100)}% under the block price on three units.`, discount, units: 3 };
     const ask = record.standing < 2
       ? { available: false, reason: "He does not talk business with you yet." }
       : record.lastAskedDay === state.run.day
@@ -733,6 +741,16 @@
     mara_invitation: { who: "Mara, off shift early and without a car", where: "The Night Owl lot, Spenard", stakes: "Four hours away from the block, or four hours she spends near your operation. Both cost time." },
     mara_boundary: { who: "Mara and the plate number on her wrist", where: "Behind the Night Owl after closing", stakes: "A plate number, her job, and whether she gets to make this decision with real information." },
     mara_after: { who: "Mara, at the end of your week and the start of hers", where: "Night Owl Mini-Mart, Spenard", stakes: "What the week cost her, and what is left to say about it." },
+    eli_missed_turn: { who: "Eli Ward, back an hour later than the route allows", where: "North Star Garage, Spenard", stakes: "Whether you want a driver who thinks, or one who does what the clock says." },
+    eli_service_map: { who: "Eli and a map he drew himself", where: "Passenger seat outside North Star Garage", stakes: "Route knowledge nobody else on this block has, and what he wants for it." },
+    eli_last_run: { who: "Eli, asking a question he has clearly rehearsed", where: "North Star Garage, Spenard", stakes: "Whether the operation has a place for him after the seventh night." },
+    dre_terms: { who: "Dre Holloway and one folded sheet of paper", where: "Behind the Night Owl Mini-Mart", stakes: "The amount, the date, and what he expects between now and then." },
+    dre_first_payment: { who: "Dre, counting the first money you have brought him", where: "Behind the Night Owl Mini-Mart", stakes: "The shape of the rest of the week's arrangement." },
+    dre_due_day: { who: "Dre on the day the note comes due", where: "Behind the Night Owl Mini-Mart", stakes: "What happens to the balance, and to his patience." },
+    dre_day7: { who: "Dre, closing the week's account", where: "Behind the Night Owl Mini-Mart", stakes: "What your name is worth to him after seven days." },
+    rook_mark: { who: "Rook's people, working through somebody else", where: "Your usual corner", stakes: "Confirmation that you are being watched, and by whom." },
+    rook_tax: { who: "Rook Mercer, in person, which is the message", where: "The Downtown exit lane", stakes: "A cut, a favor, or a public no." },
+    rook_day7: { who: "Rook, deciding what you were", where: "Wherever he finds you on the seventh day", stakes: "Whether the week ends as a partnership, a truce, or a problem." },
     kip_corner_intro: { who: "Kip Sallis, running a corner out of a gym bag", where: "The Wash & Go lot, Spenard Road", stakes: "Whether the block's nearest supply becomes a contact, a mark, or neither." },
     kip_recognized: { who: "Deshawn, who vouched for you before you robbed Kip", where: "Outside the Wash & Go, Spenard", stakes: "What your word is worth on the block after you spent it." },
     wet_bricks: { who: "A driver unstrapping someone else's mistake", where: "Loading Bay Seven, Industrial Service Roads", stakes: "Cheap weight of unverified condition, and a seller who will not be here tomorrow." },
@@ -839,13 +857,13 @@
       ]),
       dre_after_payoff: () => event("dre_after_payoff", "Dre Opens Another Door", "Dre counts the final stack across the hood behind the Mini-Mart and, when it comes out right, tears the note in half and keeps one piece. Then he stands there instead of leaving, which he has not done before. He has three ways for you to use the name you just earned, and he lays them out like a man reading from a menu he wrote himself.", [
         { label: "Take a larger note", effect: { secondLoan: true }, preview: "Take $500 now and owe $600 by the seventh night.", result: "He transfers five hundred before you have finished agreeing to it. The new paper says six hundred by the seventh night, in the same handwriting as the last one. \"Same date. Different number.\" He is already walking back to the car while he says it." },
-        { label: "Ask for the supplier", effect: { access: "cocaine", lenderTrust: 1 }, preview: "Unlocks supplier access and leaves Dre satisfied.", result: "He writes one Downtown address on the back of your paid note, hands it over, and burns the rest of the paperwork in the ashtray with the window cracked an inch. \"Use my name once. After that it's yours or it isn't.\"" },
+        { label: "Ask for the supplier", effect: { access: "cocaine", lenderTrust: 1 }, preview: "Unlocks supplier access and leaves Dre satisfied with the arrangement.", result: "He writes one Downtown address on the back of your paid note, hands it over, and burns the rest of the paperwork in the ashtray with the window cracked an inch. \"Use my name once. After that it's yours or it isn't.\"" },
         { label: "Stay independent", effect: { influence: { areaId: "north_star_lot", delta: 1 }, lenderTrust: 1, setFlags: { refusedSecondNote: true } }, preview: "No new debt. Spenard notices that you walked away clean.", result: "He puts the offer back in his jacket without any visible reaction, which from Dre is a form of respect. \"Then make your own door.\" He gets in the car. He does not say it unkindly, and he does not offer it twice." },
       ]),
       base_watch: () => event("base_watch", "The Sedan Across From the Garage", "The same gray sedan has held the curb across from North Star Garage for forty minutes. The windshield faces the bay door. The engine has not been shut off once in that time, which in this weather means somebody is sitting in it rather than watching from somewhere warm. None of it is hidden. That appears to be the point of it.", [
         { label: "Check the camera", requires: "security2", effect: { heat: -1, setFlags: { identifiedBaseWatcher: true }, baseWatched: false }, preview: "−1 Heat. You find out who is actually sitting out there.", result: "The camera catches the changeover. Rook's driver gets out and a second man in plain clothes gets in, and neither of them looks at the lens. You now know two things they do not know you know, which is worth more than the sedan leaving would have been." },
         { label: "Move the valuable stock", effect: { heat: 1, baseWatched: true }, preview: "+1 Heat. The stock moves, and so does whoever is watching.", result: "You move the bags before first light in two trips. The sedan does not follow the first one. It follows the second one, at a distance, all the way to the turn, and then it goes back to the same piece of curb it started from." },
-        { label: "Leave the garage dark", effect: { baseWatched: true }, preview: "Nothing spent. The garage stays watched.", result: "Nobody comes in and nobody tries the door. In the morning there is a chalk mark low on the frame beside the lock, small enough that you would have missed it entirely if you were not already looking for something." },
+        { label: "Leave the garage dark", effect: { baseWatched: true }, preview: "Nothing spent. The garage stays watched and they know it.", result: "Nobody comes in and nobody tries the door. In the morning there is a chalk mark low on the frame beside the lock, small enough that you would have missed it entirely if you were not already looking for something." },
       ]),
       crew_crisis: () => event("crew_crisis", "A Crew Member Misses Check-In", "A burner vibrates itself half off the garage table at four in the morning. The message is an APD booking number and a dollar amount, and nothing else — no name, no explanation, no request. The booking number belongs to somebody who works for you. Whoever sent it wants money before the shift changes, and the shift changes at six.", [
         { label: "Pay $180 and show up", effect: { cash: -180, crewAllLoyalty: 1, setFlags: { protectedCrewCrisis: true } }, preview: "−$180. Every person working for you hears about it.", result: "You are standing in the lot when the side door opens, which is a different thing entirely than posting the money and staying home. Nobody in the crew says anything about it directly. All of them know by the end of the day." },
@@ -871,6 +889,79 @@
         { label: "Name the next payment", effect: { lenderTrust: 1, setFlags: { dreGoodFaithPayment: true } }, preview: "Dre takes the date and the partial payment for now.", result: "You give him a day and he repeats it back once, in the flat way he says numbers, and puts the stack in his jacket. \"Thursday.\" He does not write it down anywhere, which is not remotely the same thing as forgetting it." },
         { label: "Tell him to wait", effect: { lenderTrust: -2, heat: 1 }, preview: "+1 Heat and real damage to Dre's patience.", result: "He closes his jacket over the money without counting it a third time. \"All right.\" He makes one call from the driver's seat before he pulls out, short, and he is looking at the Mini-Mart door the entire time he is talking." },
       ]),
+      eli_missed_turn: () => event("eli_missed_turn", "An Hour Later Than the Route", "Eli gets back an hour past when the route said he would, and he leads with the reason instead of the apology. A vehicle sat behind him from the fuel stop to the second turn, so he drove past the drop, took a lap around the freight yard, and came in from the other side. The package is intact. He is watching your face to find out whether that was the right call.", [
+        { label: "Ask what he saw", effect: { crewLoyalty: { id: "eli", delta: 2 }, setFlags: { eliJudgmentTrusted: true } }, preview: "Eli learns his read is worth something here.", result: "He gives you the make, the colour, which lane it held, and the two places it could have turned off and did not. None of it is guesswork and none of it is padded. Somewhere in the middle of it he stops sounding like he is defending himself." },
+        { label: "Dock the route payment", effect: { crewLoyalty: { id: "eli", delta: -2 }, cash: 20, setFlags: { eliDocked: true } }, preview: "+$20 back. He learns the clock outranks his judgment.", result: "He does not argue about it, which is worse than arguing. He hands back the twenty without counting it and says the route will be on time next run. It is on time after that, every time, including the runs where it should not have been." },
+        { label: "Tell him he made the right call", effect: { crewLoyalty: { id: "eli", delta: 1 }, setFlags: { eliJudgmentTrusted: true } }, preview: "He will make that call again without asking first.", result: "\"Okay.\" He says it like he is filing it somewhere. Two days later he changes a route again without checking in, and that one is also correct, and he tells you about it afterward the same flat way he tells you the fuel cost." },
+      ]),
+      eli_service_map: () => event("eli_service_map", "The Map He Drew Himself", "Eli spreads a page across the passenger seat under the dome light. It is hand-drawn, to no scale at all, and better than anything you could buy: gate hours, which yards chain up at night, where the patrol cars turn around, and two crossings that do not appear on any map because they are technically somebody's parking lot. He has been building it for a year and he has never shown anyone.", [
+        { label: "Pay him for a copy", requires: "cash90", effect: { cash: -90, crewLoyalty: { id: "eli", delta: 1 }, addRumor: { areaId: "airport_industrial", productId: "meth", text: "Eli's map marks two service-road crossings the patrol pattern does not cover after dark." } }, preview: "−$90. He keeps the original and you get the routes.", result: "He copies it out by hand rather than giving you the original, which takes twenty minutes and tells you exactly how he feels about the page. The copy is just as good. He folds the original back into his jacket before the money is even put away." },
+        { label: "Offer him a share instead", effect: { crewLoyalty: { id: "eli", delta: 2 }, setFlags: { eliOwnsShare: true }, addRumor: { areaId: "airport_industrial", productId: "meth", text: "Eli's map marks two service-road crossings the patrol pattern does not cover after dark." } }, preview: "No cash now. He takes a cut of what the routes earn.", result: "He works out the percentage out loud, lands somewhere lower than you expected, and writes it on the corner of the map so neither of you has to remember it. Then he starts talking about a third crossing he has not verified yet, which he would not have mentioned an hour ago." },
+        { label: "Tell him to keep it", effect: {}, preview: "The routes stay his. Nothing changes tonight, and he does not push.", result: "He folds it up without any visible disappointment and puts it back inside his jacket. \"It's there if you want it.\" He mentions the page exactly once more, in passing, weeks of driving later, and never pushes it again." },
+      ]),
+      eli_last_run: () => event("eli_last_run", "After the Seventh Night", "Eli asks it in the middle of a conversation about fuel prices, the way people ask questions they have been carrying around: what happens to him when this week is over. He is not angling for money. He has worked out that whatever you are building either has a driver's seat in it or it does not, and he would rather find out now than in eight days.", [
+        { label: "Tell him there's a seat", effect: { crewLoyalty: { id: "eli", delta: 2 }, setFlags: { eliPromisedFuture: true } }, preview: "A promise he will hold you to after the seventh night.", result: "He nods once and goes straight back to the fuel prices, which is how you know it landed. Before he leaves he mentions that his cousin has a van with a working heater and no questions attached, and that he had not brought it up before because there had not been a reason to." },
+        { label: "Tell him you don't know yet", effect: { setFlags: { eliToldHonestly: true } }, preview: "Honest and unsatisfying. He can work with honest.", result: "\"That's fair.\" He means it, mostly. He keeps driving the routes exactly as well as before, and he stops mentioning the week after next, and you notice the second thing more than you expected to." },
+        { label: "Tell him this is a one-week job", effect: { crewLoyalty: { id: "eli", delta: -1 }, setFlags: { eliToldNoFuture: true } }, preview: "He finishes the week. He starts looking on his own time.", result: "He takes it without complaint because he asked and you answered. The routes stay clean through the seventh night. But he starts taking calls outside the bay, briefly, and he stops leaving his jacket in the vehicle." },
+      ]),
+      dre_terms: () => event("dre_terms", "One Folded Sheet of Paper", "Dre parks behind the Mini-Mart with the engine running and hands you one folded sheet. It has your name on it, an amount, and a date, and nothing else — no interest schedule, no signature line, no conditions. He waits while you read all four lines of it. \"That's the whole arrangement,\" he says. \"People make it complicated after. Not me.\"", [
+        { label: "Say the date back to him", effect: { lenderTrust: 1, setFlags: { dreTermsAcknowledged: true } }, preview: "Dre starts the week believing you understood him.", result: "He repeats it once after you, flat, the way he says all numbers, and puts the car in gear. \"Good.\" That is the entire ceremony. The paper stays in your pocket for the rest of the week and gets softer at the folds every time you check it." },
+        { label: "Ask what happens if it's late", effect: { setFlags: { dreAskedConsequences: true } }, preview: "You get a straight answer. It is not a threat.", result: "\"It gets bigger, and I stop being somebody you can call.\" He says it in the same tone as the date. There is no menace anywhere in it, which somehow makes it land harder than a threat would have. \"Most people only hear the first half.\"" },
+        { label: "Ask for more time up front", effect: { lenderTrust: -1, setFlags: { dreAskedExtension: true } }, preview: "He says no. He also remembers that you asked before you started.", result: "\"No.\" No pause before it, no reason after it. Then, at the window as he pulls away: \"Ask me again on the day and I might have a different answer. Asking now just tells me what you think of yourself.\"" },
+      ]),
+      dre_first_payment: () => {
+        const name = state.player.streetName || "friend";
+        return event("dre_first_payment", "The First Money You Bring Him", `Dre counts it on the hood without hurrying, in stacks of five, and does not comment on the amount. The Mini-Mart's back light is out again so he does it by the glow of the open car door. When he finishes he puts it away and looks at you for a second longer than the transaction needs, working out whether this is a pattern or a one-off.`, [
+          { label: "Tell him when the next one comes", effect: { lenderTrust: 2, setFlags: { drePaymentPattern: true } }, preview: "A date on the record. Dre keeps dates.", result: `"All right, ${name}." It is the first time he has used the name, and he uses it the way he uses numbers, as a thing that is now on file. He does not write the date down. He does not need to, and both of you know that is the point.` },
+          { label: "Let the money speak", effect: { lenderTrust: 1 }, preview: "No promises made, which means nothing for him to hold you to.", result: `He accepts the silence without pushing into it. "Fine." The car door closes and the light goes out and the lot is dark again. Whatever he decided about you, he decided it while counting and he is not going to share it.` },
+        ]);
+      },
+      dre_due_day: () => {
+        const balance = state.lender.balance;
+        const paid = state.lender.payments;
+        const heavy = paid >= 300;
+        const description = balance <= 0
+          ? "Dre comes by on the due day anyway, which he did not have to do. The note is already clear. He leans on the door of the car with his hands in his pockets and talks about the weather for a minute and a half before he gets to why he is actually here, and the reason turns out to be that almost nobody clears one of these early."
+          : heavy
+            ? `Dre arrives on the due day and does not open with the number. He knows what you have paid; he has been keeping the running total in his head all week. $${balance} is still on the paper and there are hours left in the day. He is here to find out what you want to do about it rather than to tell you.`
+            : `Dre is behind the Mini-Mart on the due day with the engine off, which he does when he intends to stay a while. $${balance} of the original amount is still sitting on the paper. He does not say anything at all when you walk up. He is going to make you open.`;
+        const choices = [];
+        if (balance > 0 && state.player.cash >= Math.min(balance, 100)) {
+          choices.push({ label: "Pay what you have on you", effect: { payLenderNow: true, lenderTrust: 1 }, preview: "Hands over what you are carrying against the balance.", result: "You count it out onto the hood and he counts it again after you, because that is not an insult where he is from, it is just how money gets counted. The number on the paper comes down. Neither of you says anything about the part that is left." });
+        }
+        choices.push({ label: "Name the day you can clear it", effect: { lenderTrust: heavy ? 1 : -1, setFlags: { dreNamedFinalDate: true } }, preview: heavy ? "He has seen enough this week to take a date." : "He has not seen enough this week to take a date on faith.", result: heavy ? "He takes the date without any argument, because the week behind it does the arguing. \"I'll be here.\" He is gone in under a minute, which from Dre is a compliment." : "He listens to the date and does not agree to it or refuse it. \"You've told me a lot of things this week.\" He gets back in the car. The date stands, but so does everything else." });
+        choices.push({ label: "Offer him work instead of money", effect: { lenderTrust: -1, rivalPressure: 1, setFlags: { dreOfferedFavor: true } }, preview: "He takes the offer and the balance stays where it is.", result: "\"Everybody's got something they'd rather do than pay.\" He does not say no. He takes a name and a place off you instead of cash, and by the next evening that name has a problem, and the number on your paper has not moved at all." });
+        return event("dre_due_day", balance <= 0 ? "He Came By Anyway" : "The Day on the Paper", description, choices);
+      },
+      dre_day7: () => {
+        const cleared = state.lender.balance <= 0;
+        return event("dre_day7", cleared ? "The Account Closes Clean" : "What Is Left on the Paper", cleared
+          ? "Dre finds you on the seventh day without having been told where you would be, which is its own kind of statement. The note is settled and there is nothing to collect, so he is here for the other reason people come at the end of an arrangement: to say out loud what he thinks he has been dealing with all week."
+          : `Dre finds you on the seventh day and does not bring up the paper immediately, which is worse than if he had. The balance stands at $${state.lender.balance}. He has already decided what happens next. He is here to tell you, and to see your face while he does it.`, [
+          { label: "Hear him out", effect: { lenderTrust: cleared ? 1 : 0 }, preview: cleared ? "He tells you where you stand with him." : "He tells you what the unpaid balance becomes.", result: cleared ? "\"Most people I front pay me late and act like I owe them the patience.\" He looks out at the lot rather than at you. \"You paid me. That's it. That's the whole compliment, don't wait for a better one.\"" : "\"It doesn't stop being money because the week ended.\" He says the new number, which is larger, and the new date, which is close. Then he waits to see whether you are going to argue, and does not seem to mind either way." },
+          { label: "Ask what comes next", effect: { lenderTrust: cleared ? 1 : -1, setFlags: { dreAskedForFuture: true } }, preview: cleared ? "You ask about the next arrangement before he offers." : "You ask for a future while the current one is unpaid.", result: cleared ? "He takes a second with it. \"Come find me in a week and I'll have a number for you.\" It is not a yes, but he has never once said a thing like that to somebody he was finished with." : "\"Next.\" He repeats the word back like it is unfamiliar. \"You're asking me about next.\" He does not raise his voice at any point, and the conversation is over about four seconds later." },
+        ]);
+      },
+      rook_mark: () => event("rook_mark", "Somebody Repeats a Private Detail", "The kid who sells you coffee mentions, unprompted and friendly, that somebody was asking which mornings you come in. He does not know he has told you anything. Two blocks later the tag on the wall by the bus shelter has been gone over — same wall, same spot, different hand — and whatever it says now, it is not what it said on Monday. Nobody has spoken to you directly.", [
+        { label: "Ask the kid who was asking", effect: { setFlags: { rookMarkInvestigated: true }, rivalRespect: 1 }, preview: "You get a description. Rook hears that you went looking.", result: "The description is useless on its own — a man, a jacket, a car nobody looked at properly — but the kid remembers he was polite and did not buy anything. By the afternoon somebody has told Rook's driver that you asked, which was always the more useful half of doing it." },
+        { label: "Change which mornings you come in", effect: { heat: -1, setFlags: { rookMarkAvoided: true } }, preview: "−1 Heat. Harder to find, and it costs you the routine.", result: "You move your hours and the coffee is worse at the new time and the walk is longer. Nothing follows you for two days. On the third, the same tag on the same wall has been gone over again, so somebody worked out the new schedule inside forty-eight hours." },
+        { label: "Do nothing about it", effect: { rivalPressure: 1 }, preview: "+1 Rook pressure. Being watched costs nothing until it does.", result: "You keep the same mornings and the same corner and act as though the wall is just a wall. Nothing happens for three days. Then a buyer who has never been late is late, and apologises without explaining, and does not meet your eye while doing it." },
+      ]),
+      rook_tax: () => event("rook_tax", "Rook Comes Himself", "Rook Mercer gets out of the car, which the people who work for him say he almost never does. He is unhurried and entirely unthreatening and he stands close enough that the conversation cannot be overheard by the two people waiting at the corner. He names a weekly number. It is smaller than you expected, and that is deliberate: it is priced to be paid, not to be argued about.", [
+        { label: "Pay the number", requires: "cash140", effect: { cash: -140, rivalPressure: -3, rivalRespect: 1, setFlags: { paidRookTax: true } }, preview: "−$140. Pressure comes off and the arrangement is real.", result: "He takes it, folds it once, and puts it in his coat without counting, which is a performance and both of you know it. \"That's this week.\" He gets back in the car. Two of the corners that were closed to you on Tuesday are open again on Wednesday." },
+        { label: "Tell him you need a week", effect: { rivalPressure: 1, setFlags: { delayedRookTax: true } }, preview: "+1 pressure. He grants it, and the number will move.", result: "\"A week.\" He agrees to it immediately, which is the part that should worry you. He does not name a new figure and he does not need to, because the one thing everybody on this block knows about Rook is that the second number is never the first number." },
+        { label: "Offer him a name instead", effect: { rivalRespect: 2, rivalPressure: -1, setFlags: { tradedNameToRook: true }, influence: { areaId: "north_star_lot", delta: -1 } }, preview: "Buys your pressure down using somebody else's exposure instead of cash.", result: "You give him somebody who is not you, and he takes it, and he is visibly a little more interested in you afterward than he was before. It costs nothing today. Within two days the person whose name you traded has stopped working the block, and people know why." },
+        { label: "Tell him no, out loud", effect: { rivalPressure: 4, rivalRespect: 1, setFlags: { refusedRookTax: true } }, preview: "+4 pressure. Said in front of witnesses, which is the point.", result: "He accepts it without any change of expression and gets back in the car, and the two people at the corner heard all of it, which is why you said it there. By nightfall the story is around the block in a version where you said it louder." },
+      ]),
+      rook_day7: () => {
+        const respectful = state.rival.respect >= 2 && state.rival.pressure <= 6;
+        return event("rook_day7", respectful ? "An Offer at the End of the Week" : "The Account He Has Been Keeping", respectful
+          ? "Rook's car is outside the garage on the seventh day and he does not get out of it. The window comes down. He has spent a week watching you handle a debt, a corner, and at least two people who work for him, and he has arrived at a number for what you are worth to him — which is not the same as what you are worth."
+          : "Rook does not come himself on the seventh day. Three people arrive instead and stand in the lot without doing anything at all, which is the entire message. One of them is holding a phone with an open line on it. Whatever gets said here, he is listening to it live.", [
+          { label: respectful ? "Hear the offer" : "Walk out and face them", effect: { rivalRespect: 1 }, preview: respectful ? "You find out what a working arrangement costs." : "You take the meeting on your feet, in your own lot.", result: respectful ? "The arrangement he describes is genuinely good and would leave you working for him in every way that matters except the word. He does not oversell it. \"Think about it past tonight,\" he says, and the window goes back up before you have answered." : "You go out to them and nobody touches anybody. The one with the phone holds it up slightly, and a voice on it says your name once, and then they leave. The whole thing takes ninety seconds and costs you nothing you can count." },
+          { label: respectful ? "Tell him you're staying independent" : "Stay inside and let them stand there", effect: { rivalPressure: 2, setFlags: { refusedRookFinal: true } }, preview: "+2 pressure. He learns where the line is.", result: respectful ? "\"That's a no, then.\" He is not offended, which is somehow worse than if he had been. \"You'll hear from me in a month and it won't be an offer.\" The car pulls out slowly enough that it is clearly on purpose." : "They stand in the lot for forty minutes and then go. Nothing is broken and nobody is hurt and every single person on this block watched them do it, which was always the point of sending them instead of coming." },
+        ]);
+      },
       kip_corner_intro: () => event("kip_corner_intro", "Warm Air Off the Dryer Vents", "The Wash & Go's dryer vents push a column of warm lint-smelling air across the lot, and three people are standing in it because it is the only warm thing on this stretch of Spenard Road. One of them is working a corner out of a gym bag and has already clocked you twice. The second time you look over, he lifts his chin instead of looking away.", [
         { label: "Introduce yourself properly", effect: { meetDealer: "kip", dealerStanding: { id: "kip", delta: 1 } }, preview: "Opens Kip as a contact in People. He decides what you are later.", result: "He gives you a name, Kip, and does not ask for yours, which means he already has some version of it. The conversation lasts ninety seconds and covers nothing. By the end of it you know where he stands every night and he knows you bothered to ask." },
         { label: "Ask what he moves", effect: { meetDealer: "kip" }, preview: "Opens Kip as a contact. Straight to business, and he notices that too.", result: "He tells you weed and shrooms and nothing else, and he tells you the prices without being asked, which is either confidence or a test. He does not offer a name until you are already turning to go, and then he offers it to your back." },
@@ -1044,24 +1135,52 @@
     { id: "eli_callback", chain: "eli_routes", stage: 2, classification: "callback", trigger: "chain",
       requires: (s) => !!s.flags.refusedEli && !s.flags.eliRejectedFinally, area: null,
       earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 6, exit: (s) => !!s.flags.eliRejectedFinally },
+    { id: "eli_missed_turn", chain: "eli_routes", stage: 2, classification: "callback", trigger: "chain",
+      requires: (s) => !!s.flags.eliTestRouteResolved, area: null,
+      earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
+    { id: "eli_service_map", chain: "eli_routes", stage: 3, classification: "opportunity", trigger: "chain",
+      requires: (s) => !!s.flags.eliMissedTurnResolved || s.people.crew.eli.recruited, area: null,
+      earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 6, exit: null },
+    { id: "eli_last_run", chain: "eli_routes", stage: 4, classification: "ending_setup", trigger: "chain",
+      requires: (s) => s.people.crew.eli.introduced && !s.flags.eliRejectedFinally, area: null,
+      earliest: { day: 6, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
 
     // --- Dre's Note ----------------------------------------------------------
-    { id: "dre_warning", chain: "dre_note", stage: 1, classification: "threat", trigger: "chain",
-      requires: (s) => s.lender.balance > 0 && s.run.day >= s.lender.dueDay, area: null,
-      earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 7, exit: (s) => s.lender.balance <= 0 },
-    { id: "dre_after_payoff", chain: "dre_note", stage: 2, classification: "opportunity", trigger: "reactive",
+    { id: "dre_terms", chain: "dre_note", stage: 1, classification: "main_chapter", trigger: "chain",
+      requires: () => true, area: null, earliest: { day: 1, slot: 1 }, latest: { day: 3 }, once: true, cooldown: 0, weight: 9, exit: null },
+    { id: "dre_first_payment", chain: "dre_note", stage: 2, classification: "callback", trigger: "reactive",
+      requires: (s) => s.lender.paymentCount >= 1 && s.lender.balance > 0, area: null,
+      earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
+    { id: "dre_due_day", chain: "dre_note", stage: 3, classification: "main_chapter", trigger: "chain",
+      requires: (s) => !!s.flags.dreTermsResolved && s.run.day >= s.lender.dueDay, area: null,
+      earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
+    { id: "dre_warning", chain: "dre_note", stage: 3, classification: "threat", trigger: "chain",
+      requires: (s) => s.lender.balance > 0 && s.run.day > s.lender.dueDay && !!s.flags.dreDueDayResolved, area: null,
+      earliest: { day: 5, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 6, exit: (s) => s.lender.balance <= 0 },
+    { id: "dre_after_payoff", chain: "dre_note", stage: 4, classification: "opportunity", trigger: "reactive",
       requires: (s) => s.lender.afterPayoffOffer === "available", area: null,
       earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 10, exit: null },
+    { id: "dre_day7", chain: "dre_note", stage: 5, classification: "ending_setup", trigger: "chain",
+      requires: (s) => !!s.flags.dreTermsResolved, area: null,
+      earliest: { day: 7, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
 
     // --- Rook's Attention ----------------------------------------------------
-    { id: "early_street", chain: "rook_pressure", stage: 1, classification: "threat", trigger: "chain", kind: "encounter",
-      requires: () => true, area: null, earliest: { day: 2, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
-    { id: "rook_cut", chain: "rook_pressure", stage: 2, classification: "threat", trigger: "chain",
-      requires: (s) => !!s.flags.earlyThreatResolved && (s.rival.pressure >= 5 || AREA_BY_ID[s.world.currentNeighborhoodId].rival >= 3),
-      area: null, earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
-    { id: "mid", chain: "rook_pressure", stage: 3, classification: "threat", trigger: "chain", kind: "encounter",
+    { id: "rook_mark", chain: "rook_pressure", stage: 1, classification: "threat", trigger: "chain",
+      requires: () => true, area: null, earliest: { day: 2, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
+    { id: "early_street", chain: "rook_pressure", stage: 2, classification: "threat", trigger: "chain", kind: "encounter",
+      requires: (s) => !!s.flags.rookMarkResolved, area: null, earliest: { day: 2, slot: 1 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
+    { id: "rook_tax", chain: "rook_pressure", stage: 3, classification: "main_chapter", trigger: "chain",
       requires: (s) => !!s.flags.earlyThreatResolved, area: null,
+      earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
+    { id: "rook_cut", chain: "rook_pressure", stage: 4, classification: "callback", trigger: "chain",
+      requires: (s) => !!s.flags.rookTaxResolved && (s.rival.pressure >= 5 || AREA_BY_ID[s.world.currentNeighborhoodId].rival >= 3),
+      area: null, earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 6, exit: null },
+    { id: "mid", chain: "rook_pressure", stage: 5, classification: "threat", trigger: "chain", kind: "encounter",
+      requires: (s) => !!s.flags.rookTaxResolved, area: null,
       earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
+    { id: "rook_day7", chain: "rook_pressure", stage: 6, classification: "ending_setup", trigger: "chain",
+      requires: (s) => !!s.flags.earlyThreatResolved, area: null,
+      earliest: { day: 7, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
 
     // --- The Wash & Go -------------------------------------------------------
     { id: "kip_corner_intro", chain: "kip_corner", stage: 1, classification: "character_intro", trigger: "chain",
@@ -1144,9 +1263,14 @@
   function fireStory(state, descriptor) {
     state.run.eventHistory[descriptor.id] = slotNumber(state.run.day, state.run.slot);
     state.run.lastBeatSlot = slotNumber(state.run.day, state.run.slot);
-    if (descriptor.chain) {
+    // Reactive beats fire because the player caused them, so they do not count
+    // toward the anti-monopoly streak. Dre answering a payment is the game
+    // responding, not his storyline crowding out the week.
+    if (descriptor.chain && descriptor.trigger !== "reactive") {
       state.run.chainStreak = state.run.lastChainFired === descriptor.chain ? (state.run.chainStreak || 0) + 1 : 1;
       state.run.lastChainFired = descriptor.chain;
+      state.run.lastChainSlot = slotNumber(state.run.day, state.run.slot);
+    } else if (descriptor.chain) {
       state.run.lastChainSlot = slotNumber(state.run.day, state.run.slot);
     } else {
       state.run.chainStreak = 0;
@@ -1183,6 +1307,13 @@
     // resolves every storyline, which is how the v0.6 ladder felt.
     const beatsToday = state.run.chainBeatsDay === state.run.day ? (state.run.chainBeatsToday || 0) : 0;
     if (beatsToday >= STORY_BEATS_PER_DAY) chains = [];
+    // A beat tied to a place outranks one that could happen anywhere, when you
+    // are actually standing in that place. Without this, location-agnostic
+    // chains are eligible in every district and quietly starve the ones that
+    // belong somewhere - which is how Mara's arc got crowded out of runs that
+    // travel. It also makes standing in a district worth something.
+    const rooted = chains.filter((item) => item.area);
+    if (rooted.length) chains = rooted;
     if (chains.length) {
       const absolute = slotNumber(state.run.day, state.run.slot);
       // Tuned against the Task 7A mix target (3-5 story beats and 2-4 ambient
@@ -1214,6 +1345,19 @@
     state.rival.respect += effect.rivalRespect || 0;
     state.lender.trust += effect.lenderTrust || 0;
     state.people.mara.trust += effect.maraTrust || 0;
+    if (effect.payLenderNow) {
+      const amount = Math.min(state.lender.balance, state.player.cash);
+      if (amount > 0) {
+        state.player.cash -= amount; state.lender.balance -= amount;
+        state.lender.payments += amount; state.lender.paymentCount += 1;
+        state.lender.paymentHistory.push({ day: state.run.day, slot: state.run.slot, amount });
+        state.stats.moneySpent.debt += amount;
+        if (state.lender.balance <= 0 && state.lender.afterPayoffOffer === "locked") {
+          state.lender.clearedAt = { day: state.run.day, slot: state.run.slot };
+          state.lender.afterPayoffOffer = "available";
+        }
+      }
+    }
     if (effect.meetDealer && state.people.dealers?.[effect.meetDealer]) state.people.dealers[effect.meetDealer].known = true;
     if (effect.dealerStanding && state.people.dealers?.[effect.dealerStanding.id]) {
       const record = state.people.dealers[effect.dealerStanding.id];

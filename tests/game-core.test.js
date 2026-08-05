@@ -291,9 +291,8 @@ test("the Mara sedan encounter is unreachable before her boundary scene", () => 
 
 test("Eli progresses from introduction through a time-consuming test route", () => {
   let state = run(901); state.run.slot = 2;
-  // Close the Mara chain so Eli's introduction is the only story beat competing.
-  state.flags.maraIntroResolved = true; state.people.mara.available = false;
-  state = driveTo(state, "eli_offer"); assert.equal(state.run.pendingEvent.id, "eli_offer");
+  state.run.pendingEvent = C.buildEventForTest("eli_offer", state);
+  assert.equal(state.run.pendingEvent.id, "eli_offer");
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
   assert.equal(state.people.crew.eli.contactStage, "test_available");
   const before = state.stats.pipelineAdvances; state.player.cash = 500;

@@ -100,8 +100,25 @@ function CrewDetail({ state, dispatch, person, onBack }) {
   </div></>;
 }
 
+function DealerDetail({ state, dispatch, dealer, onBack }) {
+  const record = C.selectors.dealerRecord(state, dealer.id);
+  const actions = C.selectors.dealerActions(state, dealer.id);
+  return <><PageHead title={dealer.name} sub={`Street contact · ${dealer.where}`} onBack={onBack} /><div className="scroll">
+    <div className="card"><div className="card-title">{dealer.name}<small>{C.selectors.dealerStandingLabel(record)}</small></div>
+      <p>{record.known ? "He works the corner off the dryer vents and keeps his own hours. He remembers who paid fairly and who did not." : "You have not met him yet."}</p>
+      {record.robbedCount > 0 && <p className="warn">He has been robbed {record.robbedCount === 1 ? "once" : `${record.robbedCount} times`} and has not forgotten it.</p>}
+      {record.supplyChoked > 0 && <p className="warn">Nothing is moving on this block while he is off the corner.</p>}
+    </div>
+    <button className="btn full secondary choice" disabled={!actions.buy.available} onClick={() => dispatch({ type: "BUY_FROM_DEALER", dealerId: dealer.id })}>Buy off {dealer.name.split(" ")[0]}<span>{actions.buy.reason}</span></button>
+    <button className="btn full secondary choice" disabled={!actions.ask.available} onClick={() => dispatch({ type: "ASK_DEALER", dealerId: dealer.id })}>Ask what is moving<span>{actions.ask.reason}</span></button>
+    <button className="btn full primary choice" disabled={!actions.rob.available} onClick={() => dispatch({ type: "ROB_DEALER", dealerId: dealer.id })}>Rob {dealer.name.split(" ")[0]}<span>{actions.rob.reason}</span></button>
+  </div></>;
+}
+
 function People({ state, dispatch, navigateMore }) {
   const [page, setPage] = useState("root");
+  if (page.startsWith("dealer:")) { const dealer = C.DEALERS.find((item) => item.id === page.split(":")[1]); return <DealerDetail state={state} dispatch={dispatch} dealer={dealer} onBack={() => setPage("dealers")} />; }
+  if (page === "dealers") return <><PageHead title="Street Contacts" sub="Corners you can buy from, ask, or take" onBack={() => setPage("root")} /><div className="scroll">{C.DEALERS.map((dealer) => { const record = C.selectors.dealerRecord(state, dealer.id); return <CategoryCard key={dealer.id} title={dealer.name} status={C.selectors.dealerStandingLabel(record)} description={record.known ? `Works ${dealer.where}. Fair business, a straight answer, or a stickup — he remembers which one you chose.` : "Somebody on this block is holding, but you have not met them yet."} disabled={!record.known} onClick={() => setPage(`dealer:${dealer.id}`)} />; })}</div></>;
   if (page.startsWith("crew:")) { const person = C.CREW.find((item) => item.id === page.split(":")[1]); return <CrewDetail state={state} dispatch={dispatch} person={person} onBack={() => setPage("crew")} />; }
   if (page.startsWith("person:")) {
     const id = page.split(":")[1];
@@ -115,7 +132,7 @@ function People({ state, dispatch, navigateMore }) {
   </div></>;
   if (page === "crew") return <><PageHead title="Crew" sub={`${C.selectors.recruitedCrew(state).length}/2 active · introduced contacts, recruitment, wages, and assignments`} onBack={() => setPage("root")} /><div className="scroll">{C.CREW.map((person) => { const crew = state.people.crew[person.id]; return <CategoryCard key={person.id} title={person.name} status={crew.recruited ? `Active · ${money(crew.wageDue)} due` : crew.introduced ? crew.contactStage.replaceAll("_", " ") : "Not introduced"} description={`${person.role} · Power ${person.power}. ${crew.introduced ? person.description : "This contact has not entered the run yet."}`} disabled={!crew.introduced} onClick={() => setPage(`crew:${person.id}`)} />; })}</div></>;
   if (page === "history") return <><PageHead title="Recent History" sub="Choices and callbacks from this run" onBack={() => setPage("root")} /><div className="scroll">{state.stats.majorDecisions.slice().reverse().map((entry, index) => <div className="card compact" key={index}>{entry}</div>)}</div></>;
-  return <><PageHead title="People" sub="Open one relationship or crew decision at a time" /><div className="scroll"><CategoryCard title="Key People" status={state.people.mara.met ? "Mara · Dre · Rook" : "Dre · Rook"} description="Personal, lender, and rival relationships with concrete current status." onClick={() => setPage("key")} /><CategoryCard title="Crew" status={`${C.selectors.recruitedCrew(state).length}/2 active`} description="Introduced contacts, recruitment stages, wages, assignments, and crew capacity." onClick={() => setPage("crew")} />{state.stats.majorDecisions.length > 0 && <CategoryCard title="Recent History" status={`${state.stats.majorDecisions.length} decisions`} description="Review important choices that later scenes may call back." onClick={() => setPage("history")} />}</div></>;
+  return <><PageHead title="People" sub="Open one relationship or crew decision at a time" /><div className="scroll"><CategoryCard title="Key People" status={state.people.mara.met ? "Mara · Dre · Rook" : "Dre · Rook"} description="Personal, lender, and rival relationships with concrete current status." onClick={() => setPage("key")} /><CategoryCard title="Street Contacts" status={C.DEALERS.some((item) => state.people.dealers?.[item.id]?.known) ? "Known" : "None yet"} description="Corner suppliers. Buy, ask what is moving, or take it off them." onClick={() => setPage("dealers")} /><CategoryCard title="Crew" status={`${C.selectors.recruitedCrew(state).length}/2 active`} description="Introduced contacts, recruitment stages, wages, assignments, and crew capacity." onClick={() => setPage("crew")} />{state.stats.majorDecisions.length > 0 && <CategoryCard title="Recent History" status={`${state.stats.majorDecisions.length} decisions`} description="Review important choices that later scenes may call back." onClick={() => setPage("history")} />}</div></>;
 }
 
 function QuickScore({ state, dispatch, onBack }) {

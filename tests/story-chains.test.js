@@ -35,16 +35,21 @@ test("registry ids are unique and every referenced chain exists", () => {
   }
 });
 
-test("chain stages form an unbroken sequence from one", () => {
+test("chain stages cover one through N with no gaps", () => {
   const byChain = {};
   for (const item of REGISTRY) {
     if (!item.chain) continue;
     (byChain[item.chain] = byChain[item.chain] || []).push(item.stage);
   }
   for (const [chain, stages] of Object.entries(byChain)) {
-    const sorted = [...stages].sort((a, b) => a - b);
-    assert.equal(new Set(sorted).size, sorted.length, `${chain}: duplicate stage`);
-    sorted.forEach((stage, index) => assert.equal(stage, index + 1, `${chain}: gap before stage ${stage}`));
+    // Duplicates are branches: two alternative beats at the same point in a
+    // chain, such as Eli's rejection path against his test-route path. What
+    // must not happen is a gap, which would strand every later stage.
+    const present = new Set(stages);
+    const highest = Math.max(...stages);
+    for (let stage = 1; stage <= highest; stage += 1) {
+      assert.ok(present.has(stage), `${chain}: no beat at stage ${stage}`);
+    }
   }
 });
 

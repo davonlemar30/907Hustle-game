@@ -143,6 +143,19 @@
     }]));
   }
 
+  // Kip runs a corner rather than a market stall: the same person can be bought
+  // from, asked for word, or robbed, and he remembers which one you picked.
+  const DEALERS = [
+    { id: "kip", name: "Kip Sallis", where: "the Wash & Go lot on Spenard Road", areaId: "north_star_lot", products: ["weed", "shrooms"] },
+  ];
+  const DEALER_BY_ID = Object.fromEntries(DEALERS.map((item) => [item.id, item]));
+  function createDealerState() {
+    return Object.fromEntries(DEALERS.map((item) => [item.id, {
+      known: false, standing: 0, robbedCount: 0, lastRobbedDay: null, lastTradedDay: null,
+      lastAskedDay: null, retaliated: false, gone: false, supplyChoked: 0,
+    }]));
+  }
+
   function createRun(options) {
     const seed = normalizeSeed(options && options.seed);
     const random = makeRandom(seed);
@@ -189,6 +202,7 @@
       people: {
         mara: { met: false, available: true, trust: 0, introChoice: null, flirtHistory: false, truthTold: false, usedWithoutConsent: false, status: "distant", outcomes: [], chainStage: 0, jobAtRisk: false },
         crew: createCrewState(),
+        dealers: createDealerState(),
       },
       flags: { featureNotices: {} },
       effects: { rumors: [], modifiers: [] },
@@ -458,6 +472,65 @@
     const chance = clamp(0.30 + state.player.stats.combat * 0.065 + state.player.stats.intelligence * 0.035 + weaponBonus + crewBonus - state.player.heat * 0.015 - repeatPenalty, 0.22, 0.72);
     return { available: true, reason: "One attempt is available today. It uses one part of day.", chance, chanceLabel: `${Math.round(chance * 100)}%`, workingCapital: capital, attempts: robbery.attempts };
   }
+  // A robbed corner stops supplying the block. Losing him for good leaves a
+  // smaller permanent dent than the days immediately after the robbery.
+  function dealerSupplyFactor(state, areaId, productId) {
+    let factor = 1;
+    for (const dealer of DEALERS) {
+      if (dealer.areaId !== areaId || !dealer.products.includes(productId)) continue;
+      const record = state.people.dealers?.[dealer.id];
+      if (!record) continue;
+      if (record.supplyChoked > 0) factor *= 0.6;
+      else if (record.gone) factor *= 0.75;
+    }
+    return factor;
+  }
+  function dealerRecord(state, id) { return state.people.dealers?.[id] || null; }
+  function dealerStandingLabel(record) {
+    if (!record || !record.known) return "Not met";
+    if (record.gone) return "Gone";
+    if (record.robbedCount > 0) return "Burned";
+    if (record.standing >= 3) return "Solid";
+    if (record.standing >= 1) return "Known";
+    return "Cautious";
+  }
+  function dealerActions(state, id) {
+    const definition = DEALER_BY_ID[id];
+    const record = dealerRecord(state, id);
+    const blocked = (reason) => ({ buy: { available: false, reason }, rob: { available: false, reason }, ask: { available: false, reason } });
+    if (!definition || !record) return blocked("No such contact.");
+    if (state.run.status !== "playing") return blocked("The run is not active.");
+    if (!record.known) return blocked("You have not met this contact yet.");
+    if (record.gone) return blocked(`${definition.name.split(" ")[0]} does not work this block any more.`);
+    if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return blocked("Resolve the current situation first.");
+    if (state.world.currentNeighborhoodId !== definition.areaId) return blocked(`${definition.name.split(" ")[0]} works out of ${AREA_BY_ID[definition.areaId].name}.`);
+    if (state.run.day === RUN_DAYS && state.run.slot === 3) return blocked("There is no part of the week left for this.");
+
+    const discount = record.standing >= 3 ? 0.18 : 0.12;
+    const buy = record.lastTradedDay === state.run.day
+      ? { available: false, reason: "You already bought off him today." }
+      : { available: true, reason: `${Math.round(discount * 100)}% under the block price on three units.`, discount, units: 3 };
+    const ask = record.standing < 2
+      ? { available: false, reason: "He does not talk business with you yet." }
+      : record.lastAskedDay === state.run.day
+        ? { available: false, reason: "You already asked him today." }
+        : { available: true, reason: "One straight answer about what is moving." };
+
+    let rob;
+    if (record.robbedCount >= 2) rob = { available: false, reason: "There is nothing left of him to take." };
+    else if (record.lastRobbedDay === state.run.day) rob = { available: false, reason: "Not twice in one day." };
+    else rob = { available: true, reason: "Take the corner. Injury, Heat, retaliation, and the block's supply are all on the table.", chance: dealerRobberyChance(state, record) };
+    return { buy, rob, ask };
+  }
+  function dealerRobberyChance(state, record) {
+    const weapon = equippedWeapon(state);
+    const weaponBonus = weapon ? (weapon.type === "firearm" ? 0.12 : 0.06) : 0;
+    return clamp(
+      0.38 + state.player.stats.combat * 0.07 + weaponBonus + Math.min(0.10, recruitedCrew(state).length * 0.05)
+      + state.player.stats.intelligence * 0.02 - state.player.heat * 0.012 - record.robbedCount * 0.10 - (record.retaliated ? 0.08 : 0),
+      0.20, 0.78);
+  }
+
   function operationScore(state) {
     const crew = recruitedCrew(state).reduce((sum, person) => sum + Math.max(0, state.people.crew[person.id].loyalty + 2) * 35, 0);
     const influence = Object.values(state.world.influence).reduce((sum, value) => sum + value * 70, 0);
@@ -534,6 +607,7 @@
         market.prices[product.id] = price;
         market.history[product.id] = [...(market.history[product.id] || []), price].slice(-8);
         market.availability[product.id] = random.next() <= area.availability[product.id] ? random.int(3, area.role === "Outer" ? 13 : 9) : 0;
+        market.availability[product.id] = Math.floor(market.availability[product.id] * dealerSupplyFactor(state, area.id, product.id));
       }
       market.updatedAt = absolute;
     }
@@ -615,6 +689,10 @@
         state.stats.takeovers.income += territoryIncome;
         logEntry(state, `The controlled neighborhoods deliver $${territoryIncome} in daily income.`, "good");
       }
+      for (const dealer of DEALERS) {
+        const record = state.people.dealers?.[dealer.id];
+        if (record && record.supplyChoked > 0) record.supplyChoked -= 1;
+      }
       for (const person of recruitedCrew(state)) {
         const crew = state.people.crew[person.id];
         if (crew.wageDue > 0) {
@@ -655,6 +733,8 @@
     mara_invitation: { who: "Mara, off shift early and without a car", where: "The Night Owl lot, Spenard", stakes: "Four hours away from the block, or four hours she spends near your operation. Both cost time." },
     mara_boundary: { who: "Mara and the plate number on her wrist", where: "Behind the Night Owl after closing", stakes: "A plate number, her job, and whether she gets to make this decision with real information." },
     mara_after: { who: "Mara, at the end of your week and the start of hers", where: "Night Owl Mini-Mart, Spenard", stakes: "What the week cost her, and what is left to say about it." },
+    kip_corner_intro: { who: "Kip Sallis, running a corner out of a gym bag", where: "The Wash & Go lot, Spenard Road", stakes: "Whether the block's nearest supply becomes a contact, a mark, or neither." },
+    kip_recognized: { who: "Deshawn, who vouched for you before you robbed Kip", where: "Outside the Wash & Go, Spenard", stakes: "What your word is worth on the block after you spent it." },
     wet_bricks: { who: "A driver unstrapping someone else's mistake", where: "Loading Bay Seven, Industrial Service Roads", stakes: "Cheap weight of unverified condition, and a seller who will not be here tomorrow." },
     door_knock: { who: "Two APD officers working the row", where: "The fourplex two doors from North Star Garage", stakes: "What is in the unit with you, and how long the knocking takes to reach this door." },
     stranded_wagon: { who: "A woman with two kids and a dead battery", where: "The Minnesota Drive off-ramp shoulder", stakes: "Twenty minutes of your week against a stranger's night." },
@@ -791,6 +871,16 @@
         { label: "Name the next payment", effect: { lenderTrust: 1, setFlags: { dreGoodFaithPayment: true } }, preview: "Dre takes the date and the partial payment for now.", result: "You give him a day and he repeats it back once, in the flat way he says numbers, and puts the stack in his jacket. \"Thursday.\" He does not write it down anywhere, which is not remotely the same thing as forgetting it." },
         { label: "Tell him to wait", effect: { lenderTrust: -2, heat: 1 }, preview: "+1 Heat and real damage to Dre's patience.", result: "He closes his jacket over the money without counting it a third time. \"All right.\" He makes one call from the driver's seat before he pulls out, short, and he is looking at the Mini-Mart door the entire time he is talking." },
       ]),
+      kip_corner_intro: () => event("kip_corner_intro", "Warm Air Off the Dryer Vents", "The Wash & Go's dryer vents push a column of warm lint-smelling air across the lot, and three people are standing in it because it is the only warm thing on this stretch of Spenard Road. One of them is working a corner out of a gym bag and has already clocked you twice. The second time you look over, he lifts his chin instead of looking away.", [
+        { label: "Introduce yourself properly", effect: { meetDealer: "kip", dealerStanding: { id: "kip", delta: 1 } }, preview: "Opens Kip as a contact in People. He decides what you are later.", result: "He gives you a name, Kip, and does not ask for yours, which means he already has some version of it. The conversation lasts ninety seconds and covers nothing. By the end of it you know where he stands every night and he knows you bothered to ask." },
+        { label: "Ask what he moves", effect: { meetDealer: "kip" }, preview: "Opens Kip as a contact. Straight to business, and he notices that too.", result: "He tells you weed and shrooms and nothing else, and he tells you the prices without being asked, which is either confidence or a test. He does not offer a name until you are already turning to go, and then he offers it to your back." },
+        { label: "Mark the corner and keep walking", effect: { meetDealer: "kip", dealerStanding: { id: "kip", delta: -1 } }, preview: "Opens Kip as a contact, cold. He read the look you gave the bag.", result: "You do not stop, but you slow down enough to count the bag, the two people with him, and the gap between the vents and the street. He watches you do all of it. Neither of you pretends the other was not counting something." },
+      ]),
+      kip_recognized: () => event("kip_recognized", "Deshawn Wants a Word", "Deshawn put your name in front of Kip when you were nobody on this block, and he has been standing outside the Wash & Go for twenty minutes waiting for you to come past. He is not angry, which is worse. He wants to know whether he read you wrong, and he wants to hear it from you rather than from the four people who have already told him.", [
+        { label: "Tell him straight what you did", effect: { influence: { areaId: "north_star_lot", delta: -1 }, setFlags: { ownedKipRobbery: true } }, preview: "Costs you standing on the block. He keeps talking to you afterward.", result: "You give him the version with nothing shaved off it. He listens all the way through and then stands there a while longer. \"I'm not going to say anything to anybody.\" He means it, and it is somehow worse than being shouted at." },
+        { label: "Offer him money to square it", effect: { cash: -120, setFlags: { paidOffDeshawn: true } }, requires: "cash120", preview: "−$120. It settles the debt without settling what he thinks.", result: "He takes it because turning it down would be a performance and he is not interested in performing. He counts it once, puts it away, and tells you the corner is somebody else's problem now. He does not ask where the money came from, which is its own answer." },
+        { label: "Tell him it was business", effect: { influence: { areaId: "north_star_lot", delta: -1 }, rivalRespect: 1, setFlags: { dismissedDeshawn: true } }, preview: "Costs block standing. The version Rook hears is that you do not flinch.", result: "\"Business.\" He repeats it back without any weight on it at all, nods once, and walks off toward Minnesota. Within two days three people who used to nod at you outside the Mini-Mart have stopped doing it, and one of them tells Rook's driver why." },
+      ]),
       wet_bricks: () => event("wet_bricks", "The Tarp Tore Past Palmer", "The tarp on the flatbed tore somewhere past Palmer and the load rode the last forty miles in freezing rain. The man unstrapping it is not the man who packed it, and he wants it off his truck before his shift ends. He offers the whole lot at a little over half. The seals look intact. Some of them look intact.", [
         { label: "Buy the whole lot", requires: "cash190", effect: { cash: -190, addProduct: { id: "weed", qty: 6, unitCost: 32 }, setFlags: { boughtWetLot: true } }, preview: "−$190 for six units of weed. Condition stays unverified until you try to move it.", result: "He helps you load it, which is the first generous thing he has done all night, and is gone before you finish counting. Two of the seals are soft at the corner. The rest you will find out about at the sale." },
         { label: "Buy two and check the seals", requires: "cash70", effect: { cash: -70, addProduct: { id: "weed", qty: 2, unitCost: 35 } }, preview: "−$70 for two units you can actually inspect before committing.", result: "You take the two off the dry end of the pallet and hold each one up to the bay light. They are fine. He watches you check, decides you are not worth the argument, and re-straps what is left." },
@@ -852,6 +942,7 @@
     const templates = {
       mara_sedan_night: { title: "The Sedan Waits for Her Shift", description: "The gray sedan is in the Night Owl lot with the engine running when Mara's shift ends. A collector catches the door before it closes behind her. She does not look at him. She looks at you, and her hand goes under the counter to where the alarm is, and she waits.", enemyName: "Parking Lot Collector", enemyHealth: 30, guard: 0.10, evasion: 0.06, pursuit: 0.12, attack: [6, 12], pay: 120 },
       early_street: { title: "A Tail on the Service Road", description: "A sedan follows you away from Spenard and blocks the narrow service-road exit. No friend is close enough to pull into this decision.", enemyName: "Roadside Collector", enemyHealth: 24, guard: 0.08, evasion: 0.05, pursuit: 0.10, attack: [5, 10], pay: 85 },
+      kip_retaliation: { title: "The Wash & Go Comes Looking", description: "Kip does not come alone and he does not come to talk. Two of them block the mouth of the lot and a third is already behind you by the time you hear the gravel. He is not interested in the bag or the money. He is interested in what everyone on this block saw happen to him and what they are going to see happen next.", enemyName: "Kip and Two Others", enemyHealth: 38, guard: 0.12, evasion: 0.08, pursuit: 0.14, attack: [7, 13], pay: 150 },
       mid: { title: "Rook's Loading-Bay Test", description: "Rook's people close both ends of Bay Nine. They know about the garage, the crew, and which route you used to get here.", enemyName: "Rook's Crew", enemyHealth: 42, guard: 0.14, evasion: 0.10, pursuit: 0.16, attack: [8, 14], pay: 180 },
       late: { title: "The Seventh-Night Consequence", description: "The final plan reaches the garage before you do. Red-and-blue light washes over Rook's sedan while everybody waits to see who you protect.", enemyName: "Final Opposition", enemyHealth: 58, guard: 0.18, evasion: 0.13, pursuit: 0.20, attack: [10, 18], pay: 320 },
     };
@@ -971,6 +1062,17 @@
     { id: "mid", chain: "rook_pressure", stage: 3, classification: "threat", trigger: "chain", kind: "encounter",
       requires: (s) => !!s.flags.earlyThreatResolved, area: null,
       earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
+
+    // --- The Wash & Go -------------------------------------------------------
+    { id: "kip_corner_intro", chain: "kip_corner", stage: 1, classification: "character_intro", trigger: "chain",
+      requires: () => true, area: "north_star_lot", earliest: { day: 2, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 7, exit: null },
+    // Stage 2 is a branch: he comes back at you, or the person who vouched does.
+    { id: "kip_retaliation", chain: "kip_corner", stage: 2, classification: "threat", trigger: "chain", kind: "encounter",
+      requires: (s) => { const k = s.people.dealers?.kip; return !!k && k.robbedCount > 0 && k.lastRobbedDay != null && s.run.day >= k.lastRobbedDay + 2; },
+      area: null, earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
+    { id: "kip_recognized", chain: "kip_corner", stage: 2, classification: "callback", trigger: "chain",
+      requires: (s) => { const k = s.people.dealers?.kip; return !!k && k.robbedCount > 0 && k.lastTradedDay != null; },
+      area: "north_star_lot", earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 7, exit: null },
 
     // --- Standalone beats carried over from Alpha v0.6 -----------------------
     { id: "miri_offer", chain: null, stage: null, classification: "character_intro", trigger: "ambient",
@@ -1112,6 +1214,11 @@
     state.rival.respect += effect.rivalRespect || 0;
     state.lender.trust += effect.lenderTrust || 0;
     state.people.mara.trust += effect.maraTrust || 0;
+    if (effect.meetDealer && state.people.dealers?.[effect.meetDealer]) state.people.dealers[effect.meetDealer].known = true;
+    if (effect.dealerStanding && state.people.dealers?.[effect.dealerStanding.id]) {
+      const record = state.people.dealers[effect.dealerStanding.id];
+      record.standing = clamp(record.standing + effect.dealerStanding.delta, -5, 5);
+    }
     if (effect.maraJobAtRisk) state.people.mara.jobAtRisk = true;
     if (effect.maraDeparts) { state.people.mara.available = false; state.people.mara.status = "gone"; }
     if (effect.baseDamage) state.base.damage += effect.baseDamage;
@@ -1432,6 +1539,67 @@
     return advanced;
   }
 
+  function executeDealerRobbery(inputState, dealerId) {
+    const actions = dealerActions(inputState, dealerId);
+    if (!actions.rob.available) return inputState;
+    const definition = DEALER_BY_ID[dealerId];
+    const first = definition.name.split(" ")[0];
+    const state = copyState(inputState);
+    const record = state.people.dealers[dealerId];
+    const random = makeRandom(state.run.rngState);
+    const success = random.next() < actions.rob.chance;
+    record.robbedCount += success ? 1 : 0;
+    record.lastRobbedDay = state.run.day;
+    state.rival.pressure = clamp(state.rival.pressure + 1, 0, 15);
+    const effects = [];
+    let result;
+
+    if (success) {
+      const payout = 90 + state.run.day * 12 + random.int(0, 60);
+      const productId = random.pick(definition.products);
+      const units = random.int(2, 4);
+      state.player.cash += payout;
+      applyEventEffect(state, { addProduct: { id: productId, qty: units, unitCost: 0 } }, random);
+      state.player.heat = clamp(state.player.heat + 2, 0, 15);
+      record.standing = Math.max(-5, record.standing - 3);
+      record.supplyChoked = 2;
+      effects.push(`+$${payout} cash`, `+${units} ${PRODUCTS.find((item) => item.id === productId).name} at no cost`, "+2 Heat", "Spenard supply tightens for two days");
+      if (record.robbedCount >= 2) {
+        record.gone = true;
+        effects.push(`${first} is finished on this block`);
+      }
+      result = {
+        kind: "dealer_robbery", tone: "good", title: `${first} Gives Up the Corner`,
+        summary: `He goes down behind the dryer vents without much of a fight and hands over the bag rather than the beating. You clear $${payout} and ${units} units. He watches you the whole way to the street, and by tomorrow nobody on this block is holding.`,
+        effects,
+      };
+    } else {
+      const armed = !!equippedWeapon(state);
+      const damage = random.int(armed ? 12 : 20, 26);
+      state.player.health = clamp(state.player.health - damage, 0, 100);
+      state.player.heat = clamp(state.player.heat + 3, 0, 15);
+      record.standing = Math.max(-5, record.standing - 3);
+      record.retaliated = true;
+      effects.push(`-${damage} Health`, "+3 Heat", "$0 taken", `${first} will be ready next time`);
+      result = {
+        kind: "dealer_robbery", tone: "bad", title: `${first} Was Waiting`,
+        summary: `He is not alone and he is not surprised. You come out of the Wash & Go lot with ${damage} less health, nothing in your hands, and a face he will describe accurately to anyone who asks.`,
+        effects,
+      };
+    }
+
+    if (state.people.mara.chainStage >= 2 && state.people.mara.trust >= 1 && state.people.mara.available !== false) {
+      state.people.mara.trust -= 1;
+      logEntry(state, "Mara works two blocks from the Wash & Go. She hears about it before the end of her shift.", "warn");
+    }
+    state.stats.majorDecisions.push(`Robbed ${first}: ${success ? "took the corner" : "came away empty"}`);
+    state.run.rngState = random.state;
+    logEntry(state, result.summary, result.tone);
+    const advanced = advanceRun(state, { reason: "ROB_DEALER", suppressStory: true });
+    advanced.run.pendingOperationResult = result;
+    return advanced;
+  }
+
   function executeEliTestRoute(inputState) {
     const availability = eliTestRouteAvailability(inputState);
     if (!availability.available) return inputState;
@@ -1567,6 +1735,7 @@
     if (action.type === "RESOLVE_ENCOUNTER") return reduceEncounter(inputState, action);
     if (action.type === "ROBBERY" || action.type === "QUICK_SCORE") return executeRobbery(inputState);
     if (action.type === "ELI_TEST_ROUTE") return executeEliTestRoute(inputState);
+    if (action.type === "ROB_DEALER") return executeDealerRobbery(inputState, action.dealerId);
     if (action.type === "TAKEOVER") return executeTakeover(inputState, action.neighborhoodId, !!action.includePlayer);
 
     const state = copyState(inputState);
@@ -1793,6 +1962,47 @@
       logEntry(base, "You leave the market unopened for one hour and sit with Mara after the Mini-Mart closes.", "good");
       return advanceRun(base, { reason: "VISIT_MARA" });
     }
+    if (action.type === "BUY_FROM_DEALER") {
+      const actions = dealerActions(state, action.dealerId);
+      if (!actions.buy.available) return inputState;
+      const definition = DEALER_BY_ID[action.dealerId];
+      const first = definition.name.split(" ")[0];
+      const record = base.people.dealers[action.dealerId];
+      const random = makeRandom(base.run.rngState);
+      const productId = random.pick(definition.products);
+      const unitPrice = Math.max(1, Math.round(tradeUnitPrices(state, productId).buy * (1 - actions.buy.discount)));
+      const room = cargoCapacity(state) - cargoUsed(state);
+      const units = Math.min(actions.buy.units, room, Math.floor(state.player.cash / unitPrice));
+      if (units <= 0) return inputState;
+      base.player.cash -= unitPrice * units;
+      applyEventEffect(base, { addProduct: { id: productId, qty: units, unitCost: unitPrice } }, random);
+      record.standing = Math.min(5, record.standing + 1);
+      record.lastTradedDay = base.run.day;
+      base.run.rngState = random.state;
+      logEntry(base, `${first} counts out ${units} off the books at $${unitPrice} a unit and remembers that you paid without arguing.`, "good");
+      return advanceRun(base, { reason: "BUY_FROM_DEALER" });
+    }
+    if (action.type === "ASK_DEALER") {
+      const actions = dealerActions(state, action.dealerId);
+      if (!actions.ask.available) return inputState;
+      const definition = DEALER_BY_ID[action.dealerId];
+      const first = definition.name.split(" ")[0];
+      const record = base.people.dealers[action.dealerId];
+      const random = makeRandom(base.run.rngState);
+      const area = random.pick(NEIGHBORHOODS);
+      // He knows his own corner's product, not the whole city's supply chain.
+      const product = random.pick(PRODUCTS.filter((item) => definition.products.includes(item.id)));
+      record.lastAskedDay = base.run.day;
+      base.effects.rumors.push({
+        id: `dealer_${action.dealerId}_${base.run.day}_${base.run.slot}`,
+        areaId: area.id, productId: product.id, reliable: true,
+        text: `${first} says there is money in ${product.name} out in ${area.name} for the next day or so.`,
+        expiresAt: slotNumber(base.run.day, base.run.slot) + 4,
+      });
+      base.run.rngState = random.state;
+      logEntry(base, `${first} talks for a while about who is buying where, and none of it is a guess.`, "good");
+      return advanceRun(base, { reason: "ASK_DEALER" });
+    }
     if (action.type === "INVEST_NEIGHBORHOOD") {
       const areaId = action.neighborhoodId;
       if (!AREA_BY_ID[areaId] || state.world.currentNeighborhoodId !== areaId || state.world.influence[areaId] >= 4 || state.player.cash < 150) return inputState;
@@ -1841,7 +2051,7 @@
   return {
     VERSION, RUN_DAYS, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
     STREET_NAME_MAX, DEFAULT_STREET_NAMES, sanitizeStreetName,
-    CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY,
+    CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS,
     buildEventForTest: activeEvent, storyCandidatesForTest: storyCandidates,
     createRun, hydrateRun, inspectSave, reduceGame, advanceRun, selectRunSummary,
     selectors: {
@@ -1849,6 +2059,7 @@
       operationScore, baseValue, gearValue, heatBand, priceSignal, influenceLabel, encounterChoices, endingLabel,
       recruitedCrew, workingCapital, safeDebtPayment, debtPaymentPreview, featureAvailability, layLowPreview, controlled, recruitmentCost, operationGearPower, crewPower,
       territoryPowerEstimate, territoryBenefits, tradeUnitPrices, tradeProjection, takeoverReadiness, robberyAvailability, eliTestRouteAvailability, maraThreatEligible,
+      dealerRecord, dealerActions, dealerStandingLabel, dealerSupplyFactor,
     },
   };
 });

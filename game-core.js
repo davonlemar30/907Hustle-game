@@ -11,7 +11,21 @@
   const SAVE_KEY = "907ogr_v3";
   const WORKING_CAPITAL_RESERVE = 150;
   const STREET_NAME_MAX = 16;
-  const DEFAULT_STREET_NAMES = { shooter: "Steady", hustler: "Silver", strategist: "Quiet" };
+  const DEFAULT_STREET_NAMES = { shooter: "Steady", hustler: "Silver", strategist: "Quiet", neutral: "Rookie" };
+  const ATTRIBUTE_DEFAULTS = { strength: 2, endurance: 2, reflexes: 2, presence: 2, insight: 2, discipline: 2 };
+  const LEGACY_ATTRIBUTES = {
+    shooter: { strength: 3, endurance: 3, reflexes: 3, presence: 1, insight: 2, discipline: 1 },
+    hustler: { strength: 1, endurance: 1, reflexes: 1, presence: 3, insight: 2, discipline: 2 },
+    strategist: { strength: 2, endurance: 2, reflexes: 2, presence: 1, insight: 3, discipline: 2 },
+  };
+  const STREET_IDENTITIES = {
+    unproven: { label: "Unproven", description: "The block is still deciding." },
+    mover: { label: "The Mover", description: "People notice the way you read a market and keep product moving." },
+    earner: { label: "The Earner", description: "People notice that your promises turn into payments and plans." },
+    stickup: { label: "The Stickup", description: "People expect pressure, confrontation, and a willingness to take the fast risk." },
+    connector: { label: "The Connector", description: "People notice who answers when you call and who trusts you with a route." },
+    wild_card: { label: "The Wild Card", description: "The stories about how you move do not agree long enough to become a rule." },
+  };
 
   // Character-set sanitation only. This is a local single-player run: a profanity
   // blocklist is unwinnable and the real risk is layout breakage, not language.
@@ -95,6 +109,11 @@
   const CREW_BY_ID = Object.fromEntries(CREW.map((item) => [item.id, item]));
 
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+  function normalizedAttributes(state) { return { ...ATTRIBUTE_DEFAULTS, ...(state?.player?.attributes || {}) }; }
+  function combatRating(state) { const a = normalizedAttributes(state); return clamp(Math.round(a.strength * 0.40 + a.reflexes * 0.35 + a.endurance * 0.25), 1, 5); }
+  function charismaRating(state) { const a = normalizedAttributes(state); return clamp(Math.round(a.presence * 0.70 + a.discipline * 0.30), 1, 5); }
+  function intelligenceRating(state) { const a = normalizedAttributes(state); return clamp(Math.round(a.insight * 0.70 + a.discipline * 0.30), 1, 5); }
+  function derivedRatings(state) { return { combat: combatRating(state), charisma: charismaRating(state), intelligence: intelligenceRating(state) }; }
   function copyState(state) {
     return typeof structuredClone === "function" ? structuredClone(state) : JSON.parse(JSON.stringify(state));
   }
@@ -117,6 +136,74 @@
   function logEntry(state, text, tone) {
     state.log.unshift({ text, tone: tone || "", stamp: `Day ${state.run.day} · ${SLOTS[state.run.slot]}` });
     state.log = state.log.slice(0, 80);
+  }
+
+  function behaviorSummary(category, type) {
+    const summaries = {
+      mover: type === "sale" ? "Turned a real profit without wasting the window." : "Read the market or a supplier and moved with purpose.",
+      earner: type === "dre_payment" ? "Put real money against Dre's note." : "Followed through on a responsibility or long plan.",
+      stickup: type === "dealer_robbery" ? "Tried to take a dealer's corner by force." : "Chose confrontation when a safer route existed.",
+      connector: type === "recruit" ? "Brought another person into the operation." : "Built a route through people instead of pressure.",
+    };
+    return summaries[category] || "Made a choice the neighborhood will remember.";
+  }
+  function identityCandidate(scores) {
+    const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+    const [first, second] = ranked;
+    if (!first || first[1] <= 0) return "unproven";
+    const close = second && first[1] - second[1] < 3 && second[1] >= first[1] * 0.75;
+    return close ? "wild_card" : first[0];
+  }
+  function assignIdentity(state, identity, reasonSummary) {
+    state.player.streetIdentity = identity;
+    state.player.identityAssignedDay = state.run.day;
+    state.player.identityHistory.push({ identity, day: state.run.day, reasonSummary });
+    state.player.behavior.pendingIdentity = null;
+    state.player.behavior.pendingIdentityNights = 0;
+    logEntry(state, `People around ${AREA_BY_ID[state.world.currentNeighborhoodId].name} have started calling you ${STREET_IDENTITIES[identity].label}.`, "good");
+  }
+  function evaluateStreetIdentity(state, nightly) {
+    const behavior = state.player.behavior;
+    if (!behavior || behavior.lastEvaluatedDay === state.run.day && nightly) return;
+    if (nightly) behavior.lastEvaluatedDay = state.run.day;
+    const firstReady = behavior.meaningfulActions >= 6 && nightly && state.run.day >= 2;
+    const delayedReady = behavior.meaningfulActions >= 8;
+    if (state.player.streetIdentity === "unproven") {
+      if (!firstReady && !delayedReady) return;
+      const candidate = identityCandidate(behavior.scores);
+      if (candidate !== "unproven") assignIdentity(state, candidate, candidate === "wild_card" ? "The week has stayed deliberately mixed." : `Your recent choices consistently point toward ${STREET_IDENTITIES[candidate].label}.`);
+      return;
+    }
+    if (!nightly) return;
+    const candidate = identityCandidate(behavior.scores);
+    if (candidate === state.player.streetIdentity || candidate === "unproven") {
+      behavior.pendingIdentity = null; behavior.pendingIdentityNights = 0; return;
+    }
+    const currentScore = state.player.streetIdentity === "wild_card" ? 0 : (behavior.scores[state.player.streetIdentity] || 0);
+    const candidateScore = candidate === "wild_card" ? Math.max(...Object.values(behavior.scores)) : (behavior.scores[candidate] || 0);
+    const clearsLead = candidate === "wild_card" || (candidateScore >= currentScore * 1.25 && candidateScore - currentScore >= 3);
+    if (!clearsLead) { behavior.pendingIdentity = null; behavior.pendingIdentityNights = 0; return; }
+    if (behavior.pendingIdentity === candidate) behavior.pendingIdentityNights += 1;
+    else { behavior.pendingIdentity = candidate; behavior.pendingIdentityNights = 1; }
+    if (behavior.pendingIdentityNights >= 2) assignIdentity(state, candidate, `Two nights of choices changed what the neighborhood expects from you.`);
+  }
+  function recordBehavior(state, category, points, sourceId, type) {
+    const behavior = state.player.behavior;
+    if (!behavior || !Object.hasOwn(behavior.scores, category) || !sourceId) return false;
+    if (behavior.history.some((entry) => entry.sourceId === sourceId)) return false;
+    const day = state.run.day;
+    const capKey = `${type || category}:${day}`;
+    const dailyCaps = { sale: 2, dre_payment: 1, dealer_buy: 1, dealer_ask: 1 };
+    const used = behavior.caps[capKey] || 0;
+    if (dailyCaps[type] && used >= dailyCaps[type]) return false;
+    behavior.caps[capKey] = used + 1;
+    const entry = { type: type || category, category, points: clamp(Math.floor(points || 1), 1, 3), day, slot: state.run.slot, sourceId, summary: behaviorSummary(category, type) };
+    behavior.scores[category] += entry.points;
+    behavior.meaningfulActions += 1;
+    behavior.history.push(entry);
+    behavior.history = behavior.history.slice(-50);
+    if (behavior.meaningfulActions >= 8 && state.player.streetIdentity === "unproven") evaluateStreetIdentity(state, false);
+    return true;
   }
 
   function initialMarket(area, random) {
@@ -166,14 +253,17 @@
     const state = {
       version: VERSION,
       run: {
-        status: "choosing_background", day: 1, slot: 0, seed, rngState: random.state,
+        status: "creating_character", day: 1, slot: 0, seed, rngState: random.state,
         ending: null, pendingEvent: null, pendingEncounter: null, pendingOperationResult: null, daySummary: null,
         currentVisit: { trades: 0, grossBuy: 0, grossSell: 0, startedAt: 0 },
         recentEvents: [], encounterCount: 0, finalPlan: null, finalPlanPrepared: false,
         eventHistory: {}, lastChainFired: null, chainStreak: 0, lastChainSlot: null, lastBeatSlot: null, chainBeatsToday: 0, chainBeatsDay: 1,
       },
       player: {
-        background: null, streetName: "", streetNameChosen: false,
+        background: null, legacyBackground: null, streetName: "", streetNameChosen: false,
+        streetIdentity: "unproven", identityAssignedDay: null, identityHistory: [],
+        attributes: { ...ATTRIBUTE_DEFAULTS },
+        behavior: { scores: { mover: 0, earner: 0, stickup: 0, connector: 0 }, meaningfulActions: 0, history: [], pendingIdentity: null, pendingIdentityNights: 0, lastEvaluatedDay: null, caps: {} },
         cash: 0, health: 100, heat: 1, cargoCapacity: 10,
         stats: { combat: 0, charisma: 0, intelligence: 0 }, inventory,
         gear: { owned: [], equipped: { weapon: null, armor: null, utility: null, tool: null }, consumables: { medical_kit: 0 } },
@@ -217,7 +307,7 @@
       },
       log: [],
     };
-    logEntry(state, "Choose how you learned to survive before the week begins.", "warn");
+    logEntry(state, "You do not choose what the block calls you. The week decides.", "warn");
     return state;
   }
 
@@ -249,6 +339,14 @@
     const defaults = createRun({ seed: value.run.seed });
     const state = mergeDefaults(defaults, value);
     state.version = VERSION;
+    const legacy = ["shooter", "hustler", "strategist"].includes(value.player.background) ? value.player.background : value.player.legacyBackground;
+    if (!value.player.attributes && legacy && LEGACY_ATTRIBUTES[legacy]) state.player.attributes = { ...LEGACY_ATTRIBUTES[legacy] };
+    state.player.legacyBackground = legacy || null;
+    state.player.background = null;
+    state.player.stats = derivedRatings(state);
+    state.player.streetIdentity = STREET_IDENTITIES[state.player.streetIdentity] ? state.player.streetIdentity : "unproven";
+    state.player.behavior.history = Array.isArray(state.player.behavior.history) ? state.player.behavior.history.slice(-50) : [];
+    state.player.behavior.caps = state.player.behavior.caps && typeof state.player.behavior.caps === "object" ? state.player.behavior.caps : {};
     state.stats.robbery = normalizeRobberyStats(value.stats?.robbery, state);
     state.flags.featureNotices = state.flags.featureNotices && typeof state.flags.featureNotices === "object" ? state.flags.featureNotices : {};
     state.people.mara.available = state.people.mara.available !== false && state.people.mara.status !== "gone";
@@ -358,7 +456,7 @@
   function recruitmentCost(state, crewId) {
     const person = CREW_BY_ID[crewId];
     if (!person) return 0;
-    const charismaDiscount = Math.max(0, state.player.stats.charisma - 1) * 0.05;
+    const charismaDiscount = Math.max(0, charismaRating(state) - 1) * 0.05;
     const territoryDiscount = controlled(state, "north_star_lot") ? 0.10 : 0;
     return Math.max(1, Math.round(person.recruitCost * (1 - charismaDiscount - territoryDiscount)));
   }
@@ -374,7 +472,7 @@
       power += person.power + clamp(crew.loyalty, 0, 3) - (crew.wageDue > 0 ? 2 : 0);
     }
     if (includePlayer) {
-      power += state.player.stats.combat * 2 + state.player.stats.charisma + state.player.stats.intelligence;
+      power += combatRating(state) * 2 + charismaRating(state) + intelligenceRating(state);
       if (state.player.health > 80) power += 1;
       if (state.player.health < 50) power -= 2;
     }
@@ -382,7 +480,7 @@
   }
   function territoryPowerEstimate(state, areaId) {
     const exact = state.world.territories[areaId]?.power || 0;
-    const intelligence = state.player.stats.intelligence;
+    const intelligence = intelligenceRating(state);
     const spread = intelligence >= 3 ? 0 : intelligence === 2 ? 1 : 3;
     return { exact: spread === 0, min: Math.max(0, exact - spread), max: exact + spread, label: spread ? `${Math.max(0, exact - spread)}–${exact + spread}` : String(exact) };
   }
@@ -396,7 +494,7 @@
     const marketPriceValue = state.world.markets[areaId]?.prices[productId] || 0;
     const control = controlled(state, areaId);
     const buy = Math.round(marketPriceValue * (control ? 0.96 : 1));
-    const charismaBonus = Math.max(0, state.player.stats.charisma - 1) * 0.015;
+    const charismaBonus = Math.max(0, charismaRating(state) - 1) * 0.015;
     const influenceBonus = Math.min(0.02, state.world.influence[areaId] * 0.005);
     const sell = Math.round(marketPriceValue * (0.96 + charismaBonus + influenceBonus + (control ? 0.04 : 0)));
     return { market: marketPriceValue, buy, sell };
@@ -469,7 +567,7 @@
     const weaponBonus = equippedWeapon(state) ? 0.05 : 0;
     const crewBonus = Math.min(0.08, recruitedCrew(state).length * 0.04);
     const repeatPenalty = robbery.attempts * 0.035;
-    const chance = clamp(0.30 + state.player.stats.combat * 0.065 + state.player.stats.intelligence * 0.035 + weaponBonus + crewBonus - state.player.heat * 0.015 - repeatPenalty, 0.22, 0.72);
+    const chance = clamp(0.30 + combatRating(state) * 0.065 + intelligenceRating(state) * 0.035 + weaponBonus + crewBonus - state.player.heat * 0.015 - repeatPenalty, 0.22, 0.72);
     return { available: true, reason: "One attempt is available today. It uses one part of day.", chance, chanceLabel: `${Math.round(chance * 100)}%`, workingCapital: capital, attempts: robbery.attempts };
   }
   // A robbed corner stops supplying the block. Losing him for good leaves a
@@ -534,8 +632,8 @@
     const weapon = equippedWeapon(state);
     const weaponBonus = weapon ? (weapon.type === "firearm" ? 0.12 : 0.06) : 0;
     return clamp(
-      0.38 + state.player.stats.combat * 0.07 + weaponBonus + Math.min(0.10, recruitedCrew(state).length * 0.05)
-      + state.player.stats.intelligence * 0.02 - state.player.heat * 0.012 - record.robbedCount * 0.10 - (record.retaliated ? 0.08 : 0),
+      0.38 + combatRating(state) * 0.07 + weaponBonus + Math.min(0.10, recruitedCrew(state).length * 0.05)
+      + intelligenceRating(state) * 0.02 - state.player.heat * 0.012 - record.robbedCount * 0.10 - (record.retaliated ? 0.08 : 0),
       0.20, 0.78);
   }
 
@@ -635,7 +733,7 @@
       crew.assignment = null;
       const loyaltyBonus = clamp(crew.loyalty, -2, 4) * 0.04;
       if (person.id === "eli") {
-        const success = random.next() < 0.58 + state.player.stats.intelligence * 0.05 + loyaltyBonus - (assignment === "outer_run" ? 0.14 : 0);
+        const success = random.next() < 0.58 + intelligenceRating(state) * 0.05 + loyaltyBonus - (assignment === "outer_run" ? 0.14 : 0);
         if (success) {
           const gain = random.int(85, assignment === "outer_run" ? 210 : 145);
           state.player.cash += gain;
@@ -1019,6 +1117,17 @@
     const factory = events[id];
     if (!factory) return null;
     const built = factory();
+    const identity = state.player.streetIdentity;
+    const identityCopy = {
+      mara_intro: { mover: "Mara notices you check the counter traffic before you sit.", earner: "Mara has already heard that you keep dates written down.", stickup: "Mara watches your hands before she watches your face.", connector: "Mara knows two people who have already said your name kindly.", wild_card: "Mara says the stories about you never agree long enough to become useful." },
+      eli_offer: { mover: "Eli starts with the delivery window instead of the route.", earner: "Eli asks whether the people at your table get paid on time.", stickup: "Eli names the exits before he names the turns.", connector: "Eli names the people on the route before he names the turns.", wild_card: "Eli admits he cannot tell which version of you will show up." },
+      dre_terms: { mover: "Dre asks about turnover before he asks about cash in hand.", earner: "Dre already has the payment dates written down. So do you.", stickup: "Dre leaves a longer silence after he mentions consequences.", connector: "Dre names the people who vouched before he names the number.", wild_card: "Dre says inconsistency is still a pattern if it lasts long enough." },
+      rook_mark: { mover: "Rook's people have started counting your buyers.", earner: "Rook's people know which obligations you have kept.", stickup: "Rook's people stopped asking whether you carry. They ask whether you came alone.", connector: "Rook's people keep asking why calls get returned for you.", wild_card: "Rook's people have three descriptions of you and trust none of them." },
+      kip_corner_intro: { mover: "You check the seals before the price. Kip notices the order.", earner: "Kip asks who taught you to keep a ledger.", stickup: "Kip leaves one hand below the dryer-door line.", connector: "Kip recognizes the name of the person who sent you.", wild_card: "Kip cannot decide whether to quote you a price or watch the exit." },
+      sedan_rumor: { mover: "You weigh the rumor against the lost selling window.", earner: "You weigh it against everything due before Night.", stickup: "The version people repeat gives you a weapon whether it is true or not.", connector: "Two calls tell you more than the third-hand story did.", wild_card: "The rumor changes shape because nobody knows which version of you would react." },
+      dre_day7: { mover: "Dre judges the week by what kept moving.", earner: "Dre judges the week by what got paid.", stickup: "Dre judges the week by what survived the pressure.", connector: "Dre judges the week by who is still at the table.", wild_card: "Dre says the week produced evidence in every direction." },
+    };
+    if (identity !== "unproven" && identityCopy[id]?.[identity]) built.description += ` ${identityCopy[id][identity]}`;
     built.choices = built.choices.filter((choice) => {
       if (!choice.requires) return true;
       if (choice.requires === "security2") return state.base.tracks.security >= 2;
@@ -1040,6 +1149,14 @@
     const template = templates[id];
     if (!template) return;
     state.run.pendingEncounter = { id, step: 1, enemyHealth: template.enemyHealth, feedback: template.description, finishAfter: !!finishAfter, ...template };
+    const identity = state.player.streetIdentity;
+    const preview = identity === "stickup" ? "They arrived expecting you to make this physical."
+      : identity === "connector" ? "They keep looking past you for whoever might answer your call."
+      : identity === "mover" ? "They chose the hour when they think your business will hurt most."
+      : identity === "earner" ? "They know you have obligations you intend to reach."
+      : identity === "wild_card" ? "They prepared for two different versions of you and may have guessed wrong." : "Nobody here knows yet what kind of answer you give.";
+    state.run.pendingEncounter.description += ` ${preview}`;
+    state.run.pendingEncounter.feedback = state.run.pendingEncounter.description;
     if (id === "mara_sedan_night") {
       const tone = state.people.mara.introChoice === "flirt"
         ? "She taps the coffee lid twice, the same small signal from the first night you stayed to talk."
@@ -1471,6 +1588,12 @@
     evolveMarkets(state, random);
     resolveCrewAssignments(state, random);
     applyPressure(state, context, crossedDay);
+    if (crossedDay || finalSlot) {
+      const nextDay = state.run.day, nextSlot = state.run.slot;
+      state.run.day = oldDay; state.run.slot = 3;
+      evaluateStreetIdentity(state, true);
+      state.run.day = nextDay; state.run.slot = nextSlot;
+    }
     state.stats.pipelineAdvances += 1;
     state.stats.decisions += 1;
     announceFeatureUnlocks(state, beforeFeatures);
@@ -1494,9 +1617,9 @@
     if (state.player.cash >= encounter.pay) choices.push({ id: "pay", label: `Pay $${encounter.pay}`, description: "Keep the bag and accept the cost." });
     if (cargoUsed(state) > 0) choices.push({ id: "surrender", label: "Surrender product", description: "Protect health by giving up part of the bag." });
     const weapon = equippedWeapon(state);
-    if (weapon?.type === "close" || state.player.stats.combat >= 3) choices.push({ id: "fight", label: weapon ? `Fight with ${weapon.name}` : "Stand and fight", description: "Combat, health, armor, and close protection matter." });
+    if (weapon?.type === "close" || combatRating(state) >= 3) choices.push({ id: "fight", label: weapon ? `Fight with ${weapon.name}` : "Stand and fight", description: "Combat, health, armor, and close protection matter." });
     if (weapon?.type === "firearm") choices.push({ id: "draw", label: `Draw ${weapon.name}`, description: "Combat and weapon accuracy matter. Firing raises heat." });
-    if (state.player.stats.intelligence >= 3) choices.push({ id: "intimidate", label: "Name their weak position", description: "Use Intelligence to make the threat feel too expensive." });
+    if (intelligenceRating(state) >= 3) choices.push({ id: "intimidate", label: "Name their weak position", description: "Use Intelligence to make the threat feel too expensive." });
     const tone = state.people.crew.tone;
     if (tone.recruited && tone.loyalty >= 0) choices.push({ id: "call_tone", label: "Call Tone", description: "Spend crew loyalty to end this on his terms." });
     if (encounter.id === "mara_sedan_night" && state.people.mara.met) choices.push({ id: "call_mara", label: "Signal Mara", description: "Trust Mara to trigger the Night Owl alarm. This spends some of the trust between you." });
@@ -1533,7 +1656,7 @@
     const encounter = state.run.pendingEncounter;
     const armor = GEAR_BY_ID[state.player.gear.equipped.armor]?.armor || 0;
     const raw = random.int(encounter.attack[0], encounter.attack[1]);
-    const damage = Math.max(1, raw - armor - Math.floor(state.player.stats.combat / 2));
+    const damage = Math.max(1, raw - armor - Math.floor(combatRating(state) / 2));
     state.player.health = clamp(state.player.health - damage, 0, 100);
     encounter.step += 1;
     encounter.feedback = `${action} fails. ${encounter.enemyName} closes the distance and you lose ${damage} health.`;
@@ -1553,6 +1676,8 @@
     if (!available.includes(action.choiceId)) return inputState;
     const random = makeRandom(state.run.rngState);
     const choice = action.choiceId;
+    if (["fight", "draw", "intimidate"].includes(choice)) recordBehavior(state, "stickup", choice === "draw" ? 2 : 1, `encounter:${encounter.id}`, "confrontation");
+    else if (["talk", "call_tone", "call_mara"].includes(choice)) recordBehavior(state, "connector", 1, `encounter:${encounter.id}`, "relationship");
     if (["fight", "draw", "run", "talk", "pay"].includes(choice)) state.stats.encounterChoices[choice === "draw" ? "fight" : choice] += 1;
     else state.stats.encounterChoices.other += 1;
 
@@ -1581,20 +1706,20 @@
       encounter.step += 1;
       encounter.feedback = "You seal the worst injury and force your hands steady. One decision remains.";
     } else if (choice === "intimidate") {
-      const chance = clamp(0.38 + state.player.stats.intelligence * 0.1 + state.rival.respect * 0.03 - encounter.guard, 0.15, 0.9);
+      const chance = clamp(0.38 + intelligenceRating(state) * 0.1 + state.rival.respect * 0.03 - encounter.guard, 0.15, 0.9);
       if (random.next() < chance) finishEncounter(state, "talk", "You name the cameras, exits, and people they failed to count. Their threat collapses under its own cost.");
       else failEncounterStep(state, random, "The calculation");
     } else if (choice === "talk") {
       const influence = state.world.influence[state.world.currentNeighborhoodId] * 0.04;
       const relationship = encounter.id === "mid" ? state.rival.respect * 0.035 : encounter.id === "mara_sedan_night" ? state.people.mara.trust * 0.02 : 0;
-      const chance = clamp(0.28 + state.player.stats.charisma * 0.08 + influence + relationship - encounter.guard, 0.10, 0.90);
+      const chance = clamp(0.28 + charismaRating(state) * 0.08 + influence + relationship - encounter.guard, 0.10, 0.90);
       if (random.next() < chance) {
         if (encounter.id === "mid") state.rival.respect += 1;
         finishEncounter(state, "talk", "You name the people and consequences they forgot to count. The lane opens without anybody reaching for a weapon.");
       } else failEncounterStep(state, random, "The explanation");
     } else if (choice === "run") {
       const gearBonus = GEAR_BY_ID[state.player.gear.equipped.utility]?.escape || 0;
-      const chance = clamp(0.24 + state.player.stats.intelligence * 0.09 + gearBonus + 0.18 * freeCargoRatio(state) + healthModifier(state.player.health) - encounter.pursuit, 0.10, 0.90);
+      const chance = clamp(0.24 + intelligenceRating(state) * 0.09 + gearBonus + 0.18 * freeCargoRatio(state) + healthModifier(state.player.health) - encounter.pursuit, 0.10, 0.90);
       if (random.next() < chance) {
         const lost = encounter.id === "mara_sedan_night" || encounter.id === "early_street" ? null : loseInventory(state, 1);
         finishEncounter(state, "escape", lost ? `You clear the lane but drop ${lost.lost} ${lost.product.name} under the fence.` : "You saw the open lane before they did and reach the street with the bag intact.");
@@ -1602,13 +1727,13 @@
     } else if (choice === "fight" || choice === "draw") {
       const weapon = equippedWeapon(state);
       const firearm = choice === "draw";
-      const chance = clamp((firearm ? 0.28 + state.player.stats.combat * 0.09 : 0.30 + state.player.stats.combat * 0.09) + (weapon?.accuracy || 0) + healthModifier(state.player.health) - (firearm ? encounter.evasion : encounter.guard), 0.10, 0.90);
+      const chance = clamp((firearm ? 0.28 + combatRating(state) * 0.09 : 0.30 + combatRating(state) * 0.09) + (weapon?.accuracy || 0) + healthModifier(state.player.health) - (firearm ? encounter.evasion : encounter.guard), 0.10, 0.90);
       if (firearm) {
         state.player.heat = clamp(state.player.heat + weapon.heat, 0, 15);
         state.flags.firedWeaponDowntown = state.world.currentNeighborhoodId === "downtown";
       }
       if (random.next() < chance) {
-        const damage = weapon ? random.int(weapon.damage[0], weapon.damage[1]) + (firearm ? 0 : Math.floor(state.player.stats.combat / 2)) : random.int(4, 8) + state.player.stats.combat;
+        const damage = weapon ? random.int(weapon.damage[0], weapon.damage[1]) + (firearm ? 0 : Math.floor(combatRating(state) / 2)) : random.int(4, 8) + combatRating(state);
         encounter.enemyHealth -= damage;
         if (encounter.enemyHealth <= 0) {
           if (firearm || encounter.id === "late") state.flags.seriousViolence = true;
@@ -1676,6 +1801,7 @@
       };
     }
     state.stats.majorDecisions.push(`Quick Score ${attemptNumber}: ${success ? "success" : "failure"}`);
+    recordBehavior(state, "stickup", 2, `quick_score:${state.run.day}:${attemptNumber}`, "quick_score");
     state.run.rngState = random.state;
     logEntry(state, result.summary, result.tone);
     const advanced = advanceRun(state, { reason: "QUICK_SCORE", suppressStory: true });
@@ -1737,6 +1863,7 @@
       logEntry(state, "Mara works two blocks from the Wash & Go. She hears about it before the end of her shift.", "warn");
     }
     state.stats.majorDecisions.push(`Robbed ${first}: ${success ? "took the corner" : "came away empty"}`);
+    recordBehavior(state, "stickup", 3, `dealer_robbery:${dealerId}:${state.run.day}:${record.lastRobbedDay}:${state.player.behavior.meaningfulActions}`, "dealer_robbery");
     state.run.rngState = random.state;
     logEntry(state, result.summary, result.tone);
     const advanced = advanceRun(state, { reason: "ROB_DEALER", suppressStory: true });
@@ -1751,7 +1878,7 @@
     const random = makeRandom(state.run.rngState);
     state.player.cash -= availability.cost;
     state.stats.moneySpent.crew += availability.cost;
-    const successChance = clamp(0.52 + state.player.stats.intelligence * 0.06 + Math.max(0, state.people.crew.eli.loyalty) * 0.03 - state.player.heat * 0.01, 0.42, 0.78);
+    const successChance = clamp(0.52 + intelligenceRating(state) * 0.06 + Math.max(0, state.people.crew.eli.loyalty) * 0.03 - state.player.heat * 0.01, 0.42, 0.78);
     const success = random.next() < successChance;
     let result;
     if (success) {
@@ -1768,6 +1895,7 @@
     state.people.crew.eli.contactStage = "recruitable";
     state.flags.eliTestRouteResolved = true;
     state.stats.majorDecisions.push(`Eli test route: ${success ? "clean" : "compromised"}`);
+    recordBehavior(state, "connector", 2, `eli_test_route:${state.run.day}`, "eli_route");
     state.run.rngState = random.state;
     logEntry(state, result.summary, result.tone);
     const advanced = advanceRun(state, { reason: "ELI_TEST_ROUTE", suppressStory: true });
@@ -1847,6 +1975,7 @@
     }
     const result = { kind: "takeover", tone: won ? "good" : "bad", title, summary, rounds, effects, areaId, won, attackPower, defensePower };
     state.stats.majorDecisions.push(`${AREA_BY_ID[areaId].name} takeover: ${won ? "won" : "lost"}`);
+    recordBehavior(state, "stickup", 3, `takeover:${areaId}:${state.run.day}`, "territory_attack");
     state.run.rngState = random.state;
     logEntry(state, summary, result.tone);
     const advanced = advanceRun(state, { reason: "TAKEOVER", suppressStory: true });
@@ -1858,22 +1987,24 @@
     if (!inputState || !action || !action.type) return inputState;
     if (action.type === "HYDRATE_RUN") return hydrateRun(action.state) || inputState;
     if (action.type === "NEW_RUN") return createRun({ seed: action.seed });
-    if (action.type === "CHOOSE_BACKGROUND") {
-      if (inputState.run.status !== "choosing_background") return inputState;
+    if (action.type === "START_RUN" || action.type === "CHOOSE_BACKGROUND") {
+      if (inputState.run.status !== "creating_character") return inputState;
       const background = BACKGROUNDS.find((item) => item.id === action.backgroundId);
-      if (!background) return inputState;
+      if (action.type === "CHOOSE_BACKGROUND" && !background) return inputState;
       const state = copyState(inputState);
       const chosenName = sanitizeStreetName(action.streetName);
-      state.player.background = background.id;
-      state.player.streetName = chosenName || DEFAULT_STREET_NAMES[background.id] || "Steady";
+      state.player.background = null;
+      state.player.legacyBackground = action.type === "CHOOSE_BACKGROUND" ? background.id : null;
+      state.player.attributes = action.type === "CHOOSE_BACKGROUND" ? { ...LEGACY_ATTRIBUTES[background.id] } : { ...ATTRIBUTE_DEFAULTS };
+      state.player.streetName = chosenName || (action.type === "CHOOSE_BACKGROUND" ? DEFAULT_STREET_NAMES[background.id] : DEFAULT_STREET_NAMES.neutral);
       state.player.streetNameChosen = !!chosenName;
-      state.player.cash = background.cash;
-      state.player.heat = background.heat;
-      state.player.stats = { combat: background.combat, charisma: background.charisma, intelligence: background.intelligence };
+      state.player.cash = 375;
+      state.player.heat = 1;
+      state.player.stats = derivedRatings(state);
       state.run.status = "playing";
-      state.stats.startingNetWorth = background.cash - state.lender.balance;
+      state.stats.startingNetWorth = state.player.cash - state.lender.balance;
       state.log = [];
-      logEntry(state, `The North Star Garage key sticks once before the lock turns. Seven nights start now, ${state.player.streetName}.`, "warn");
+      logEntry(state, `${state.player.streetName} starts the week with no title, no crew, and Dre's note already running.`, "warn");
       return state;
     }
     if (action.type === "RESOLVE_ENCOUNTER") return reduceEncounter(inputState, action);
@@ -1898,6 +2029,8 @@
       if (!current || !choice) return inputState;
       state.run.pendingEvent = null;
       applyEventEffect(state, choice.effect || {}, random);
+      const eventCategory = current.id.startsWith("dre_") ? "earner" : current.id.startsWith("rook_") ? "stickup" : current.id.startsWith("eli_") || current.id.startsWith("mara_") ? "connector" : current.id.startsWith("kip_") ? "mover" : null;
+      if (eventCategory) recordBehavior(state, eventCategory, current.id.endsWith("day7") ? 2 : 1, `event:${current.id}`, "story_choice");
       logEntry(state, choice.result, (choice.effect?.cash || 0) >= 0 ? "good" : "warn");
       state.stats.majorDecisions.push(`${current.title}: ${choice.label}`);
       state.run.recentEvents = [current.id, ...state.run.recentEvents.filter((id) => id !== current.id)].slice(0, 4);
@@ -1960,6 +2093,7 @@
       state.stats.productsMoved[product.id] += qty;
       state.stats.bestTrade = Math.max(state.stats.bestTrade, total);
       state.stats.largestLoss = Math.max(state.stats.largestLoss, Math.max(0, -profit));
+      if (profit >= 20) recordBehavior(state, "mover", profit >= 100 ? 2 : 1, `sale:${state.run.day}:${state.world.currentNeighborhoodId}:${state.run.currentVisit.trades}:${product.id}`, "sale");
       if (profit > 0 && qty >= 3 && !state.world.tradeInfluenceGranted[state.world.currentNeighborhoodId]) {
         influenceChange(state, state.world.currentNeighborhoodId, 1);
         state.world.tradeInfluenceGranted[state.world.currentNeighborhoodId] = true;
@@ -2008,6 +2142,7 @@
       if (!crew.recruited || crew.wageDue <= 0 || state.player.cash < crew.wageDue) return inputState;
       const amount = crew.wageDue;
       state.player.cash -= amount; crew.wageDue = 0; crew.loyalty += 1; state.stats.moneySpent.crew += amount;
+      recordBehavior(state, "earner", 2, `crew_pay:${action.crewId}:${state.run.day}`, "crew_pay");
       logEntry(state, `${CREW_BY_ID[action.crewId].name.split(" ")[0]} folds the full $${amount} into a pocket and stays for the next plan.`, "good");
       return state;
     }
@@ -2053,6 +2188,7 @@
         base.flags.drePaidEarly = base.run.day <= base.lender.dueDay;
       }
       base.lender.relationship = relationshipForLender(base.lender, base.run.day);
+      recordBehavior(base, "earner", amount >= 150 || !base.lender.balance ? 2 : 1, `dre_payment:${base.run.day}:${base.lender.paymentCount}`, "dre_payment");
       logEntry(base, base.lender.balance ? `Dre counts $${amount} behind the Mini-Mart. $${base.lender.balance} stays written on the note.` : "Dre counts the final stack, tears the note in half, and keeps one piece.", "good");
       return advanceRun(base, { reason: "PAY_DEBT" });
     }
@@ -2062,6 +2198,7 @@
       const upgrade = BASE_UPGRADES.find((item) => item.track === track && item.level === nextLevel);
       if (!upgrade || state.player.cash < upgrade.cost) return inputState;
       base.player.cash -= upgrade.cost; base.base.tracks[track] = nextLevel; base.stats.moneySpent.base += upgrade.cost;
+      recordBehavior(base, "earner", 2, `base_upgrade:${track}:${nextLevel}`, "safehouse_investment");
       logEntry(base, `${upgrade.name} changes what the garage can protect.`, "good");
       return advanceRun(base, { reason: "UPGRADE_BASE" });
     }
@@ -2084,6 +2221,7 @@
       if (!crew.introduced || crew.recruited || state.player.cash < cost || (person.id === "eli" && crew.contactStage !== "recruitable")) return inputState;
       base.player.cash -= cost; crew.recruited = true; crew.status = "active"; crew.loyalty += 1; crew.wageDue = person.wage; base.stats.moneySpent.crew += cost;
       crew.contactStage = "active";
+      recordBehavior(base, "connector", 3, `recruit:${action.crewId}`, "recruit");
       logEntry(base, `${person.name} takes the chair at the garage table. The operation has another person to answer for.`, "good");
       return advanceRun(base, { reason: "RECRUIT_CREW" });
     }
@@ -2122,6 +2260,7 @@
       applyEventEffect(base, { addProduct: { id: productId, qty: units, unitCost: unitPrice } }, random);
       record.standing = Math.min(5, record.standing + 1);
       record.lastTradedDay = base.run.day;
+      recordBehavior(base, "mover", 1, `dealer_buy:${action.dealerId}:${base.run.day}`, "dealer_buy");
       base.run.rngState = random.state;
       logEntry(base, `${first} counts out ${units} off the books at $${unitPrice} a unit and remembers that you paid without arguing.`, "good");
       return advanceRun(base, { reason: "BUY_FROM_DEALER" });
@@ -2137,6 +2276,7 @@
       // He knows his own corner's product, not the whole city's supply chain.
       const product = random.pick(PRODUCTS.filter((item) => definition.products.includes(item.id)));
       record.lastAskedDay = base.run.day;
+      recordBehavior(base, "mover", 1, `dealer_ask:${action.dealerId}:${base.run.day}`, "dealer_ask");
       base.effects.rumors.push({
         id: `dealer_${action.dealerId}_${base.run.day}_${base.run.slot}`,
         areaId: area.id, productId: product.id, reliable: true,
@@ -2151,6 +2291,7 @@
       const areaId = action.neighborhoodId;
       if (!AREA_BY_ID[areaId] || state.world.currentNeighborhoodId !== areaId || state.world.influence[areaId] >= 4 || state.player.cash < 150) return inputState;
       base.player.cash -= 150; influenceChange(base, areaId, 1); base.stats.moneySpent.base += 150;
+      recordBehavior(base, "earner", 2, `neighborhood_investment:${areaId}`, "safehouse_investment");
       logEntry(base, `You put $150 into a promise people in ${AREA_BY_ID[areaId].name} can see.`, "good");
       return advanceRun(base, { reason: "INVEST_NEIGHBORHOOD" });
     }
@@ -2159,6 +2300,7 @@
       if (state.run.day < 6 || !allowed.includes(action.planId) || state.run.finalPlanPrepared) return inputState;
       base.run.finalPlan = action.planId; base.run.finalPlanPrepared = true;
       base.stats.majorDecisions.push(`Prepared final plan: ${action.planId}`);
+      recordBehavior(base, "earner", 2, `final_plan:${action.planId}`, "day7_plan");
       logEntry(base, `The garage table is cleared for one final plan: ${action.planId.replace("_", " ")}.`, "warn");
       return advanceRun(base, { reason: "PREPARE_FINAL_PLAN" });
     }
@@ -2181,6 +2323,7 @@
     return {
       ending: state.run.ending, endingLabel: endingLabel(state.run.ending), cash: state.player.cash,
       streetName: state.player.streetName || "Unnamed run",
+      streetIdentity: state.player.streetIdentity, streetIdentityLabel: STREET_IDENTITIES[state.player.streetIdentity]?.label || STREET_IDENTITIES.unproven.label,
       storedCash: state.base.storedCash, debt: state.lender.balance, inventoryValue: inventoryValue(state),
       netWorth: netWorth(state), operationScore: operationScore(state), baseValue: baseValue(state), gearValue: gearValue(state),
       baseTracks: { ...state.base.tracks }, crew: recruitedCrew(state).map((person) => ({ id: person.id, name: person.name, loyalty: state.people.crew[person.id].loyalty, status: state.people.crew[person.id].status })),
@@ -2194,12 +2337,14 @@
 
   return {
     VERSION, RUN_DAYS, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
-    STREET_NAME_MAX, DEFAULT_STREET_NAMES, sanitizeStreetName,
+    STREET_NAME_MAX, DEFAULT_STREET_NAMES, ATTRIBUTE_DEFAULTS, LEGACY_ATTRIBUTES, STREET_IDENTITIES, sanitizeStreetName,
     CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS,
     buildEventForTest: activeEvent, storyCandidatesForTest: storyCandidates,
+    recordBehaviorForTest: recordBehavior, evaluateStreetIdentityForTest: evaluateStreetIdentity,
     createRun, hydrateRun, inspectSave, reduceGame, advanceRun, selectRunSummary,
     selectors: {
       cargoUsed, cargoCapacity, storedCargoUsed, storageCapacity, storedCashCapacity, inventoryValue, netWorth,
+      combatRating, charismaRating, intelligenceRating, derivedRatings,
       operationScore, baseValue, gearValue, heatBand, priceSignal, influenceLabel, encounterChoices, endingLabel,
       recruitedCrew, workingCapital, safeDebtPayment, debtPaymentPreview, featureAvailability, layLowPreview, controlled, recruitmentCost, operationGearPower, crewPower,
       territoryPowerEstimate, territoryBenefits, tradeUnitPrices, tradeProjection, takeoverReadiness, robberyAvailability, eliTestRouteAvailability, maraThreatEligible,

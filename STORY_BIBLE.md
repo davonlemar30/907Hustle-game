@@ -1,10 +1,16 @@
 # 907Hustle: One Good Run — Story Bible
 
-Writer-facing reference for Alpha v0.7.1. Everything here describes the **active
+Writer-facing reference for Alpha v0.8. Everything here describes the **active
 runtime** (`index.html` → `v05.css`, `game-core.js`, `ui.jsx`). The 42 events in
 `events.js` are not loaded and are not canon.
 
 ---
+
+## Street Identity voice guidance
+
+Street Identity changes interpretation, not personality or relationship truth. Mara notices safety and consent, Eli routes and people, Dre dates and follow-through, Rook pressure, and Kip business and threat. Avoid repeating the full identity label, exposing score math, or treating identity as a permanent class. Unproven copy must remain coherent.
+
+Variations currently appear in `mara_intro`, `eli_offer`, `dre_terms`, `rook_mark`, `kip_corner_intro`, `sedan_rumor`, `dre_day7`, encounter previews, and the Day 7 summary. Mara trust, Dre trust, Rook respect, dealer standing, and crew loyalty remain separate character state.
 
 ## 1. Writing standard
 

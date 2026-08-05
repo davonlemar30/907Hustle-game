@@ -1,6 +1,16 @@
 # 907Hustle: One Good Run — Project Status
 
-Last updated: 2026-08-04 (America/Anchorage)
+Last updated: 2026-08-05 (America/Anchorage)
+
+## Alpha v0.8 baseline
+
+- Branch: `codex/alpha-v0-8-classless-foundation`, based on merged `main` commit `98c726a` containing PRs #48 and #49.
+- New runs are classless: optional Street Name, six attributes at 2, `background: null`, and `streetIdentity: "unproven"`.
+- Combat, Charisma, and Intelligence are centralized derived selectors. The 18 former active stat reads now use them.
+- A hidden, deduplicated behavior ledger feeds nightly Street Identity evaluation; More → Character displays only qualitative results.
+- Legacy Shooter, Hustler, and Strategist saves migrate additively to equivalent attributes while preserving story, dealer, inventory, debt, and relationship state.
+- Save schema/key remain version 3 / `907ogr_v3`. Operation Score is unchanged and Street Read remains unimplemented.
+- Verification: 88 tests passed; 800/800 simulations completed with zero dead ends. Full results are in `SEVENTH_PLAYTEST_AUDIT.md`.
 
 ## Current baseline
 
@@ -79,4 +89,4 @@ The aggressive profile never returns to Spenard, so Mara is structurally unreach
 
 ## Next recommended single task
 
-Work through the **Manual browser QA checklist** in `SIXTH_PLAYTEST_AUDIT.md` and record the results table — it now also needs to cover the Street Contacts screen and Kip's three actions. Then play two human runs, one anchored in Spenard and one travelling constantly, to confirm that the locality preference reads as a meaningful choice rather than as missing content. Only then start Alpha v0.8 (classless foundation), because v0.8 replaces the stat model that every chain gate currently reads.
+Run the ten-viewport manual browser checklist and the two deliberate v0.8 human flows in `SEVENTH_PLAYTEST_AUDIT.md`, recording identity timing, Character-screen readability, exact save/resume, and identity-aware copy before beginning v0.9.

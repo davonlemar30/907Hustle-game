@@ -20,7 +20,7 @@ frequency, which simulated bots only bracket between 0% and 64%.
 
 ---
 
-## In progress — Alpha v0.7.1 (Playstyle Foundation)
+## Shipped — Alpha v0.7.1 (Playstyle Foundation)
 
 Completes the story and playstyle foundation. **Starting edges are preserved**
 for compatibility; the classless migration is v0.8.
@@ -46,7 +46,7 @@ spread on a character-select screen rather than a way to play.
 
 ---
 
-## Alpha v0.8 — Classless Foundation
+## Shipped — Alpha v0.8 (Classless Foundation)
 
 - Remove edge selection for new saves; keep Street Name.
 - Six attributes at 2 each, with Combat, Charisma, and Intelligence becoming
@@ -59,6 +59,8 @@ spread on a character-select screen rather than a way to play.
 
 **Migration note:** only 18 sites read the three current ratings, so this changes
 one derivation function rather than every call site.
+
+88 tests and 800 simulated runs pass with zero dead ends. Manual browser QA remains open and is recorded honestly in `SEVENTH_PLAYTEST_AUDIT.md`.
 
 ---
 

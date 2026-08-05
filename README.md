@@ -2,13 +2,13 @@
 
 907Hustle: One Good Run is a mobile-first, single-player crime, trading, resource-management, and light RPG web game set in an Anchorage-inspired version of Spenard.
 
-The current playable build is **Alpha v0.7.1: Playstyle Foundation**. The player has seven days to survive Dre's debt, trade across three districts, build relationships, manage Heat and Health, recruit crew, improve a safehouse, challenge Rook's influence, and decide whether to hustle, work contacts, or take faster and riskier routes.
+The current playable build is **Alpha v0.8: Classless Foundation**. The player begins without a class, then earns a flexible Street Identity while surviving Dre's debt, trading, building relationships, and choosing between business, people, and pressure.
 
 The long-term design goal is a classless street-life RPG where progress comes through access, reputation, transportation, relationships, skills, jobs, suppliers, territory, and obligations. The current build remains a focused seven-day vertical slice.
 
-## Current Alpha: v0.7.1
+## Current Alpha: v0.8
 
-Alpha v0.7.1 expands the story and playstyle foundation introduced in v0.7.
+Alpha v0.8 starts every new player with six equal attributes, no selected edge, and an earned Street Identity that never blocks an activity.
 
 ### Core gameplay
 
@@ -60,14 +60,14 @@ node tests/simulate-runs.js 200
 
 Latest recorded results:
 
-- 83 tests passed
+- 88 tests passed
 - 0 tests failed
 - 800 of 800 simulated runs terminated
 - 0 dead ends
 - Four simulation profiles: cautious, balanced, aggressive, and stickup
 - 23 distinct opening story sequences across 30 seeds
 
-Browser and mobile QA still requires a human pass on a machine with normal internet access because React, ReactDOM, and Babel currently load from CDNs.
+Responsive browser QA passed the ten required viewports for overflow, 44px controls, classless creation, Character rendering, exact resume, and console errors. Two full human-style seven-day runs remain open.
 
 ## Run the game locally
 
@@ -96,13 +96,13 @@ The active runtime is:
 
 - Save version: `3`
 - Save key: `907ogr_v3`
-- Alpha v0.7 and v0.7.1 state additions hydrate through additive defaults
+- Alpha v0.8 state additions hydrate through additive defaults
 - Older v3 saves remain playable
 - Legacy Strategist saves remain supported
 
 ## Project direction
 
-The current build still uses the Hustler and Shooter starting edges for compatibility. The planned Alpha v0.8 classless foundation will replace edge selection for new runs with:
+The classless foundation now includes:
 
 - Equal starting attributes
 - Earned Street Identity
@@ -110,17 +110,21 @@ The current build still uses the Hustler and Shooter starting edges for compatib
 - Six core attributes
 - Identity-aware dialogue and event eligibility
 
+Legacy edges remain migration data only and appear as save history, not as a current class.
+
 Future phases are planned around Street Read progression, legitimate work, training, gambling, shoplifting, transportation, jail, multiple lenders, expanded territory, regional travel, and optional continuation after the Day 7 score checkpoint.
 
 ## Documentation
 
-- [`ALPHA_V0.7.1.md`](ALPHA_V0.7.1.md) — current playable build description
+- [`ALPHA_V0.8.md`](ALPHA_V0.8.md) — current playable build description
+- [`ALPHA_V0.7.1.md`](ALPHA_V0.7.1.md) — prior playable build description
 - `VISION.md` — long-term design target
 - `ROADMAP.md` — build sequence
 - `PROJECT_STATUS.md` — active baseline, architecture, verification, and known limitations
 - `STORY_BIBLE.md` — writing standards, character voices, event chains, and event copy
 - `PROGRESSION_DESIGN.md` — Street Read design proposal, currently unimplemented
 - `SIXTH_PLAYTEST_AUDIT.md` — Alpha v0.7 audit, decisions, and manual QA checklist
+- `SEVENTH_PLAYTEST_AUDIT.md` — Alpha v0.8 implementation and verification audit
 
 ## Legacy files
 

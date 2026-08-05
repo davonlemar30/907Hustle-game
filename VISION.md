@@ -113,7 +113,7 @@ never farm progress. This is the same anti-grind stance as `PROGRESSION_DESIGN.m
 
 ## 6. Street Identity
 
-You pick a Street Name, but the neighborhood starts you **Unnamed**. Identity is
+You pick a Street Name, but the neighborhood starts you **Unproven**. Identity is
 earned by behavior and is purely descriptive — it never blocks an activity.
 
 Five categories, tracked in a behavior ledger:

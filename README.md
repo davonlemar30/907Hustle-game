@@ -1,41 +1,136 @@
 # 907Hustle: One Good Run
 
-A mobile-first, seven-day Anchorage street-market strategy game.
+907Hustle: One Good Run is a mobile-first, single-player crime, trading, resource-management, and light RPG web game set in an Anchorage-inspired version of Spenard.
 
-## Run the game
+The current playable build is **Alpha v0.7.1: Playstyle Foundation**. The player has seven days to survive Dre's debt, trade across three districts, build relationships, manage Heat and Health, recruit crew, improve a safehouse, challenge Rook's influence, and decide whether to hustle, work contacts, or take faster and riskier routes.
 
-Serve this directory with any static HTTP server, then open `index.html`:
+The long-term design goal is a classless street-life RPG where progress comes through access, reputation, transportation, relationships, skills, jobs, suppliers, territory, and obligations. The current build remains a focused seven-day vertical slice.
 
-```sh
-python3 -m http.server 4173
-```
+## Current Alpha: v0.7.1
 
-The active runtime is `index.html`, the pure domain module in `game-core.js`, and the React presentation in `ui.jsx`. React and Babel are currently loaded from CDNs, so the browser needs network access on first load.
+Alpha v0.7.1 expands the story and playstyle foundation introduced in v0.7.
 
-## Test the core
+### Core gameplay
+
+- Seven-day run with Morning, Afternoon, Evening, and Night
+- Three active districts: Spenard, Downtown, and Industrial Service Roads
+- Four product market with seeded price movement and weighted-average cost basis
+- Buy and sell previews with revenue, cost basis, projected profit or loss, cash after, and cargo after
+- Dre's debt, payment history, reserve-aware payment controls, and consequences for missed terms
+- Heat, Health, Recovery, Lay Low, gear, protected storage, safehouse upgrades, crew, and territory
+- Autosave, title screen, New Game, Load Game, save preview, and mobile-first navigation
+
+### Story engine
+
+- 43 active story beats across five connected chains
+- Data-driven `STORY_REGISTRY` with seeded, deterministic selection
+- Reactive, character-chain, and ambient event tiers
+- Location preference so district-specific stories appear when the player stays in that area
+- Anti-monopoly rules that keep one storyline from consuming the entire week
+- Nine repeatable one-off street events
+
+### Character stories
+
+- **Mara Velez:** six-stage relationship arc with friendship, romance, distance, boundaries, danger, and three Day 7 outcomes
+- **Eli "Shortcut" Ward:** five-stage contact and crew arc built around routes, judgment, loyalty, and whether the operation has a place for him
+- **Dre Holloway:** debt storyline that reacts to first payment, payment reliability, due-day behavior, payoff choices, and the final reckoning
+- **Rook Mercer:** six-stage escalation from surveillance and pressure to interference, confrontation, terms, or open rivalry
+- **Kip Sallis:** persistent Spenard dealer who supports both fair business and the first deliberate stickup playstyle
+
+### Kip Sallis dealer prototype
+
+Once Kip is introduced, he appears under **People → Street Contacts**.
+
+- **Buy off Kip:** purchase weed or shrooms below the current Spenard price and build standing
+- **Ask what's moving:** receive a reliable product lead after building enough standing
+- **Rob Kip:** attempt a dealer robbery regardless of working capital
+
+Robbing Kip can produce cash and product, while also causing injury, Heat, retaliation, damaged standing, lower Spenard supply, Rook pressure, and relationship fallout with Mara. Two successful robberies remove Kip from the block for the rest of the run.
+
+Quick Score remains a separate emergency comeback action and is unchanged.
+
+## Verification
+
+Current automated verification:
 
 ```sh
 node --test tests/*.test.js
 node tests/simulate-runs.js 200
 ```
 
-## Legacy files (not loaded)
+Latest recorded results:
 
-`index.html` loads only `v05.css`, `game-core.js`, and `ui.jsx`. The following
-are retained history and are **not** part of the running game — the 42 events in
-`events.js` in particular are not live content:
+- 83 tests passed
+- 0 tests failed
+- 800 of 800 simulated runs terminated
+- 0 dead ends
+- Four simulation profiles: cautious, balanced, aggressive, and stickup
+- 23 distinct opening story sequences across 30 seeds
 
-- `events.js`, `script.js`, `style.css`, `combat.js`
-- `907hustle/` (early HTML prototypes and uploads)
-- `assets/cousins-apt-placeholder.svg`
+Browser and mobile QA still requires a human pass on a machine with normal internet access because React, ReactDOM, and Babel currently load from CDNs.
 
-The live event set is the registry in `game-core.js` (`STORY_REGISTRY`).
+## Run the game locally
+
+Serve the repository with any static HTTP server, then open `index.html`:
+
+```sh
+python3 -m http.server 4173
+```
+
+Then visit:
+
+```text
+http://localhost:4173
+```
+
+The active runtime is:
+
+- `index.html`
+- `v05.css`
+- `game-core.js`
+- `ui.jsx`
+
+`game-core.js` is a UMD domain module exposed through `window.GameCore` and `module.exports`. `ui.jsx` contains the React presentation layer.
+
+## Save compatibility
+
+- Save version: `3`
+- Save key: `907ogr_v3`
+- Alpha v0.7 and v0.7.1 state additions hydrate through additive defaults
+- Older v3 saves remain playable
+- Legacy Strategist saves remain supported
+
+## Project direction
+
+The current build still uses the Hustler and Shooter starting edges for compatibility. The planned Alpha v0.8 classless foundation will replace edge selection for new runs with:
+
+- Equal starting attributes
+- Earned Street Identity
+- Behavior tracking
+- Six core attributes
+- Identity-aware dialogue and event eligibility
+
+Future phases are planned around Street Read progression, legitimate work, training, gambling, shoplifting, transportation, jail, multiple lenders, expanded territory, regional travel, and optional continuation after the Day 7 score checkpoint.
 
 ## Documentation
 
-- `VISION.md` — the design target: classless growth, access, obligations
-- `ROADMAP.md` — build order and what each build contains
-- `PROJECT_STATUS.md` — current baseline, architecture, verification, next task
-- `STORY_BIBLE.md` — writing standard, voice guide, chains, event copy
-- `PROGRESSION_DESIGN.md` — Street Read XP spec (design only, not implemented)
-- `SIXTH_PLAYTEST_AUDIT.md` — Alpha v0.7 audit and decisions
+- [`ALPHA_V0.7.1.md`](ALPHA_V0.7.1.md) — current playable build description
+- `VISION.md` — long-term design target
+- `ROADMAP.md` — build sequence
+- `PROJECT_STATUS.md` — active baseline, architecture, verification, and known limitations
+- `STORY_BIBLE.md` — writing standards, character voices, event chains, and event copy
+- `PROGRESSION_DESIGN.md` — Street Read design proposal, currently unimplemented
+- `SIXTH_PLAYTEST_AUDIT.md` — Alpha v0.7 audit, decisions, and manual QA checklist
+
+## Legacy files
+
+`index.html` loads only `v05.css`, `game-core.js`, and `ui.jsx`. The following are retained for historical reference and are not part of the running game:
+
+- `events.js`
+- `script.js`
+- `style.css`
+- `combat.js`
+- `907hustle/`
+- `assets/cousins-apt-placeholder.svg`
+
+The live event set is `STORY_REGISTRY` inside `game-core.js`.

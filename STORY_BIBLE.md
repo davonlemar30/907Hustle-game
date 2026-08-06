@@ -1,6 +1,17 @@
 # 907Hustle: One Good Run — Story Bible
 
-Writer-facing reference for Alpha v0.8. Everything here describes the **active
+## Alpha v0.9 continuity rules
+
+- Fresh runs begin at Yalonda and John's home. John has already introduced Dre, but no other local relationship is established.
+- Mara is a stranger until the player voluntarily visits the Night Owl. Her first-meeting tones are Friendly honesty, Light flirtation, and Brief and guarded.
+- A sedan cannot appear in Mara's introduction or boundary scene. `mara_sedan_night` requires her stage-4 continuity plus player-created Rook pressure of at least 4.
+- Rook begins unaware with zero pressure. Kip begins unknown and is discovered through Explore Spenard.
+- Garage scenes require `base.controlled`. Legacy v3 saves may begin with that continuity because hydration preserves their established premise.
+- Yalonda and John are recurring People, not menu exposition. Household warnings and eviction can produce the `Nowhere to Go` ending.
+
+The full 43-beat classification is in `EIGHTH_PLAYTEST_AUDIT.md`; changed scene copy and callbacks are in `COPY_REVIEW.md`.
+
+Writer-facing reference for Alpha v0.9. Everything here describes the **active
 runtime** (`index.html` → `v05.css`, `game-core.js`, `ui.jsx`). The 42 events in
 `events.js` are not loaded and are not canon.
 

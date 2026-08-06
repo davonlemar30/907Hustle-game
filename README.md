@@ -2,11 +2,13 @@
 
 907Hustle: One Good Run is a mobile-first, single-player crime, trading, resource-management, and light RPG web game set in an Anchorage-inspired version of Spenard.
 
-The current playable build is **Alpha v0.8: Classless Foundation**. The player begins without a class, then earns a flexible Street Identity while surviving Dre's debt, trading, building relationships, and choosing between business, people, and pressure.
+The current playable build is **Alpha v0.9: Fresh Start, Daily Life, and Player Freedom**. The player arrives at Yalonda and John's home without local assets, chooses freely among legal work, exploration, training, gambling, shoplifting, transit, relationships, trade, and optional property, then earns a flexible Street Identity through behavior.
 
 The long-term design goal is a classless street-life RPG where progress comes through access, reputation, transportation, relationships, skills, jobs, suppliers, territory, and obligations. The current build remains a focused seven-day vertical slice.
 
-## Current Alpha: v0.8
+## Current Alpha: v0.9
+
+Alpha v0.9 is documented in `ALPHA_V0.9.md`, with verification in `EIGHTH_PLAYTEST_AUDIT.md` and changed narrative copy in `COPY_REVIEW.md`.
 
 Alpha v0.8 starts every new player with six equal attributes, no selected edge, and an earned Street Identity that never blocks an activity.
 
@@ -60,14 +62,14 @@ node tests/simulate-runs.js 200
 
 Latest recorded results:
 
-- 88 tests passed
+- 97 tests passed
 - 0 tests failed
-- 800 of 800 simulated runs terminated
+- 2,000 of 2,000 simulated runs terminated
 - 0 dead ends
-- Four simulation profiles: cautious, balanced, aggressive, and stickup
+- Ten simulation profiles, including legal worker, trader, thief, gambler, trainer, and mixed freedom
 - 23 distinct opening story sequences across 30 seeds
 
-Responsive browser QA passed the ten required viewports for overflow, 44px controls, classless creation, Character rendering, exact resume, and console errors. Two full human-style seven-day runs remain open.
+Responsive browser QA passed the ten required viewports for overflow, 44px controls, fresh creation, four-tab navigation, and console errors. Three full human-style seven-day runs and a rendered save/title/load traversal remain open.
 
 ## Run the game locally
 

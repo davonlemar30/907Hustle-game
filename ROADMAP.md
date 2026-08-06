@@ -4,6 +4,12 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
+## Shipped — Alpha v0.9 (Fresh Start and Daily Life)
+
+Fresh Anchorage arrival at the family home · fixed $1,200 Day 7 note · household trust, storage, discovery, warnings, and eviction · Day 1 work, exploration, training, gambling, shoplifting, transit, and listings · optional $650 garage · hidden attribute progress · run-scoped Street Read · fresh Mara/Kip/Rook continuity · additive legacy hydration.
+
+97 tests and 2,000 simulated runs pass with zero dead ends. Ten responsive viewports pass automated rendered checks. **Open:** three complete human-style seven-day runs and a rendered save/title/load traversal.
+
 ## Shipped — Alpha v0.7 (Story Engine and Identity)
 
 Data-driven event registry with a three-tier weighted selector · Mara's six-stage

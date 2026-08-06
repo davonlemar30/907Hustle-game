@@ -521,7 +521,7 @@
   }
   function maraThreatEligible(state) {
     const relevantHistory = !!(state.people.mara.introChoice || state.flags.maraFlirted || state.flags.maraFriendlyIntro || state.flags.maraDistantIntro || state.flags.toldMaraAboutGarage || state.stats.moneySpent.relationships > 0);
-    return !!(state.flags.maraBoundaryResolved && state.people.mara.met && state.people.mara.available !== false && state.people.mara.status !== "gone" && relevantHistory && !state.flags.maraSedanNightResolved);
+    return !!(state.flags.maraBoundaryResolved && state.people.mara.met && state.people.mara.available !== false && state.people.mara.status !== "gone" && relevantHistory && state.rival.pressure >= 4 && !state.flags.maraSedanNightResolved);
   }
   function controlled(state, areaId) { return state.world.territories[areaId]?.owner === "player"; }
   function recruitmentCost(state, crewId) {
@@ -902,7 +902,7 @@
   }
 
   const EVENT_CONTEXT = {
-    mara_intro: { who: "Mara Velez, the clerk who recognizes you", where: "Night Owl Mini-Mart, Spenard", stakes: "Choose whether this familiar face starts the week as a flirtation, a friend, or someone kept at a distance." },
+    mara_intro: { who: "Mara Velez, the Night Owl clerk meeting you for the first time", where: "Night Owl Mini-Mart, Spenard", stakes: "Choose the tone of a first conversation with someone who has no prior history with you." },
     eli_offer: { who: "Eli Ward, a local driver looking for work", where: "Outside North Star Garage, Spenard", stakes: "Decide whether Eli gets a test route, only shares road information, or remembers being turned away." },
     eli_callback: { who: "Eli Ward, still working the service roads", where: "North Star Garage, Spenard", stakes: "Reopen the door to a test route or confirm that Eli should look elsewhere." },
     miri_offer: { who: "Miri Cole, a connected supplier", where: "Downtown corner booth", stakes: "Supplier access, loyalty, and how much ownership you are willing to share." },
@@ -964,10 +964,10 @@
   function setPendingEvent(state, item) { state.run.pendingEvent = item; }
   function activeEvent(id, state) {
     const events = {
-      mara_intro: () => event("mara_intro", "Mara on the Night Shift", "You have been coming to the Night Owl for months, and tonight Mara has the coffee poured before you reach the counter. She asks about the garage the way people ask about weather, out of habit rather than interest. A gray sedan goes past the window for the second time in ten minutes. Mara does not look at it, which means she noticed it before you did.", [
-        { label: "Flirt and stay a minute", effect: { maraTrust: 1, setFlags: { maraFlirted: true, maraIntroChoice: "flirt" } }, preview: "Records a flirtatious first conversation that later scenes will remember.", result: "She tops up a cup you have not finished and leans on the register. \"The late shift goes faster when you stop pretending to be in a hurry.\" Somebody comes in for cigarettes and she is professional again in under a second, but she looks back at you on their way out." },
-        { label: "Keep it friendly", effect: { setFlags: { maraFriendlyIntro: true, maraIntroChoice: "friendly" } }, preview: "Establishes a friendly contact. Romance stays possible later.", result: "You trade neighborhood news until a customer comes in. The fourplex on the corner sold, and the plow took out somebody's mailbox again. She rings you up at the end anyway. \"Next one's still on you.\" It is not quite a joke and not quite serious." },
-        { label: "Grab the coffee and go", effect: { setFlags: { maraDistantIntro: true, maraIntroChoice: "distant" } }, preview: "Introduces Mara at a distance. She remembers that you did not stay.", result: "You take the cup and go. In the reflection off the cooler door she watches the sedan make its third pass, and she writes something small in the corner of the till tape before the door has finished closing behind you." },
+      mara_intro: () => event("mara_intro", "First Coffee in Spenard", "The Night Owl's heater clicks louder than the drink cooler. You study the coffee machine without pretending you know the routine. The clerk watches from behind the register a little longer than professionalism requires, then slides a paper cup closer. \"Black or cream?\" she asks. Her name tag says Mara. Nothing in her face says she knows you, Dre, or what you might become here.", [
+        { label: "Friendly honesty", effect: { maraTrust: 1, setFlags: { maraFriendlyIntro: true, maraIntroChoice: "friendly" } }, preview: "Tell her you just arrived and keep the first exchange warm.", result: "You tell her Alaska is the restart, not the victory lap. Mara listens without trying to turn it into advice. She marks the coffee down as a refill and points out which bus still runs after closing. When the next customer enters, she gives you a small nod that says the conversation can continue another night." },
+        { label: "Light flirtation", effect: { maraTrust: 1, setFlags: { maraFlirted: true, maraIntroChoice: "flirt" } }, preview: "Let the mutual interest show while respecting the counter between you.", result: "You ask whether every new customer gets this much attention. Mara looks at the cup, then back at you. \"Only the ones reading the machine like a legal document.\" The smile stays brief and professional, but it is real. She tells you her name even though the tag already did." },
+        { label: "Brief and guarded", effect: { setFlags: { maraDistantIntro: true, maraIntroChoice: "distant" } }, preview: "Keep your history private and the exchange surface-level.", result: "You choose black, pay, and offer only your street name. Mara does not press. She gives you the correct change and a neutral goodnight, then returns to the register book. You leave as a stranger she noticed, not a story she already knows." },
       ]),
       eli_offer: () => event("eli_offer", "The Impound Notice", "Eli Ward is waiting outside North Star Garage with an impound notice folded into his jacket, the crease worn soft from being taken out and put back. He gets to it fast: he knows the loading yards, the service roads, and which gates get chained at what hour. He can move a small package without bringing a tail home. He has clearly rehearsed that last sentence.", [
         { label: "Hear him out", effect: { introduceCrew: "eli", setCrewStage: { id: "eli", stage: "test_available" }, crewLoyalty: { id: "eli", delta: 1 } }, preview: "Unlocks Give Eli a Test Route in People.", result: "He flattens the impound notice on the hood and draws the route on the back of it, naming each turn as he goes. He wants thirty-five for fuel and one chance to prove it. He does not ask what would be in the package, which is either professional or well practiced." },
@@ -991,9 +991,9 @@
         { label: "Keep the answer small", effect: { setFlags: { maraDeflected: true } }, preview: "Nothing changes tonight. Mara notices the size of the answer.", result: "You give her the short version. Mara nods, folds the receipt she was about to write on, and puts it in her apron. The heater ticks. She counts the last of the twenties without looking up." },
         { label: "Put $60 toward her yard fees", requires: "cash60", effect: { cash: -60, maraTrust: 2, setFlags: { maraTookMoney: true } }, preview: "Costs $60. Mara accepts the help and sets the terms you did not ask for.", result: "She takes the sixty and writes you a receipt on Night Owl paper, dated and signed, because she does not want it to be a favor. \"This is a loan,\" she says. \"I pay it back in March.\" She means it." },
       ]),
-      mara_invitation: () => event("mara_invitation", "Four Hours and No Car", "Mara is outside when you come around the corner, coat already on, keys in her fist. Her shift ended early because the owner cut hours again. \"I have four hours and no car,\" she says. The lot's sodium light makes the slush look orange. She is not asking for a favor. She is asking what you want to do with the evening.", [
-        { label: "Drive out to Point Woronzof", effect: { maraTrust: 2, heat: -1, setFlags: { maraDateNight: true } }, preview: "Lowers Heat and puts real ground between her and the block.", result: "You park where the inlet wind comes off the water hard enough to rock the vehicle. Mara talks about the yard, then about her mother, then about nothing at all. On the drive back she falls asleep against the window and does not apologize for it." },
-        { label: "Bring her to the garage", effect: { maraTrust: 1, maraJobAtRisk: true, setFlags: { maraSawGarage: true } }, preview: "She sees the operation, and she is seen near it.", result: "She walks the length of the bay once, looks at the bags, and does not touch anything. \"This is what it is, then.\" A car slows on the street outside and keeps going. Mara watches it the whole way down the block." },
+      mara_invitation: () => event("mara_invitation", "Four Hours After Close", "Mara is outside when you come around the corner, coat already on. Her shift ended early because the owner cut hours again. \"I have four hours,\" she says. The lot's sodium light makes the slush look orange. She is not asking to be rescued. She is asking what kind of evening you can make without pretending either of you owns a car.", [
+        { label: "Take the bus toward the inlet", effect: { maraTrust: 2, heat: -1, setFlags: { maraDateNight: true } }, preview: "Bus fare is folded into the scene; you spend the evening away from the block.", result: "You ride until the commercial lights thin out, then walk where the inlet wind cuts across the open ground. Mara talks about the yard interview, her mother, and nothing at all. On the bus back, your shoulders touch twice and neither of you moves." },
+        ...(state.base.controlled ? [{ label: "Show her the garage", requires: "base_controlled", effect: { maraTrust: 1, maraJobAtRisk: true, setFlags: { maraSawGarage: true } }, preview: "She sees the operation, and she is seen near it.", result: "She walks the length of the bay once, looks at the bags, and does not touch anything. \"This is what it is, then.\" A car slows on the street outside and keeps going. Mara watches it the whole way down the block." }] : []),
         { label: "Tell her tonight is not good", effect: { setFlags: state.flags.maraRaincheck ? { maraInvitationClosed: true } : { maraRaincheck: true } }, preview: "Nothing happens tonight. The offer may come back once.", result: "She takes it evenly, the way she takes most things. \"Then another night.\" She starts walking toward the bus shelter on Spenard before you can offer the ride." },
       ]),
       mara_boundary: () => event("mara_boundary", "The Plate on Her Wrist", "Mara meets you behind the Night Owl with the keys already in her hand and the store dark behind her. A car followed her to her door last night, sat there eleven minutes, and left. She has the plate written on the inside of her wrist. \"I am not asking you to fix it,\" she says. \"I am asking you to tell me what it is.\"", [
@@ -1074,10 +1074,10 @@
         { label: "Tell him you don't know yet", effect: { setFlags: { eliToldHonestly: true } }, preview: "Honest and unsatisfying. He can work with honest.", result: "\"That's fair.\" He means it, mostly. He keeps driving the routes exactly as well as before, and he stops mentioning the week after next, and you notice the second thing more than you expected to." },
         { label: "Tell him this is a one-week job", effect: { crewLoyalty: { id: "eli", delta: -1 }, setFlags: { eliToldNoFuture: true } }, preview: "He finishes the week. He starts looking on his own time.", result: "He takes it without complaint because he asked and you answered. The routes stay clean through the seventh night. But he starts taking calls outside the bay, briefly, and he stops leaving his jacket in the vehicle." },
       ]),
-      dre_terms: () => event("dre_terms", "One Folded Sheet of Paper", "Dre parks behind the Mini-Mart with the engine running and hands you one folded sheet. It has your name on it, an amount, and a date, and nothing else — no interest schedule, no signature line, no conditions. He waits while you read all four lines of it. \"That's the whole arrangement,\" he says. \"People make it complicated after. Not me.\"", [
+      dre_terms: () => event("dre_terms", "One Folded Sheet of Paper", "The meeting John arranged is already over, but Dre makes you read the paper again behind the Mini-Mart: $1,000 received, $1,200 due on Day 7, partial payments accepted, no first-week compounding. There is no signature line and no negotiation. \"That's the whole arrangement,\" he says. \"People make it complicated after. Not me.\"", [
         { label: "Say the date back to him", effect: { lenderTrust: 1, setFlags: { dreTermsAcknowledged: true } }, preview: "Dre starts the week believing you understood him.", result: "He repeats it once after you, flat, the way he says all numbers, and puts the car in gear. \"Good.\" That is the entire ceremony. The paper stays in your pocket for the rest of the week and gets softer at the folds every time you check it." },
         { label: "Ask what happens if it's late", effect: { setFlags: { dreAskedConsequences: true } }, preview: "You get a straight answer. It is not a threat.", result: "\"It gets bigger, and I stop being somebody you can call.\" He says it in the same tone as the date. There is no menace anywhere in it, which somehow makes it land harder than a threat would have. \"Most people only hear the first half.\"" },
-        { label: "Ask for more time up front", effect: { lenderTrust: -1, setFlags: { dreAskedExtension: true } }, preview: "He says no. He also remembers that you asked before you started.", result: "\"No.\" No pause before it, no reason after it. Then, at the window as he pulls away: \"Ask me again on the day and I might have a different answer. Asking now just tells me what you think of yourself.\"" },
+        { label: "Fold the paper away", effect: { setFlags: { dreTermsAcceptedQuietly: true } }, preview: "No new promise and no attempt to change fixed terms.", result: "You fold the page along the crease Dre already made and put it away. He nods once. The amount and date do not move, and neither of you performs a negotiation that was never available." },
       ]),
       dre_first_payment: () => {
         const name = state.player.streetName || "friend";
@@ -1203,6 +1203,7 @@
     built.choices = built.choices.filter((choice) => {
       if (!choice.requires) return true;
       if (choice.requires === "security2") return state.base.tracks.security >= 2;
+      if (choice.requires === "base_controlled") return state.base.controlled;
       const cashGate = /^cash(\d+)$/.exec(choice.requires);
       if (cashGate) return state.player.cash >= Number(cashGate[1]);
       return true;
@@ -1212,7 +1213,7 @@
 
   function startEncounter(state, id, finishAfter) {
     const templates = {
-      mara_sedan_night: { title: "The Sedan Waits for Her Shift", description: "The gray sedan is in the Night Owl lot with the engine running when Mara's shift ends. A collector catches the door before it closes behind her. She does not look at him. She looks at you, and her hand goes under the counter to where the alarm is, and she waits.", enemyName: "Parking Lot Collector", enemyHealth: 30, guard: 0.10, evasion: 0.06, pursuit: 0.12, attack: [6, 12], pay: 120 },
+      mara_sedan_night: { title: "Your Pressure Reaches the Night Owl", description: "Only after your visible choices raise Rook's pressure does the gray sedan appear outside the Night Owl. The driver watches you, not Mara. A collector catches the door before it closes and uses her shift to make sure you stop. Mara looks at the alarm, then at you, waiting to see whether you keep a danger you created away from her counter.", enemyName: "Rook's Parking-Lot Collector", enemyHealth: 30, guard: 0.10, evasion: 0.06, pursuit: 0.12, attack: [6, 12], pay: 120 },
       early_street: { title: "A Tail on the Service Road", description: "A sedan follows you away from Spenard and blocks the narrow service-road exit. No friend is close enough to pull into this decision.", enemyName: "Roadside Collector", enemyHealth: 24, guard: 0.08, evasion: 0.05, pursuit: 0.10, attack: [5, 10], pay: 85 },
       kip_retaliation: { title: "The Wash & Go Comes Looking", description: "Kip does not come alone and he does not come to talk. Two of them block the mouth of the lot and a third is already behind you by the time you hear the gravel. He is not interested in the bag or the money. He is interested in what everyone on this block saw happen to him and what they are going to see happen next.", enemyName: "Kip and Two Others", enemyHealth: 38, guard: 0.12, evasion: 0.08, pursuit: 0.14, attack: [7, 13], pay: 150 },
       mid: { title: "Rook's Loading-Bay Test", description: "Rook's people close both ends of Bay Nine. They know about the garage, the crew, and which route you used to get here.", enemyName: "Rook's Crew", enemyHealth: 42, guard: 0.14, evasion: 0.10, pursuit: 0.16, attack: [8, 14], pay: 180 },
@@ -1296,11 +1297,12 @@
     return !!state.flags[resolvedFlagName(id)];
   }
   const maraOpen = (state) => state.people.mara.available !== false && state.people.mara.status !== "gone";
+  const rivalAttentionEarned = (state) => state.rival.pressure > 0 || state.player.heat >= 3 || state.stats.robbery.attempts > 0 || state.people.dealers?.kip?.robbedCount > 0 || Object.values(state.world.influence).some((value) => value > 0);
 
   const STORY_REGISTRY = [
     // --- The Night Owl -------------------------------------------------------
     { id: "mara_intro", chain: "mara_spenard", stage: 1, classification: "character_intro", trigger: "chain",
-      requires: () => true, area: "north_star_lot", earliest: { day: 1, slot: 1 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
+      requires: (s) => !!s.flags.nightOwlVisited && !s.people.mara.met, area: "north_star_lot", earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
     { id: "mara_shift_change", chain: "mara_spenard", stage: 2, classification: "character_followup", trigger: "chain",
       requires: (s) => !!s.flags.maraIntroResolved && maraOpen(s), area: "north_star_lot",
       earliest: { day: 2, slot: 1 }, latest: { day: 6 }, once: true, cooldown: 0, weight: 8, exit: (s) => !maraOpen(s) },
@@ -1320,7 +1322,7 @@
 
     // --- Service Roads -------------------------------------------------------
     { id: "eli_offer", chain: "eli_routes", stage: 1, classification: "character_intro", trigger: "chain",
-      requires: () => true, area: null, earliest: { day: 1, slot: 3 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
+      requires: (s) => s.base.controlled, area: null, earliest: { day: 1, slot: 3 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
     { id: "eli_callback", chain: "eli_routes", stage: 2, classification: "callback", trigger: "chain",
       requires: (s) => !!s.flags.refusedEli && !s.flags.eliRejectedFinally, area: null,
       earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 6, exit: (s) => !!s.flags.eliRejectedFinally },
@@ -1355,7 +1357,7 @@
 
     // --- Rook's Attention ----------------------------------------------------
     { id: "rook_mark", chain: "rook_pressure", stage: 1, classification: "threat", trigger: "chain",
-      requires: () => true, area: null, earliest: { day: 2, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
+      requires: (s) => rivalAttentionEarned(s), area: null, earliest: { day: 2, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
     { id: "early_street", chain: "rook_pressure", stage: 2, classification: "threat", trigger: "chain", kind: "encounter",
       requires: (s) => !!s.flags.rookMarkResolved, area: null, earliest: { day: 2, slot: 1 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
     { id: "rook_tax", chain: "rook_pressure", stage: 3, classification: "main_chapter", trigger: "chain",
@@ -1373,7 +1375,7 @@
 
     // --- The Wash & Go -------------------------------------------------------
     { id: "kip_corner_intro", chain: "kip_corner", stage: 1, classification: "character_intro", trigger: "chain",
-      requires: () => true, area: "north_star_lot", earliest: { day: 2, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 7, exit: null },
+      requires: (s) => !!s.people.dealers?.kip?.known, area: "north_star_lot", earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 7, exit: null },
     // Stage 2 is a branch: he comes back at you, or the person who vouched does.
     { id: "kip_retaliation", chain: "kip_corner", stage: 2, classification: "threat", trigger: "chain", kind: "encounter",
       requires: (s) => { const k = s.people.dealers?.kip; return !!k && k.robbedCount > 0 && k.lastRobbedDay != null && s.run.day >= k.lastRobbedDay + 2; },
@@ -1386,7 +1388,7 @@
     { id: "miri_offer", chain: null, stage: null, classification: "character_intro", trigger: "ambient",
       requires: () => true, area: "downtown", earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
     { id: "tone_offer", chain: null, stage: null, classification: "character_intro", trigger: "ambient",
-      requires: () => true, area: "north_star_lot", earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
+      requires: (s) => s.base.controlled, area: "north_star_lot", earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
     { id: "courier", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
       requires: () => true, area: "airport_industrial", earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
     { id: "base_watch", chain: null, stage: null, classification: "threat", trigger: "ambient",
@@ -1406,7 +1408,7 @@
     { id: "wet_bricks", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
       requires: (s) => s.player.cash >= 70, area: "airport_industrial", earliest: { day: 2, slot: 0 }, latest: null, once: false, cooldown: 8, weight: 4, exit: null },
     { id: "door_knock", chain: null, stage: null, classification: "threat", trigger: "ambient",
-      requires: () => true, area: "north_star_lot", earliest: { day: 2, slot: 0 }, latest: null, once: false, cooldown: 8, weight: 4, exit: null },
+      requires: (s) => s.base.controlled, area: "north_star_lot", earliest: { day: 2, slot: 0 }, latest: null, once: false, cooldown: 8, weight: 4, exit: null },
     { id: "stranded_wagon", chain: null, stage: null, classification: "ambient", trigger: "ambient",
       requires: () => true, area: null, earliest: { day: 1, slot: 2 }, latest: null, once: false, cooldown: 8, weight: 5, exit: null },
     { id: "found_phone", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
@@ -1416,9 +1418,9 @@
     { id: "dock_shift", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
       requires: () => true, area: null, earliest: { day: 1, slot: 2 }, latest: null, once: false, cooldown: 8, weight: 4, exit: null },
     { id: "garage_furnace", chain: null, stage: null, classification: "ambient", trigger: "ambient",
-      requires: () => true, area: "north_star_lot", earliest: { day: 2, slot: 0 }, latest: null, once: false, cooldown: 8, weight: 3, exit: null },
+      requires: (s) => s.base.controlled, area: "north_star_lot", earliest: { day: 2, slot: 0 }, latest: null, once: false, cooldown: 8, weight: 3, exit: null },
     { id: "sedan_rumor", chain: null, stage: null, classification: "ambient", trigger: "ambient",
-      requires: () => true, area: null, earliest: { day: 2, slot: 0 }, latest: null, once: false, cooldown: 8, weight: 5, exit: null },
+      requires: (s) => s.rival.pressure >= 2, area: null, earliest: { day: 2, slot: 0 }, latest: null, once: false, cooldown: 8, weight: 5, exit: null },
     { id: "midtown_lights", chain: null, stage: null, classification: "threat", trigger: "ambient",
       requires: () => true, area: null, earliest: { day: 1, slot: 2 }, latest: null, once: false, cooldown: 8, weight: 4, exit: null },
   ];
@@ -2344,6 +2346,14 @@
     }
 
     let base = state;
+    if (action.type === "VISIT_NIGHT_OWL") {
+      if (state.world.currentNeighborhoodId !== "north_star_lot") return inputState;
+      base.flags.nightOwlVisited = true;
+      logEntry(base, state.people.mara.met ? "You stop at the Night Owl without treating Mara's shift like an obligation." : "You step into the Night Owl for the first time and study a coffee machine you have never used.", "");
+      const next = advanceRun(base, { reason: "VISIT_NIGHT_OWL", suppressStory: true });
+      if (next.run.status === "playing" && !next.people.mara.met && !next.run.pendingEvent) fireStory(next, STORY_BY_ID.mara_intro);
+      return next;
+    }
     if (action.type === "LEASE_GARAGE") {
       if (state.base.controlled || state.player.cash < GARAGE_DEPOSIT) return inputState;
       base.player.cash -= GARAGE_DEPOSIT;

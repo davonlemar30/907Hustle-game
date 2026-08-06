@@ -11,6 +11,9 @@
   const SAVE_KEY = "907ogr_v3";
   const WORKING_CAPITAL_RESERVE = 150;
   const STREET_NAME_MAX = 16;
+  const GARAGE_DEPOSIT = 650;
+  const STREET_READ_LEVELS = [40, 110, 210, 340];
+  const ATTRIBUTE_THRESHOLDS = { 2: 10, 3: 18, 4: 28 };
   const DEFAULT_STREET_NAMES = { shooter: "Steady", hustler: "Silver", strategist: "Quiet", neutral: "Rookie" };
   const ATTRIBUTE_DEFAULTS = { strength: 2, endurance: 2, reflexes: 2, presence: 2, insight: 2, discipline: 2 };
   const LEGACY_ATTRIBUTES = {
@@ -254,6 +257,7 @@
       version: VERSION,
       run: {
         status: "creating_character", day: 1, slot: 0, seed, rngState: random.state,
+        premise: "fresh_arrival", openingPending: false,
         ending: null, pendingEvent: null, pendingEncounter: null, pendingOperationResult: null, daySummary: null,
         currentVisit: { trades: 0, grossBuy: 0, grossSell: 0, startedAt: 0 },
         recentEvents: [], encounterCount: 0, finalPlan: null, finalPlanPrepared: false,
@@ -263,8 +267,9 @@
         background: null, legacyBackground: null, streetName: "", streetNameChosen: false,
         streetIdentity: "unproven", identityAssignedDay: null, identityHistory: [],
         attributes: { ...ATTRIBUTE_DEFAULTS },
+        attributeProgress: { strength: 0, endurance: 0, reflexes: 0, presence: 0, insight: 0, discipline: 0 },
         behavior: { scores: { mover: 0, earner: 0, stickup: 0, connector: 0 }, meaningfulActions: 0, history: [], pendingIdentity: null, pendingIdentityNights: 0, lastEvaluatedDay: null, caps: {} },
-        cash: 0, health: 100, heat: 1, cargoCapacity: 10,
+        cash: 0, health: 100, heat: 0, cargoCapacity: 10,
         stats: { combat: 0, charisma: 0, intelligence: 0 }, inventory,
         gear: { owned: [], equipped: { weapon: null, armor: null, utility: null, tool: null }, consumables: { medical_kit: 0 } },
       },
@@ -278,26 +283,29 @@
         }])),
       },
       base: {
-        name: "North Star Garage", visiting: false,
+        name: "North Star Garage", controlled: false, acquiredDay: null, visiting: false,
         tracks: { security: 0, storage: 0, operations: 0, recovery: 0 },
         storedCash: 0, storedInventory, watched: false, damage: 0, assignedCrew: null,
       },
       lender: {
-        name: "Dre Holloway", principal: 620, balance: 620, dueDay: 4, trust: 0,
+        name: "Dre Holloway", principal: 1000, balance: 1200, dueDay: 7, trust: 0,
         relationship: "businesslike", payments: 0, paymentCount: 0, feesAdded: 0,
         paymentHistory: [], penaltyHistory: [], clearedAt: null, missedDays: 0, lastPenaltyDay: 0,
         afterPayoffOffer: "locked",
       },
-      rival: { name: "Rook Mercer", pressure: 1, respect: 0, relationship: "dismissive", recentInterference: null },
+      rival: { name: "Rook Mercer", pressure: 0, respect: 0, relationship: "unaware", recentInterference: null },
       people: {
+        household: { yalondaTrust: 2, johnTrust: 1, warnings: 0, contrabandFound: 0, dangerBroughtHome: 0, evicted: false, lastQuestionDay: null },
         mara: { met: false, available: true, trust: 0, introChoice: null, flirtHistory: false, truthTold: false, usedWithoutConsent: false, status: "distant", outcomes: [], chainStage: 0, jobAtRisk: false },
         crew: createCrewState(),
         dealers: createDealerState(),
       },
+      home: { storedCash: 0, storedInventory: Object.fromEntries(PRODUCTS.map((item) => [item.id, { qty: 0, avgCost: 0 }])), hiddenWeapon: null },
       flags: { featureNotices: {} },
       effects: { rumors: [], modifiers: [] },
       stats: {
-        startingNetWorth: -620, bestTrade: 0, largestLoss: 0, highestHeat: 1,
+        startingNetWorth: -200, bestTrade: 0, largestLoss: 0, highestHeat: 0,
+        streetRead: { xp: 0, level: 0, awards: {} },
         productsMoved: Object.fromEntries(PRODUCTS.map((item) => [item.id, 0])),
         decisions: 0, pipelineAdvances: 0, marketUpdates: 0, visits: [], majorDecisions: [],
         moneySpent: { debt: 0, base: 0, gear: 0, crew: 0, healing: 0, relationships: 0, events: 0 },
@@ -339,6 +347,11 @@
     const defaults = createRun({ seed: value.run.seed });
     const state = mergeDefaults(defaults, value);
     state.version = VERSION;
+    if (value.run.premise === undefined) state.run.premise = "legacy_established";
+    if (value.base?.controlled === undefined) {
+      state.base.controlled = true;
+      state.base.acquiredDay = value.run.day || 1;
+    }
     const legacy = ["shooter", "hustler", "strategist"].includes(value.player.background) ? value.player.background : value.player.legacyBackground;
     if (!value.player.attributes && legacy && LEGACY_ATTRIBUTES[legacy]) state.player.attributes = { ...LEGACY_ATTRIBUTES[legacy] };
     state.player.legacyBackground = legacy || null;
@@ -384,6 +397,7 @@
   function storedCargoUsed(state) { return PRODUCTS.reduce((sum, item) => sum + (state.base.storedInventory[item.id]?.qty || 0), 0); }
   function storageCapacity(state) { return 2 + state.base.tracks.storage * 6; }
   function storedCashCapacity(state) { return state.base.tracks.storage === 0 ? 0 : state.base.tracks.storage === 1 ? 300 : 1200; }
+  function homeStoredCargoUsed(state) { return PRODUCTS.reduce((sum, item) => sum + (state.home?.storedInventory?.[item.id]?.qty || 0), 0); }
   function recruitedCrew(state) { return CREW.filter((person) => state.people.crew[person.id].recruited && state.people.crew[person.id].status === "active"); }
   function influenceLabel(value) { return ["Unknown", "Active", "Established", "Contested", "Controlled"][clamp(value, 0, 4)]; }
   function inventoryValue(state) {
@@ -391,15 +405,16 @@
     return PRODUCTS.reduce((sum, product) => {
       const carried = state.player.inventory[product.id]?.qty || 0;
       const stored = state.base.storedInventory[product.id]?.qty || 0;
-      return sum + (carried + stored) * (market.prices[product.id] || 0);
+      const hidden = state.home?.storedInventory?.[product.id]?.qty || 0;
+      return sum + (carried + stored + hidden) * (market.prices[product.id] || 0);
     }, 0);
   }
   function gearValue(state) { return state.player.gear.owned.reduce((sum, id) => sum + (GEAR_BY_ID[id]?.cost || 0), 0); }
   function baseValue(state) {
     return BASE_UPGRADES.filter((item) => state.base.tracks[item.track] >= item.level).reduce((sum, item) => sum + item.cost, 0);
   }
-  function netWorth(state) { return state.player.cash + state.base.storedCash + inventoryValue(state) - state.lender.balance; }
-  function workingCapital(state) { return state.player.cash + state.base.storedCash + inventoryValue(state); }
+  function netWorth(state) { return state.player.cash + state.base.storedCash + (state.home?.storedCash || 0) + inventoryValue(state) - state.lender.balance; }
+  function workingCapital(state) { return state.player.cash + state.base.storedCash + (state.home?.storedCash || 0) + inventoryValue(state); }
   function safeDebtPayment(state) { return Math.min(state.lender.balance, Math.max(0, state.player.cash - WORKING_CAPITAL_RESERVE)); }
   function debtPaymentPreview(state, requestedAmount) {
     const maximum = Math.min(state.player.cash, state.lender.balance);
@@ -673,6 +688,7 @@
     return "businesslike";
   }
   function relationshipForRival(rival) {
+    if (rival.pressure <= 0 && rival.respect <= 0) return "unaware";
     if (rival.respect >= 4 && rival.pressure <= 6) return "respectful";
     if (rival.respect >= 2 && rival.pressure <= 4) return "cooperative";
     if (rival.pressure >= 12) return "aggressive";
@@ -1539,11 +1555,12 @@
       mara_escape: "Two Tickets South", mara_clear: "She Gets the Monday Interview", mara_gone: "Gone Before You Were",
       clean_exit: "Clean Exit", rook_partner: "Rook's Partner",
       takeover: "North Star Takes the Week", dre_expansion: "Dre's New Operator", crew_saved: "Everybody Gets Home",
-      disappeared: "Gone Before Dawn", arrested: "Caught", killed: "Taken Down", base_lost: "The Garage Is Gone",
+      disappeared: "Gone Before Dawn", arrested: "Caught", killed: "Taken Down", base_lost: "The Garage Is Gone", nowhere_to_go: "Nowhere to Go",
     })[id] || "Run Complete";
   }
   function chooseEnding(state, forced) {
     if (forced) return forced;
+    if (state.people.household?.evicted) return "nowhere_to_go";
     if (state.player.health <= 0) return state.base.tracks.recovery >= 2 ? "base_lost" : "killed";
     if (state.player.heat >= 15) return "arrested";
     if (state.base.damage >= 3) return "base_lost";
@@ -1571,6 +1588,31 @@
     logEntry(state, `By sunrise, the week has a name: ${endingLabel(state.run.ending)}.`, state.run.ending === "one_good_run" ? "good" : "warn");
   }
 
+  function householdWarning(state, count, reason, catastrophic) {
+    const household = state.people.household;
+    household.warnings += Math.max(1, count || 1);
+    household.yalondaTrust -= Math.max(1, count || 1);
+    household.johnTrust -= catastrophic ? 2 : 1;
+    logEntry(state, reason, "bad");
+    if (catastrophic || household.warnings >= 3) {
+      household.evicted = true;
+      endRun(state, "nowhere_to_go");
+    }
+  }
+
+  function checkHomeContraband(state, random) {
+    const productUnits = homeStoredCargoUsed(state);
+    const itemCount = productUnits + (state.home.hiddenWeapon ? 1 : 0);
+    if (!itemCount || state.people.household.evicted) return;
+    const chance = clamp(0.10 + Math.max(0, itemCount - 1) * 0.08 + Math.max(0, state.player.heat - 2) * 0.02 + (state.player.heat >= 6 ? 0.10 : 0), 0, 0.90);
+    if (random.next() >= chance) return;
+    state.people.household.contrabandFound += 1;
+    const repeatedWeapon = !!state.home.hiddenWeapon && state.people.household.warnings > 0;
+    for (const product of PRODUCTS) state.home.storedInventory[product.id] = { qty: 0, avgCost: 0 };
+    state.home.hiddenWeapon = null;
+    householdWarning(state, repeatedWeapon ? 2 : 1, repeatedWeapon ? "John finds the weapon after the first warning. Yalonda tells you the house cannot survive another night like this." : "Yalonda finds what you hid. The contraband leaves the house, and the warning does not.", false);
+  }
+
   function advanceRun(inputState, context) {
     const beforeFeatures = featureAvailability(inputState);
     const state = copyState(inputState);
@@ -1592,6 +1634,7 @@
       const nextDay = state.run.day, nextSlot = state.run.slot;
       state.run.day = oldDay; state.run.slot = 3;
       evaluateStreetIdentity(state, true);
+      checkHomeContraband(state, random);
       state.run.day = nextDay; state.run.slot = nextSlot;
     }
     state.stats.pipelineAdvances += 1;
@@ -1998,13 +2041,24 @@
       state.player.attributes = action.type === "CHOOSE_BACKGROUND" ? { ...LEGACY_ATTRIBUTES[background.id] } : { ...ATTRIBUTE_DEFAULTS };
       state.player.streetName = chosenName || (action.type === "CHOOSE_BACKGROUND" ? DEFAULT_STREET_NAMES[background.id] : DEFAULT_STREET_NAMES.neutral);
       state.player.streetNameChosen = !!chosenName;
-      state.player.cash = 375;
-      state.player.heat = 1;
+      state.player.cash = action.type === "CHOOSE_BACKGROUND" ? 375 : 1000;
+      state.player.heat = action.type === "CHOOSE_BACKGROUND" ? 1 : 0;
+      if (action.type === "CHOOSE_BACKGROUND") {
+        state.run.premise = "legacy_established";
+        state.base.controlled = true;
+        state.base.acquiredDay = 1;
+        state.lender.principal = 620;
+        state.lender.balance = 620;
+        state.lender.dueDay = 4;
+        state.rival.pressure = 1;
+        state.rival.relationship = "dismissive";
+      }
       state.player.stats = derivedRatings(state);
       state.run.status = "playing";
+      state.run.openingPending = action.type === "START_RUN";
       state.stats.startingNetWorth = state.player.cash - state.lender.balance;
       state.log = [];
-      logEntry(state, `${state.player.streetName} starts the week with no title, no crew, and Dre's note already running.`, "warn");
+      logEntry(state, action.type === "START_RUN" ? `${state.player.streetName} arrives in Anchorage with one suitcase, Yalonda's spare room, and Dre's fixed $1,200 note due on Day 7.` : `${state.player.streetName} continues an established week under Dre's note.`, "warn");
       return state;
     }
     if (action.type === "RESOLVE_ENCOUNTER") return reduceEncounter(inputState, action);
@@ -2016,6 +2070,7 @@
     const state = copyState(inputState);
     if (state.run.status !== "playing" && action.type !== "DISMISS_DAY_SUMMARY") return inputState;
     if (action.type === "DISMISS_DAY_SUMMARY") { state.run.daySummary = null; return state; }
+    if (action.type === "DISMISS_OPENING") { state.run.openingPending = false; return state; }
     if (action.type === "ACKNOWLEDGE_OPERATION_RESULT") { state.run.pendingOperationResult = null; return state; }
     if (state.run.pendingOperationResult) return inputState;
     if (state.run.pendingEncounter) return inputState;
@@ -2117,6 +2172,67 @@
       }
       return state;
     }
+    if (action.type === "HOME_STORE_CASH" || action.type === "HOME_RETRIEVE_CASH") {
+      const amount = Math.max(0, Math.floor(action.amount || 0));
+      if (!amount || state.people.household.evicted) return inputState;
+      if (action.type === "HOME_STORE_CASH") {
+        if (amount > state.player.cash) return inputState;
+        state.player.cash -= amount; state.home.storedCash += amount;
+        logEntry(state, `You put $${amount} with your personal things in Yalonda's spare room.`, "good");
+      } else {
+        if (amount > state.home.storedCash) return inputState;
+        state.home.storedCash -= amount; state.player.cash += amount;
+        logEntry(state, `You take $${amount} back into street cash.`, "");
+      }
+      return state;
+    }
+    if (action.type === "HOME_STORE_PRODUCT" || action.type === "HOME_RETRIEVE_PRODUCT") {
+      if (!PRODUCT_BY_ID[action.productId] || state.people.household.evicted) return inputState;
+      const qty = Math.max(0, Math.floor(action.qty || 0));
+      if (!qty) return inputState;
+      const carried = state.player.inventory[action.productId], stored = state.home.storedInventory[action.productId];
+      if (action.type === "HOME_STORE_PRODUCT") {
+        if (qty > carried.qty || homeStoredCargoUsed(state) + qty > 2) return inputState;
+        const total = stored.qty + qty;
+        stored.avgCost = total ? ((stored.avgCost * stored.qty) + carried.avgCost * qty) / total : 0;
+        stored.qty = total; carried.qty -= qty; if (!carried.qty) carried.avgCost = 0;
+        logEntry(state, `You hide ${qty} ${PRODUCT_BY_ID[action.productId].name} in a house where it is not allowed.`, "warn");
+      } else {
+        if (qty > stored.qty || cargoUsed(state) + qty > cargoCapacity(state)) return inputState;
+        const total = carried.qty + qty;
+        carried.avgCost = total ? ((carried.avgCost * carried.qty) + stored.avgCost * qty) / total : 0;
+        carried.qty = total; stored.qty -= qty; if (!stored.qty) stored.avgCost = 0;
+      }
+      return state;
+    }
+    if (action.type === "HOME_HIDE_WEAPON" || action.type === "HOME_RETRIEVE_WEAPON") {
+      if (state.people.household.evicted) return inputState;
+      if (action.type === "HOME_HIDE_WEAPON") {
+        const item = GEAR_BY_ID[action.gearId];
+        if (!item || item.slot !== "weapon" || !hasGear(state, item.id) || state.home.hiddenWeapon) return inputState;
+        state.home.hiddenWeapon = item.id;
+        state.player.gear.owned = state.player.gear.owned.filter((id) => id !== item.id);
+        if (state.player.gear.equipped.weapon === item.id) state.player.gear.equipped.weapon = null;
+        logEntry(state, `You hide ${item.name} in Yalonda's house against the rules.`, "warn");
+      } else {
+        if (!state.home.hiddenWeapon) return inputState;
+        const id = state.home.hiddenWeapon; state.home.hiddenWeapon = null;
+        state.player.gear.owned.push(id); state.player.gear.equipped.weapon = id;
+      }
+      return state;
+    }
+    if (action.type === "ASK_JOHN") {
+      if (state.people.household.evicted || state.people.household.lastQuestionDay === state.run.day) return inputState;
+      state.people.household.lastQuestionDay = state.run.day;
+      state.effects.rumors.push({ id: `john_${state.run.day}`, areaId: "north_star_lot", productId: "weed", reliable: true, text: "John says the bus is reliable for Downtown, Ship Creek hires early, and the Industrial roads need a ride you trust.", expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
+      logEntry(state, "John gives you one careful answer without pretending the city is safer than it is.", "good");
+      return state;
+    }
+    if (action.type === "HOUSE_VIOLATION") {
+      state.people.household.dangerBroughtHome += action.danger ? 1 : 0;
+      householdWarning(state, action.serious ? 2 : 1, action.reason || "Trouble reaches Yalonda's front step, and the house rules become a warning.", !!action.catastrophic);
+      return state;
+    }
     if (action.type === "STORE_PRODUCT" || action.type === "RETRIEVE_PRODUCT") {
       if (!state.base.visiting || !PRODUCT_BY_ID[action.productId]) return inputState;
       const qty = Math.max(0, Math.floor(action.qty || 0));
@@ -2155,6 +2271,12 @@
       return advanceRun(base, { reason: "TRAVEL" });
     }
     if (action.type === "END_MARKET") { logEntry(base, "The last buyer leaves and the neighborhood starts pricing tomorrow's rumors.", ""); return advanceRun(base, { reason: "END_MARKET" }); }
+    if (action.type === "SLEEP_HOME") {
+      if (state.people.household.evicted) return inputState;
+      base.player.health = clamp(base.player.health + 12, 0, 100);
+      logEntry(base, "Yalonda keeps the house quiet. You sleep, eat something basic, and recover twelve Health.", "good");
+      return advanceRun(base, { reason: "SLEEP_HOME" });
+    }
     if (action.type === "LAY_LOW") { logEntry(base, state.base.watched ? "You kill the garage lights, but the sedan across the street never leaves." : "You kill the lights and let North Star forget your vehicle for a few hours.", ""); return advanceRun(base, { reason: "LAY_LOW" }); }
     if (action.type === "VISIT_BASE") {
       const next = advanceRun(base, { reason: "VISIT_BASE" });

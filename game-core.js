@@ -281,6 +281,8 @@
         transport: { dayPassDay: null, weekPass: false, busRides: 0, downtownKnown: false, industrialRouteKnown: false },
         locations: {
           explorationCount: 0, discoveries: [], gamblingKnown: false,
+          gym: { sessionDay: null, sessionsToday: 0 },
+          gambling: { plays: 0, wins: 0, losses: 0, net: 0 },
           discountStore: { name: "Northern Value", suspicion: 0, lastAttemptDay: null },
           employer: { name: "Ship Creek Freight", standing: 0, lastShiftDay: null, keptCommitments: 0, missedCommitments: 0 },
         },
@@ -444,6 +446,12 @@
   function activityAvailability(state) {
     const employer = state.world.locations.employer;
     const busCovered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
+    const gym = state.world.locations.gym;
+    const gymSessions = gym.sessionDay === state.run.day ? gym.sessionsToday : 0;
+    const gymCosts = [25, 45, 75, 120];
+    const gymProgress = [3, 2, 1, 1];
+    const gymIndex = Math.min(3, gymSessions);
+    const store = state.world.locations.discountStore;
     return {
       work: state.run.slot !== 0 ? { available: false, reason: "Ship Creek hires in the Morning only.", cost: 0 }
         : employer.lastShiftDay === state.run.day ? { available: false, reason: "You already worked today's shift.", cost: 0 }
@@ -452,7 +460,25 @@
       busDowntown: state.world.currentNeighborhoodId === "downtown" ? { available: false, reason: "You are already Downtown.", cost: 0 }
         : { available: state.player.cash >= (busCovered ? 0 : 5), reason: busCovered ? "Your pass covers this ride." : "$5 single ride; passes are also available.", cost: busCovered ? 0 : 5 },
       industrial: { available: state.run.premise === "legacy_established" || state.world.transport.industrialRouteKnown, reason: state.world.transport.industrialRouteKnown ? "A trusted route is available." : "Industrial needs Eli, a trusted ride, a future vehicle, or a specific route.", cost: 0 },
+      gym: { available: state.player.cash >= gymCosts[gymIndex], reason: `${gymSessions ? "Same-day training is more expensive and less effective." : "The first session gives the best progress."}`, cost: gymCosts[gymIndex], progress: gymProgress[gymIndex], sessionsToday: gymSessions },
+      gambling: !state.world.locations.gamblingKnown ? { available: false, reason: "Explore Spenard to find the informal game." }
+        : ![2, 3].includes(state.run.slot) ? { available: false, reason: "The game runs in the Evening and at Night." }
+          : { available: true, reason: "Seeded risk; reading the room improves a chance, never guarantees it." },
+      shoplifting: store.lastAttemptDay === state.run.day ? { available: false, reason: "Northern Value is watching for you today." }
+        : { available: true, reason: "One attempt per day. Reflexes lead; Insight, Heat, and suspicion matter." },
     };
+  }
+
+  function improveAttribute(state, attribute, progress) {
+    if (!["strength", "endurance", "reflexes"].includes(attribute) || state.player.attributes[attribute] >= 5) return false;
+    state.player.attributeProgress[attribute] += progress;
+    const threshold = ATTRIBUTE_THRESHOLDS[state.player.attributes[attribute]];
+    if (state.player.attributeProgress[attribute] < threshold) return false;
+    state.player.attributeProgress[attribute] -= threshold;
+    state.player.attributes[attribute] += 1;
+    state.player.stats = derivedRatings(state);
+    logEntry(state, `${attribute[0].toUpperCase()}${attribute.slice(1)} rises to ${state.player.attributes[attribute]}. The work is showing.`, "good");
+    return true;
   }
   function announceFeatureUnlocks(state, before) {
     const after = featureAvailability(state);
@@ -2287,6 +2313,58 @@
     }
 
     let base = state;
+    if (action.type === "TRAIN_ATTRIBUTE") {
+      const attribute = action.attribute;
+      const available = activityAvailability(state).gym;
+      if (!available.available || !["strength", "endurance", "reflexes"].includes(attribute) || state.player.attributes[attribute] >= 5) return inputState;
+      const gym = base.world.locations.gym;
+      if (gym.sessionDay !== base.run.day) { gym.sessionDay = base.run.day; gym.sessionsToday = 0; }
+      base.player.cash -= available.cost;
+      gym.sessionsToday += 1;
+      const improved = improveAttribute(base, attribute, available.progress);
+      logEntry(base, `Gym session: $${available.cost}, +${available.progress} hidden ${attribute} progress${improved ? ", milestone reached" : ""}.`, "good");
+      return advanceRun(base, { reason: "TRAIN_ATTRIBUTE" });
+    }
+    if (action.type === "GAMBLE") {
+      const available = activityAvailability(state).gambling;
+      const stake = Math.floor(action.stake || 0);
+      if (!available.available || ![20, 50, 100].includes(stake) || state.player.cash < stake) return inputState;
+      const random = makeRandom(base.run.rngState);
+      const approach = ["read", "steady", "press"].includes(action.approach) ? action.approach : "read";
+      const skill = approach === "read" ? base.player.attributes.insight : approach === "steady" ? base.player.attributes.discipline : base.player.attributes.presence;
+      const chance = clamp(0.35 + skill * 0.035 - stake / 2000, 0.32, 0.54);
+      const won = random.next() < chance;
+      base.player.cash -= stake;
+      if (won) base.player.cash += stake * 2;
+      const game = base.world.locations.gambling;
+      game.plays += 1; game[won ? "wins" : "losses"] += 1; game.net += won ? stake : -stake;
+      if (game.plays === 1) recordBehavior(base, "connector", 1, "gambling:first_contact", "gambling_contact");
+      base.run.rngState = random.state;
+      logEntry(base, won ? `The ${approach} approach holds. You leave the game $${stake} ahead.` : `The room takes your $${stake}. Nobody offers credit, and the next choice is yours.`, won ? "good" : "bad");
+      return advanceRun(base, { reason: "GAMBLE" });
+    }
+    if (action.type === "SHOPLIFT") {
+      const available = activityAvailability(state).shoplifting;
+      if (!available.available) return inputState;
+      const random = makeRandom(base.run.rngState);
+      const store = base.world.locations.discountStore;
+      const chance = clamp(0.30 + base.player.attributes.reflexes * 0.08 + base.player.attributes.insight * 0.03 - base.player.heat * 0.025 - store.suspicion * 0.04, 0.15, 0.72);
+      const success = random.next() < chance;
+      store.lastAttemptDay = base.run.day;
+      store.suspicion = clamp(store.suspicion + (success ? 1 : 2), 0, 8);
+      if (success) {
+        const reward = random.int(25, 65);
+        base.player.cash += reward;
+        base.player.heat = clamp(base.player.heat + (store.suspicion >= 4 ? 1 : 0), 0, 15);
+        if (store.suspicion >= 3) recordBehavior(base, "stickup", 1, `shoplift_pattern:${base.run.day}`, "shoplift_pattern");
+        logEntry(base, `You leave Northern Value with small goods worth $${reward}. The store remembers more than the payout justifies.`, "good");
+      } else {
+        base.player.heat = clamp(base.player.heat + 2, 0, 15);
+        logEntry(base, "Northern Value security walks you out empty-handed. The store remembers your face, and Heat rises by 2.", "bad");
+      }
+      base.run.rngState = random.state;
+      return advanceRun(base, { reason: "SHOPLIFT" });
+    }
     if (action.type === "EXPLORE_SPENARD") {
       const random = makeRandom(base.run.rngState);
       const count = base.world.locations.explorationCount;

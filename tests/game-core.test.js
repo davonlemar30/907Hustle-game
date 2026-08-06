@@ -5,6 +5,9 @@ const C = require("../game-core.js");
 function run(seed = 907) {
   return C.reduceGame(C.createRun({ seed }), { type: "CHOOSE_BACKGROUND", backgroundId: "shooter" });
 }
+function fresh(seed = 907) {
+  return C.reduceGame(C.createRun({ seed }), { type: "START_RUN" });
+}
 function quietAdvance(state, reason = "END_MARKET") {
   state.run.pendingEvent = null; state.run.pendingEncounter = null; state.run.pendingOperationResult = null;
   return C.advanceRun(state, { reason, suppressStory: true });
@@ -288,21 +291,19 @@ test("v3 hydration preserves Strategist capability as legacy history", () => {
   assert.deepEqual(hydrated.stats.robbery, { attempts: 1, successes: 0, failures: 1, totalPayout: 0, lastAttemptedDay: 1, attempted: true, success: false, payout: 0 });
 });
 
-test("feature availability follows milestones and returning saves bypass early locks", () => {
-  let state = run(); let features = C.selectors.featureAvailability(state);
+test("fresh runs expose Places and People while garage operations remain earned", () => {
+  let state = fresh(); let features = C.selectors.featureAvailability(state);
   assert.equal(features.market.available, true); assert.equal(features.finances.available, true); assert.equal(features.help.available, true);
-  assert.equal(features.travel.available, false); assert.equal(features.operations.available, false); assert.equal(features.people.available, false); assert.equal(features.recovery.available, false);
-  state = quietAdvance(state); features = C.selectors.featureAvailability(state);
-  assert.equal(features.travel.available, true); assert.equal(features.operations.available, true);
-  state.run.day = 3; features = C.selectors.featureAvailability(state);
-  assert.equal(features.people.available, true); assert.equal(features.recovery.available, true);
+  assert.equal(features.travel.available, true); assert.equal(features.operations.available, false); assert.equal(features.people.available, true); assert.equal(features.recovery.available, false);
+  state.player.cash = C.GARAGE_DEPOSIT; state = C.reduceGame(state, { type: "LEASE_GARAGE" }); features = C.selectors.featureAvailability(state);
+  assert.equal(features.operations.available, true); assert.equal(state.base.controlled, true);
 });
 
 test("Mara introduction resolves once and does not by itself arm her threat", () => {
   let state = run(); assert.equal(C.selectors.maraThreatEligible(state), false);
-  state = driveTo(state, "mara_intro"); assert.equal(state.run.pendingEvent.id, "mara_intro");
+  state = C.reduceGame(state, { type: "VISIT_NIGHT_OWL" }); assert.equal(state.run.pendingEvent.id, "mara_intro");
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
-  assert.equal(state.people.mara.met, true); assert.equal(state.people.mara.introChoice, "flirt");
+  assert.equal(state.people.mara.met, true); assert.equal(state.people.mara.introChoice, "friendly");
   assert.equal(state.flags.maraIntroResolved, true); assert.equal(state.people.mara.chainStage, 1);
   // Alpha v0.7: the sedan is a stage-5 beat. An introduction alone must not arm it.
   assert.equal(C.selectors.maraThreatEligible(state), false);
@@ -328,7 +329,7 @@ test("the Mara sedan encounter is unreachable before her boundary scene", () => 
   state.people.mara.met = true; state.people.mara.introChoice = "flirt"; state.people.mara.chainStage = 2;
   state.run.day = 6; state.run.slot = 2;
   assert.equal(C.selectors.maraThreatEligible(state), false);
-  state.flags.maraBoundaryResolved = true;
+  state.flags.maraBoundaryResolved = true; state.rival.pressure = 4;
   assert.equal(C.selectors.maraThreatEligible(state), true);
 });
 
@@ -407,7 +408,7 @@ test("the saved-run preview carries the name alongside the run position", () => 
 
 test("Mara's stages record chain progress without exposing it to the player", () => {
   let state = run();
-  state = driveTo(state, "mara_intro");
+  state = C.reduceGame(state, { type: "VISIT_NIGHT_OWL" });
   const built = state.run.pendingEvent;
   assert.equal(built.chain, undefined); assert.equal(built.stage, undefined); assert.equal(built.weight, undefined);
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
@@ -418,7 +419,7 @@ test("Mara's stages record chain progress without exposing it to the player", ()
 
 test("resolving a Mara scene never consumes a second part of day", () => {
   let state = run();
-  state = driveTo(state, "mara_intro");
+  state = C.reduceGame(state, { type: "VISIT_NIGHT_OWL" });
   const before = state.stats.pipelineAdvances, day = state.run.day, slot = state.run.slot;
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
   assert.equal(state.stats.pipelineAdvances, before);
@@ -616,4 +617,71 @@ test("a pre-v0.7.1 save hydrates and gains the dealer record", () => {
   assert.equal(inspection.state.people.dealers.kip.known, false);
   assert.equal(inspection.state.people.dealers.kip.robbedCount, 0);
   assert.equal(C.selectors.dealerSupplyFactor(inspection.state, "north_star_lot", "weed"), 1);
+});
+
+// --- Alpha v0.9: fresh arrival and daily life -------------------------------
+
+test("fresh v0.9 runs begin at the family home with only cash and fixed debt", () => {
+  const state = fresh(9001);
+  assert.equal(state.run.premise, "fresh_arrival"); assert.equal(state.run.openingPending, true);
+  assert.equal(state.player.cash, 1000); assert.equal(state.player.heat, 0); assert.equal(state.lender.principal, 1000); assert.equal(state.lender.balance, 1200); assert.equal(state.lender.dueDay, 7);
+  assert.equal(state.base.controlled, false); assert.equal(state.rival.pressure, 0); assert.equal(state.rival.relationship, "unaware");
+  assert.deepEqual(Object.values(state.player.inventory).map((item) => item.qty), [0, 0, 0, 0]);
+  assert.deepEqual([state.people.household.yalondaTrust, state.people.household.johnTrust, state.people.household.warnings], [2, 1, 0]);
+  assert.equal(state.world.productAccess.weed, false); assert.equal(state.people.dealers.kip.known, false);
+});
+
+test("household storage is limited and three warnings end as Nowhere to Go", () => {
+  let state = fresh(9002); state.player.inventory.weed = { qty: 3, avgCost: 20 };
+  state = C.reduceGame(state, { type: "HOME_STORE_PRODUCT", productId: "weed", qty: 2 });
+  const rejected = C.reduceGame(state, { type: "HOME_STORE_PRODUCT", productId: "weed", qty: 1 });
+  assert.equal(rejected, state); assert.equal(state.home.storedInventory.weed.qty, 2);
+  state = C.reduceGame(state, { type: "HOUSE_VIOLATION", serious: true, reason: "test" });
+  assert.equal(state.people.household.warnings, 2); assert.equal(state.run.status, "playing");
+  state = C.reduceGame(state, { type: "HOUSE_VIOLATION", reason: "test" });
+  assert.equal(state.run.status, "ended"); assert.equal(state.run.ending, "nowhere_to_go"); assert.equal(C.selectors.endingLabel(state.run.ending), "Nowhere to Go");
+});
+
+test("work is Morning-only, once daily, seeded, and builds legal standing", () => {
+  let a = fresh(9003), b = fresh(9003);
+  a = C.reduceGame(a, { type: "WORK_SHIFT" }); b = C.reduceGame(b, { type: "WORK_SHIFT" });
+  assert.equal(a.player.cash, b.player.cash); assert.ok(a.player.cash >= 1110 && a.player.cash <= 1140); assert.equal(a.run.slot, 1);
+  assert.equal(a.world.locations.employer.standing, 1); assert.equal(C.selectors.activityAvailability(a).work.available, false);
+});
+
+test("gym costs escalate, progress diminishes, and attributes cap at five", () => {
+  let state = fresh(9004); const spent = [];
+  for (let i = 0; i < 4; i += 1) { state.run.pendingEvent = null; const before = state.player.cash; state = C.reduceGame(state, { type: "TRAIN_ATTRIBUTE", attribute: "strength" }); spent.push(before - state.player.cash); }
+  assert.deepEqual(spent, [25, 45, 75, 120]); assert.equal(state.player.attributes.strength, 2); assert.equal(state.player.attributeProgress.strength, 7);
+  state.player.attributeProgress.strength = 9; state.world.locations.gym.sessionDay = null; state.run.pendingEvent = null; state.run.slot = 0;
+  state = C.reduceGame(state, { type: "TRAIN_ATTRIBUTE", attribute: "strength" });
+  assert.equal(state.player.attributes.strength, 3); assert.equal(state.player.attributeProgress.strength, 2);
+});
+
+test("exploration guarantees a supplier before later seeded discoveries", () => {
+  let state = fresh(9005); state = C.reduceGame(state, { type: "EXPLORE_SPENARD" });
+  assert.equal(state.people.dealers.kip.known, true); assert.equal(state.world.productAccess.weed, true); assert.ok(state.world.locations.discoveries.includes("kip_supplier"));
+  state.run.pendingEvent = null; state = C.reduceGame(state, { type: "EXPLORE_SPENARD" });
+  assert.equal(state.world.locations.gamblingKnown, true);
+});
+
+test("bus opens Downtown but fresh runs cannot travel to Industrial without a route", () => {
+  let state = fresh(9006); const blocked = C.reduceGame(state, { type: "TRAVEL", neighborhoodId: "airport_industrial" }); assert.equal(blocked, state);
+  state = C.reduceGame(state, { type: "BUS_TRAVEL", neighborhoodId: "downtown" });
+  assert.equal(state.world.currentNeighborhoodId, "downtown"); assert.equal(state.player.cash, 995); assert.equal(state.run.slot, 1);
+});
+
+test("Street Read awards deduplicate and remain separate from score and identity", () => {
+  const state = fresh(9007); const score = C.selectors.operationScore(state);
+  assert.equal(C.awardStreetReadForTest(state, "test:first", 40, "Test"), true);
+  assert.equal(C.awardStreetReadForTest(state, "test:first", 40, "Test"), false);
+  assert.equal(state.stats.streetRead.xp, 40); assert.equal(state.stats.streetRead.level, 1);
+  assert.equal(state.player.streetIdentity, "unproven"); assert.equal(C.selectors.operationScore(state), score);
+});
+
+test("legacy v3 saves retain garage ownership while v0.9 acquisition advances once", () => {
+  const legacy = run(9008); const raw = JSON.parse(JSON.stringify(legacy)); delete raw.base.controlled; delete raw.run.premise;
+  const hydrated = C.hydrateRun(raw); assert.equal(hydrated.run.premise, "legacy_established"); assert.equal(hydrated.base.controlled, true);
+  let state = fresh(9009); const before = state.stats.pipelineAdvances; state = C.reduceGame(state, { type: "LEASE_GARAGE" });
+  assert.equal(state.base.controlled, true); assert.equal(state.player.cash, 350); assert.equal(state.stats.pipelineAdvances, before + 1);
 });

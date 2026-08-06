@@ -217,6 +217,7 @@ test("a reactive beat fires on its cause rather than on a dice roll", () => {
 test("repeatable street events respect their cooldown", () => {
   const item = REGISTRY.find((entry) => entry.id === "sedan_rumor");
   let state = freshRun(31, "hustler");
+  state.rival.pressure = 2;
   state.run.eventHistory.sedan_rumor = 0;
   state.run.day = 1; state.run.slot = 2;
   assert.ok(!C.storyCandidatesForTest(state).some((entry) => entry.id === "sedan_rumor"), "fired inside its cooldown");

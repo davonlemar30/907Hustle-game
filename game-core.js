@@ -909,7 +909,7 @@
     tone_offer: { who: "Anton Bell, a former security worker", where: "North Star Garage", stakes: "Protection against Rook at the cost of another wage." },
     mara_shift_change: { who: "Mara Velez, twenty minutes past close", where: "Night Owl Mini-Mart, Spenard", stakes: "Mara is building an exit that public association with your operation would close. How much you tell her sets the terms." },
     mara_invitation: { who: "Mara, off shift early and without a car", where: "The Night Owl lot, Spenard", stakes: "Four hours away from the block, or four hours she spends near your operation. Both cost time." },
-    mara_boundary: { who: "Mara and the plate number on her wrist", where: "Behind the Night Owl after closing", stakes: "A plate number, her job, and whether she gets to make this decision with real information." },
+    mara_boundary: { who: "Mara and the question a customer left behind", where: "Behind the Night Owl after closing", stakes: "Her job, her consent, and whether she gets to make this decision with real information." },
     mara_after: { who: "Mara, at the end of your week and the start of hers", where: "Night Owl Mini-Mart, Spenard", stakes: "What the week cost her, and what is left to say about it." },
     eli_missed_turn: { who: "Eli Ward, back an hour later than the route allows", where: "North Star Garage, Spenard", stakes: "Whether you want a driver who thinks, or one who does what the clock says." },
     eli_service_map: { who: "Eli and a map he drew himself", where: "Passenger seat outside North Star Garage", stakes: "Route knowledge nobody else on this block has, and what he wants for it." },
@@ -996,9 +996,9 @@
         ...(state.base.controlled ? [{ label: "Show her the garage", requires: "base_controlled", effect: { maraTrust: 1, maraJobAtRisk: true, setFlags: { maraSawGarage: true } }, preview: "She sees the operation, and she is seen near it.", result: "She walks the length of the bay once, looks at the bags, and does not touch anything. \"This is what it is, then.\" A car slows on the street outside and keeps going. Mara watches it the whole way down the block." }] : []),
         { label: "Tell her tonight is not good", effect: { setFlags: state.flags.maraRaincheck ? { maraInvitationClosed: true } : { maraRaincheck: true } }, preview: "Nothing happens tonight. The offer may come back once.", result: "She takes it evenly, the way she takes most things. \"Then another night.\" She starts walking toward the bus shelter on Spenard before you can offer the ride." },
       ]),
-      mara_boundary: () => event("mara_boundary", "The Plate on Her Wrist", "Mara meets you behind the Night Owl with the keys already in her hand and the store dark behind her. A car followed her to her door last night, sat there eleven minutes, and left. She has the plate written on the inside of her wrist. \"I am not asking you to fix it,\" she says. \"I am asking you to tell me what it is.\"", [
-        { label: "Tell her everything, risk included", effect: { maraTrust: 2, setFlags: { toldMaraTruth: true } }, preview: "Mara gets the whole picture, including the part that puts her at risk.", result: "You give her Rook's name, Dre's date, and the honest odds. Mara listens all the way through without interrupting. Then she copies the plate onto a second slip and puts one in her shoe. \"Now it's mine too,\" she says. \"That was the part you owed me.\"" },
-        { label: "Give the officer her name", effect: { maraTrust: -2, heat: -1, setFlags: { usedMaraWithoutConsent: true } }, preview: "Heat drops. Mara finds out from someone else that you used her name.", result: "The story holds because her name is clean and yours is not. Two days of Heat come off you. Mara hears it from the officer's partner, who buys cigarettes at her counter on Fridays and assumed she already knew." },
+      mara_boundary: () => event("mara_boundary", "The Question Behind the Store", "Mara meets you behind the Night Owl with the keys already in her hand and the store dark behind her. A customer used your street name, asked which nights she closes, and left without buying anything. \"I am not asking you to fix it,\" she says. \"I am asking you to tell me what I am standing next to.\"", [
+        { label: "Tell her everything, risk included", effect: { maraTrust: 2, setFlags: { toldMaraTruth: true } }, preview: "Mara gets the whole picture, including the part that could put her at risk.", result: "You give her Rook's name, Dre's date, and the honest odds. Mara listens all the way through without interrupting. Then she writes down the names and puts the note in her shoe. \"Now the decision is mine too,\" she says. \"That was the part you owed me.\"" },
+        { label: "Give the officer her name", effect: { maraTrust: -2, heat: -1, setFlags: { usedMaraWithoutConsent: true } }, preview: "Heat drops. Mara finds out from someone else that you used her name.", result: "The story holds because her name is clean and yours is not. Some attention comes off you. Mara hears it from the officer's partner, who buys cigarettes at her counter on Fridays and assumed she already knew." },
         { label: "Tell her you can't answer that", effect: { maraTrust: -1 }, preview: "The question stays open. Mara stops expecting an answer to it.", result: "She waits long enough to be sure that is the whole reply. Then she pockets the keys. \"Okay.\" The next time you come in, the coffee is on the counter before you reach it, and she is already turned toward the register." },
       ]),
       mara_after: () => {
@@ -1239,7 +1239,7 @@
       const history = state.flags.usedMaraWithoutConsent
         ? "She has not said a word to you since she found out whose name went to the officer."
         : state.flags.toldMaraTruth
-          ? "She has the plate memorized from the night she wrote it on the inside of her wrist."
+          ? "She remembers every risk you named when she asked for the truth."
           : state.flags.maraDateNight
             ? "Point Woronzof was four days ago. This is the same week."
             : "The question she asked behind the store is still sitting between you, unanswered.";
@@ -1699,6 +1699,10 @@
     state.stats.decisions += 1;
     announceFeatureUnlocks(state, beforeFeatures);
     if (crossedDay) state.run.daySummary = { day: oldDay, netWorth: netWorth(state), operationScore: operationScore(state), heat: state.player.heat, debt: state.lender.balance, health: state.player.health, baseValue: baseValue(state), crew: recruitedCrew(state).length };
+    if (state.run.status !== "playing") {
+      state.run.rngState = random.state;
+      return state;
+    }
     if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
     else if (finalSlot) endRun(state);
     else if (!context.suppressStory) scheduleStory(state, context, random);
@@ -2489,6 +2493,13 @@
       awardStreetRead(base, `travel:${destination}`, 10, `Reached ${AREA_BY_ID[destination].name}`);
       logEntry(base, `The People Mover carries you to ${AREA_BY_ID[destination].name}${cost ? " for $5" : " on your pass"}.`, "");
       return advanceRun(base, { reason: "BUS_TRAVEL" });
+    }
+    if (action.type === "WALK_HOME") {
+      if (state.world.currentNeighborhoodId !== "downtown") return inputState;
+      base.world.currentNeighborhoodId = "north_star_lot";
+      base.player.health = clamp(base.player.health - 3, 1, 100);
+      logEntry(base, "With no bus fare to spare, you walk back to Spenard. It costs no cash, one part of day, and 3 Health.", "warn");
+      return advanceRun(base, { reason: "WALK_HOME" });
     }
     if (action.type === "TRAVEL") {
       if (!AREA_BY_ID[action.neighborhoodId] || action.neighborhoodId === state.world.currentNeighborhoodId) return inputState;

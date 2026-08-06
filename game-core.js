@@ -419,6 +419,7 @@
   }
   function gearValue(state) { return state.player.gear.owned.reduce((sum, id) => sum + (GEAR_BY_ID[id]?.cost || 0), 0); }
   function baseValue(state) {
+    if (!state.base.controlled) return 0;
     return BASE_UPGRADES.filter((item) => state.base.tracks[item.track] >= item.level).reduce((sum, item) => sum + item.cost, 0);
   }
   function netWorth(state) { return state.player.cash + state.base.storedCash + (state.home?.storedCash || 0) + inventoryValue(state) - state.lender.balance; }
@@ -438,7 +439,7 @@
       finances: { available: true, hint: "Available now." },
       help: { available: true, hint: "Available now." },
       travel: { available: true, hint: "Places and local travel are available now." },
-      operations: { available: progressed, hint: "Finish trading once to unlock Operations." },
+      operations: { available: state.base.controlled, hint: `Lease North Star Garage for $${GARAGE_DEPOSIT} to unlock Operations.` },
       people: { available: true, hint: "Yalonda and John are available now." },
       recovery: { available: state.player.health < 100 || state.player.heat > 1 || state.flags.recoveryIntroduced || returning, hint: "Take an injury or pick up Heat to unlock Recovery." },
     };
@@ -2207,7 +2208,7 @@
     }
 
     if (action.type === "STORE_CASH" || action.type === "RETRIEVE_CASH") {
-      if (!state.base.visiting) return inputState;
+      if (!state.base.controlled || !state.base.visiting) return inputState;
       const amount = Math.max(0, Math.floor(action.amount || 0));
       if (!amount) return inputState;
       if (action.type === "STORE_CASH") {
@@ -2283,7 +2284,7 @@
       return state;
     }
     if (action.type === "STORE_PRODUCT" || action.type === "RETRIEVE_PRODUCT") {
-      if (!state.base.visiting || !PRODUCT_BY_ID[action.productId]) return inputState;
+      if (!state.base.controlled || !state.base.visiting || !PRODUCT_BY_ID[action.productId]) return inputState;
       const qty = Math.max(0, Math.floor(action.qty || 0));
       if (!qty) return inputState;
       const carried = state.player.inventory[action.productId], stored = state.base.storedInventory[action.productId];
@@ -2302,7 +2303,7 @@
       return state;
     }
     if (action.type === "PAY_CREW") {
-      if (!state.base.visiting || !CREW_BY_ID[action.crewId]) return inputState;
+      if (!state.base.controlled || !state.base.visiting || !CREW_BY_ID[action.crewId]) return inputState;
       const crew = state.people.crew[action.crewId];
       if (!crew.recruited || crew.wageDue <= 0 || state.player.cash < crew.wageDue) return inputState;
       const amount = crew.wageDue;
@@ -2313,6 +2314,16 @@
     }
 
     let base = state;
+    if (action.type === "LEASE_GARAGE") {
+      if (state.base.controlled || state.player.cash < GARAGE_DEPOSIT) return inputState;
+      base.player.cash -= GARAGE_DEPOSIT;
+      base.base.controlled = true;
+      base.base.acquiredDay = base.run.day;
+      base.stats.moneySpent.base += GARAGE_DEPOSIT;
+      recordBehavior(base, "mover", 3, "property:north_star", "property");
+      logEntry(base, `You put $${GARAGE_DEPOSIT} down on North Star Garage. The first week is included; storage, upgrades, recovery, and crew operations are now yours to build.`, "good");
+      return advanceRun(base, { reason: "LEASE_GARAGE" });
+    }
     if (action.type === "TRAIN_ATTRIBUTE") {
       const attribute = action.attribute;
       const available = activityAvailability(state).gym;
@@ -2448,6 +2459,7 @@
     }
     if (action.type === "LAY_LOW") { logEntry(base, state.base.watched ? "You kill the garage lights, but the sedan across the street never leaves." : "You kill the lights and let North Star forget your vehicle for a few hours.", ""); return advanceRun(base, { reason: "LAY_LOW" }); }
     if (action.type === "VISIT_BASE") {
+      if (!state.base.controlled) return inputState;
       const next = advanceRun(base, { reason: "VISIT_BASE" });
       if (next.run.status === "playing") next.base.visiting = true;
       logEntry(next, "The North Star Garage door rolls down behind you. Storage, crew, and upgrades are available until you leave.", "");
@@ -2461,7 +2473,7 @@
       return advanceRun(base, { reason: "HEAL" });
     }
     if (action.type === "HEAL_AT_BASE") {
-      if (!state.base.visiting || state.base.tracks.recovery < 1 || state.player.health >= 100) return inputState;
+      if (!state.base.controlled || !state.base.visiting || state.base.tracks.recovery < 1 || state.player.health >= 100) return inputState;
       const cost = state.base.tracks.recovery >= 2 ? 25 : 45, amount = state.base.tracks.recovery >= 2 ? 35 : 22;
       if (state.player.cash < cost) return inputState;
       base.player.cash -= cost; base.player.health = clamp(base.player.health + amount, 0, 100); base.stats.moneySpent.healing += cost;
@@ -2484,7 +2496,7 @@
       return advanceRun(base, { reason: "PAY_DEBT" });
     }
     if (action.type === "UPGRADE_BASE") {
-      if (!state.base.visiting) return inputState;
+      if (!state.base.controlled || !state.base.visiting) return inputState;
       const track = action.track, nextLevel = (state.base.tracks[track] || 0) + 1;
       const upgrade = BASE_UPGRADES.find((item) => item.track === track && item.level === nextLevel);
       if (!upgrade || state.player.cash < upgrade.cost) return inputState;
@@ -2494,7 +2506,7 @@
       return advanceRun(base, { reason: "UPGRADE_BASE" });
     }
     if (action.type === "BUY_GEAR") {
-      if (!state.base.visiting) return inputState;
+      if (!state.base.controlled || !state.base.visiting) return inputState;
       const item = GEAR_BY_ID[action.gearId];
       if (!item || state.player.cash < item.cost || (item.id !== "medical_kit" && hasGear(state, item.id))) return inputState;
       base.player.cash -= item.cost; base.stats.moneySpent.gear += item.cost;
@@ -2507,7 +2519,7 @@
       return advanceRun(base, { reason: "BUY_GEAR" });
     }
     if (action.type === "RECRUIT_CREW") {
-      if (!state.base.visiting || !CREW_BY_ID[action.crewId] || recruitedCrew(state).length >= 2) return inputState;
+      if (!state.base.controlled || !state.base.visiting || !CREW_BY_ID[action.crewId] || recruitedCrew(state).length >= 2) return inputState;
       const person = CREW_BY_ID[action.crewId], crew = state.people.crew[action.crewId], cost = recruitmentCost(state, action.crewId);
       if (!crew.introduced || crew.recruited || state.player.cash < cost || (person.id === "eli" && crew.contactStage !== "recruitable")) return inputState;
       base.player.cash -= cost; crew.recruited = true; crew.status = "active"; crew.loyalty += 1; crew.wageDue = person.wage; base.stats.moneySpent.crew += cost;
@@ -2517,7 +2529,7 @@
       return advanceRun(base, { reason: "RECRUIT_CREW" });
     }
     if (action.type === "ASSIGN_CREW") {
-      if (!state.base.visiting || !CREW_BY_ID[action.crewId]) return inputState;
+      if (!state.base.controlled || !state.base.visiting || !CREW_BY_ID[action.crewId]) return inputState;
       const crew = state.people.crew[action.crewId];
       if (!crew.recruited || crew.assignment) return inputState;
       const allowed = { eli: ["north_run", "outer_run"], miri: ["source_cocaine", "source_meth"], tone: ["guard_base", "intimidate_buyer"] };

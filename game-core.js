@@ -11,6 +11,9 @@
   const SAVE_KEY = "907ogr_v3";
   const WORKING_CAPITAL_RESERVE = 150;
   const STREET_NAME_MAX = 16;
+  const GARAGE_DEPOSIT = 650;
+  const STREET_READ_LEVELS = [40, 110, 210, 340];
+  const ATTRIBUTE_THRESHOLDS = { 2: 10, 3: 18, 4: 28 };
   const DEFAULT_STREET_NAMES = { shooter: "Steady", hustler: "Silver", strategist: "Quiet", neutral: "Rookie" };
   const ATTRIBUTE_DEFAULTS = { strength: 2, endurance: 2, reflexes: 2, presence: 2, insight: 2, discipline: 2 };
   const LEGACY_ATTRIBUTES = {
@@ -205,6 +208,16 @@
     if (behavior.meaningfulActions >= 8 && state.player.streetIdentity === "unproven") evaluateStreetIdentity(state, false);
     return true;
   }
+  function awardStreetRead(state, awardId, xp, label) {
+    const streetRead = state.stats?.streetRead;
+    if (!streetRead || !awardId || streetRead.awards[awardId]) return false;
+    streetRead.awards[awardId] = { xp, day: state.run.day, slot: state.run.slot, label };
+    streetRead.xp += xp;
+    const prior = streetRead.level;
+    streetRead.level = STREET_READ_LEVELS.filter((threshold) => streetRead.xp >= threshold).length;
+    if (streetRead.level > prior) logEntry(state, `Street Read ${streetRead.level}: the city is becoming easier to read.`, "good");
+    return true;
+  }
 
   function initialMarket(area, random) {
     const prices = {}, availability = {}, history = {};
@@ -254,6 +267,7 @@
       version: VERSION,
       run: {
         status: "creating_character", day: 1, slot: 0, seed, rngState: random.state,
+        premise: "fresh_arrival", openingPending: false,
         ending: null, pendingEvent: null, pendingEncounter: null, pendingOperationResult: null, daySummary: null,
         currentVisit: { trades: 0, grossBuy: 0, grossSell: 0, startedAt: 0 },
         recentEvents: [], encounterCount: 0, finalPlan: null, finalPlanPrepared: false,
@@ -263,8 +277,9 @@
         background: null, legacyBackground: null, streetName: "", streetNameChosen: false,
         streetIdentity: "unproven", identityAssignedDay: null, identityHistory: [],
         attributes: { ...ATTRIBUTE_DEFAULTS },
+        attributeProgress: { strength: 0, endurance: 0, reflexes: 0, presence: 0, insight: 0, discipline: 0 },
         behavior: { scores: { mover: 0, earner: 0, stickup: 0, connector: 0 }, meaningfulActions: 0, history: [], pendingIdentity: null, pendingIdentityNights: 0, lastEvaluatedDay: null, caps: {} },
-        cash: 0, health: 100, heat: 1, cargoCapacity: 10,
+        cash: 0, health: 100, heat: 0, cargoCapacity: 10,
         stats: { combat: 0, charisma: 0, intelligence: 0 }, inventory,
         gear: { owned: [], equipped: { weapon: null, armor: null, utility: null, tool: null }, consumables: { medical_kit: 0 } },
       },
@@ -272,32 +287,43 @@
         currentNeighborhoodId: "north_star_lot", markets,
         influence: { north_star_lot: 0, downtown: 0, airport_industrial: 0 },
         tradeInfluenceGranted: { north_star_lot: false, downtown: false, airport_industrial: false },
-        productAccess: { weed: true, shrooms: true, cocaine: false, meth: false },
+        productAccess: { weed: false, shrooms: false, cocaine: false, meth: false },
+        transport: { dayPassDay: null, weekPass: false, busRides: 0, downtownKnown: false, industrialRouteKnown: false },
+        locations: {
+          explorationCount: 0, discoveries: [], gamblingKnown: false,
+          gym: { sessionDay: null, sessionsToday: 0 },
+          gambling: { plays: 0, wins: 0, losses: 0, net: 0 },
+          discountStore: { name: "Northern Value", suspicion: 0, lastAttemptDay: null },
+          employer: { name: "Ship Creek Freight", standing: 0, lastShiftDay: null, keptCommitments: 0, missedCommitments: 0 },
+        },
         territories: Object.fromEntries(TERRITORIES.map((territory) => [territory.areaId, {
           owner: "rook", power: territory.power, capturedDay: null, incomeCollected: 0, attempts: 0,
         }])),
       },
       base: {
-        name: "North Star Garage", visiting: false,
+        name: "North Star Garage", controlled: false, acquiredDay: null, visiting: false,
         tracks: { security: 0, storage: 0, operations: 0, recovery: 0 },
         storedCash: 0, storedInventory, watched: false, damage: 0, assignedCrew: null,
       },
       lender: {
-        name: "Dre Holloway", principal: 620, balance: 620, dueDay: 4, trust: 0,
+        name: "Dre Holloway", principal: 1000, balance: 1200, dueDay: 7, trust: 0,
         relationship: "businesslike", payments: 0, paymentCount: 0, feesAdded: 0,
         paymentHistory: [], penaltyHistory: [], clearedAt: null, missedDays: 0, lastPenaltyDay: 0,
         afterPayoffOffer: "locked",
       },
-      rival: { name: "Rook Mercer", pressure: 1, respect: 0, relationship: "dismissive", recentInterference: null },
+      rival: { name: "Rook Mercer", pressure: 0, respect: 0, relationship: "unaware", recentInterference: null },
       people: {
+        household: { yalondaTrust: 2, johnTrust: 1, warnings: 0, contrabandFound: 0, dangerBroughtHome: 0, evicted: false, lastQuestionDay: null },
         mara: { met: false, available: true, trust: 0, introChoice: null, flirtHistory: false, truthTold: false, usedWithoutConsent: false, status: "distant", outcomes: [], chainStage: 0, jobAtRisk: false },
         crew: createCrewState(),
         dealers: createDealerState(),
       },
+      home: { storedCash: 0, storedInventory: Object.fromEntries(PRODUCTS.map((item) => [item.id, { qty: 0, avgCost: 0 }])), hiddenWeapon: null },
       flags: { featureNotices: {} },
       effects: { rumors: [], modifiers: [] },
       stats: {
-        startingNetWorth: -620, bestTrade: 0, largestLoss: 0, highestHeat: 1,
+        startingNetWorth: -200, bestTrade: 0, largestLoss: 0, highestHeat: 0,
+        streetRead: { xp: 0, level: 0, awards: {}, lastAskDay: null },
         productsMoved: Object.fromEntries(PRODUCTS.map((item) => [item.id, 0])),
         decisions: 0, pipelineAdvances: 0, marketUpdates: 0, visits: [], majorDecisions: [],
         moneySpent: { debt: 0, base: 0, gear: 0, crew: 0, healing: 0, relationships: 0, events: 0 },
@@ -339,6 +365,11 @@
     const defaults = createRun({ seed: value.run.seed });
     const state = mergeDefaults(defaults, value);
     state.version = VERSION;
+    if (value.run.premise === undefined) state.run.premise = "legacy_established";
+    if (value.base?.controlled === undefined) {
+      state.base.controlled = true;
+      state.base.acquiredDay = value.run.day || 1;
+    }
     const legacy = ["shooter", "hustler", "strategist"].includes(value.player.background) ? value.player.background : value.player.legacyBackground;
     if (!value.player.attributes && legacy && LEGACY_ATTRIBUTES[legacy]) state.player.attributes = { ...LEGACY_ATTRIBUTES[legacy] };
     state.player.legacyBackground = legacy || null;
@@ -384,6 +415,7 @@
   function storedCargoUsed(state) { return PRODUCTS.reduce((sum, item) => sum + (state.base.storedInventory[item.id]?.qty || 0), 0); }
   function storageCapacity(state) { return 2 + state.base.tracks.storage * 6; }
   function storedCashCapacity(state) { return state.base.tracks.storage === 0 ? 0 : state.base.tracks.storage === 1 ? 300 : 1200; }
+  function homeStoredCargoUsed(state) { return PRODUCTS.reduce((sum, item) => sum + (state.home?.storedInventory?.[item.id]?.qty || 0), 0); }
   function recruitedCrew(state) { return CREW.filter((person) => state.people.crew[person.id].recruited && state.people.crew[person.id].status === "active"); }
   function influenceLabel(value) { return ["Unknown", "Active", "Established", "Contested", "Controlled"][clamp(value, 0, 4)]; }
   function inventoryValue(state) {
@@ -391,15 +423,17 @@
     return PRODUCTS.reduce((sum, product) => {
       const carried = state.player.inventory[product.id]?.qty || 0;
       const stored = state.base.storedInventory[product.id]?.qty || 0;
-      return sum + (carried + stored) * (market.prices[product.id] || 0);
+      const hidden = state.home?.storedInventory?.[product.id]?.qty || 0;
+      return sum + (carried + stored + hidden) * (market.prices[product.id] || 0);
     }, 0);
   }
   function gearValue(state) { return state.player.gear.owned.reduce((sum, id) => sum + (GEAR_BY_ID[id]?.cost || 0), 0); }
   function baseValue(state) {
+    if (!state.base.controlled) return 0;
     return BASE_UPGRADES.filter((item) => state.base.tracks[item.track] >= item.level).reduce((sum, item) => sum + item.cost, 0);
   }
-  function netWorth(state) { return state.player.cash + state.base.storedCash + inventoryValue(state) - state.lender.balance; }
-  function workingCapital(state) { return state.player.cash + state.base.storedCash + inventoryValue(state); }
+  function netWorth(state) { return state.player.cash + state.base.storedCash + (state.home?.storedCash || 0) + inventoryValue(state) - state.lender.balance; }
+  function workingCapital(state) { return state.player.cash + state.base.storedCash + (state.home?.storedCash || 0) + inventoryValue(state); }
   function safeDebtPayment(state) { return Math.min(state.lender.balance, Math.max(0, state.player.cash - WORKING_CAPITAL_RESERVE)); }
   function debtPaymentPreview(state, requestedAmount) {
     const maximum = Math.min(state.player.cash, state.lender.balance);
@@ -414,11 +448,48 @@
       market: { available: true, hint: "Available now." },
       finances: { available: true, hint: "Available now." },
       help: { available: true, hint: "Available now." },
-      travel: { available: progressed, hint: "Finish trading once to unlock Travel." },
-      operations: { available: progressed, hint: "Finish trading once to unlock Operations." },
-      people: { available: someoneIntroduced || returning, hint: "Meet someone who sticks around to unlock People." },
+      travel: { available: true, hint: "Places and local travel are available now." },
+      operations: { available: state.base.controlled, hint: `Lease North Star Garage for $${GARAGE_DEPOSIT} to unlock Operations.` },
+      people: { available: true, hint: "Yalonda and John are available now." },
       recovery: { available: state.player.health < 100 || state.player.heat > 1 || state.flags.recoveryIntroduced || returning, hint: "Take an injury or pick up Heat to unlock Recovery." },
     };
+  }
+  function activityAvailability(state) {
+    const employer = state.world.locations.employer;
+    const busCovered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
+    const gym = state.world.locations.gym;
+    const gymSessions = gym.sessionDay === state.run.day ? gym.sessionsToday : 0;
+    const gymCosts = [25, 45, 75, 120];
+    const gymProgress = [3, 2, 1, 1];
+    const gymIndex = Math.min(3, gymSessions);
+    const store = state.world.locations.discountStore;
+    return {
+      work: state.run.slot !== 0 ? { available: false, reason: "Ship Creek hires in the Morning only.", cost: 0 }
+        : employer.lastShiftDay === state.run.day ? { available: false, reason: "You already worked today's shift.", cost: 0 }
+          : { available: true, reason: "One freight shift builds legitimate standing.", cost: 0 },
+      explore: { available: true, reason: state.world.locations.explorationCount ? "Later walks draw from a diminishing discovery pool." : "Your first useful discovery is guaranteed.", cost: 0 },
+      busDowntown: state.world.currentNeighborhoodId === "downtown" ? { available: false, reason: "You are already Downtown.", cost: 0 }
+        : { available: state.player.cash >= (busCovered ? 0 : 5), reason: busCovered ? "Your pass covers this ride." : "$5 single ride; passes are also available.", cost: busCovered ? 0 : 5 },
+      industrial: { available: state.run.premise === "legacy_established" || state.world.transport.industrialRouteKnown, reason: state.world.transport.industrialRouteKnown ? "A trusted route is available." : "Industrial needs Eli, a trusted ride, a future vehicle, or a specific route.", cost: 0 },
+      gym: { available: state.player.cash >= gymCosts[gymIndex], reason: `${gymSessions ? "Same-day training is more expensive and less effective." : "The first session gives the best progress."}`, cost: gymCosts[gymIndex], progress: gymProgress[gymIndex], sessionsToday: gymSessions },
+      gambling: !state.world.locations.gamblingKnown ? { available: false, reason: "Explore Spenard to find the informal game." }
+        : ![2, 3].includes(state.run.slot) ? { available: false, reason: "The game runs in the Evening and at Night." }
+          : { available: true, reason: "Seeded risk; reading the room improves a chance, never guarantees it." },
+      shoplifting: store.lastAttemptDay === state.run.day ? { available: false, reason: "Northern Value is watching for you today." }
+        : { available: true, reason: "One attempt per day. Reflexes lead; Insight, Heat, and suspicion matter." },
+    };
+  }
+
+  function improveAttribute(state, attribute, progress) {
+    if (!["strength", "endurance", "reflexes"].includes(attribute) || state.player.attributes[attribute] >= 5) return false;
+    state.player.attributeProgress[attribute] += progress;
+    const threshold = ATTRIBUTE_THRESHOLDS[state.player.attributes[attribute]];
+    if (state.player.attributeProgress[attribute] < threshold) return false;
+    state.player.attributeProgress[attribute] -= threshold;
+    state.player.attributes[attribute] += 1;
+    state.player.stats = derivedRatings(state);
+    logEntry(state, `${attribute[0].toUpperCase()}${attribute.slice(1)} rises to ${state.player.attributes[attribute]}. The work is showing.`, "good");
+    return true;
   }
   function announceFeatureUnlocks(state, before) {
     const after = featureAvailability(state);
@@ -450,7 +521,7 @@
   }
   function maraThreatEligible(state) {
     const relevantHistory = !!(state.people.mara.introChoice || state.flags.maraFlirted || state.flags.maraFriendlyIntro || state.flags.maraDistantIntro || state.flags.toldMaraAboutGarage || state.stats.moneySpent.relationships > 0);
-    return !!(state.flags.maraBoundaryResolved && state.people.mara.met && state.people.mara.available !== false && state.people.mara.status !== "gone" && relevantHistory && !state.flags.maraSedanNightResolved);
+    return !!(state.flags.maraBoundaryResolved && state.people.mara.met && state.people.mara.available !== false && state.people.mara.status !== "gone" && relevantHistory && state.rival.pressure >= 4 && !state.flags.maraSedanNightResolved);
   }
   function controlled(state, areaId) { return state.world.territories[areaId]?.owner === "player"; }
   function recruitmentCost(state, crewId) {
@@ -673,6 +744,7 @@
     return "businesslike";
   }
   function relationshipForRival(rival) {
+    if (rival.pressure <= 0 && rival.respect <= 0) return "unaware";
     if (rival.respect >= 4 && rival.pressure <= 6) return "respectful";
     if (rival.respect >= 2 && rival.pressure <= 4) return "cooperative";
     if (rival.pressure >= 12) return "aggressive";
@@ -830,14 +902,14 @@
   }
 
   const EVENT_CONTEXT = {
-    mara_intro: { who: "Mara Velez, the clerk who recognizes you", where: "Night Owl Mini-Mart, Spenard", stakes: "Choose whether this familiar face starts the week as a flirtation, a friend, or someone kept at a distance." },
+    mara_intro: { who: "Mara Velez, the Night Owl clerk meeting you for the first time", where: "Night Owl Mini-Mart, Spenard", stakes: "Choose the tone of a first conversation with someone who has no prior history with you." },
     eli_offer: { who: "Eli Ward, a local driver looking for work", where: "Outside North Star Garage, Spenard", stakes: "Decide whether Eli gets a test route, only shares road information, or remembers being turned away." },
     eli_callback: { who: "Eli Ward, still working the service roads", where: "North Star Garage, Spenard", stakes: "Reopen the door to a test route or confirm that Eli should look elsewhere." },
     miri_offer: { who: "Miri Cole, a connected supplier", where: "Downtown corner booth", stakes: "Supplier access, loyalty, and how much ownership you are willing to share." },
     tone_offer: { who: "Anton Bell, a former security worker", where: "North Star Garage", stakes: "Protection against Rook at the cost of another wage." },
     mara_shift_change: { who: "Mara Velez, twenty minutes past close", where: "Night Owl Mini-Mart, Spenard", stakes: "Mara is building an exit that public association with your operation would close. How much you tell her sets the terms." },
     mara_invitation: { who: "Mara, off shift early and without a car", where: "The Night Owl lot, Spenard", stakes: "Four hours away from the block, or four hours she spends near your operation. Both cost time." },
-    mara_boundary: { who: "Mara and the plate number on her wrist", where: "Behind the Night Owl after closing", stakes: "A plate number, her job, and whether she gets to make this decision with real information." },
+    mara_boundary: { who: "Mara and the question a customer left behind", where: "Behind the Night Owl after closing", stakes: "Her job, her consent, and whether she gets to make this decision with real information." },
     mara_after: { who: "Mara, at the end of your week and the start of hers", where: "Night Owl Mini-Mart, Spenard", stakes: "What the week cost her, and what is left to say about it." },
     eli_missed_turn: { who: "Eli Ward, back an hour later than the route allows", where: "North Star Garage, Spenard", stakes: "Whether you want a driver who thinks, or one who does what the clock says." },
     eli_service_map: { who: "Eli and a map he drew himself", where: "Passenger seat outside North Star Garage", stakes: "Route knowledge nobody else on this block has, and what he wants for it." },
@@ -892,10 +964,10 @@
   function setPendingEvent(state, item) { state.run.pendingEvent = item; }
   function activeEvent(id, state) {
     const events = {
-      mara_intro: () => event("mara_intro", "Mara on the Night Shift", "You have been coming to the Night Owl for months, and tonight Mara has the coffee poured before you reach the counter. She asks about the garage the way people ask about weather, out of habit rather than interest. A gray sedan goes past the window for the second time in ten minutes. Mara does not look at it, which means she noticed it before you did.", [
-        { label: "Flirt and stay a minute", effect: { maraTrust: 1, setFlags: { maraFlirted: true, maraIntroChoice: "flirt" } }, preview: "Records a flirtatious first conversation that later scenes will remember.", result: "She tops up a cup you have not finished and leans on the register. \"The late shift goes faster when you stop pretending to be in a hurry.\" Somebody comes in for cigarettes and she is professional again in under a second, but she looks back at you on their way out." },
-        { label: "Keep it friendly", effect: { setFlags: { maraFriendlyIntro: true, maraIntroChoice: "friendly" } }, preview: "Establishes a friendly contact. Romance stays possible later.", result: "You trade neighborhood news until a customer comes in. The fourplex on the corner sold, and the plow took out somebody's mailbox again. She rings you up at the end anyway. \"Next one's still on you.\" It is not quite a joke and not quite serious." },
-        { label: "Grab the coffee and go", effect: { setFlags: { maraDistantIntro: true, maraIntroChoice: "distant" } }, preview: "Introduces Mara at a distance. She remembers that you did not stay.", result: "You take the cup and go. In the reflection off the cooler door she watches the sedan make its third pass, and she writes something small in the corner of the till tape before the door has finished closing behind you." },
+      mara_intro: () => event("mara_intro", "First Coffee in Spenard", "The Night Owl's heater clicks louder than the drink cooler. You study the coffee machine without pretending you know the routine. The clerk watches from behind the register a little longer than professionalism requires, then slides a paper cup closer. \"Black or cream?\" she asks. Her name tag says Mara. Nothing in her face says she knows you, Dre, or what you might become here.", [
+        { label: "Friendly honesty", effect: { maraTrust: 1, setFlags: { maraFriendlyIntro: true, maraIntroChoice: "friendly" } }, preview: "Tell her you just arrived and keep the first exchange warm.", result: "You tell her Alaska is the restart, not the victory lap. Mara listens without trying to turn it into advice. She marks the coffee down as a refill and points out which bus still runs after closing. When the next customer enters, she gives you a small nod that says the conversation can continue another night." },
+        { label: "Light flirtation", effect: { maraTrust: 1, setFlags: { maraFlirted: true, maraIntroChoice: "flirt" } }, preview: "Let the mutual interest show while respecting the counter between you.", result: "You ask whether every new customer gets this much attention. Mara looks at the cup, then back at you. \"Only the ones reading the machine like a legal document.\" The smile stays brief and professional, but it is real. She tells you her name even though the tag already did." },
+        { label: "Brief and guarded", effect: { setFlags: { maraDistantIntro: true, maraIntroChoice: "distant" } }, preview: "Keep your history private and the exchange surface-level.", result: "You choose black, pay, and offer only your street name. Mara does not press. She gives you the correct change and a neutral goodnight, then returns to the register book. You leave as a stranger she noticed, not a story she already knows." },
       ]),
       eli_offer: () => event("eli_offer", "The Impound Notice", "Eli Ward is waiting outside North Star Garage with an impound notice folded into his jacket, the crease worn soft from being taken out and put back. He gets to it fast: he knows the loading yards, the service roads, and which gates get chained at what hour. He can move a small package without bringing a tail home. He has clearly rehearsed that last sentence.", [
         { label: "Hear him out", effect: { introduceCrew: "eli", setCrewStage: { id: "eli", stage: "test_available" }, crewLoyalty: { id: "eli", delta: 1 } }, preview: "Unlocks Give Eli a Test Route in People.", result: "He flattens the impound notice on the hood and draws the route on the back of it, naming each turn as he goes. He wants thirty-five for fuel and one chance to prove it. He does not ask what would be in the package, which is either professional or well practiced." },
@@ -919,14 +991,14 @@
         { label: "Keep the answer small", effect: { setFlags: { maraDeflected: true } }, preview: "Nothing changes tonight. Mara notices the size of the answer.", result: "You give her the short version. Mara nods, folds the receipt she was about to write on, and puts it in her apron. The heater ticks. She counts the last of the twenties without looking up." },
         { label: "Put $60 toward her yard fees", requires: "cash60", effect: { cash: -60, maraTrust: 2, setFlags: { maraTookMoney: true } }, preview: "Costs $60. Mara accepts the help and sets the terms you did not ask for.", result: "She takes the sixty and writes you a receipt on Night Owl paper, dated and signed, because she does not want it to be a favor. \"This is a loan,\" she says. \"I pay it back in March.\" She means it." },
       ]),
-      mara_invitation: () => event("mara_invitation", "Four Hours and No Car", "Mara is outside when you come around the corner, coat already on, keys in her fist. Her shift ended early because the owner cut hours again. \"I have four hours and no car,\" she says. The lot's sodium light makes the slush look orange. She is not asking for a favor. She is asking what you want to do with the evening.", [
-        { label: "Drive out to Point Woronzof", effect: { maraTrust: 2, heat: -1, setFlags: { maraDateNight: true } }, preview: "Lowers Heat and puts real ground between her and the block.", result: "You park where the inlet wind comes off the water hard enough to rock the vehicle. Mara talks about the yard, then about her mother, then about nothing at all. On the drive back she falls asleep against the window and does not apologize for it." },
-        { label: "Bring her to the garage", effect: { maraTrust: 1, maraJobAtRisk: true, setFlags: { maraSawGarage: true } }, preview: "She sees the operation, and she is seen near it.", result: "She walks the length of the bay once, looks at the bags, and does not touch anything. \"This is what it is, then.\" A car slows on the street outside and keeps going. Mara watches it the whole way down the block." },
+      mara_invitation: () => event("mara_invitation", "Four Hours After Close", "Mara is outside when you come around the corner, coat already on. Her shift ended early because the owner cut hours again. \"I have four hours,\" she says. The lot's sodium light makes the slush look orange. She is not asking to be rescued. She is asking what kind of evening you can make without pretending either of you owns a car.", [
+        { label: "Take the bus toward the inlet", effect: { maraTrust: 2, heat: -1, setFlags: { maraDateNight: true } }, preview: "Bus fare is folded into the scene; you spend the evening away from the block.", result: "You ride until the commercial lights thin out, then walk where the inlet wind cuts across the open ground. Mara talks about the yard interview, her mother, and nothing at all. On the bus back, your shoulders touch twice and neither of you moves." },
+        ...(state.base.controlled ? [{ label: "Show her the garage", requires: "base_controlled", effect: { maraTrust: 1, maraJobAtRisk: true, setFlags: { maraSawGarage: true } }, preview: "She sees the operation, and she is seen near it.", result: "She walks the length of the bay once, looks at the bags, and does not touch anything. \"This is what it is, then.\" A car slows on the street outside and keeps going. Mara watches it the whole way down the block." }] : []),
         { label: "Tell her tonight is not good", effect: { setFlags: state.flags.maraRaincheck ? { maraInvitationClosed: true } : { maraRaincheck: true } }, preview: "Nothing happens tonight. The offer may come back once.", result: "She takes it evenly, the way she takes most things. \"Then another night.\" She starts walking toward the bus shelter on Spenard before you can offer the ride." },
       ]),
-      mara_boundary: () => event("mara_boundary", "The Plate on Her Wrist", "Mara meets you behind the Night Owl with the keys already in her hand and the store dark behind her. A car followed her to her door last night, sat there eleven minutes, and left. She has the plate written on the inside of her wrist. \"I am not asking you to fix it,\" she says. \"I am asking you to tell me what it is.\"", [
-        { label: "Tell her everything, risk included", effect: { maraTrust: 2, setFlags: { toldMaraTruth: true } }, preview: "Mara gets the whole picture, including the part that puts her at risk.", result: "You give her Rook's name, Dre's date, and the honest odds. Mara listens all the way through without interrupting. Then she copies the plate onto a second slip and puts one in her shoe. \"Now it's mine too,\" she says. \"That was the part you owed me.\"" },
-        { label: "Give the officer her name", effect: { maraTrust: -2, heat: -1, setFlags: { usedMaraWithoutConsent: true } }, preview: "Heat drops. Mara finds out from someone else that you used her name.", result: "The story holds because her name is clean and yours is not. Two days of Heat come off you. Mara hears it from the officer's partner, who buys cigarettes at her counter on Fridays and assumed she already knew." },
+      mara_boundary: () => event("mara_boundary", "The Question Behind the Store", "Mara meets you behind the Night Owl with the keys already in her hand and the store dark behind her. A customer used your street name, asked which nights she closes, and left without buying anything. \"I am not asking you to fix it,\" she says. \"I am asking you to tell me what I am standing next to.\"", [
+        { label: "Tell her everything, risk included", effect: { maraTrust: 2, setFlags: { toldMaraTruth: true } }, preview: "Mara gets the whole picture, including the part that could put her at risk.", result: "You give her Rook's name, Dre's date, and the honest odds. Mara listens all the way through without interrupting. Then she writes down the names and puts the note in her shoe. \"Now the decision is mine too,\" she says. \"That was the part you owed me.\"" },
+        { label: "Give the officer her name", effect: { maraTrust: -2, heat: -1, setFlags: { usedMaraWithoutConsent: true } }, preview: "Heat drops. Mara finds out from someone else that you used her name.", result: "The story holds because her name is clean and yours is not. Some attention comes off you. Mara hears it from the officer's partner, who buys cigarettes at her counter on Fridays and assumed she already knew." },
         { label: "Tell her you can't answer that", effect: { maraTrust: -1 }, preview: "The question stays open. Mara stops expecting an answer to it.", result: "She waits long enough to be sure that is the whole reply. Then she pockets the keys. \"Okay.\" The next time you come in, the coffee is on the counter before you reach it, and she is already turned toward the register." },
       ]),
       mara_after: () => {
@@ -1002,10 +1074,10 @@
         { label: "Tell him you don't know yet", effect: { setFlags: { eliToldHonestly: true } }, preview: "Honest and unsatisfying. He can work with honest.", result: "\"That's fair.\" He means it, mostly. He keeps driving the routes exactly as well as before, and he stops mentioning the week after next, and you notice the second thing more than you expected to." },
         { label: "Tell him this is a one-week job", effect: { crewLoyalty: { id: "eli", delta: -1 }, setFlags: { eliToldNoFuture: true } }, preview: "He finishes the week. He starts looking on his own time.", result: "He takes it without complaint because he asked and you answered. The routes stay clean through the seventh night. But he starts taking calls outside the bay, briefly, and he stops leaving his jacket in the vehicle." },
       ]),
-      dre_terms: () => event("dre_terms", "One Folded Sheet of Paper", "Dre parks behind the Mini-Mart with the engine running and hands you one folded sheet. It has your name on it, an amount, and a date, and nothing else — no interest schedule, no signature line, no conditions. He waits while you read all four lines of it. \"That's the whole arrangement,\" he says. \"People make it complicated after. Not me.\"", [
+      dre_terms: () => event("dre_terms", "One Folded Sheet of Paper", "The meeting John arranged is already over, but Dre makes you read the paper again behind the Mini-Mart: $1,000 received, $1,200 due on Day 7, partial payments accepted, no first-week compounding. There is no signature line and no negotiation. \"That's the whole arrangement,\" he says. \"People make it complicated after. Not me.\"", [
         { label: "Say the date back to him", effect: { lenderTrust: 1, setFlags: { dreTermsAcknowledged: true } }, preview: "Dre starts the week believing you understood him.", result: "He repeats it once after you, flat, the way he says all numbers, and puts the car in gear. \"Good.\" That is the entire ceremony. The paper stays in your pocket for the rest of the week and gets softer at the folds every time you check it." },
         { label: "Ask what happens if it's late", effect: { setFlags: { dreAskedConsequences: true } }, preview: "You get a straight answer. It is not a threat.", result: "\"It gets bigger, and I stop being somebody you can call.\" He says it in the same tone as the date. There is no menace anywhere in it, which somehow makes it land harder than a threat would have. \"Most people only hear the first half.\"" },
-        { label: "Ask for more time up front", effect: { lenderTrust: -1, setFlags: { dreAskedExtension: true } }, preview: "He says no. He also remembers that you asked before you started.", result: "\"No.\" No pause before it, no reason after it. Then, at the window as he pulls away: \"Ask me again on the day and I might have a different answer. Asking now just tells me what you think of yourself.\"" },
+        { label: "Fold the paper away", effect: { setFlags: { dreTermsAcceptedQuietly: true } }, preview: "No new promise and no attempt to change fixed terms.", result: "You fold the page along the crease Dre already made and put it away. He nods once. The amount and date do not move, and neither of you performs a negotiation that was never available." },
       ]),
       dre_first_payment: () => {
         const name = state.player.streetName || "friend";
@@ -1131,6 +1203,7 @@
     built.choices = built.choices.filter((choice) => {
       if (!choice.requires) return true;
       if (choice.requires === "security2") return state.base.tracks.security >= 2;
+      if (choice.requires === "base_controlled") return state.base.controlled;
       const cashGate = /^cash(\d+)$/.exec(choice.requires);
       if (cashGate) return state.player.cash >= Number(cashGate[1]);
       return true;
@@ -1140,7 +1213,7 @@
 
   function startEncounter(state, id, finishAfter) {
     const templates = {
-      mara_sedan_night: { title: "The Sedan Waits for Her Shift", description: "The gray sedan is in the Night Owl lot with the engine running when Mara's shift ends. A collector catches the door before it closes behind her. She does not look at him. She looks at you, and her hand goes under the counter to where the alarm is, and she waits.", enemyName: "Parking Lot Collector", enemyHealth: 30, guard: 0.10, evasion: 0.06, pursuit: 0.12, attack: [6, 12], pay: 120 },
+      mara_sedan_night: { title: "Your Pressure Reaches the Night Owl", description: "Only after your visible choices raise Rook's pressure does the gray sedan appear outside the Night Owl. The driver watches you, not Mara. A collector catches the door before it closes and uses her shift to make sure you stop. Mara looks at the alarm, then at you, waiting to see whether you keep a danger you created away from her counter.", enemyName: "Rook's Parking-Lot Collector", enemyHealth: 30, guard: 0.10, evasion: 0.06, pursuit: 0.12, attack: [6, 12], pay: 120 },
       early_street: { title: "A Tail on the Service Road", description: "A sedan follows you away from Spenard and blocks the narrow service-road exit. No friend is close enough to pull into this decision.", enemyName: "Roadside Collector", enemyHealth: 24, guard: 0.08, evasion: 0.05, pursuit: 0.10, attack: [5, 10], pay: 85 },
       kip_retaliation: { title: "The Wash & Go Comes Looking", description: "Kip does not come alone and he does not come to talk. Two of them block the mouth of the lot and a third is already behind you by the time you hear the gravel. He is not interested in the bag or the money. He is interested in what everyone on this block saw happen to him and what they are going to see happen next.", enemyName: "Kip and Two Others", enemyHealth: 38, guard: 0.12, evasion: 0.08, pursuit: 0.14, attack: [7, 13], pay: 150 },
       mid: { title: "Rook's Loading-Bay Test", description: "Rook's people close both ends of Bay Nine. They know about the garage, the crew, and which route you used to get here.", enemyName: "Rook's Crew", enemyHealth: 42, guard: 0.14, evasion: 0.10, pursuit: 0.16, attack: [8, 14], pay: 180 },
@@ -1166,7 +1239,7 @@
       const history = state.flags.usedMaraWithoutConsent
         ? "She has not said a word to you since she found out whose name went to the officer."
         : state.flags.toldMaraTruth
-          ? "She has the plate memorized from the night she wrote it on the inside of her wrist."
+          ? "She remembers every risk you named when she asked for the truth."
           : state.flags.maraDateNight
             ? "Point Woronzof was four days ago. This is the same week."
             : "The question she asked behind the store is still sitting between you, unanswered.";
@@ -1224,11 +1297,12 @@
     return !!state.flags[resolvedFlagName(id)];
   }
   const maraOpen = (state) => state.people.mara.available !== false && state.people.mara.status !== "gone";
+  const rivalAttentionEarned = (state) => state.rival.pressure > 0 || state.player.heat >= 3 || state.stats.robbery.attempts > 0 || state.people.dealers?.kip?.robbedCount > 0 || Object.values(state.world.influence).some((value) => value > 0);
 
   const STORY_REGISTRY = [
     // --- The Night Owl -------------------------------------------------------
     { id: "mara_intro", chain: "mara_spenard", stage: 1, classification: "character_intro", trigger: "chain",
-      requires: () => true, area: "north_star_lot", earliest: { day: 1, slot: 1 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
+      requires: (s) => !!s.flags.nightOwlVisited && !s.people.mara.met, area: "north_star_lot", earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
     { id: "mara_shift_change", chain: "mara_spenard", stage: 2, classification: "character_followup", trigger: "chain",
       requires: (s) => !!s.flags.maraIntroResolved && maraOpen(s), area: "north_star_lot",
       earliest: { day: 2, slot: 1 }, latest: { day: 6 }, once: true, cooldown: 0, weight: 8, exit: (s) => !maraOpen(s) },
@@ -1248,7 +1322,7 @@
 
     // --- Service Roads -------------------------------------------------------
     { id: "eli_offer", chain: "eli_routes", stage: 1, classification: "character_intro", trigger: "chain",
-      requires: () => true, area: null, earliest: { day: 1, slot: 3 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
+      requires: (s) => s.base.controlled, area: null, earliest: { day: 1, slot: 3 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
     { id: "eli_callback", chain: "eli_routes", stage: 2, classification: "callback", trigger: "chain",
       requires: (s) => !!s.flags.refusedEli && !s.flags.eliRejectedFinally, area: null,
       earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 6, exit: (s) => !!s.flags.eliRejectedFinally },
@@ -1283,7 +1357,7 @@
 
     // --- Rook's Attention ----------------------------------------------------
     { id: "rook_mark", chain: "rook_pressure", stage: 1, classification: "threat", trigger: "chain",
-      requires: () => true, area: null, earliest: { day: 2, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
+      requires: (s) => rivalAttentionEarned(s), area: null, earliest: { day: 2, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
     { id: "early_street", chain: "rook_pressure", stage: 2, classification: "threat", trigger: "chain", kind: "encounter",
       requires: (s) => !!s.flags.rookMarkResolved, area: null, earliest: { day: 2, slot: 1 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
     { id: "rook_tax", chain: "rook_pressure", stage: 3, classification: "main_chapter", trigger: "chain",
@@ -1301,7 +1375,7 @@
 
     // --- The Wash & Go -------------------------------------------------------
     { id: "kip_corner_intro", chain: "kip_corner", stage: 1, classification: "character_intro", trigger: "chain",
-      requires: () => true, area: "north_star_lot", earliest: { day: 2, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 7, exit: null },
+      requires: (s) => !!s.people.dealers?.kip?.known, area: "north_star_lot", earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 7, exit: null },
     // Stage 2 is a branch: he comes back at you, or the person who vouched does.
     { id: "kip_retaliation", chain: "kip_corner", stage: 2, classification: "threat", trigger: "chain", kind: "encounter",
       requires: (s) => { const k = s.people.dealers?.kip; return !!k && k.robbedCount > 0 && k.lastRobbedDay != null && s.run.day >= k.lastRobbedDay + 2; },
@@ -1314,7 +1388,7 @@
     { id: "miri_offer", chain: null, stage: null, classification: "character_intro", trigger: "ambient",
       requires: () => true, area: "downtown", earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
     { id: "tone_offer", chain: null, stage: null, classification: "character_intro", trigger: "ambient",
-      requires: () => true, area: "north_star_lot", earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
+      requires: (s) => s.base.controlled, area: "north_star_lot", earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
     { id: "courier", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
       requires: () => true, area: "airport_industrial", earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
     { id: "base_watch", chain: null, stage: null, classification: "threat", trigger: "ambient",
@@ -1334,7 +1408,7 @@
     { id: "wet_bricks", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
       requires: (s) => s.player.cash >= 70, area: "airport_industrial", earliest: { day: 2, slot: 0 }, latest: null, once: false, cooldown: 8, weight: 4, exit: null },
     { id: "door_knock", chain: null, stage: null, classification: "threat", trigger: "ambient",
-      requires: () => true, area: "north_star_lot", earliest: { day: 2, slot: 0 }, latest: null, once: false, cooldown: 8, weight: 4, exit: null },
+      requires: (s) => s.base.controlled, area: "north_star_lot", earliest: { day: 2, slot: 0 }, latest: null, once: false, cooldown: 8, weight: 4, exit: null },
     { id: "stranded_wagon", chain: null, stage: null, classification: "ambient", trigger: "ambient",
       requires: () => true, area: null, earliest: { day: 1, slot: 2 }, latest: null, once: false, cooldown: 8, weight: 5, exit: null },
     { id: "found_phone", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
@@ -1344,9 +1418,9 @@
     { id: "dock_shift", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
       requires: () => true, area: null, earliest: { day: 1, slot: 2 }, latest: null, once: false, cooldown: 8, weight: 4, exit: null },
     { id: "garage_furnace", chain: null, stage: null, classification: "ambient", trigger: "ambient",
-      requires: () => true, area: "north_star_lot", earliest: { day: 2, slot: 0 }, latest: null, once: false, cooldown: 8, weight: 3, exit: null },
+      requires: (s) => s.base.controlled, area: "north_star_lot", earliest: { day: 2, slot: 0 }, latest: null, once: false, cooldown: 8, weight: 3, exit: null },
     { id: "sedan_rumor", chain: null, stage: null, classification: "ambient", trigger: "ambient",
-      requires: () => true, area: null, earliest: { day: 2, slot: 0 }, latest: null, once: false, cooldown: 8, weight: 5, exit: null },
+      requires: (s) => s.rival.pressure >= 2, area: null, earliest: { day: 2, slot: 0 }, latest: null, once: false, cooldown: 8, weight: 5, exit: null },
     { id: "midtown_lights", chain: null, stage: null, classification: "threat", trigger: "ambient",
       requires: () => true, area: null, earliest: { day: 1, slot: 2 }, latest: null, once: false, cooldown: 8, weight: 4, exit: null },
   ];
@@ -1539,11 +1613,12 @@
       mara_escape: "Two Tickets South", mara_clear: "She Gets the Monday Interview", mara_gone: "Gone Before You Were",
       clean_exit: "Clean Exit", rook_partner: "Rook's Partner",
       takeover: "North Star Takes the Week", dre_expansion: "Dre's New Operator", crew_saved: "Everybody Gets Home",
-      disappeared: "Gone Before Dawn", arrested: "Caught", killed: "Taken Down", base_lost: "The Garage Is Gone",
+      disappeared: "Gone Before Dawn", arrested: "Caught", killed: "Taken Down", base_lost: "The Garage Is Gone", nowhere_to_go: "Nowhere to Go",
     })[id] || "Run Complete";
   }
   function chooseEnding(state, forced) {
     if (forced) return forced;
+    if (state.people.household?.evicted) return "nowhere_to_go";
     if (state.player.health <= 0) return state.base.tracks.recovery >= 2 ? "base_lost" : "killed";
     if (state.player.heat >= 15) return "arrested";
     if (state.base.damage >= 3) return "base_lost";
@@ -1571,6 +1646,31 @@
     logEntry(state, `By sunrise, the week has a name: ${endingLabel(state.run.ending)}.`, state.run.ending === "one_good_run" ? "good" : "warn");
   }
 
+  function householdWarning(state, count, reason, catastrophic) {
+    const household = state.people.household;
+    household.warnings += Math.max(1, count || 1);
+    household.yalondaTrust -= Math.max(1, count || 1);
+    household.johnTrust -= catastrophic ? 2 : 1;
+    logEntry(state, reason, "bad");
+    if (catastrophic || household.warnings >= 3) {
+      household.evicted = true;
+      endRun(state, "nowhere_to_go");
+    }
+  }
+
+  function checkHomeContraband(state, random) {
+    const productUnits = homeStoredCargoUsed(state);
+    const itemCount = productUnits + (state.home.hiddenWeapon ? 1 : 0);
+    if (!itemCount || state.people.household.evicted) return;
+    const chance = clamp(0.10 + Math.max(0, itemCount - 1) * 0.08 + Math.max(0, state.player.heat - 2) * 0.02 + (state.player.heat >= 6 ? 0.10 : 0), 0, 0.90);
+    if (random.next() >= chance) return;
+    state.people.household.contrabandFound += 1;
+    const repeatedWeapon = !!state.home.hiddenWeapon && state.people.household.warnings > 0;
+    for (const product of PRODUCTS) state.home.storedInventory[product.id] = { qty: 0, avgCost: 0 };
+    state.home.hiddenWeapon = null;
+    householdWarning(state, repeatedWeapon ? 2 : 1, repeatedWeapon ? "John finds the weapon after the first warning. Yalonda tells you the house cannot survive another night like this." : "Yalonda finds what you hid. The contraband leaves the house, and the warning does not.", false);
+  }
+
   function advanceRun(inputState, context) {
     const beforeFeatures = featureAvailability(inputState);
     const state = copyState(inputState);
@@ -1592,12 +1692,17 @@
       const nextDay = state.run.day, nextSlot = state.run.slot;
       state.run.day = oldDay; state.run.slot = 3;
       evaluateStreetIdentity(state, true);
+      checkHomeContraband(state, random);
       state.run.day = nextDay; state.run.slot = nextSlot;
     }
     state.stats.pipelineAdvances += 1;
     state.stats.decisions += 1;
     announceFeatureUnlocks(state, beforeFeatures);
     if (crossedDay) state.run.daySummary = { day: oldDay, netWorth: netWorth(state), operationScore: operationScore(state), heat: state.player.heat, debt: state.lender.balance, health: state.player.health, baseValue: baseValue(state), crew: recruitedCrew(state).length };
+    if (state.run.status !== "playing") {
+      state.run.rngState = random.state;
+      return state;
+    }
     if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
     else if (finalSlot) endRun(state);
     else if (!context.suppressStory) scheduleStory(state, context, random);
@@ -1778,6 +1883,7 @@
       state.player.heat = clamp(state.player.heat + addedHeat, 0, 15);
       state.rival.pressure = clamp(state.rival.pressure + Math.min(3, attemptNumber), 0, 15);
       state.stats.robbery.successes += 1;
+      awardStreetRead(state, "quick_score:first_success", 20, "Completed a first Quick Score");
       state.stats.robbery.totalPayout += payout;
       state.stats.robbery.success = true;
       state.stats.robbery.payout = state.stats.robbery.totalPayout;
@@ -1829,6 +1935,7 @@
       const productId = random.pick(definition.products);
       const units = random.int(2, 4);
       state.player.cash += payout;
+      awardStreetRead(state, "dealer_robbery:first_success", 20, "Completed a first dealer robbery");
       applyEventEffect(state, { addProduct: { id: productId, qty: units, unitCost: 0 } }, random);
       state.player.heat = clamp(state.player.heat + 2, 0, 15);
       record.standing = Math.max(-5, record.standing - 3);
@@ -1896,6 +2003,7 @@
     state.flags.eliTestRouteResolved = true;
     state.stats.majorDecisions.push(`Eli test route: ${success ? "clean" : "compromised"}`);
     recordBehavior(state, "connector", 2, `eli_test_route:${state.run.day}`, "eli_route");
+    awardStreetRead(state, "contact_job:eli", 25, "Completed Eli's test route");
     state.run.rngState = random.state;
     logEntry(state, result.summary, result.tone);
     const advanced = advanceRun(state, { reason: "ELI_TEST_ROUTE", suppressStory: true });
@@ -1934,6 +2042,7 @@
     const effects = [`-$${definition.attackCost} operation cost`];
     if (won) {
       state.stats.takeovers.wins += 1;
+      awardStreetRead(state, `territory:${areaId}`, 35, `Took ${AREA_BY_ID[areaId].name}`);
       state.world.territories[areaId].owner = "player";
       state.world.territories[areaId].capturedDay = state.run.day;
       state.world.influence[areaId] = 4;
@@ -1998,13 +2107,28 @@
       state.player.attributes = action.type === "CHOOSE_BACKGROUND" ? { ...LEGACY_ATTRIBUTES[background.id] } : { ...ATTRIBUTE_DEFAULTS };
       state.player.streetName = chosenName || (action.type === "CHOOSE_BACKGROUND" ? DEFAULT_STREET_NAMES[background.id] : DEFAULT_STREET_NAMES.neutral);
       state.player.streetNameChosen = !!chosenName;
-      state.player.cash = 375;
-      state.player.heat = 1;
+      state.player.cash = action.type === "CHOOSE_BACKGROUND" ? 375 : 1000;
+      state.player.heat = action.type === "CHOOSE_BACKGROUND" ? 1 : 0;
+      if (action.type === "CHOOSE_BACKGROUND") {
+        state.run.premise = "legacy_established";
+        state.base.controlled = true;
+        state.base.acquiredDay = 1;
+        state.lender.principal = 620;
+        state.lender.balance = 620;
+        state.lender.dueDay = 4;
+        state.rival.pressure = 1;
+        state.rival.relationship = "dismissive";
+        state.world.productAccess.weed = true;
+        state.world.productAccess.shrooms = true;
+        state.world.transport.downtownKnown = true;
+        state.world.transport.industrialRouteKnown = true;
+      }
       state.player.stats = derivedRatings(state);
       state.run.status = "playing";
+      state.run.openingPending = action.type === "START_RUN";
       state.stats.startingNetWorth = state.player.cash - state.lender.balance;
       state.log = [];
-      logEntry(state, `${state.player.streetName} starts the week with no title, no crew, and Dre's note already running.`, "warn");
+      logEntry(state, action.type === "START_RUN" ? `${state.player.streetName} arrives in Anchorage with one suitcase, Yalonda's spare room, and Dre's fixed $1,200 note due on Day 7.` : `${state.player.streetName} continues an established week under Dre's note.`, "warn");
       return state;
     }
     if (action.type === "RESOLVE_ENCOUNTER") return reduceEncounter(inputState, action);
@@ -2016,6 +2140,7 @@
     const state = copyState(inputState);
     if (state.run.status !== "playing" && action.type !== "DISMISS_DAY_SUMMARY") return inputState;
     if (action.type === "DISMISS_DAY_SUMMARY") { state.run.daySummary = null; return state; }
+    if (action.type === "DISMISS_OPENING") { state.run.openingPending = false; return state; }
     if (action.type === "ACKNOWLEDGE_OPERATION_RESULT") { state.run.pendingOperationResult = null; return state; }
     if (state.run.pendingOperationResult) return inputState;
     if (state.run.pendingEncounter) return inputState;
@@ -2042,6 +2167,7 @@
         state.flags.maraIntroResolved = true;
       }
       const descriptor = STORY_BY_ID[current.id];
+      if (descriptor?.chain && Object.keys(state.stats.streetRead.awards).filter((id) => id.startsWith("story:")).length < 6) awardStreetRead(state, `story:${current.id}`, 15, `Resolved ${current.title}`);
       if (descriptor && descriptor.chain === "mara_spenard") {
         state.people.mara.chainStage = Math.max(state.people.mara.chainStage || 0, descriptor.stage);
         state.people.mara.outcomes.push({ stage: descriptor.stage, id: current.id, choice: choice.label, day: state.run.day });
@@ -2094,6 +2220,8 @@
       state.stats.bestTrade = Math.max(state.stats.bestTrade, total);
       state.stats.largestLoss = Math.max(state.stats.largestLoss, Math.max(0, -profit));
       if (profit >= 20) recordBehavior(state, "mover", profit >= 100 ? 2 : 1, `sale:${state.run.day}:${state.world.currentNeighborhoodId}:${state.run.currentVisit.trades}:${product.id}`, "sale");
+      if (profit >= 50) awardStreetRead(state, "sale:first_profit_50", 15, "Cleared $50 profit on a sale");
+      if (profit > 0) awardStreetRead(state, `sale:district:${state.world.currentNeighborhoodId}`, 12, `Completed a profitable sale in ${AREA_BY_ID[state.world.currentNeighborhoodId].name}`);
       if (profit > 0 && qty >= 3 && !state.world.tradeInfluenceGranted[state.world.currentNeighborhoodId]) {
         influenceChange(state, state.world.currentNeighborhoodId, 1);
         state.world.tradeInfluenceGranted[state.world.currentNeighborhoodId] = true;
@@ -2103,7 +2231,7 @@
     }
 
     if (action.type === "STORE_CASH" || action.type === "RETRIEVE_CASH") {
-      if (!state.base.visiting) return inputState;
+      if (!state.base.controlled || !state.base.visiting) return inputState;
       const amount = Math.max(0, Math.floor(action.amount || 0));
       if (!amount) return inputState;
       if (action.type === "STORE_CASH") {
@@ -2117,8 +2245,82 @@
       }
       return state;
     }
+    if (action.type === "HOME_STORE_CASH" || action.type === "HOME_RETRIEVE_CASH") {
+      const amount = Math.max(0, Math.floor(action.amount || 0));
+      if (!amount || state.people.household.evicted) return inputState;
+      if (action.type === "HOME_STORE_CASH") {
+        if (amount > state.player.cash) return inputState;
+        state.player.cash -= amount; state.home.storedCash += amount;
+        logEntry(state, `You put $${amount} with your personal things in Yalonda's spare room.`, "good");
+      } else {
+        if (amount > state.home.storedCash) return inputState;
+        state.home.storedCash -= amount; state.player.cash += amount;
+        logEntry(state, `You take $${amount} back into street cash.`, "");
+      }
+      return state;
+    }
+    if (action.type === "HOME_STORE_PRODUCT" || action.type === "HOME_RETRIEVE_PRODUCT") {
+      if (!PRODUCT_BY_ID[action.productId] || state.people.household.evicted) return inputState;
+      const qty = Math.max(0, Math.floor(action.qty || 0));
+      if (!qty) return inputState;
+      const carried = state.player.inventory[action.productId], stored = state.home.storedInventory[action.productId];
+      if (action.type === "HOME_STORE_PRODUCT") {
+        if (qty > carried.qty || homeStoredCargoUsed(state) + qty > 2) return inputState;
+        const total = stored.qty + qty;
+        stored.avgCost = total ? ((stored.avgCost * stored.qty) + carried.avgCost * qty) / total : 0;
+        stored.qty = total; carried.qty -= qty; if (!carried.qty) carried.avgCost = 0;
+        logEntry(state, `You hide ${qty} ${PRODUCT_BY_ID[action.productId].name} in a house where it is not allowed.`, "warn");
+      } else {
+        if (qty > stored.qty || cargoUsed(state) + qty > cargoCapacity(state)) return inputState;
+        const total = carried.qty + qty;
+        carried.avgCost = total ? ((carried.avgCost * carried.qty) + stored.avgCost * qty) / total : 0;
+        carried.qty = total; stored.qty -= qty; if (!stored.qty) stored.avgCost = 0;
+      }
+      return state;
+    }
+    if (action.type === "HOME_HIDE_WEAPON" || action.type === "HOME_RETRIEVE_WEAPON") {
+      if (state.people.household.evicted) return inputState;
+      if (action.type === "HOME_HIDE_WEAPON") {
+        const item = GEAR_BY_ID[action.gearId];
+        if (!item || item.slot !== "weapon" || !hasGear(state, item.id) || state.home.hiddenWeapon) return inputState;
+        state.home.hiddenWeapon = item.id;
+        state.player.gear.owned = state.player.gear.owned.filter((id) => id !== item.id);
+        if (state.player.gear.equipped.weapon === item.id) state.player.gear.equipped.weapon = null;
+        logEntry(state, `You hide ${item.name} in Yalonda's house against the rules.`, "warn");
+      } else {
+        if (!state.home.hiddenWeapon) return inputState;
+        const id = state.home.hiddenWeapon; state.home.hiddenWeapon = null;
+        state.player.gear.owned.push(id); state.player.gear.equipped.weapon = id;
+      }
+      return state;
+    }
+    if (action.type === "ASK_JOHN") {
+      if (state.people.household.evicted || state.people.household.lastQuestionDay === state.run.day) return inputState;
+      state.people.household.lastQuestionDay = state.run.day;
+      if (recordBehavior(state, "connector", 1, "household:john_first_advice", "family_contact")) awardStreetRead(state, "contact:john", 8, "Asked John for local context");
+      state.effects.rumors.push({ id: `john_${state.run.day}`, areaId: "north_star_lot", productId: "weed", reliable: true, text: "John says the bus is reliable for Downtown, Ship Creek hires early, and the Industrial roads need a ride you trust.", expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
+      logEntry(state, "John gives you one careful answer without pretending the city is safer than it is.", "good");
+      return state;
+    }
+    if (action.type === "ASK_AROUND") {
+      if (state.stats.streetRead.level < 2 || state.stats.streetRead.lastAskDay === state.run.day) return inputState;
+      const random = makeRandom(state.run.rngState);
+      const area = random.pick(NEIGHBORHOODS);
+      const product = random.pick(PRODUCTS.filter((item) => state.world.productAccess[item.id]));
+      if (!product) return inputState;
+      state.stats.streetRead.lastAskDay = state.run.day;
+      state.effects.rumors.push({ id: `street_read_${state.run.day}`, areaId: area.id, productId: product.id, reliable: true, text: `A reliable answer points to ${product.name} in ${area.name}.`, expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
+      state.run.rngState = random.state;
+      logEntry(state, `Street Read turns one conversation into a reliable ${area.name} lead.`, "good");
+      return state;
+    }
+    if (action.type === "HOUSE_VIOLATION") {
+      state.people.household.dangerBroughtHome += action.danger ? 1 : 0;
+      householdWarning(state, action.serious ? 2 : 1, action.reason || "Trouble reaches Yalonda's front step, and the house rules become a warning.", !!action.catastrophic);
+      return state;
+    }
     if (action.type === "STORE_PRODUCT" || action.type === "RETRIEVE_PRODUCT") {
-      if (!state.base.visiting || !PRODUCT_BY_ID[action.productId]) return inputState;
+      if (!state.base.controlled || !state.base.visiting || !PRODUCT_BY_ID[action.productId]) return inputState;
       const qty = Math.max(0, Math.floor(action.qty || 0));
       if (!qty) return inputState;
       const carried = state.player.inventory[action.productId], stored = state.base.storedInventory[action.productId];
@@ -2137,7 +2339,7 @@
       return state;
     }
     if (action.type === "PAY_CREW") {
-      if (!state.base.visiting || !CREW_BY_ID[action.crewId]) return inputState;
+      if (!state.base.controlled || !state.base.visiting || !CREW_BY_ID[action.crewId]) return inputState;
       const crew = state.people.crew[action.crewId];
       if (!crew.recruited || crew.wageDue <= 0 || state.player.cash < crew.wageDue) return inputState;
       const amount = crew.wageDue;
@@ -2148,15 +2350,176 @@
     }
 
     let base = state;
+    if (action.type === "VISIT_NIGHT_OWL") {
+      if (state.world.currentNeighborhoodId !== "north_star_lot") return inputState;
+      base.flags.nightOwlVisited = true;
+      logEntry(base, state.people.mara.met ? "You stop at the Night Owl without treating Mara's shift like an obligation." : "You step into the Night Owl for the first time and study a coffee machine you have never used.", "");
+      const next = advanceRun(base, { reason: "VISIT_NIGHT_OWL", suppressStory: true });
+      if (next.run.status === "playing" && !next.people.mara.met && !next.run.pendingEvent) fireStory(next, STORY_BY_ID.mara_intro);
+      return next;
+    }
+    if (action.type === "LEASE_GARAGE") {
+      if (state.base.controlled || state.player.cash < GARAGE_DEPOSIT) return inputState;
+      base.player.cash -= GARAGE_DEPOSIT;
+      base.base.controlled = true;
+      base.base.acquiredDay = base.run.day;
+      base.stats.moneySpent.base += GARAGE_DEPOSIT;
+      recordBehavior(base, "mover", 3, "property:north_star", "property");
+      awardStreetRead(base, "property:north_star", 25, "Acquired North Star Garage");
+      logEntry(base, `You put $${GARAGE_DEPOSIT} down on North Star Garage. The first week is included; storage, upgrades, recovery, and crew operations are now yours to build.`, "good");
+      return advanceRun(base, { reason: "LEASE_GARAGE" });
+    }
+    if (action.type === "TRAIN_ATTRIBUTE") {
+      const attribute = action.attribute;
+      const available = activityAvailability(state).gym;
+      if (!available.available || !["strength", "endurance", "reflexes"].includes(attribute) || state.player.attributes[attribute] >= 5) return inputState;
+      const gym = base.world.locations.gym;
+      if (gym.sessionDay !== base.run.day) { gym.sessionDay = base.run.day; gym.sessionsToday = 0; }
+      base.player.cash -= available.cost;
+      gym.sessionsToday += 1;
+      const improved = improveAttribute(base, attribute, available.progress);
+      if (improved) awardStreetRead(base, `training:${attribute}:${base.player.attributes[attribute]}`, 15, `Raised ${attribute}`);
+      logEntry(base, `Gym session: $${available.cost}, +${available.progress} hidden ${attribute} progress${improved ? ", milestone reached" : ""}.`, "good");
+      return advanceRun(base, { reason: "TRAIN_ATTRIBUTE" });
+    }
+    if (action.type === "GAMBLE") {
+      const available = activityAvailability(state).gambling;
+      const stake = Math.floor(action.stake || 0);
+      if (!available.available || ![20, 50, 100].includes(stake) || state.player.cash < stake) return inputState;
+      const random = makeRandom(base.run.rngState);
+      const approach = ["read", "steady", "press"].includes(action.approach) ? action.approach : "read";
+      const skill = approach === "read" ? base.player.attributes.insight : approach === "steady" ? base.player.attributes.discipline : base.player.attributes.presence;
+      const chance = clamp(0.35 + skill * 0.035 - stake / 2000, 0.32, 0.54);
+      const won = random.next() < chance;
+      base.player.cash -= stake;
+      if (won) base.player.cash += stake * 2;
+      const game = base.world.locations.gambling;
+      game.plays += 1; game[won ? "wins" : "losses"] += 1; game.net += won ? stake : -stake;
+      if (game.plays === 1) recordBehavior(base, "connector", 1, "gambling:first_contact", "gambling_contact");
+      if (game.plays === 1) awardStreetRead(base, "gambling:first", 10, "Found and played the informal game");
+      base.run.rngState = random.state;
+      logEntry(base, won ? `The ${approach} approach holds. You leave the game $${stake} ahead.` : `The room takes your $${stake}. Nobody offers credit, and the next choice is yours.`, won ? "good" : "bad");
+      return advanceRun(base, { reason: "GAMBLE" });
+    }
+    if (action.type === "SHOPLIFT") {
+      const available = activityAvailability(state).shoplifting;
+      if (!available.available) return inputState;
+      const random = makeRandom(base.run.rngState);
+      const store = base.world.locations.discountStore;
+      const chance = clamp(0.30 + base.player.attributes.reflexes * 0.08 + base.player.attributes.insight * 0.03 - base.player.heat * 0.025 - store.suspicion * 0.04, 0.15, 0.72);
+      const success = random.next() < chance;
+      store.lastAttemptDay = base.run.day;
+      store.suspicion = clamp(store.suspicion + (success ? 1 : 2), 0, 8);
+      if (success) {
+        const reward = random.int(25, 65);
+        base.player.cash += reward;
+        base.player.heat = clamp(base.player.heat + (store.suspicion >= 4 ? 1 : 0), 0, 15);
+        if (store.suspicion >= 3) recordBehavior(base, "stickup", 1, `shoplift_pattern:${base.run.day}`, "shoplift_pattern");
+        awardStreetRead(base, "shoplifting:first_success", 12, "Completed a first shoplifting attempt");
+        logEntry(base, `You leave Northern Value with small goods worth $${reward}. The store remembers more than the payout justifies.`, "good");
+      } else {
+        base.player.heat = clamp(base.player.heat + 2, 0, 15);
+        logEntry(base, "Northern Value security walks you out empty-handed. The store remembers your face, and Heat rises by 2.", "bad");
+      }
+      base.run.rngState = random.state;
+      return advanceRun(base, { reason: "SHOPLIFT" });
+    }
+    if (action.type === "EXPLORE_SPENARD") {
+      const random = makeRandom(base.run.rngState);
+      const count = base.world.locations.explorationCount;
+      base.world.locations.explorationCount += 1;
+      if (count === 0) {
+        base.people.dealers.kip.known = true;
+        base.world.productAccess.weed = true;
+        base.world.productAccess.shrooms = true;
+        base.world.locations.discoveries.push("kip_supplier");
+        awardStreetRead(base, "supplier:first", 20, "Discovered a supplier");
+        logEntry(base, "A walk down Spenard ends at the Wash & Go lot. Kip gives you a first price, not trust; his corner is now a supplier option in People.", "good");
+      } else if (!base.world.locations.gamblingKnown) {
+        base.world.locations.gamblingKnown = true;
+        base.world.locations.discoveries.push("informal_game");
+        logEntry(base, "A back-room dice game announces itself through the people leaving, not a sign. Evening and Night games are now visible.", "good");
+      } else {
+        const discoveries = [
+          "John's bus advice matches the posted Downtown timetable.",
+          "A freight worker confirms Ship Creek hires before breakfast.",
+          "The North Star listing is real, but the owner will not move on the deposit.",
+          "You learn which Northern Value aisle has the longest camera gap.",
+        ];
+        logEntry(base, random.pick(discoveries), "");
+      }
+      base.run.rngState = random.state;
+      return advanceRun(base, { reason: "EXPLORE_SPENARD" });
+    }
+    if (action.type === "WORK_SHIFT") {
+      const available = activityAvailability(state).work;
+      if (!available.available) return inputState;
+      const random = makeRandom(base.run.rngState);
+      const employer = base.world.locations.employer;
+      const bonus = random.next() < 0.35 + base.player.attributes.discipline * 0.05 ? random.int(15, 30) : 0;
+      const payout = 110 + bonus;
+      base.player.cash += payout;
+      employer.lastShiftDay = base.run.day;
+      employer.standing = clamp(employer.standing + 1, 0, 5);
+      employer.keptCommitments += 1;
+      recordBehavior(base, "earner", employer.standing >= 3 ? 2 : 1, `work:${base.run.day}`, "legal_work");
+      if (employer.standing >= 3) base.flags.legalCover = true;
+      awardStreetRead(base, "work:first_shift", 15, "Completed a legitimate work shift");
+      base.run.rngState = random.state;
+      logEntry(base, `Ship Creek Freight pays $${payout}${bonus ? `, including a $${bonus} extra-load bonus` : ""}. Your employer standing is ${employer.standing}.`, "good");
+      return advanceRun(base, { reason: "WORK_SHIFT" });
+    }
+    if (action.type === "BUY_BUS_PASS") {
+      const kind = action.passType;
+      const cost = kind === "day" ? 12 : kind === "week" ? 45 : 0;
+      if (!cost || state.player.cash < cost) return inputState;
+      base.player.cash -= cost;
+      if (kind === "day") base.world.transport.dayPassDay = base.run.day;
+      else base.world.transport.weekPass = true;
+      logEntry(base, `You buy a ${kind === "day" ? "day" : "seven-day"} People Mover pass for $${cost}.`, "good");
+      return base;
+    }
+    if (action.type === "BUS_TRAVEL") {
+      const destination = action.neighborhoodId;
+      if (!["north_star_lot", "downtown"].includes(destination) || destination === state.world.currentNeighborhoodId) return inputState;
+      const covered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
+      const cost = covered ? 0 : 5;
+      if (state.player.cash < cost) return inputState;
+      base.player.cash -= cost;
+      base.world.currentNeighborhoodId = destination;
+      base.world.transport.busRides += 1;
+      awardStreetRead(base, "transport:first_bus", 10, "Used the bus");
+      if (destination === "downtown") base.world.transport.downtownKnown = true;
+      awardStreetRead(base, `travel:${destination}`, 10, `Reached ${AREA_BY_ID[destination].name}`);
+      logEntry(base, `The People Mover carries you to ${AREA_BY_ID[destination].name}${cost ? " for $5" : " on your pass"}.`, "");
+      return advanceRun(base, { reason: "BUS_TRAVEL" });
+    }
+    if (action.type === "WALK_HOME") {
+      if (state.world.currentNeighborhoodId !== "downtown") return inputState;
+      base.world.currentNeighborhoodId = "north_star_lot";
+      base.player.health = clamp(base.player.health - 3, 1, 100);
+      logEntry(base, "With no bus fare to spare, you walk back to Spenard. It costs no cash, one part of day, and 3 Health.", "warn");
+      return advanceRun(base, { reason: "WALK_HOME" });
+    }
     if (action.type === "TRAVEL") {
       if (!AREA_BY_ID[action.neighborhoodId] || action.neighborhoodId === state.world.currentNeighborhoodId) return inputState;
+      if (state.run.premise === "fresh_arrival" && action.neighborhoodId === "downtown") return inputState;
+      if (state.run.premise === "fresh_arrival" && action.neighborhoodId === "airport_industrial" && !state.world.transport.industrialRouteKnown) return inputState;
       base.world.currentNeighborhoodId = action.neighborhoodId;
+      awardStreetRead(base, `travel:${action.neighborhoodId}`, 10, `Reached ${AREA_BY_ID[action.neighborhoodId].name}`);
       logEntry(base, `You reach ${AREA_BY_ID[action.neighborhoodId].name} before the same headlights can settle behind you.`, "");
       return advanceRun(base, { reason: "TRAVEL" });
     }
     if (action.type === "END_MARKET") { logEntry(base, "The last buyer leaves and the neighborhood starts pricing tomorrow's rumors.", ""); return advanceRun(base, { reason: "END_MARKET" }); }
+    if (action.type === "SLEEP_HOME") {
+      if (state.people.household.evicted) return inputState;
+      base.player.health = clamp(base.player.health + 12, 0, 100);
+      logEntry(base, "Yalonda keeps the house quiet. You sleep, eat something basic, and recover twelve Health.", "good");
+      return advanceRun(base, { reason: "SLEEP_HOME" });
+    }
     if (action.type === "LAY_LOW") { logEntry(base, state.base.watched ? "You kill the garage lights, but the sedan across the street never leaves." : "You kill the lights and let North Star forget your vehicle for a few hours.", ""); return advanceRun(base, { reason: "LAY_LOW" }); }
     if (action.type === "VISIT_BASE") {
+      if (!state.base.controlled) return inputState;
       const next = advanceRun(base, { reason: "VISIT_BASE" });
       if (next.run.status === "playing") next.base.visiting = true;
       logEntry(next, "The North Star Garage door rolls down behind you. Storage, crew, and upgrades are available until you leave.", "");
@@ -2170,7 +2533,7 @@
       return advanceRun(base, { reason: "HEAL" });
     }
     if (action.type === "HEAL_AT_BASE") {
-      if (!state.base.visiting || state.base.tracks.recovery < 1 || state.player.health >= 100) return inputState;
+      if (!state.base.controlled || !state.base.visiting || state.base.tracks.recovery < 1 || state.player.health >= 100) return inputState;
       const cost = state.base.tracks.recovery >= 2 ? 25 : 45, amount = state.base.tracks.recovery >= 2 ? 35 : 22;
       if (state.player.cash < cost) return inputState;
       base.player.cash -= cost; base.player.health = clamp(base.player.health + amount, 0, 100); base.stats.moneySpent.healing += cost;
@@ -2189,11 +2552,13 @@
       }
       base.lender.relationship = relationshipForLender(base.lender, base.run.day);
       recordBehavior(base, "earner", amount >= 150 || !base.lender.balance ? 2 : 1, `dre_payment:${base.run.day}:${base.lender.paymentCount}`, "dre_payment");
+      awardStreetRead(base, `debt:payment:${base.run.day}`, 12, "Made a payment to Dre");
+      if (!base.lender.balance) awardStreetRead(base, "debt:cleared", 40, "Cleared Dre's note");
       logEntry(base, base.lender.balance ? `Dre counts $${amount} behind the Mini-Mart. $${base.lender.balance} stays written on the note.` : "Dre counts the final stack, tears the note in half, and keeps one piece.", "good");
       return advanceRun(base, { reason: "PAY_DEBT" });
     }
     if (action.type === "UPGRADE_BASE") {
-      if (!state.base.visiting) return inputState;
+      if (!state.base.controlled || !state.base.visiting) return inputState;
       const track = action.track, nextLevel = (state.base.tracks[track] || 0) + 1;
       const upgrade = BASE_UPGRADES.find((item) => item.track === track && item.level === nextLevel);
       if (!upgrade || state.player.cash < upgrade.cost) return inputState;
@@ -2203,7 +2568,7 @@
       return advanceRun(base, { reason: "UPGRADE_BASE" });
     }
     if (action.type === "BUY_GEAR") {
-      if (!state.base.visiting) return inputState;
+      if (!state.base.controlled || !state.base.visiting) return inputState;
       const item = GEAR_BY_ID[action.gearId];
       if (!item || state.player.cash < item.cost || (item.id !== "medical_kit" && hasGear(state, item.id))) return inputState;
       base.player.cash -= item.cost; base.stats.moneySpent.gear += item.cost;
@@ -2216,17 +2581,19 @@
       return advanceRun(base, { reason: "BUY_GEAR" });
     }
     if (action.type === "RECRUIT_CREW") {
-      if (!state.base.visiting || !CREW_BY_ID[action.crewId] || recruitedCrew(state).length >= 2) return inputState;
+      const crewCapacity = state.stats.streetRead.level >= 4 ? 3 : 2;
+      if (!state.base.controlled || !state.base.visiting || !CREW_BY_ID[action.crewId] || recruitedCrew(state).length >= crewCapacity) return inputState;
       const person = CREW_BY_ID[action.crewId], crew = state.people.crew[action.crewId], cost = recruitmentCost(state, action.crewId);
       if (!crew.introduced || crew.recruited || state.player.cash < cost || (person.id === "eli" && crew.contactStage !== "recruitable")) return inputState;
       base.player.cash -= cost; crew.recruited = true; crew.status = "active"; crew.loyalty += 1; crew.wageDue = person.wage; base.stats.moneySpent.crew += cost;
       crew.contactStage = "active";
       recordBehavior(base, "connector", 3, `recruit:${action.crewId}`, "recruit");
+      awardStreetRead(base, `crew:recruit:${action.crewId}`, 20, `Recruited ${person.name}`);
       logEntry(base, `${person.name} takes the chair at the garage table. The operation has another person to answer for.`, "good");
       return advanceRun(base, { reason: "RECRUIT_CREW" });
     }
     if (action.type === "ASSIGN_CREW") {
-      if (!state.base.visiting || !CREW_BY_ID[action.crewId]) return inputState;
+      if (!state.base.controlled || !state.base.visiting || !CREW_BY_ID[action.crewId]) return inputState;
       const crew = state.people.crew[action.crewId];
       if (!crew.recruited || crew.assignment) return inputState;
       const allowed = { eli: ["north_run", "outer_run"], miri: ["source_cocaine", "source_meth"], tone: ["guard_base", "intimidate_buyer"] };
@@ -2301,6 +2668,7 @@
       base.run.finalPlan = action.planId; base.run.finalPlanPrepared = true;
       base.stats.majorDecisions.push(`Prepared final plan: ${action.planId}`);
       recordBehavior(base, "earner", 2, `final_plan:${action.planId}`, "day7_plan");
+      awardStreetRead(base, "plan:day7", 25, "Prepared the Day 7 plan");
       logEntry(base, `The garage table is cleared for one final plan: ${action.planId.replace("_", " ")}.`, "warn");
       return advanceRun(base, { reason: "PREPARE_FINAL_PLAN" });
     }
@@ -2331,22 +2699,23 @@
       lenderRelationship: state.lender.relationship, rivalRelationship: state.rival.relationship,
       bestTrade: state.stats.bestTrade, largestLoss: state.stats.largestLoss, highestHeat: state.stats.highestHeat,
       productsMoved: { ...state.stats.productsMoved }, majorDecisions: [...state.stats.majorDecisions],
+      streetRead: { xp: state.stats.streetRead.xp, level: state.stats.streetRead.level },
       territories, robbery: { ...state.stats.robbery }, takeovers: { ...state.stats.takeovers },
     };
   }
 
   return {
-    VERSION, RUN_DAYS, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
+    VERSION, RUN_DAYS, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, STREET_READ_LEVELS, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
     STREET_NAME_MAX, DEFAULT_STREET_NAMES, ATTRIBUTE_DEFAULTS, LEGACY_ATTRIBUTES, STREET_IDENTITIES, sanitizeStreetName,
     CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS,
     buildEventForTest: activeEvent, storyCandidatesForTest: storyCandidates,
-    recordBehaviorForTest: recordBehavior, evaluateStreetIdentityForTest: evaluateStreetIdentity,
+    recordBehaviorForTest: recordBehavior, awardStreetReadForTest: awardStreetRead, evaluateStreetIdentityForTest: evaluateStreetIdentity,
     createRun, hydrateRun, inspectSave, reduceGame, advanceRun, selectRunSummary,
     selectors: {
       cargoUsed, cargoCapacity, storedCargoUsed, storageCapacity, storedCashCapacity, inventoryValue, netWorth,
       combatRating, charismaRating, intelligenceRating, derivedRatings,
       operationScore, baseValue, gearValue, heatBand, priceSignal, influenceLabel, encounterChoices, endingLabel,
-      recruitedCrew, workingCapital, safeDebtPayment, debtPaymentPreview, featureAvailability, layLowPreview, controlled, recruitmentCost, operationGearPower, crewPower,
+      recruitedCrew, workingCapital, safeDebtPayment, debtPaymentPreview, featureAvailability, activityAvailability, layLowPreview, controlled, recruitmentCost, operationGearPower, crewPower,
       territoryPowerEstimate, territoryBenefits, tradeUnitPrices, tradeProjection, takeoverReadiness, robberyAvailability, eliTestRouteAvailability, maraThreatEligible,
       dealerRecord, dealerActions, dealerStandingLabel, dealerSupplyFactor,
     },

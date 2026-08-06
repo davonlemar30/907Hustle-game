@@ -1,5 +1,9 @@
 # 907Hustle: One Good Run — Expanded Vision
 
+## Implemented v0.9 vertical slice
+
+The current build begins with a genuine fresh arrival rather than inherited criminal infrastructure. The family home is temporary shelter with understandable boundaries; legal work, training, exploration, transit, relationships, petty theft, gambling, trading, and optional property compete for the same four daily time parts. North Star Garage is earned and optional. Street Read recognizes meaningful first accomplishments without replacing Street Identity or Operation Score. These are implemented systems, not future targets; exact scope is recorded in `ALPHA_V0.9.md`.
+
 A classless single-player street-life and organization-management RPG set in
 Anchorage. Torn is a reference for *activity breadth* only; 907Hustle's identity
 is authored single-player consequence — neighborhood continuity, gang influence,

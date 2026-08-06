@@ -7,8 +7,8 @@ const ui = fs.readFileSync(path.join(root, "ui.jsx"), "utf8");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "v05.css"), "utf8");
 
-test("active shell is Alpha v0.8 with a packaged title asset", () => {
-  assert.match(ui, /Alpha v0\.8/); assert.match(html, /ui\.jsx/); assert.doesNotMatch(html, /legacy-v1-ui-reference|text\/plain/);
+test("active shell is Alpha v0.9 with a packaged title asset", () => {
+  assert.match(ui, /Alpha v0\.9/); assert.match(html, /ui\.jsx/); assert.doesNotMatch(html, /legacy-v1-ui-reference|text\/plain/);
   assert.match(ui, /907hustle-title\.png/); assert.ok(fs.existsSync(path.join(root, "assets", "907hustle-title.png")));
 });
 test("title screen exposes safe load, new-game confirmation, preview, and help", () => {
@@ -19,9 +19,12 @@ test("new games are classless and expose one Start from the Bottom confirmation"
   assert.match(ui, /Start from the Bottom/); assert.match(ui, /type: "START_RUN"/); assert.doesNotMatch(ui, /Choose your edge|C\.STARTING_EDGES\.map|C\.BACKGROUNDS\.map/);
 });
 test("four primary navigation labels and progressive More categories are explicit", () => {
-  assert.match(ui, /const NAV = \[\["market", "Market"\], \["travel", "Travel"\], \["people", "People"\], \["more", "More"\]\]/);
-  for (const label of ["Operations", "Finances", "Recovery", "Help"]) assert.match(ui, new RegExp(`title="${label}"`));
+  assert.match(ui, /const NAV = \[\["market", "Market"\], \["places", "Places"\], \["people", "People"\], \["more", "More"\]\]/);
+  for (const label of ["Street Read", "Operations", "Finances", "Recovery", "Help"]) assert.match(ui, new RegExp(`title="${label}"`));
   assert.match(css, /grid-template-columns:repeat\(4,1fr\)/);
+});
+test("Places exposes the fresh-arrival activity and access model", () => {
+  for (const token of ["Yalonda and John's Home", "Ship Creek Freight", "Explore Spenard", "Spenard Community Gym", "Northern Value", "Informal Game", "People Mover", "North Star Garage Listing", "Auto Lot", "Gun Counter"]) assert.ok(ui.includes(token), token);
 });
 test("HUD shows three primary values and a one-tap status drawer", () => {
   for (const token of ['label="Day / Time"', 'label="Cash"', 'label="Heat"', "status-toggle", "Dre debt", "Crew Power"]) assert.ok(ui.includes(token), token);

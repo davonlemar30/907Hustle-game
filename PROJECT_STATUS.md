@@ -2,6 +2,17 @@
 
 Last updated: 2026-08-05 (America/Anchorage)
 
+## Alpha v0.9 implemented baseline
+
+- Branch: `codex/alpha-v0-9-fresh-start-daily-life`, based on remote `main` commit `199ca219`.
+- Fresh runs start at Yalonda and John's home with $1,000, zero Heat, no assets or standing, and Dre's fixed $1,200 Day 7 note.
+- Places combines daily life and travel. Work, exploration, gym, gambling, shoplifting, buses, home storage, and garage listing are playable.
+- North Star Garage is optional at a $650 deposit; all garage-dependent systems and beats are ownership-gated.
+- Street Read and hidden attribute progress are implemented separately from Street Identity and Operation Score.
+- Mara starts as a stranger; Rook starts unaware; Kip is discovered through play. The 43-beat registry is audited in `EIGHTH_PLAYTEST_AUDIT.md`.
+- Save schema/key remain version 3 / `907ogr_v3`; legacy v3 saves retain established state.
+- Verification: 97 tests passed; 2,000/2,000 simulations completed with zero dead ends; ten responsive viewports passed. Three full human-style runs remain open.
+
 ## Alpha v0.8 baseline
 
 - Branch: `codex/alpha-v0-8-classless-foundation`, based on merged `main` commit `98c726a` containing PRs #48 and #49.

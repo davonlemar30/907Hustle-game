@@ -277,7 +277,13 @@
         currentNeighborhoodId: "north_star_lot", markets,
         influence: { north_star_lot: 0, downtown: 0, airport_industrial: 0 },
         tradeInfluenceGranted: { north_star_lot: false, downtown: false, airport_industrial: false },
-        productAccess: { weed: true, shrooms: true, cocaine: false, meth: false },
+        productAccess: { weed: false, shrooms: false, cocaine: false, meth: false },
+        transport: { dayPassDay: null, weekPass: false, busRides: 0, downtownKnown: false, industrialRouteKnown: false },
+        locations: {
+          explorationCount: 0, discoveries: [], gamblingKnown: false,
+          discountStore: { name: "Northern Value", suspicion: 0, lastAttemptDay: null },
+          employer: { name: "Ship Creek Freight", standing: 0, lastShiftDay: null, keptCommitments: 0, missedCommitments: 0 },
+        },
         territories: Object.fromEntries(TERRITORIES.map((territory) => [territory.areaId, {
           owner: "rook", power: territory.power, capturedDay: null, incomeCollected: 0, attempts: 0,
         }])),
@@ -429,10 +435,23 @@
       market: { available: true, hint: "Available now." },
       finances: { available: true, hint: "Available now." },
       help: { available: true, hint: "Available now." },
-      travel: { available: progressed, hint: "Finish trading once to unlock Travel." },
+      travel: { available: true, hint: "Places and local travel are available now." },
       operations: { available: progressed, hint: "Finish trading once to unlock Operations." },
-      people: { available: someoneIntroduced || returning, hint: "Meet someone who sticks around to unlock People." },
+      people: { available: true, hint: "Yalonda and John are available now." },
       recovery: { available: state.player.health < 100 || state.player.heat > 1 || state.flags.recoveryIntroduced || returning, hint: "Take an injury or pick up Heat to unlock Recovery." },
+    };
+  }
+  function activityAvailability(state) {
+    const employer = state.world.locations.employer;
+    const busCovered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
+    return {
+      work: state.run.slot !== 0 ? { available: false, reason: "Ship Creek hires in the Morning only.", cost: 0 }
+        : employer.lastShiftDay === state.run.day ? { available: false, reason: "You already worked today's shift.", cost: 0 }
+          : { available: true, reason: "One freight shift builds legitimate standing.", cost: 0 },
+      explore: { available: true, reason: state.world.locations.explorationCount ? "Later walks draw from a diminishing discovery pool." : "Your first useful discovery is guaranteed.", cost: 0 },
+      busDowntown: state.world.currentNeighborhoodId === "downtown" ? { available: false, reason: "You are already Downtown.", cost: 0 }
+        : { available: state.player.cash >= (busCovered ? 0 : 5), reason: busCovered ? "Your pass covers this ride." : "$5 single ride; passes are also available.", cost: busCovered ? 0 : 5 },
+      industrial: { available: state.run.premise === "legacy_established" || state.world.transport.industrialRouteKnown, reason: state.world.transport.industrialRouteKnown ? "A trusted route is available." : "Industrial needs Eli, a trusted ride, a future vehicle, or a specific route.", cost: 0 },
     };
   }
   function announceFeatureUnlocks(state, before) {
@@ -2052,6 +2071,10 @@
         state.lender.dueDay = 4;
         state.rival.pressure = 1;
         state.rival.relationship = "dismissive";
+        state.world.productAccess.weed = true;
+        state.world.productAccess.shrooms = true;
+        state.world.transport.downtownKnown = true;
+        state.world.transport.industrialRouteKnown = true;
       }
       state.player.stats = derivedRatings(state);
       state.run.status = "playing";
@@ -2264,8 +2287,76 @@
     }
 
     let base = state;
+    if (action.type === "EXPLORE_SPENARD") {
+      const random = makeRandom(base.run.rngState);
+      const count = base.world.locations.explorationCount;
+      base.world.locations.explorationCount += 1;
+      if (count === 0) {
+        base.people.dealers.kip.known = true;
+        base.world.productAccess.weed = true;
+        base.world.productAccess.shrooms = true;
+        base.world.locations.discoveries.push("kip_supplier");
+        logEntry(base, "A walk down Spenard ends at the Wash & Go lot. Kip gives you a first price, not trust; his corner is now a supplier option in People.", "good");
+      } else if (!base.world.locations.gamblingKnown) {
+        base.world.locations.gamblingKnown = true;
+        base.world.locations.discoveries.push("informal_game");
+        logEntry(base, "A back-room dice game announces itself through the people leaving, not a sign. Evening and Night games are now visible.", "good");
+      } else {
+        const discoveries = [
+          "John's bus advice matches the posted Downtown timetable.",
+          "A freight worker confirms Ship Creek hires before breakfast.",
+          "The North Star listing is real, but the owner will not move on the deposit.",
+          "You learn which Northern Value aisle has the longest camera gap.",
+        ];
+        logEntry(base, random.pick(discoveries), "");
+      }
+      base.run.rngState = random.state;
+      return advanceRun(base, { reason: "EXPLORE_SPENARD" });
+    }
+    if (action.type === "WORK_SHIFT") {
+      const available = activityAvailability(state).work;
+      if (!available.available) return inputState;
+      const random = makeRandom(base.run.rngState);
+      const employer = base.world.locations.employer;
+      const bonus = random.next() < 0.35 + base.player.attributes.discipline * 0.05 ? random.int(15, 30) : 0;
+      const payout = 110 + bonus;
+      base.player.cash += payout;
+      employer.lastShiftDay = base.run.day;
+      employer.standing = clamp(employer.standing + 1, 0, 5);
+      employer.keptCommitments += 1;
+      recordBehavior(base, "earner", employer.standing >= 3 ? 2 : 1, `work:${base.run.day}`, "legal_work");
+      if (employer.standing >= 3) base.flags.legalCover = true;
+      base.run.rngState = random.state;
+      logEntry(base, `Ship Creek Freight pays $${payout}${bonus ? `, including a $${bonus} extra-load bonus` : ""}. Your employer standing is ${employer.standing}.`, "good");
+      return advanceRun(base, { reason: "WORK_SHIFT" });
+    }
+    if (action.type === "BUY_BUS_PASS") {
+      const kind = action.passType;
+      const cost = kind === "day" ? 12 : kind === "week" ? 45 : 0;
+      if (!cost || state.player.cash < cost) return inputState;
+      base.player.cash -= cost;
+      if (kind === "day") base.world.transport.dayPassDay = base.run.day;
+      else base.world.transport.weekPass = true;
+      logEntry(base, `You buy a ${kind === "day" ? "day" : "seven-day"} People Mover pass for $${cost}.`, "good");
+      return base;
+    }
+    if (action.type === "BUS_TRAVEL") {
+      const destination = action.neighborhoodId;
+      if (!["north_star_lot", "downtown"].includes(destination) || destination === state.world.currentNeighborhoodId) return inputState;
+      const covered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
+      const cost = covered ? 0 : 5;
+      if (state.player.cash < cost) return inputState;
+      base.player.cash -= cost;
+      base.world.currentNeighborhoodId = destination;
+      base.world.transport.busRides += 1;
+      if (destination === "downtown") base.world.transport.downtownKnown = true;
+      logEntry(base, `The People Mover carries you to ${AREA_BY_ID[destination].name}${cost ? " for $5" : " on your pass"}.`, "");
+      return advanceRun(base, { reason: "BUS_TRAVEL" });
+    }
     if (action.type === "TRAVEL") {
       if (!AREA_BY_ID[action.neighborhoodId] || action.neighborhoodId === state.world.currentNeighborhoodId) return inputState;
+      if (state.run.premise === "fresh_arrival" && action.neighborhoodId === "downtown") return inputState;
+      if (state.run.premise === "fresh_arrival" && action.neighborhoodId === "airport_industrial" && !state.world.transport.industrialRouteKnown) return inputState;
       base.world.currentNeighborhoodId = action.neighborhoodId;
       logEntry(base, `You reach ${AREA_BY_ID[action.neighborhoodId].name} before the same headlights can settle behind you.`, "");
       return advanceRun(base, { reason: "TRAVEL" });
@@ -2458,7 +2549,7 @@
   }
 
   return {
-    VERSION, RUN_DAYS, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
+    VERSION, RUN_DAYS, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, STREET_READ_LEVELS, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
     STREET_NAME_MAX, DEFAULT_STREET_NAMES, ATTRIBUTE_DEFAULTS, LEGACY_ATTRIBUTES, STREET_IDENTITIES, sanitizeStreetName,
     CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS,
     buildEventForTest: activeEvent, storyCandidatesForTest: storyCandidates,
@@ -2468,7 +2559,7 @@
       cargoUsed, cargoCapacity, storedCargoUsed, storageCapacity, storedCashCapacity, inventoryValue, netWorth,
       combatRating, charismaRating, intelligenceRating, derivedRatings,
       operationScore, baseValue, gearValue, heatBand, priceSignal, influenceLabel, encounterChoices, endingLabel,
-      recruitedCrew, workingCapital, safeDebtPayment, debtPaymentPreview, featureAvailability, layLowPreview, controlled, recruitmentCost, operationGearPower, crewPower,
+      recruitedCrew, workingCapital, safeDebtPayment, debtPaymentPreview, featureAvailability, activityAvailability, layLowPreview, controlled, recruitmentCost, operationGearPower, crewPower,
       territoryPowerEstimate, territoryBenefits, tradeUnitPrices, tradeProjection, takeoverReadiness, robberyAvailability, eliTestRouteAvailability, maraThreatEligible,
       dealerRecord, dealerActions, dealerStandingLabel, dealerSupplyFactor,
     },

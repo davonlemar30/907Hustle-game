@@ -37,7 +37,7 @@ function driveTo(state, id, limit = 90) {
   return state;
 }
 
-test("v3 run uses an isolated save and approved equal-resource backgrounds", () => {
+test("v3 run keeps legacy migration data without exposing a starting class", () => {
   assert.equal(C.VERSION, 3); assert.equal(C.SAVE_KEY, "907ogr_v3");
   assert.equal(C.BACKGROUNDS.length, 3);
   assert.deepEqual(C.BACKGROUNDS.map((item) => item.name), ["Steady-Hand Shooter", "Silver-Tongued Hustler", "Strategist"]);
@@ -45,13 +45,55 @@ test("v3 run uses an isolated save and approved equal-resource backgrounds", () 
   assert.ok(C.BACKGROUNDS.every((item) => item.cash === 375 && item.heat === 1));
 });
 
-test("backgrounds create the approved stat identities", () => {
+test("legacy backgrounds hydrate to the approved derived identities", () => {
   const expected = { shooter: [3, 1, 2], hustler: [1, 3, 2], strategist: [2, 1, 3] };
   for (const [id, values] of Object.entries(expected)) {
     const state = C.reduceGame(C.createRun({ seed: 4 }), { type: "CHOOSE_BACKGROUND", backgroundId: id });
-    assert.deepEqual(Object.values(state.player.stats), values);
+    assert.equal(state.player.background, null);
+    assert.equal(state.player.legacyBackground, id);
+    assert.deepEqual(Object.values(C.selectors.derivedRatings(state)), values);
     assert.equal(state.player.cash, 375);
   }
+});
+
+test("classless new runs start balanced, Unproven, and use the neutral name", () => {
+  const state = C.reduceGame(C.createRun({ seed: 8 }), { type: "START_RUN" });
+  assert.equal(state.run.status, "playing");
+  assert.equal(state.player.background, null); assert.equal(state.player.legacyBackground, null);
+  assert.equal(state.player.streetName, "Rookie"); assert.equal(state.player.streetIdentity, "unproven");
+  assert.deepEqual(state.player.attributes, C.ATTRIBUTE_DEFAULTS);
+  assert.deepEqual(C.selectors.derivedRatings(state), { combat: 2, charisma: 2, intelligence: 2 });
+});
+
+test("meaningful behavior is deduplicated, capped, and bounded", () => {
+  const state = C.reduceGame(C.createRun({ seed: 8 }), { type: "START_RUN" });
+  assert.equal(C.recordBehaviorForTest(state, "mover", 1, "sale:a", "sale"), true);
+  assert.equal(C.recordBehaviorForTest(state, "mover", 1, "sale:a", "sale"), false);
+  assert.equal(C.recordBehaviorForTest(state, "mover", 1, "sale:b", "sale"), true);
+  assert.equal(C.recordBehaviorForTest(state, "mover", 1, "sale:c", "sale"), false);
+  for (let i = 0; i < 60; i += 1) C.recordBehaviorForTest(state, "connector", 1, `contact:${i}`, "relationship");
+  assert.equal(state.player.behavior.history.length, 50);
+});
+
+test("Street Identity assigns at Day 2 Night and mixed behavior becomes Wild Card", () => {
+  const mover = C.reduceGame(C.createRun({ seed: 8 }), { type: "START_RUN" });
+  for (let i = 0; i < 6; i += 1) C.recordBehaviorForTest(mover, "mover", 1, `move:${i}`, "market_read");
+  mover.run.day = 2; mover.run.slot = 3; C.evaluateStreetIdentityForTest(mover, true);
+  assert.equal(mover.player.streetIdentity, "mover"); assert.equal(mover.player.identityHistory.length, 1);
+  const mixed = C.reduceGame(C.createRun({ seed: 9 }), { type: "START_RUN" });
+  for (let i = 0; i < 3; i += 1) C.recordBehaviorForTest(mixed, "mover", 1, `m:${i}`, "market_read");
+  for (let i = 0; i < 3; i += 1) C.recordBehaviorForTest(mixed, "connector", 1, `c:${i}`, "relationship");
+  mixed.run.day = 2; mixed.run.slot = 3; C.evaluateStreetIdentityForTest(mixed, true);
+  assert.equal(mixed.player.streetIdentity, "wild_card");
+});
+
+test("identity changes require the lead to persist for two nights", () => {
+  const state = C.reduceGame(C.createRun({ seed: 10 }), { type: "START_RUN" });
+  for (let i = 0; i < 6; i += 1) C.recordBehaviorForTest(state, "mover", 1, `move:${i}`, "market_read");
+  state.run.day = 2; C.evaluateStreetIdentityForTest(state, true); assert.equal(state.player.streetIdentity, "mover");
+  for (let i = 0; i < 9; i += 1) C.recordBehaviorForTest(state, "stickup", 1, `stick:${i}`, "confrontation");
+  state.run.day = 3; C.evaluateStreetIdentityForTest(state, true); assert.equal(state.player.streetIdentity, "mover");
+  state.run.day = 4; C.evaluateStreetIdentityForTest(state, true); assert.equal(state.player.streetIdentity, "stickup");
 });
 
 test("buy and sell stay in one locked market visit", () => {
@@ -194,9 +236,9 @@ test("all three territories start under Rook with exact approved values", () => 
 });
 
 test("Intelligence controls territory estimate precision", () => {
-  const state = run(); state.player.stats.intelligence = 1; assert.equal(C.selectors.territoryPowerEstimate(state, "north_star_lot").label, "9–15");
-  state.player.stats.intelligence = 2; assert.equal(C.selectors.territoryPowerEstimate(state, "north_star_lot").label, "11–13");
-  state.player.stats.intelligence = 3; assert.equal(C.selectors.territoryPowerEstimate(state, "north_star_lot").label, "12");
+  const state = run(); state.player.attributes.insight = 1; state.player.attributes.discipline = 1; assert.equal(C.selectors.territoryPowerEstimate(state, "north_star_lot").label, "9–15");
+  state.player.attributes.insight = 2; state.player.attributes.discipline = 2; assert.equal(C.selectors.territoryPowerEstimate(state, "north_star_lot").label, "11–13");
+  state.player.attributes.insight = 3; state.player.attributes.discipline = 3; assert.equal(C.selectors.territoryPowerEstimate(state, "north_star_lot").label, "12");
 });
 
 test("takeover consumes one slot and records automatic narrated rounds", () => {
@@ -234,13 +276,14 @@ test("title save inspection distinguishes missing, valid, and invalid saves", ()
   assert.equal(invalid.exists, true); assert.equal(invalid.valid, false); assert.match(invalid.error, /could not be read/i);
 });
 
-test("v3 hydration preserves Strategist and normalizes additive fields", () => {
-  const old = run(88); old.player.background = "strategist"; old.player.stats = { combat: 2, charisma: 1, intelligence: 3 };
+test("v3 hydration preserves Strategist capability as legacy history", () => {
+  const old = run(88); old.player.background = "strategist"; delete old.player.attributes; delete old.player.legacyBackground; old.player.stats = { combat: 2, charisma: 1, intelligence: 3 };
   old.people.mara = { met: true, trust: 2, status: "cautious", outcomes: [] };
   old.people.crew.eli.introduced = true; delete old.people.crew.eli.contactStage;
   old.stats.robbery = { attempted: true, success: false, payout: 0 };
   const hydrated = C.hydrateRun(JSON.parse(JSON.stringify(old)));
-  assert.equal(hydrated.player.background, "strategist"); assert.equal(hydrated.people.mara.available, true);
+  assert.equal(hydrated.player.background, null); assert.equal(hydrated.player.legacyBackground, "strategist"); assert.equal(hydrated.people.mara.available, true);
+  assert.deepEqual(C.selectors.derivedRatings(hydrated), { combat: 2, charisma: 1, intelligence: 3 });
   assert.equal(hydrated.people.crew.eli.contactStage, "recruitable");
   assert.deepEqual(hydrated.stats.robbery, { attempts: 1, successes: 0, failures: 1, totalPayout: 0, lastAttemptedDay: 1, attempted: true, success: false, payout: 0 });
 });
@@ -319,16 +362,16 @@ test("street names are sanitized to a safe character set and length", () => {
   for (const empty of ["", "   ", "!!!", null, undefined, {}]) assert.equal(C.sanitizeStreetName(empty), "");
 });
 
-test("the street name is optional and falls back to an edge default", () => {
-  const skipped = C.reduceGame(C.createRun({ seed: 12 }), { type: "CHOOSE_BACKGROUND", backgroundId: "hustler" });
-  assert.equal(skipped.player.streetName, C.DEFAULT_STREET_NAMES.hustler);
+test("the street name is optional and falls back to Rookie", () => {
+  const skipped = C.reduceGame(C.createRun({ seed: 12 }), { type: "START_RUN" });
+  assert.equal(skipped.player.streetName, C.DEFAULT_STREET_NAMES.neutral);
   assert.equal(skipped.player.streetNameChosen, false);
-  const chosen = C.reduceGame(C.createRun({ seed: 12 }), { type: "CHOOSE_BACKGROUND", backgroundId: "shooter", streetName: "  Kodiak!!  " });
+  const chosen = C.reduceGame(C.createRun({ seed: 12 }), { type: "START_RUN", streetName: "  Kodiak!!  " });
   assert.equal(chosen.player.streetName, "Kodiak");
   assert.equal(chosen.player.streetNameChosen, true);
   assert.match(chosen.log[0].text, /Kodiak/);
-  const blanked = C.reduceGame(C.createRun({ seed: 12 }), { type: "CHOOSE_BACKGROUND", backgroundId: "shooter", streetName: "###" });
-  assert.equal(blanked.player.streetName, C.DEFAULT_STREET_NAMES.shooter);
+  const blanked = C.reduceGame(C.createRun({ seed: 12 }), { type: "START_RUN", streetName: "###" });
+  assert.equal(blanked.player.streetName, C.DEFAULT_STREET_NAMES.neutral);
   assert.equal(blanked.player.streetNameChosen, false);
 });
 

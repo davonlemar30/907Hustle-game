@@ -7,16 +7,16 @@ const ui = fs.readFileSync(path.join(root, "ui.jsx"), "utf8");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "v05.css"), "utf8");
 
-test("active shell is Alpha v0.7 with a packaged title asset", () => {
-  assert.match(ui, /Alpha v0\.7/); assert.match(html, /ui\.jsx/); assert.doesNotMatch(html, /legacy-v1-ui-reference|text\/plain/);
+test("active shell is Alpha v0.8 with a packaged title asset", () => {
+  assert.match(ui, /Alpha v0\.8/); assert.match(html, /ui\.jsx/); assert.doesNotMatch(html, /legacy-v1-ui-reference|text\/plain/);
   assert.match(ui, /907hustle-title\.png/); assert.ok(fs.existsSync(path.join(root, "assets", "907hustle-title.png")));
 });
 test("title screen exposes safe load, new-game confirmation, preview, and help", () => {
   for (const token of ["Load Game", "New Game", "Saved run", "How to Play", "inspectSave", "HYDRATE_RUN", "replace the current autosave"]) assert.ok(ui.includes(token), token);
   assert.match(ui, /screen !== "game"/);
 });
-test("new games expose only two edges while legacy Strategist remains in core tests", () => {
-  assert.match(ui, /Choose your edge/); assert.match(ui, /C\.STARTING_EDGES\.map/); assert.doesNotMatch(ui, /C\.BACKGROUNDS\.map/);
+test("new games are classless and expose one Start from the Bottom confirmation", () => {
+  assert.match(ui, /Start from the Bottom/); assert.match(ui, /type: "START_RUN"/); assert.doesNotMatch(ui, /Choose your edge|C\.STARTING_EDGES\.map|C\.BACKGROUNDS\.map/);
 });
 test("four primary navigation labels and progressive More categories are explicit", () => {
   assert.match(ui, /const NAV = \[\["market", "Market"\], \["travel", "Travel"\], \["people", "People"\], \["more", "More"\]\]/);
@@ -59,10 +59,15 @@ test("the market close action names the player action and its destination", () =
   assert.match(ui, /nextPartLabel/);
   assert.match(ui, /Close this market visit/);
 });
-test("the optional Street Name is offered before edge selection and shown on the save", () => {
+test("the optional Street Name is offered before classless confirmation and shown on the save", () => {
   assert.match(ui, /Street Name/); assert.match(ui, /maxLength=\{C\.STREET_NAME_MAX\}/);
   assert.match(ui, /What do they call you\?/); assert.match(ui, /streetName \}\)/);
   assert.match(ui, /\{preview\.name\}/); assert.match(ui, /Seven days as \{summary\.streetName\}/);
+});
+test("Character is nested under More and hides identity internals", () => {
+  for (const token of ["function Character", "Strength", "Endurance", "Reflexes", "Presence", "Insight", "Discipline", "Derived ratings", "Recent reputation", "legacyBackground"]) assert.ok(ui.includes(token), token);
+  assert.doesNotMatch(ui, /behavior\.scores|pendingIdentityNights|25 percent|raw margin/i);
+  assert.equal((ui.match(/\[\["market", "Market"\]/g) || []).length, 1);
 });
 test("registry metadata never reaches the presentation layer", () => {
   for (const leak of [/event\.stage/, /event\.cooldown/, /event\.weight/, /event\.requires/, /event\.chain/, /chainStage/]) {

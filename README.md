@@ -2,54 +2,188 @@
 
 907Hustle: One Good Run is a mobile-first, single-player crime, trading, resource-management, and light RPG web game set in an Anchorage-inspired version of Spenard.
 
-The current playable build is **Alpha v0.9: Fresh Start, Daily Life, and Player Freedom**. The player arrives at Yalonda and John's home without local assets, chooses freely among legal work, exploration, training, gambling, shoplifting, transit, relationships, trade, and optional property, then earns a flexible Street Identity through behavior.
+The current playable build is **v1.0: Organization Layer**. The player begins as a broke newcomer staying with family, works through a seven-day run, manages Dre's debt, trades and hustles for money, develops relationships and reputation, acquires the North Star Garage, and can grow into an operator who controls blocks through soldiers and lieutenants.
 
-The long-term design goal is a classless street-life RPG where progress comes through access, reputation, transportation, relationships, skills, jobs, suppliers, territory, and obligations. The current build remains a focused seven-day vertical slice.
+The game uses a classless progression model. Access and identity emerge from behavior, attributes, relationships, Street Read, Respect, money, property, crew, and territory rather than a fixed class path.
 
-## Current Alpha: v0.9
+## Current Build: v1.0
 
-Alpha v0.9 is documented in `ALPHA_V0.9.md`, with verification in `EIGHTH_PLAYTEST_AUDIT.md` and changed narrative copy in `COPY_REVIEW.md`.
-
-Alpha v0.8 starts every new player with six equal attributes, no selected edge, and an earned Street Identity that never blocks an activity.
+v1.0 extends the v0.9 daily-life foundation with a midgame organization layer.
 
 ### Core gameplay
 
 - Seven-day run with Morning, Afternoon, Evening, and Night
 - Three active districts: Spenard, Downtown, and Industrial Service Roads
-- Four product market with seeded price movement and weighted-average cost basis
-- Buy and sell previews with revenue, cost basis, projected profit or loss, cash after, and cargo after
-- Dre's debt, payment history, reserve-aware payment controls, and consequences for missed terms
-- Heat, Health, Recovery, Lay Low, gear, protected storage, safehouse upgrades, crew, and territory
+- Four-product market with seeded price movement and weighted-average cost basis
+- Buy/sell previews with revenue, cost basis, projected profit or loss, cash after, and cargo after
+- Legal work, exploration, gym training, informal gambling, shoplifting, transit, relationships, and property progression
+- Dre debt management with reserve-aware payments and physical enforcement at the Day 7 deadline
+- Heat, Health, Recovery, gear, protected storage, garage upgrades, crew, Respect, and territory
 - Autosave, title screen, New Game, Load Game, save preview, and mobile-first navigation
 
-### Story engine
+## Organization Layer
 
-- 43 active story beats across five connected chains
-- Data-driven `STORY_REGISTRY` with seeded, deterministic selection
-- Reactive, character-chain, and ambient event tiers
-- Location preference so district-specific stories appear when the player stays in that area
-- Anti-monopoly rules that keep one storyline from consuming the entire week
-- Nine repeatable one-off street events
+### Soldiers
 
-### Character stories
+Soldiers are anonymous manpower hired with cash and assigned to controlled Spenard blocks.
 
-- **Mara Velez:** six-stage relationship arc with friendship, romance, distance, boundaries, danger, and three Day 7 outcomes
-- **Eli "Shortcut" Ward:** five-stage contact and crew arc built around routes, judgment, loyalty, and whether the operation has a place for him
-- **Dre Holloway:** debt storyline that reacts to first payment, payment reliability, due-day behavior, payoff choices, and the final reckoning
-- **Rook Mercer:** six-stage escalation from surveillance and pressure to interference, confrontation, terms, or open rivalry
-- **Kip Sallis:** persistent Spenard dealer who supports both fair business and the first deliberate stickup playstyle
+- Soldier capacity scales with controlled territory
+- Claiming a block requires an available soldier
+- Successful claims immediately post a soldier to the new block
+- Assigned soldiers generate passive dirty income through the existing `advanceRun` pipeline
+- Soldiers can be lost to raids, arrests, and attrition
+- Survivors from a lost block return to the available manpower pool
 
-### Kip Sallis dealer prototype
+### Territory Blocks
 
-Once Kip is introduced, he appears under **People → Street Contacts**.
+Spenard currently contains six claimable blocks.
 
-- **Buy off Kip:** purchase weed or shrooms below the current Spenard price and build standing
-- **Ask what's moving:** receive a reliable product lead after building enough standing
-- **Rob Kip:** attempt a dealer robbery regardless of working capital
+Each block has:
 
-Robbing Kip can produce cash and product, while also causing injury, Heat, retaliation, damaged standing, lower Spenard supply, Rook pressure, and relationship fallout with Mara. Two successful robberies remove Kip from the block for the rest of the run.
+- earning potential
+- Heat exposure
+- Rook visibility
+- patrol frequency
+- manpower requirements
 
-Quick Score remains a separate emergency comeback action and is unchanged.
+Eli's territory intelligence reveals block stats before expansion. Without that intelligence, the player operates with incomplete information.
+
+### District Control
+
+Territory Blocks are the tactical layer. District Control is the neighborhood-level strategic layer.
+
+Spenard progresses through:
+
+- Presence
+- Influence
+- Dominant
+- District Control
+
+Block income owns the passive territory payout where the block layer exists, preventing duplicate district income. District Control provides broader strategic benefits and creates a foundation for future Downtown and Industrial block expansion.
+
+### Lieutenants
+
+Two specialist lieutenant roles drive the organization layer.
+
+**Eli "Shortcut" Ward — Operations**
+
+- soldier positioning
+- block rotation
+- territory defense
+- operational efficiency
+- automated manpower management
+
+Eli can run one standing operations policy:
+
+- Balanced
+- Maximize Income
+- Hold Ground
+- Stay Quiet
+- Manual
+
+Policy changes and automated redistribution consume no additional player time.
+
+**Kip Sallis — Finance**
+
+- dirty-to-clean cash conversion
+- laundering capacity
+- financial Heat reduction
+- legitimate money management
+
+Kip is a finance specialist and stays outside field crew assignments.
+
+### Dirty and Clean Cash
+
+v1.0 tracks money as:
+
+- `player.dirtyCash`
+- `player.cleanCash`
+- `player.cash`
+
+The core invariant is:
+
+```text
+cash = dirtyCash + cleanCash
+```
+
+Ship Creek work enters as clean income. Street income generally enters as dirty cash.
+
+Kip launders dirty cash at a flat **15% fee**. Clean cash avoids financial Heat from spending and supports legitimate purchases.
+
+### Rook
+
+Rook escalation now follows **Respect**.
+
+- Respect represents the player's growing street presence and influence
+- Heat represents police attention
+- Rook's escalation stage reacts to Respect and organization growth
+- Legacy saves preserve already-earned Rook progression
+
+### Dre
+
+Dre's debt remains the central seven-day obligation.
+
+- The fresh-arrival note is due on Day 7
+- Unpaid debt at the deadline can trigger collector enforcement
+- Collector severity scales with the remaining balance
+- Killing collectors increases future enforcement cost through Dre's interest multiplier
+- Paying the debt in full prevents collector escalation
+
+## Story and Relationships
+
+The current build preserves the authored character and event systems from v0.9.
+
+- **Mara Velez:** relationship progression with friendship, romance, boundaries, danger, and Day 7 outcomes
+- **Eli Ward:** contact-to-crew-to-lieutenant progression
+- **Dre Holloway:** lender relationship, payment behavior, warnings, and enforcement
+- **Rook Mercer:** rival escalation driven by Respect
+- **Kip Sallis:** dealer progression that can grow into a finance lieutenant role
+
+The live story system remains data-driven through `STORY_REGISTRY` in `game-core.js` and uses seeded deterministic selection.
+
+## UI / UX
+
+The current interface uses progressive disclosure and a mobile-first single shell.
+
+Primary navigation:
+
+- Market
+- Travel
+- People
+- More
+
+Nested surfaces include:
+
+- Operations
+- Finances
+- Recovery
+- Character
+- Territory Blocks
+- District Control
+- Soldiers
+- Safehouse
+- laundering
+
+Current mobile standards:
+
+- 44px minimum visible control height
+- no horizontal overflow at 320, 375, 390, and 430px target widths
+- player-facing time shown as day parts
+- nested screens use explicit Back controls
+- trading remains the strongest primary gameplay surface
+
+The **next planned build is a dedicated UI/UX and mobile-presentation pass**. Its focus is stronger visual hierarchy, reduced information density, clearer organization surfaces, improved warning/feedback states, and a more cohesive presentation for the v1.0 systems while preserving the established mobile shell.
+
+## Deterministic Architecture
+
+907Hustle uses one central gameplay clock and one seeded RNG path.
+
+- `advanceRun` owns time advancement
+- passive soldier and territory resolution runs inside the same pipeline
+- organization activity consumes no hidden extra turns
+- deterministic RNG is preserved across combat, events, territory, raids, and passive systems
+- save version remains `3`
+- older compatible v3 saves hydrate through additive defaults and migration rules
 
 ## Verification
 
@@ -57,21 +191,37 @@ Current automated verification:
 
 ```sh
 node --test tests/*.test.js
-node tests/simulate-runs.js 200
+node tests/simulate-runs.js
 ```
 
-Latest recorded results:
+Latest recorded v1.0 results:
 
-- 97 tests passed
-- 0 tests failed
-- 2,000 of 2,000 simulated runs terminated
-- 0 dead ends
-- Ten simulation profiles, including legal worker, trader, thief, gambler, trainer, and mixed freedom
-- 23 distinct opening story sequences across 30 seeds
+- **138 / 138 automated tests passing**
+- **24 stabilization and regression tests added during PR #52**
+- **800 simulated runs across 10 strategies**
+- operator strategy covers garage, Eli, soldiers, territory, Kip, and laundering progression
+- zero simulation crashes reported
+- Node-driven end-to-end organization run completed through save/load
 
-Responsive browser QA passed the ten required viewports for overflow, 44px controls, fresh creation, four-tab navigation, and console errors. Three full human-style seven-day runs and a rendered save/title/load traversal remain open.
+The final v1.0 stabilization pass verified the full flow:
 
-## Run the game locally
+```text
+garage
+→ Eli recruitment
+→ Eli promotion
+→ soldier recruitment
+→ territory claims
+→ passive income
+→ Eli policy change
+→ Kip introduction
+→ laundering
+→ Day 7 Dre enforcement
+→ save/load
+```
+
+A final real-browser/mobile visual QA pass remains recommended because the development sandbox encountered a script-cache mismatch during the latest UI verification attempt.
+
+## Run Locally
 
 Serve the repository with any static HTTP server, then open `index.html`:
 
@@ -94,43 +244,59 @@ The active runtime is:
 
 `game-core.js` is a UMD domain module exposed through `window.GameCore` and `module.exports`. `ui.jsx` contains the React presentation layer.
 
-## Save compatibility
+## Save Compatibility
 
 - Save version: `3`
 - Save key: `907ogr_v3`
-- Alpha v0.8 state additions hydrate through additive defaults
-- Older v3 saves remain playable
-- Legacy Strategist saves remain supported
+- v0.9 and v1.0 state additions hydrate through additive defaults and migration rules
+- pre-existing cash migrates into the dirty-cash model
+- legacy Rook progression is preserved during the Respect migration
+- older compatible v3 saves remain playable
 
-## Project direction
+## Project Direction
 
-The classless foundation now includes:
+The current progression arc is:
 
-- Equal starting attributes
-- Earned Street Identity
-- Behavior tracking
-- Six core attributes
-- Identity-aware dialogue and event eligibility
+```text
+street-level survival
+→ working/trading/hustling
+→ garage ownership
+→ crew growth
+→ Eli as Operations Lieutenant
+→ soldiers and Territory Blocks
+→ passive organization income
+→ Kip and laundering
+→ District Control
+→ larger rival and law-enforcement consequences
+```
 
-Legacy edges remain migration data only and appear as save history, not as a current class.
+Near-term development priority:
 
-Future phases are planned around Street Read progression, legitimate work, training, gambling, shoplifting, transportation, jail, multiple lenders, expanded territory, regional travel, and optional continuation after the Day 7 score checkpoint.
+1. UI/UX and mobile presentation pass
+2. human browser playtesting and balance validation of v1.0 organization systems
+3. stronger District Control rewards and capstone presentation
+4. later expansion of block territory into Downtown and Industrial
 
 ## Documentation
 
-- [`ALPHA_V0.8.md`](ALPHA_V0.8.md) — current playable build description
-- [`ALPHA_V0.7.1.md`](ALPHA_V0.7.1.md) — prior playable build description
+Key repository references:
+
 - `VISION.md` — long-term design target
 - `ROADMAP.md` — build sequence
-- `PROJECT_STATUS.md` — active baseline, architecture, verification, and known limitations
-- `STORY_BIBLE.md` — writing standards, character voices, event chains, and event copy
-- `PROGRESSION_DESIGN.md` — Street Read design proposal, currently unimplemented
-- `SIXTH_PLAYTEST_AUDIT.md` — Alpha v0.7 audit, decisions, and manual QA checklist
-- `SEVENTH_PLAYTEST_AUDIT.md` — Alpha v0.8 implementation and verification audit
+- `PROJECT_STATUS.md` — architecture, verification, and current limitations
+- `STORY_BIBLE.md` — character voices, story standards, and event chains
+- `ALPHA_V0.9.md` — v0.9 daily-life foundation
+- `EIGHTH_PLAYTEST_AUDIT.md` — v0.9 verification record
+- `COPY_REVIEW.md` — current narrative-copy review
+- PR #52 — v1.0 Soldiers, Territory, Lieutenants, Laundering, and stabilization work
 
-## Legacy files
+The ClickUp 907Hustle Master Doc remains the broader design and playtesting source of truth.
 
-`index.html` loads only `v05.css`, `game-core.js`, and `ui.jsx`. The following are retained for historical reference and are not part of the running game:
+## Legacy Files
+
+`index.html` loads only `v05.css`, `game-core.js`, and `ui.jsx`.
+
+These files remain for historical reference and are outside the active runtime:
 
 - `events.js`
 - `script.js`

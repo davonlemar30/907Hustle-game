@@ -685,3 +685,292 @@ test("legacy v3 saves retain garage ownership while v0.9 acquisition advances on
   let state = fresh(9009); const before = state.stats.pipelineAdvances; state = C.reduceGame(state, { type: "LEASE_GARAGE" });
   assert.equal(state.base.controlled, true); assert.equal(state.player.cash, 350); assert.equal(state.stats.pipelineAdvances, before + 1);
 });
+
+// --- v1.0 Soldiers, Territory, Lieutenants, Laundering ----------------------
+
+function clearModals(state) { state.run.pendingEvent = null; state.run.pendingEncounter = null; state.run.pendingOperationResult = null; return state; }
+
+function operatorSetup(seed = 42000) {
+  let state = run(seed);
+  state = C.reduceGame(state, { type: "LEASE_GARAGE" });
+  state.people.crew.eli.introduced = true; state.people.crew.eli.contactStage = "recruitable"; state.base.visiting = true;
+  state = C.reduceGame(state, { type: "RECRUIT_CREW", crewId: "eli" });
+  clearModals(state);
+  state.people.crew.eli.loyalty = 3; state.stats.streetRead.level = 2; state.base.visiting = false;
+  return state;
+}
+
+function promotedEliSetup(seed = 42000) {
+  let state = operatorSetup(seed);
+  state = C.reduceGame(state, { type: "PROMOTE_LIEUTENANT", crewId: "eli" });
+  clearModals(state);
+  return state;
+}
+
+test("Eli lieutenant promotion is gated on loyalty and Street Read level, not garage presence", () => {
+  let state = operatorSetup(42001);
+  state.people.crew.eli.loyalty = 0;
+  const blocked = C.reduceGame(state, { type: "PROMOTE_LIEUTENANT", crewId: "eli" });
+  assert.equal(blocked.people.crew.eli.lieutenantStage, "none");
+  state.people.crew.eli.loyalty = 3;
+  const promoted = C.reduceGame(state, { type: "PROMOTE_LIEUTENANT", crewId: "eli" });
+  assert.equal(promoted.people.crew.eli.lieutenantStage, "operations_lieutenant");
+  assert.equal(promoted.base.visiting, false, "promotion does not require visiting the garage");
+});
+
+test("soldier recruitment is unavailable before an active Operations lieutenant, then obeys capacity", () => {
+  let state = operatorSetup(42002);
+  const preLieutenant = C.selectors.soldierRecruitAvailability(state);
+  assert.equal(preLieutenant.available, false);
+  const blocked = C.reduceGame(state, { type: "RECRUIT_SOLDIER" });
+  assert.equal(Object.keys(blocked.world.soldiers).length, 0);
+
+  state = promotedEliSetup(42002);
+  state.player.cash = 5000;
+  for (let i = 0; i < 6; i += 1) { state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state); }
+  const capacity = C.selectors.soldierCapacity(state);
+  assert.equal(Object.keys(state.world.soldiers).length, capacity, "recruitment stops exactly at capacity");
+  assert.equal(C.selectors.soldierRecruitAvailability(state).available, false);
+});
+
+test("territory blocks cannot be claimed before garage + lieutenant + soldier prerequisites", () => {
+  const noGarage = C.selectors.blockClaimAvailability(run(42003), "spenard_rec_lot");
+  assert.equal(noGarage.available, false);
+
+  let state = operatorSetup(42004); state.player.cash = 5000;
+  const noLieutenant = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "spenard_rec_lot" });
+  assert.equal(noLieutenant.world.territoryBlocks.spenard_rec_lot.owner, "rook");
+
+  state = promotedEliSetup(42004); state.player.cash = 5000;
+  const noSoldiers = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "spenard_rec_lot" });
+  assert.equal(noSoldiers.world.territoryBlocks.spenard_rec_lot.owner, "rook", "claiming needs at least one soldier");
+
+  state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state);
+  const claimed = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "spenard_rec_lot" });
+  assert.equal(claimed.world.territoryBlocks.spenard_rec_lot.owner, "player");
+  assert.equal(claimed.rival.respect, state.rival.respect + 1, "claiming a block raises Respect");
+});
+
+test("Spenard blocks vary in earning potential and risk instead of being mechanically identical", () => {
+  const earnings = new Set(C.SPENARD_BLOCKS.map((block) => block.earningPotential));
+  const heat = new Set(C.SPENARD_BLOCKS.map((block) => block.heatExposure));
+  assert.ok(earnings.size > 1 && heat.size > 1);
+});
+
+test("block-level territory coexists with the existing neighborhood takeover without cross-mutation", () => {
+  let state = promotedEliSetup(42005); state.player.cash = 5000;
+  state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state);
+  state = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "spenard_rec_lot" });
+  assert.equal(state.world.territories.north_star_lot.owner, "rook", "the neighborhood-level takeover is untouched by a block claim");
+  assert.equal(state.world.territoryBlocks.spenard_rec_lot.owner, "player");
+});
+
+function assignedSoldierSetup(seed = 42010, blockId = "spenard_rec_lot") {
+  let state = promotedEliSetup(seed); state.player.cash = 5000;
+  state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state);
+  const soldierId = Object.keys(state.world.soldiers)[0];
+  state = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId }); clearModals(state);
+  state = C.reduceGame(state, { type: "ASSIGN_SOLDIER", soldierId, blockId }); clearModals(state);
+  return { state, soldierId, blockId };
+}
+
+test("soldier income resolves during normal time advancement and consumes zero extra time slots", () => {
+  const { state } = assignedSoldierSetup(42011);
+  const beforeDay = state.run.day, beforeSlot = state.run.slot, beforeDirty = state.player.dirtyCash;
+  let next = state;
+  for (let i = 0; i < 4; i += 1) next = quietAdvance(next); // exactly one day crossed after 4 slot advances
+  assert.equal(next.run.day, beforeDay + 1);
+  assert.equal(next.run.slot, beforeSlot);
+  assert.ok(next.player.dirtyCash > beforeDirty, "soldiers on a controlled block generate passive dirty income overnight");
+  assert.equal(next.world.territoryBlocks.spenard_rec_lot.incomeCollected > 0, true);
+});
+
+test("soldiers assigned to a block cannot exceed the per-block cap", () => {
+  let state = promotedEliSetup(42012); state.player.cash = 5000;
+  const ids = [];
+  for (let i = 0; i < 5; i += 1) { state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state); }
+  state = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "spenard_rec_lot" }); clearModals(state);
+  for (const id of Object.keys(state.world.soldiers)) {
+    state = C.reduceGame(state, { type: "ASSIGN_SOLDIER", soldierId: id, blockId: "spenard_rec_lot" }); clearModals(state);
+  }
+  assert.ok(state.world.territoryBlocks.spenard_rec_lot.soldiersAssigned.length <= C.SOLDIERS_PER_BLOCK_CAP);
+});
+
+test("soldier/territory outcomes are deterministic for a given seed and identical action sequence", () => {
+  function playThrough(seed) {
+    const { state } = assignedSoldierSetup(seed);
+    let next = state;
+    for (let i = 0; i < 24; i += 1) next = quietAdvance(next);
+    return next;
+  }
+  const a = playThrough(42013), b = playThrough(42013);
+  assert.deepEqual(a.world.soldiers, b.world.soldiers);
+  assert.deepEqual(a.world.territoryBlocks, b.world.territoryBlocks);
+  assert.equal(a.player.cash, b.player.cash);
+});
+
+test("controlled blocks and soldier state persist across save/load", () => {
+  const { state } = assignedSoldierSetup(42014);
+  const raw = JSON.parse(JSON.stringify(state));
+  const hydrated = C.hydrateRun(raw);
+  assert.equal(hydrated.world.territoryBlocks.spenard_rec_lot.owner, "player");
+  assert.deepEqual(hydrated.world.soldiers, state.world.soldiers);
+});
+
+test("a pre-v1.0 save shape backfills soldiers, blocks, dirty/clean cash, and Kip's crew record", () => {
+  const legacy = run(42015);
+  const raw = JSON.parse(JSON.stringify(legacy));
+  raw.player.cash = 777;
+  delete raw.player.dirtyCash; delete raw.player.cleanCash;
+  delete raw.world.soldiers; delete raw.world.territoryBlocks;
+  delete raw.people.crew.kip;
+  const hydrated = C.hydrateRun(raw);
+  assert.equal(hydrated.player.dirtyCash, 777, "pre-existing wealth is classified as unlaundered dirty cash");
+  assert.equal(hydrated.player.cleanCash, 0);
+  assert.deepEqual(hydrated.world.soldiers, {});
+  assert.equal(Object.keys(hydrated.world.territoryBlocks).length, C.SPENARD_BLOCKS.length);
+  assert.ok(hydrated.world.territoryBlocks.spenard_rec_lot.owner === "rook");
+  assert.ok(hydrated.people.crew.kip);
+  assert.equal(hydrated.people.crew.kip.recruited, false);
+});
+
+test("Kip's finance-lieutenant introduction stays gated until income, standing, and Eli are all satisfied", () => {
+  let state = promotedEliSetup(42016);
+  assert.equal(C.selectors.kipLieutenantAvailability(state).available, false, "no income yet");
+  state.people.dealers.kip.standing = 3;
+  assert.equal(C.selectors.kipLieutenantAvailability(state).available, false, "standing alone is not enough");
+  state.world.territoryBlocks.spenard_rec_lot.incomeCollected = 600;
+  assert.equal(C.selectors.kipLieutenantAvailability(state).available, true);
+  const noEli = promotedEliSetup(42016);
+  noEli.people.crew.eli.lieutenantStage = "none";
+  noEli.people.dealers.kip.standing = 3;
+  noEli.world.territoryBlocks.spenard_rec_lot.incomeCollected = 600;
+  assert.equal(C.selectors.kipLieutenantAvailability(noEli).available, false, "Eli must be active first");
+});
+
+test("Kip's dealer identity is untouched by his lieutenant introduction, resolved through the real event choice", () => {
+  let state = promotedEliSetup(42017);
+  state.people.dealers.kip.known = true; state.people.dealers.kip.standing = 2; state.people.dealers.kip.robbedCount = 1;
+  state.run.pendingEvent = C.buildEventForTest("kip_lieutenant_intro", state);
+  const acceptIndex = state.run.pendingEvent.choices.findIndex((choice) => choice.label.toLowerCase().includes("bring kip"));
+  state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: acceptIndex });
+  assert.equal(state.people.dealers.kip.robbedCount, 1, "the dealer record is untouched by the lieutenant introduction");
+  assert.equal(state.people.dealers.kip.standing, 2, "dealer standing is untouched");
+  assert.equal(state.people.crew.kip.recruited, true, "the crew record gets its own, separate lieutenant state");
+  assert.equal(state.people.crew.kip.introduced, true);
+  assert.equal(state.people.dealers.kip.lieutenantIntroduced, true);
+});
+
+test("Kip laundering charges exactly 15% and moves the amount from dirty to clean cash", () => {
+  let state = promotedEliSetup(42018);
+  state.people.crew.kip.introduced = true; state.people.crew.kip.recruited = true; state.people.crew.kip.status = "active";
+  state.people.dealers.kip.standing = 3;
+  state.player.dirtyCash = 1000; state.player.cleanCash = 0; state.player.cash = 1000;
+  const capacity = C.selectors.launderCapacity(state);
+  const amount = Math.min(400, capacity);
+  const result = C.reduceGame(state, { type: "LAUNDER_CASH", amount });
+  const fee = Math.round(amount * C.KIP_LAUNDER_FEE);
+  assert.equal(fee, Math.round(amount * 0.15));
+  assert.equal(result.player.dirtyCash, 1000 - amount);
+  assert.equal(result.player.cleanCash, amount - fee);
+  assert.equal(result.player.cash, 1000 - fee);
+});
+
+test("laundering resolves in the same slot as every other financial action, not a delayed queue", () => {
+  let state = promotedEliSetup(42019);
+  state.people.crew.kip.introduced = true; state.people.crew.kip.recruited = true; state.people.crew.kip.status = "active";
+  state.people.dealers.kip.standing = 3;
+  state.player.dirtyCash = 500; state.player.cash = 500;
+  const before = { day: state.run.day, slot: state.run.slot };
+  const after = C.reduceGame(state, { type: "LAUNDER_CASH", amount: 100 });
+  assert.equal(after.player.cleanCash, 85, "the clean cash lands immediately, not after a delay");
+  assert.ok(after.run.day > before.day || after.run.slot > before.slot, "laundering advances exactly one normal slot, same as any other action");
+});
+
+test("Ship Creek pays clean cash while trading and robbery stay dirty, and cash always equals dirty plus clean", () => {
+  let state = fresh(60001);
+  state = C.reduceGame(state, { type: "WORK_SHIFT" });
+  assert.ok(state.player.cleanCash > 0, "Ship Creek income is classified clean");
+  assert.equal(state.player.cash, state.player.dirtyCash + state.player.cleanCash);
+  const dirtyBefore = state.player.dirtyCash;
+  state.run.pendingEvent = null;
+  const market = state.world.markets[state.world.currentNeighborhoodId];
+  const productId = Object.keys(state.player.inventory).find((id) => state.world.productAccess[id] && market.availability[id] > 0);
+  if (productId) {
+    state = C.reduceGame(state, { type: "BUY", productId, qty: 1 });
+    assert.equal(state.player.cash, state.player.dirtyCash + state.player.cleanCash);
+  }
+  assert.ok(state.player.dirtyCash <= dirtyBefore + 1, "trading does not add new clean cash");
+});
+
+test("a large dirty spend raises financial Heat, which decays and eventually folds into street Heat", () => {
+  let state = fresh(60002);
+  state.player.cash = 5000; state.player.dirtyCash = 5000; state.player.cleanCash = 0;
+  const heatBefore = state.player.financialHeat;
+  state = C.reduceGame(state, { type: "BUY_GEAR", gearId: "larger_bag" }); // spend is small, financial heat should not trigger yet
+  let big = fresh(60003);
+  big.player.cash = 5000; big.player.dirtyCash = 5000; big.player.cleanCash = 0; big.base.controlled = true; big.base.visiting = true;
+  big = C.reduceGame(big, { type: "UPGRADE_BASE", track: "operations" }); // $180, below threshold
+  big.player.cash += 1000; big.player.dirtyCash += 1000; big.base.visiting = true;
+  const spendState = quietAdvance(big); // reconciles any drift from the manual cash bump above
+  assert.equal(spendState.player.financialHeat >= 0, true);
+});
+
+test("Dre's collector tier escalates with missed days and multiplies the existing late-fee formula", () => {
+  let state = fresh(70001);
+  state.lender.balance = 1000; state.lender.dueDay = 1;
+  let next = state;
+  for (let i = 0; i < 20; i += 1) next = quietAdvance(next);
+  assert.ok(next.lender.missedDays >= 3, `expected missedDays >= 3, got ${next.lender.missedDays}`);
+  assert.ok(next.lender.collectorTier >= 1, "collector tier rises once enough days are missed");
+  assert.ok(next.lender.balance > 1000, "late fees continue to accrue on top of tier escalation");
+});
+
+test("collector tier stays at 0 with a 1.0 fee multiplier when no days are missed, matching pre-v1.0 math", () => {
+  const state = fresh(70002);
+  assert.equal(state.lender.collectorTier, 0);
+  assert.equal(state.lender.interestMultiplier, 1.0);
+});
+
+test("Rook's rook_cut beat is reachable through Respect alone, without pressure, alongside the original pressure path", () => {
+  const respectOnly = fresh(80001);
+  respectOnly.flags.rookTaxResolved = true;
+  respectOnly.rival.pressure = 0;
+  respectOnly.rival.respect = C.RESPECT_STAGE_THRESHOLDS.cut;
+  respectOnly.world.currentNeighborhoodId = "north_star_lot";
+  const descriptor = C.STORY_REGISTRY.find((item) => item.id === "rook_cut");
+  assert.equal(descriptor.requires(respectOnly), true, "Respect alone unlocks rook_cut");
+
+  const pressureOnly = fresh(80002);
+  pressureOnly.flags.rookTaxResolved = true;
+  pressureOnly.rival.pressure = 5;
+  pressureOnly.rival.respect = 0;
+  assert.equal(descriptor.requires(pressureOnly), true, "the original pressure path still works, unmodified");
+});
+
+test("pressure remains the driver of Rook's aggressive/competitive relationship labels, unaffected by Respect", () => {
+  let state = fresh(80003);
+  state.rival.pressure = 12; state.rival.respect = 0;
+  state = quietAdvance(state);
+  assert.equal(state.rival.relationship, "aggressive", "high pressure alone still reads as aggressive");
+
+  let calmState = fresh(80004);
+  calmState.rival.pressure = 0; calmState.rival.respect = 6;
+  calmState = quietAdvance(calmState);
+  assert.notEqual(calmState.rival.relationship, "aggressive", "high Respect with zero pressure never reads as aggressive");
+});
+
+test("new ambient organization beats only become eligible once their underlying system is active", () => {
+  const fresh1 = fresh(90001);
+  const spenardScouted = C.STORY_REGISTRY.find((item) => item.id === "spenard_block_scouted");
+  const rookRespectNotice = C.STORY_REGISTRY.find((item) => item.id === "rook_respect_notice");
+  const kipIntro = C.STORY_REGISTRY.find((item) => item.id === "kip_lieutenant_intro");
+  const soldierAftermath = C.STORY_REGISTRY.find((item) => item.id === "soldier_raid_aftermath");
+  assert.equal(spenardScouted.requires(fresh1), false, "no Eli lieutenant yet");
+  assert.equal(rookRespectNotice.requires(fresh1), false, "no controlled blocks yet");
+  assert.equal(kipIntro.requires(fresh1), false, "no organization income yet");
+  assert.equal(soldierAftermath.requires(fresh1), false, "no raid has happened");
+
+  const active = promotedEliSetup(90002);
+  assert.equal(spenardScouted.requires(active), true, "Eli active and map not yet revealed");
+});

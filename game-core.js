@@ -98,6 +98,10 @@
     { id: "eli", name: "Eli ‘Shortcut’ Ward", role: "Runner", power: 3, recruitCost: 120, wage: 45, description: "Moves small bundles and knows service-road exits." },
     { id: "miri", name: "Samira ‘Miri’ Cole", role: "Connector", power: 2, recruitCost: 180, wage: 60, description: "Opens buyers and supply through an aging Downtown list." },
     { id: "tone", name: "Anton ‘Tone’ Bell", role: "Enforcer / Lookout", power: 5, recruitCost: 250, wage: 85, description: "Protects the garage and changes confrontation choices." },
+    // Kip does not fight or draw a wage; his catalog power stays 0. His cost is
+    // the 15% he keeps on anything he launders. He is introduced through Eli,
+    // not recruited with cash, so recruitCost is unused for him.
+    { id: "kip", name: "Kip Sallis", role: "Finance Lieutenant", power: 0, recruitCost: 0, wage: 0, description: "Moves dirty cash through six Spenard businesses and keeps a cut." },
   ];
 
   const TERRITORIES = [
@@ -106,12 +110,110 @@
     { areaId: "airport_industrial", power: 24, attackCost: 200, dailyIncome: 110, special: "Meth access opens." },
   ];
 
+  // --- v1.0 Soldier / Territory / Lieutenant tunables -----------------------
+  // Kept centralized so balance passes touch one block, not every call site.
+  const SOLDIER_RECRUIT_COST = 140;
+  const SOLDIER_BASE_CAPACITY = 2;
+  const SOLDIER_CAPACITY_PER_BLOCK = 2;
+  const SOLDIERS_PER_BLOCK_CAP = 3;
+  const SOLDIER_INCOME_BASE_DIMINISH = 0.85;
+  const SOLDIER_ATTRITION_BASE_CHANCE = 0.05;
+  const RAID_BASE_CHANCE = 0.10;
+  const RAID_HEAT_WEIGHT = 0.02;
+  const RAID_PATROL_WEIGHT = 0.15;
+  const RAID_BLOCK_LOSS_CHANCE = 0.35; // conditional on a raid already hitting
+
+  const KIP_LAUNDER_FEE = 0.15;
+  const LAUNDER_CAPACITY_BASE = 300;
+  const LAUNDER_CAPACITY_PER_TRUST = 60;
+  const LAUNDER_CAPACITY_PER_BLOCK = 50;
+  const LAUNDER_RISK_THRESHOLD = 250; // heavy single-day volume above this can draw attention
+
+  const FINANCIAL_HEAT_DIRTY_SPEND_THRESHOLD = 400;
+  const FINANCIAL_HEAT_PER_OVER_THRESHOLD = 0.01;
+  const FINANCIAL_HEAT_DECAY_PER_DAY = 1;
+  const FINANCIAL_HEAT_FOLD_IN_THRESHOLD = 6;
+
+  const DRE_COLLECTOR_TIERS = [
+    { missedDaysAtLeast: 0, tier: 0, label: "No collector yet", feeMultiplier: 1.0 },
+    { missedDaysAtLeast: 2, tier: 1, label: "Reminder calls", feeMultiplier: 1.15 },
+    { missedDaysAtLeast: 4, tier: 2, label: "A collector shows up", feeMultiplier: 1.35 },
+    { missedDaysAtLeast: 6, tier: 3, label: "Serious collectors", feeMultiplier: 1.6 },
+  ];
+  const DRE_COLLECTOR_KILL_INTEREST_BUMP = 0.25;
+  const DRE_COLLECTOR_INTEREST_CAP = 3.0;
+
+  const ELI_LIEUTENANT_UNLOCK = { minLoyalty: 3, minStreetReadLevel: 2 };
+  const KIP_LIEUTENANT_INCOME_THRESHOLD = 500;
+  const KIP_LIEUTENANT_STANDING_MIN = 2;
+
+  const RESPECT_STAGE_THRESHOLDS = { mark: 0, tax: 2, cut: 5, mid: 6, day7: 8 };
+
+  const SPENARD_BLOCKS = [
+    { id: "wash_and_go_lot", name: "Wash & Go Lot", earningPotential: 55, heatExposure: 1, rookVisibility: 1, patrolFrequency: 1, claimCost: 220 },
+    { id: "fourth_ave_strip", name: "Fourth Avenue Strip", earningPotential: 80, heatExposure: 2, rookVisibility: 2, patrolFrequency: 2, claimCost: 320 },
+    { id: "minnesota_offramp", name: "Minnesota Off-Ramp", earningPotential: 65, heatExposure: 2, rookVisibility: 1, patrolFrequency: 1, claimCost: 260 },
+    { id: "spenard_rec_lot", name: "Spenard Rec Center Lot", earningPotential: 45, heatExposure: 1, rookVisibility: 0, patrolFrequency: 1, claimCost: 180 },
+    { id: "northern_lights_motels", name: "Northern Lights Motel Row", earningPotential: 100, heatExposure: 3, rookVisibility: 3, patrolFrequency: 2, claimCost: 400 },
+    { id: "service_road_chokepoint", name: "Service Road Chokepoint", earningPotential: 70, heatExposure: 2, rookVisibility: 2, patrolFrequency: 3, claimCost: 300 },
+  ];
+
+  const KIP_BUSINESSES = [
+    { id: "spenard_laundromat", name: "Spenard Suds Laundromat", capacityShare: 0.20 },
+    { id: "night_owl_adjacent_deli", name: "Corner Deli (Kip's cousin)", capacityShare: 0.15 },
+    { id: "used_tire_shop", name: "Minnesota Drive Tire & Wheel", capacityShare: 0.20 },
+    { id: "mobile_detailing", name: "Northern Lights Mobile Detailing", capacityShare: 0.15 },
+    { id: "vape_kiosk", name: "Strip Mall Vape Kiosk", capacityShare: 0.15 },
+    { id: "storage_rental", name: "Spenard Self-Storage Row", capacityShare: 0.15 },
+  ];
+  const SPENARD_BLOCK_BY_ID = Object.fromEntries(SPENARD_BLOCKS.map((item) => [item.id, item]));
+
   const PRODUCT_BY_ID = Object.fromEntries(PRODUCTS.map((item) => [item.id, item]));
   const AREA_BY_ID = Object.fromEntries(NEIGHBORHOODS.map((item) => [item.id, item]));
   const GEAR_BY_ID = Object.fromEntries(GEAR.map((item) => [item.id, item]));
   const CREW_BY_ID = Object.fromEntries(CREW.map((item) => [item.id, item]));
 
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+  // Dirty/clean cash is a bookkeeping layer on top of the single pervasive
+  // player.cash pool every existing reducer already reads/writes directly.
+  // New income that knows its own legitimacy goes through addDirtyCash/
+  // addCleanCash, which move cash and the bucket together. Everything else
+  // (the ~35 existing call sites that still do `player.cash +=`/`-=`
+  // directly) is reconciled lazily: reconcileCash() is called once at the
+  // top of every advanceRun tick and folds any cash drift since the last
+  // tick into dirtyCash (untracked income defaults to dirty) or drains it
+  // out of dirtyCash first, then cleanCash (untracked spending is assumed
+  // dirty-first). This keeps `cash === dirtyCash + cleanCash` true without
+  // touching a single existing reducer.
+  function addDirtyCash(state, amount) {
+    const value = Math.max(0, Math.round(Number(amount) || 0));
+    if (!value) return;
+    state.player.cash += value;
+    state.player.dirtyCash += value;
+  }
+  function addCleanCash(state, amount) {
+    const value = Math.max(0, Math.round(Number(amount) || 0));
+    if (!value) return;
+    state.player.cash += value;
+    state.player.cleanCash += value;
+  }
+  function reconcileCash(state) {
+    const known = state.player.dirtyCash + state.player.cleanCash;
+    const drift = Math.round(state.player.cash - known);
+    if (drift > 0) {
+      state.player.dirtyCash += drift;
+    } else if (drift < 0) {
+      let deficit = -drift;
+      const fromDirty = Math.min(state.player.dirtyCash, deficit);
+      state.player.dirtyCash -= fromDirty;
+      deficit -= fromDirty;
+      if (deficit > 0) state.player.cleanCash = Math.max(0, state.player.cleanCash - deficit);
+      if (fromDirty > FINANCIAL_HEAT_DIRTY_SPEND_THRESHOLD) {
+        const added = Math.round((fromDirty - FINANCIAL_HEAT_DIRTY_SPEND_THRESHOLD) * FINANCIAL_HEAT_PER_OVER_THRESHOLD);
+        if (added > 0) state.player.financialHeat = clamp(state.player.financialHeat + added, 0, 10);
+      }
+    }
+  }
   function normalizedAttributes(state) { return { ...ATTRIBUTE_DEFAULTS, ...(state?.player?.attributes || {}) }; }
   function combatRating(state) { const a = normalizedAttributes(state); return clamp(Math.round(a.strength * 0.40 + a.reflexes * 0.35 + a.endurance * 0.25), 1, 5); }
   function charismaRating(state) { const a = normalizedAttributes(state); return clamp(Math.round(a.presence * 0.70 + a.discipline * 0.30), 1, 5); }
@@ -240,6 +342,10 @@
     return Object.fromEntries(CREW.map((person) => [person.id, {
       introduced: false, recruited: false, loyalty: 0, wageDue: 0, assignment: null,
       contactStage: "unknown", crisisResolved: false, status: "outside", outcomes: [],
+      // Lieutenant fields are only meaningful for eli/kip but every crew record
+      // carries the same shape so mergeDefaults/save-hydration stays uniform.
+      lieutenantStage: "none", lieutenantEffectiveness: 0,
+      launderingCapacityUsedToday: 0, launderingCapacityUsedDay: null, businessesUnlocked: [],
     }]));
   }
 
@@ -253,6 +359,7 @@
     return Object.fromEntries(DEALERS.map((item) => [item.id, {
       known: false, standing: 0, robbedCount: 0, lastRobbedDay: null, lastTradedDay: null,
       lastAskedDay: null, retaliated: false, gone: false, supplyChoked: 0,
+      lieutenantIntroduced: false,
     }]));
   }
 
@@ -279,7 +386,7 @@
         attributes: { ...ATTRIBUTE_DEFAULTS },
         attributeProgress: { strength: 0, endurance: 0, reflexes: 0, presence: 0, insight: 0, discipline: 0 },
         behavior: { scores: { mover: 0, earner: 0, stickup: 0, connector: 0 }, meaningfulActions: 0, history: [], pendingIdentity: null, pendingIdentityNights: 0, lastEvaluatedDay: null, caps: {} },
-        cash: 0, health: 100, heat: 0, cargoCapacity: 10,
+        cash: 0, dirtyCash: 0, cleanCash: 0, financialHeat: 0, health: 100, heat: 0, cargoCapacity: 10,
         stats: { combat: 0, charisma: 0, intelligence: 0 }, inventory,
         gear: { owned: [], equipped: { weapon: null, armor: null, utility: null, tool: null }, consumables: { medical_kit: 0 } },
       },
@@ -299,6 +406,14 @@
         territories: Object.fromEntries(TERRITORIES.map((territory) => [territory.areaId, {
           owner: "rook", power: territory.power, capturedDay: null, incomeCollected: 0, attempts: 0,
         }])),
+        // Block-level footholds inside a neighborhood, additive to (and independent
+        // from) the whole-neighborhood `territories` takeover above. Spenard-only
+        // for now; ids are globally unique so downtown_*/airport_industrial_* blocks
+        // can be added later with no schema change.
+        territoryBlocks: Object.fromEntries(SPENARD_BLOCKS.map((block) => [block.id, {
+          owner: "rook", soldiersAssigned: [], capturedDay: null, incomeCollected: 0, lastRaidDay: null, raidCount: 0,
+        }])),
+        soldiers: {}, nextSoldierId: 1,
       },
       base: {
         name: "North Star Garage", controlled: false, acquiredDay: null, visiting: false,
@@ -310,6 +425,7 @@
         relationship: "businesslike", payments: 0, paymentCount: 0, feesAdded: 0,
         paymentHistory: [], penaltyHistory: [], clearedAt: null, missedDays: 0, lastPenaltyDay: 0,
         afterPayoffOffer: "locked",
+        collectorTier: 0, collectorsKilled: 0, interestMultiplier: 1.0,
       },
       rival: { name: "Rook Mercer", pressure: 0, respect: 0, relationship: "unaware", recentInterference: null },
       people: {
@@ -381,6 +497,13 @@
     state.stats.robbery = normalizeRobberyStats(value.stats?.robbery, state);
     state.flags.featureNotices = state.flags.featureNotices && typeof state.flags.featureNotices === "object" ? state.flags.featureNotices : {};
     state.people.mara.available = state.people.mara.available !== false && state.people.mara.status !== "gone";
+    // Pre-v1.0 saves have no dirty/clean split. Treat all existing wealth as
+    // unlaundered street money: nothing in pre-v1.0 gameplay ever laundered
+    // anything, so this is the narratively honest default.
+    if (value.player?.dirtyCash === undefined) {
+      state.player.dirtyCash = value.player?.cash ?? 0;
+      state.player.cleanCash = 0;
+    }
     for (const person of CREW) {
       const crew = state.people.crew[person.id];
       if (!value.people?.crew?.[person.id]?.contactStage) {
@@ -627,6 +750,96 @@
       crewPower: crewPower(state, includePlayer), defender: territoryPowerEstimate(state, areaId), includePlayer: !!includePlayer,
     };
   }
+
+  // --- Territory blocks, soldiers, lieutenants ------------------------------
+  // Block-level footholds inside Spenard. Additive to and independent from the
+  // whole-neighborhood `world.territories` takeover above.
+  function controlledBlockCount(state) {
+    return SPENARD_BLOCKS.reduce((sum, block) => sum + (state.world.territoryBlocks[block.id]?.owner === "player" ? 1 : 0), 0);
+  }
+  function eliLieutenantActive(state) { return state.people.crew.eli.recruited && state.people.crew.eli.lieutenantStage === "operations_lieutenant"; }
+  function soldierCapacity(state) {
+    if (!eliLieutenantActive(state)) return 0;
+    return SOLDIER_BASE_CAPACITY + controlledBlockCount(state) * SOLDIER_CAPACITY_PER_BLOCK;
+  }
+  function activeSoldierCount(state) { return Object.values(state.world.soldiers).filter((item) => item.status === "active").length; }
+  function blockSoldierCount(state, blockId) { return (state.world.territoryBlocks[blockId]?.soldiersAssigned || []).length; }
+  function blockIntelVisible(state) { return !!state.flags.spenardBlocksRevealed; }
+  function soldierRecruitAvailability(state) {
+    if (state.run.status !== "playing") return { available: false, reason: "The run is not active." };
+    if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
+    if (!state.base.controlled) return { available: false, reason: "Control North Star Garage first." };
+    if (!eliLieutenantActive(state)) return { available: false, reason: "Eli needs to be running Operations before soldiers make sense." };
+    const capacity = soldierCapacity(state), current = activeSoldierCount(state);
+    if (current >= capacity) return { available: false, reason: `Soldier capacity is full (${current}/${capacity}). Claim more territory to expand it.`, capacity, current };
+    if (state.player.cash < SOLDIER_RECRUIT_COST) return { available: false, reason: `Recruiting a soldier costs $${SOLDIER_RECRUIT_COST}.`, capacity, current };
+    return { available: true, reason: "A soldier can be brought on.", cost: SOLDIER_RECRUIT_COST, capacity, current };
+  }
+  function soldierAssignAvailability(state, soldierId, blockId) {
+    const soldier = state.world.soldiers[soldierId];
+    const block = state.world.territoryBlocks[blockId];
+    if (!soldier || soldier.status !== "active") return { available: false, reason: "That soldier is not available." };
+    if (soldier.blockId) return { available: false, reason: "That soldier is already assigned." };
+    if (!block || block.owner !== "player") return { available: false, reason: "You do not control that block." };
+    if (blockSoldierCount(state, blockId) >= SOLDIERS_PER_BLOCK_CAP) return { available: false, reason: `This block already runs ${SOLDIERS_PER_BLOCK_CAP} soldiers.` };
+    return { available: true, reason: "The soldier can be posted there." };
+  }
+  function blockClaimAvailability(state, blockId) {
+    const definition = SPENARD_BLOCK_BY_ID[blockId];
+    const block = state.world.territoryBlocks[blockId];
+    if (!definition || !block) return { available: false, reason: "Unknown block." };
+    if (block.owner === "player") return { available: false, reason: "This block is already yours." };
+    if (state.run.status !== "playing") return { available: false, reason: "The run is not active." };
+    if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
+    if (!state.base.controlled) return { available: false, reason: "Control North Star Garage first." };
+    if (!eliLieutenantActive(state)) return { available: false, reason: "Claiming corners needs an active Operations lieutenant." };
+    if (activeSoldierCount(state) < 1) return { available: false, reason: "Claiming a block needs at least one soldier to hold it." };
+    if (state.player.cash < definition.claimCost) return { available: false, reason: `Claiming this block costs $${definition.claimCost}.`, cost: definition.claimCost };
+    return { available: true, reason: "The block can be claimed.", cost: definition.claimCost };
+  }
+  function eliPromotionAvailability(state) {
+    const eli = state.people.crew.eli;
+    if (!eli.recruited) return { available: false, reason: "Eli needs to be recruited first." };
+    if (eli.lieutenantStage === "operations_lieutenant") return { available: false, reason: "Eli already runs Operations." };
+    if (eli.loyalty < ELI_LIEUTENANT_UNLOCK.minLoyalty) return { available: false, reason: `Eli's loyalty needs to reach ${ELI_LIEUTENANT_UNLOCK.minLoyalty}.` };
+    if (state.stats.streetRead.level < ELI_LIEUTENANT_UNLOCK.minStreetReadLevel) return { available: false, reason: `Street Read needs to reach level ${ELI_LIEUTENANT_UNLOCK.minStreetReadLevel}.` };
+    return { available: true, reason: "Eli is ready to run Operations." };
+  }
+  function weeklyIncomeEstimate(state) {
+    // The run is only 7 days, so there is no literal rolling week to measure.
+    // This is a heuristic projection from territory/soldier income collected
+    // so far, scaled to a 7-day equivalent.
+    const dayElapsed = Math.max(1, state.run.day);
+    const collected = SPENARD_BLOCKS.reduce((sum, block) => sum + (state.world.territoryBlocks[block.id]?.incomeCollected || 0), 0);
+    return Math.round((collected / dayElapsed) * RUN_DAYS);
+  }
+  function kipLieutenantAvailability(state) {
+    const kipDealer = state.people.dealers.kip;
+    if (kipDealer.lieutenantIntroduced) return { available: false, reason: "Kip is already running the network." };
+    if (!eliLieutenantActive(state)) return { available: false, reason: "Eli needs to be running Operations first." };
+    if (weeklyIncomeEstimate(state) < KIP_LIEUTENANT_INCOME_THRESHOLD) return { available: false, reason: `Weekly income needs to reach $${KIP_LIEUTENANT_INCOME_THRESHOLD}.` };
+    if ((kipDealer.standing || 0) < KIP_LIEUTENANT_STANDING_MIN) return { available: false, reason: `Kip's standing needs to reach ${KIP_LIEUTENANT_STANDING_MIN}.` };
+    return { available: true, reason: "Kip is ready to be brought in." };
+  }
+  function launderCapacity(state) {
+    const kipDealer = state.people.dealers.kip;
+    return LAUNDER_CAPACITY_BASE + (kipDealer.standing || 0) * LAUNDER_CAPACITY_PER_TRUST + controlledBlockCount(state) * LAUNDER_CAPACITY_PER_BLOCK;
+  }
+  function launderAvailability(state, amount) {
+    const kip = state.people.crew.kip;
+    if (!kip.recruited) return { available: false, reason: "Kip is not running the network yet." };
+    if (state.run.status !== "playing") return { available: false, reason: "The run is not active." };
+    if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
+    const usedToday = kip.launderingCapacityUsedDay === state.run.day ? kip.launderingCapacityUsedToday : 0;
+    const capacity = launderCapacity(state);
+    const remaining = Math.max(0, capacity - usedToday);
+    const value = Math.max(0, Math.floor(Number(amount) || 0));
+    if (value <= 0) return { available: false, reason: "Enter an amount to launder.", capacity, remaining };
+    if (value > state.player.dirtyCash) return { available: false, reason: "You do not have that much dirty cash.", capacity, remaining };
+    if (value > remaining) return { available: false, reason: `Kip's network can only move $${remaining} more today.`, capacity, remaining };
+    const fee = Math.round(value * KIP_LAUNDER_FEE);
+    return { available: true, reason: "Kip can run this through the network.", fee, net: value - fee, capacity, remaining };
+  }
   function robberyAvailability(state) {
     if (state.run.status !== "playing") return { available: false, reason: "The run is not active." };
     const robbery = normalizeRobberyStats(state.stats.robbery, state);
@@ -840,6 +1053,61 @@
     }
   }
 
+  // Soldiers and the blocks they staff are 1:1 coupled, so income and raid
+  // resolution live in one function sharing the tick's single RNG instance
+  // rather than two passes. Only acts on crossedDay, matching how territory
+  // income/wage accrual already only resolve once per day today.
+  function resolveSoldierOperations(state, random, crossedDay) {
+    if (!crossedDay) return;
+    const eli = state.people.crew.eli;
+    const effectivenessDiscount = eli.lieutenantStage === "operations_lieutenant" ? eli.lieutenantEffectiveness * 0.05 : 0;
+    let totalIncome = 0;
+    for (const block of SPENARD_BLOCKS) {
+      const record = state.world.territoryBlocks[block.id];
+      if (record.owner !== "player") continue;
+      record.soldiersAssigned = record.soldiersAssigned.filter((id) => state.world.soldiers[id]?.status === "active");
+      const assigned = record.soldiersAssigned;
+      if (assigned.length > 0) {
+        let blockIncome = 0;
+        for (let index = 0; index < assigned.length; index += 1) blockIncome += block.earningPotential * Math.pow(SOLDIER_INCOME_BASE_DIMINISH, index);
+        blockIncome = Math.round(blockIncome);
+        totalIncome += blockIncome;
+        record.incomeCollected += blockIncome;
+        const raidChance = clamp(RAID_BASE_CHANCE + state.player.heat * RAID_HEAT_WEIGHT + block.patrolFrequency * RAID_PATROL_WEIGHT - effectivenessDiscount, 0, 0.9);
+        if (random.next() < raidChance) {
+          const lostId = random.pick(assigned);
+          const soldier = state.world.soldiers[lostId];
+          soldier.status = "lost";
+          soldier.blockId = null;
+          record.soldiersAssigned = record.soldiersAssigned.filter((id) => id !== lostId);
+          record.lastRaidDay = state.run.day;
+          record.raidCount += 1;
+          state.player.heat = clamp(state.player.heat + 1, 0, 15);
+          state.rival.pressure = clamp(state.rival.pressure + 1, 0, 15);
+          logEntry(state, `Rook's people hit ${block.name}. One soldier does not check back in.`, "bad");
+          if (random.next() < RAID_BLOCK_LOSS_CHANCE) {
+            record.owner = "rook";
+            logEntry(state, `${block.name} slips back under Rook's people after the raid.`, "bad");
+          }
+        }
+      }
+      for (const id of [...record.soldiersAssigned]) {
+        const soldier = state.world.soldiers[id];
+        if (!soldier || soldier.status !== "active") continue;
+        if (random.next() < SOLDIER_ATTRITION_BASE_CHANCE) {
+          soldier.status = "lost";
+          soldier.blockId = null;
+          record.soldiersAssigned = record.soldiersAssigned.filter((sid) => sid !== id);
+          logEntry(state, `One of the soldiers on ${block.name} does not show up again.`, "warn");
+        }
+      }
+    }
+    if (totalIncome > 0) {
+      addDirtyCash(state, totalIncome);
+      logEntry(state, `Soldiers on the block bring in $${totalIncome} while you were elsewhere.`, "good");
+    }
+  }
+
   function applyPressure(state, context, crossedDay) {
     const area = AREA_BY_ID[state.world.currentNeighborhoodId];
     if (context.reason === "TRAVEL") {
@@ -880,12 +1148,22 @@
         }
         crew.wageDue += person.wage;
       }
+      state.player.financialHeat = clamp(state.player.financialHeat - FINANCIAL_HEAT_DECAY_PER_DAY, 0, 10);
+      if (state.player.financialHeat >= FINANCIAL_HEAT_FOLD_IN_THRESHOLD) {
+        state.player.heat = clamp(state.player.heat + 1, 0, 15);
+      }
     }
 
     if (crossedDay && state.lender.balance > 0 && state.run.day > state.lender.dueDay) {
       state.lender.missedDays += 1;
+      // Collector tier is layered on top of the existing late-fee formula as a
+      // multiplier: tier 0 with no collectors killed is byte-identical to the
+      // pre-v1.0 math, so nothing changes for players who never miss enough
+      // days to escalate.
+      const tierEntry = [...DRE_COLLECTOR_TIERS].reverse().find((item) => state.lender.missedDays >= item.missedDaysAtLeast) || DRE_COLLECTOR_TIERS[0];
+      state.lender.collectorTier = tierEntry.tier;
       if (state.lender.lastPenaltyDay !== state.run.day) {
-        const fee = Math.max(25, Math.round(state.lender.balance * 0.08));
+        const fee = Math.round(Math.max(25, Math.round(state.lender.balance * 0.08)) * tierEntry.feeMultiplier * state.lender.interestMultiplier);
         state.lender.balance += fee;
         state.lender.feesAdded += fee;
         state.lender.penaltyHistory.push({ day: state.run.day, slot: state.run.slot, amount: fee });
@@ -899,6 +1177,21 @@
     state.rival.relationship = relationshipForRival(state.rival);
     state.people.mara.status = maraStatus(state.people.mara);
     state.stats.highestHeat = Math.max(state.stats.highestHeat, state.player.heat);
+  }
+
+  // Laundering itself resolves instantly at the point of the LAUNDER_CASH
+  // action (matching every other financial reducer in the game). This is a
+  // small nightly risk tick on top of that: heavy same-day volume through
+  // Kip's network can draw attention even though the cash already settled.
+  function resolveKipLaundering(state, random, crossedDay) {
+    if (!crossedDay) return;
+    const kip = state.people.crew.kip;
+    if (!kip.recruited) return;
+    const usedYesterday = kip.launderingCapacityUsedDay === state.run.day - 1 ? kip.launderingCapacityUsedToday : 0;
+    if (usedYesterday > LAUNDER_RISK_THRESHOLD && random.next() < 0.25) {
+      state.player.financialHeat = clamp(state.player.financialHeat + 1, 0, 10);
+      logEntry(state, "Kip's network moved a lot of money yesterday. Somebody besides you noticed the volume.", "warn");
+    }
   }
 
   const EVENT_CONTEXT = {
@@ -941,6 +1234,11 @@
     rook_cut: { who: "Rook's driver", where: "Downtown exit lane", stakes: "$120, physical injury, and Rook's respect." },
     rough_night: { who: "Three people tied to Rook", where: "Industrial Bay Nine", stakes: "$80 or a dangerous attempt to hold your ground." },
     dre_warning: { who: "Dre Holloway", where: "Behind the Mini-Mart", stakes: "Dre's patience and the pressure attached to the unpaid balance." },
+    eli_lieutenant_offer: { who: "Eli Ward, with a second phone in his jacket", where: "North Star Garage, Spenard", stakes: "Whether Eli starts running soldiers and corners instead of only routes." },
+    spenard_block_scouted: { who: "Eli, with a hand-marked map of Spenard", where: "North Star Garage, Spenard", stakes: "Real numbers on every block instead of a guess." },
+    kip_lieutenant_intro: { who: "Eli, vouching for someone you already know", where: "North Star Garage, Spenard", stakes: "Whether Kip starts moving your money instead of only product." },
+    rook_respect_notice: { who: "Word from two blocks over", where: "Spenard", stakes: "What Rook thinks of an operation that is starting to look like his." },
+    soldier_raid_aftermath: { who: "The block, the morning after", where: "Spenard", stakes: "Nothing to decide here. Just what it cost." },
   };
   function effectPreview(effect) {
     const parts = [];
@@ -1185,6 +1483,26 @@
         { label: "Cut over to the frontage road", effect: { heat: -1, setFlags: { avoidedMidtownLights: true } }, preview: "−1 Heat. The frontage road is slower and nobody on it is being watched.", result: "You come off at Thirty-Sixth and take the frontage road behind the strip mall, past the sign for a carpet outlet that closed years ago and never came down. It adds fifteen minutes. Nobody looks at the vehicle once." },
         { label: "Sit in the line", effect: { heat: 1 }, preview: "+1 Heat. Half a mile of being the slowest thing in front of four cruisers.", result: "It takes eleven minutes to clear the cones. A trooper glances into the vehicle somewhere around the fire truck, the way people look at anything that is moving slowly past them, and then looks at the next one. It is almost certainly nothing." },
       ]),
+      eli_lieutenant_offer: () => event("eli_lieutenant_offer", "Eli Wants a Bigger Job", "Eli leans against the bay door with a second, cheaper phone he did not have last week. \"Routes are fine,\" he says, \"but you're spending time on corners that should just be running themselves.\" He wants to place soldiers, rotate who stands where, and only bring you the parts that actually need a decision.", [
+        { label: "Give him Operations", effect: { setFlags: { eliLieutenantOfferAccepted: true }, promoteEliLieutenant: true }, preview: "Eli starts running soldier placement and corner rotation on his own.", result: "He pockets the phone like the conversation is already over. \"I'll bring you the numbers, not the errands.\" By the time you are back at the garage he has already written a rotation on the whiteboard nobody asked him to buy." },
+        { label: "Keep making the calls yourself", effect: { setFlags: { eliLieutenantOfferDeclined: true }, crewLoyalty: { id: "eli", delta: -1 } }, preview: "Nothing changes yet. He will ask again once more is riding on it.", result: "He puts the second phone away without arguing. \"Your week.\" He does not bring it up again, but he also stops volunteering the small things he used to mention on his own." },
+      ]),
+      spenard_block_scouted: () => event("spenard_block_scouted", "Eli's Map of the Blocks", "Eli unrolls a Spenard street map on the garage hood with corners circled in three different pens, dates next to some of them. \"This is what patrol actually looks like, not what people say it looks like.\" He taps each circle in turn and gives you a number for it.", [
+        { label: "Take the map", effect: { setFlags: { spenardBlocksRevealed: true } }, preview: "Block earning, Heat exposure, Rook visibility, and patrol frequency become visible before you claim anything.", result: "You fold the map into the glovebox. The numbers on it do not match the stories people tell about those corners, which is exactly why they are worth having." },
+        { label: "Tell him to keep it simple", effect: { setFlags: { spenardBlocksDeclined: true } }, preview: "You skip the numbers and keep reading the blocks yourself, the way you have all week.", result: "He rolls the map back up without arguing and sets it on the shelf instead of the hood. \"It'll be here when you want it.\" You keep working corners off instinct instead of his notes." },
+      ]),
+      kip_lieutenant_intro: () => event("kip_lieutenant_intro", "Eli Vouches for Kip", "Eli brings Kip around the back of the garage instead of the front, which is its own kind of introduction. \"He already moves product without getting caught doing it,\" Eli says. \"Cash is the same problem, different pocket.\" Kip does not oversell it. He names a fee and lets the number sit there.", [
+        { label: "Bring Kip into the operation", effect: { setFlags: { kipLieutenantIntroAccepted: true }, introduceKipLieutenant: true }, preview: "Kip starts turning dirty cash into clean cash through his network, keeping a cut for himself.", result: "He shakes on the arrangement like it was never up for negotiation, because it was not. \"Same cut, every time, no exceptions for a bad week.\" Eli looks satisfied in the specific way of someone who arranged something correctly." },
+        { label: "Not yet", effect: { setFlags: { kipLieutenantIntroDeclined: true } }, preview: "Nothing changes. The offer does not repeat itself on its own schedule.", result: "Kip shrugs like the number was never going to move either way. \"Corner's still there when you want it.\" Eli says nothing, which from Eli is a small disagreement." },
+      ]),
+      rook_respect_notice: () => event("rook_respect_notice", "Rook Notices the Corners", "The word reaches you secondhand, the way it always does: Rook has stopped calling your operation a nuisance. Someone who works for him described it as an operation, full stop, in front of people who repeat things. That is a different kind of attention than pressure. It does not come with a threat attached, which is exactly why it is worth taking seriously.", [
+        { label: "Note it and keep moving", effect: {}, preview: "Nothing to spend here. The respect is already logged and worth remembering later.", result: "You do not change anything about the week because of a rumor, but you remember who told you, in case the next thing that comes through this route needs to move fast." },
+        { label: "Ask what else they said", effect: {}, preview: "You spend a little time chasing the rest of the story instead of moving on.", result: "The second half of the rumor turns out thinner than the first, mostly guesswork dressed up as certainty. Still, you learn which corner the comment was made on, and that is not nothing." },
+      ]),
+      soldier_raid_aftermath: () => event("soldier_raid_aftermath", "The Morning After the Raid", "The block is quieter than it should be this early. Whoever was standing that corner is not standing it now, and the people who usually buy there are working out, in real time, whether to come back or find somewhere else. Nothing here needs a decision from you. It already happened.", [
+        { label: "Keep the block running", effect: {}, preview: "Acknowledge it and move on. The operation absorbs the loss and keeps working the corner.", result: "You do not close the corner. By afternoon somebody is standing on it again, and the block decides on its own how much that matters." },
+        { label: "Walk the block yourself", effect: {}, preview: "You spend a little time seeing the aftermath in person instead of hearing about it.", result: "There is nothing dramatic to see, just an empty spot where somebody used to stand and a few people who noticed. You leave without changing anything, but you saw it yourself." },
+      ]),
     };
     const factory = events[id];
     if (!factory) return null;
@@ -1216,6 +1534,7 @@
       mara_sedan_night: { title: "Your Pressure Reaches the Night Owl", description: "Only after your visible choices raise Rook's pressure does the gray sedan appear outside the Night Owl. The driver watches you, not Mara. A collector catches the door before it closes and uses her shift to make sure you stop. Mara looks at the alarm, then at you, waiting to see whether you keep a danger you created away from her counter.", enemyName: "Rook's Parking-Lot Collector", enemyHealth: 30, guard: 0.10, evasion: 0.06, pursuit: 0.12, attack: [6, 12], pay: 120 },
       early_street: { title: "A Tail on the Service Road", description: "A sedan follows you away from Spenard and blocks the narrow service-road exit. No friend is close enough to pull into this decision.", enemyName: "Roadside Collector", enemyHealth: 24, guard: 0.08, evasion: 0.05, pursuit: 0.10, attack: [5, 10], pay: 85 },
       kip_retaliation: { title: "The Wash & Go Comes Looking", description: "Kip does not come alone and he does not come to talk. Two of them block the mouth of the lot and a third is already behind you by the time you hear the gravel. He is not interested in the bag or the money. He is interested in what everyone on this block saw happen to him and what they are going to see happen next.", enemyName: "Kip and Two Others", enemyHealth: 38, guard: 0.12, evasion: 0.08, pursuit: 0.14, attack: [7, 13], pay: 150 },
+      dre_collector: { title: "Dre Sends Someone in Person", description: "The late fees stopped being a number on a note. A collector is standing in the driveway when you get back, in no hurry, making sure you notice that he is not.", enemyName: "Dre's Collector", enemyHealth: 30, guard: 0.10, evasion: 0.07, pursuit: 0.12, attack: [6, 12], pay: 150 },
       mid: { title: "Rook's Loading-Bay Test", description: "Rook's people close both ends of Bay Nine. They know about the garage, the crew, and which route you used to get here.", enemyName: "Rook's Crew", enemyHealth: 42, guard: 0.14, evasion: 0.10, pursuit: 0.16, attack: [8, 14], pay: 180 },
       late: { title: "The Seventh-Night Consequence", description: "The final plan reaches the garage before you do. Red-and-blue light washes over Rook's sedan while everybody waits to see who you protect.", enemyName: "Final Opposition", enemyHealth: 58, guard: 0.18, evasion: 0.13, pursuit: 0.20, attack: [10, 18], pay: 320 },
     };
@@ -1294,6 +1613,7 @@
   function eventResolved(state, id) {
     if (id === "early_street") return !!state.flags.earlyThreatResolved;
     if (id === "mid") return !!state.flags.midThreatResolved;
+    if (id === "dre_collector") return !!state.flags.dreCollectorThreatResolved;
     return !!state.flags[resolvedFlagName(id)];
   }
   const maraOpen = (state) => state.people.mara.available !== false && state.people.mara.status !== "gone";
@@ -1332,7 +1652,10 @@
     { id: "eli_service_map", chain: "eli_routes", stage: 3, classification: "opportunity", trigger: "chain",
       requires: (s) => !!s.flags.eliMissedTurnResolved || s.people.crew.eli.recruited, area: null,
       earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 6, exit: null },
-    { id: "eli_last_run", chain: "eli_routes", stage: 4, classification: "ending_setup", trigger: "chain",
+    { id: "eli_lieutenant_offer", chain: "eli_routes", stage: 4, classification: "opportunity", trigger: "chain",
+      requires: (s) => eliPromotionAvailability(s).available, area: null,
+      earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 7, exit: null },
+    { id: "eli_last_run", chain: "eli_routes", stage: 5, classification: "ending_setup", trigger: "chain",
       requires: (s) => s.people.crew.eli.introduced && !s.flags.eliRejectedFinally, area: null,
       earliest: { day: 6, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
 
@@ -1351,6 +1674,9 @@
     { id: "dre_after_payoff", chain: "dre_note", stage: 4, classification: "opportunity", trigger: "reactive",
       requires: (s) => s.lender.afterPayoffOffer === "available", area: null,
       earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 10, exit: null },
+    { id: "dre_collector", chain: "dre_note", stage: 4, classification: "threat", trigger: "chain", kind: "encounter",
+      requires: (s) => s.lender.collectorTier >= 2, area: null,
+      earliest: { day: 5, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: (s) => s.lender.balance <= 0 },
     { id: "dre_day7", chain: "dre_note", stage: 5, classification: "ending_setup", trigger: "chain",
       requires: (s) => !!s.flags.dreTermsResolved, area: null,
       earliest: { day: 7, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
@@ -1363,8 +1689,12 @@
     { id: "rook_tax", chain: "rook_pressure", stage: 3, classification: "main_chapter", trigger: "chain",
       requires: (s) => !!s.flags.earlyThreatResolved, area: null,
       earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
+    // Respect is an additive OR-branch alongside the original pressure gate, not
+    // a replacement: every pressure-driven path that already reached this beat
+    // keeps working exactly as before. Territory-block claimers who never build
+    // up much pressure get a second legitimate path via Respect instead.
     { id: "rook_cut", chain: "rook_pressure", stage: 4, classification: "callback", trigger: "chain",
-      requires: (s) => !!s.flags.rookTaxResolved && (s.rival.pressure >= 5 || AREA_BY_ID[s.world.currentNeighborhoodId].rival >= 3),
+      requires: (s) => !!s.flags.rookTaxResolved && (s.rival.pressure >= 5 || AREA_BY_ID[s.world.currentNeighborhoodId].rival >= 3 || s.rival.respect >= RESPECT_STAGE_THRESHOLDS.cut),
       area: null, earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 6, exit: null },
     { id: "mid", chain: "rook_pressure", stage: 5, classification: "threat", trigger: "chain", kind: "encounter",
       requires: (s) => !!s.flags.rookTaxResolved, area: null,
@@ -1383,6 +1713,9 @@
     { id: "kip_recognized", chain: "kip_corner", stage: 2, classification: "callback", trigger: "chain",
       requires: (s) => { const k = s.people.dealers?.kip; return !!k && k.robbedCount > 0 && k.lastTradedDay != null; },
       area: "north_star_lot", earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 7, exit: null },
+    { id: "kip_lieutenant_intro", chain: "kip_corner", stage: 3, classification: "opportunity", trigger: "reactive",
+      requires: (s) => kipLieutenantAvailability(s).available, area: null,
+      earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 10, exit: null },
 
     // --- Standalone beats carried over from Alpha v0.6 -----------------------
     { id: "miri_offer", chain: null, stage: null, classification: "character_intro", trigger: "ambient",
@@ -1403,6 +1736,15 @@
     { id: "rough_night", chain: null, stage: null, classification: "threat", trigger: "ambient",
       requires: (s) => AREA_BY_ID[s.world.currentNeighborhoodId].risk >= 3 || s.player.health < 65, area: null,
       earliest: { day: 2, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 4, exit: null },
+    { id: "spenard_block_scouted", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
+      requires: (s) => eliLieutenantActive(s) && !s.flags.spenardBlocksRevealed, area: "north_star_lot",
+      earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 7, exit: null },
+    { id: "rook_respect_notice", chain: null, stage: null, classification: "ambient", trigger: "ambient",
+      requires: (s) => s.rival.respect >= RESPECT_STAGE_THRESHOLDS.tax && controlledBlockCount(s) > 0, area: null,
+      earliest: { day: 1, slot: 0 }, latest: null, once: false, cooldown: 6, weight: 5, exit: null },
+    { id: "soldier_raid_aftermath", chain: null, stage: null, classification: "ambient", trigger: "ambient",
+      requires: (s) => Object.values(s.world.territoryBlocks).some((block) => block.lastRaidDay === s.run.day - 1), area: null,
+      earliest: { day: 1, slot: 0 }, latest: null, once: false, cooldown: 2, weight: 6, exit: null },
 
     // --- Alpha v0.7 one-off street events (repeatable, cooldown-gated) --------
     { id: "wet_bricks", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
@@ -1582,6 +1924,22 @@
     if (effect.crewAllLoyalty) for (const person of recruitedCrew(state)) state.people.crew[person.id].loyalty += effect.crewAllLoyalty;
     if (effect.baseWatched !== undefined) state.base.watched = effect.baseWatched;
     if (effect.access) state.world.productAccess[effect.access] = true;
+    if (effect.promoteEliLieutenant) {
+      const eli = state.people.crew.eli;
+      eli.lieutenantStage = "operations_lieutenant";
+      let effectiveness = 0;
+      if (state.flags.eliJudgmentTrusted) effectiveness += 1;
+      if (state.flags.eliOwnsShare || state.flags.eliPromisedFuture) effectiveness += 1;
+      if (state.flags.eliDocked || state.flags.eliToldNoFuture) effectiveness -= 1;
+      eli.lieutenantEffectiveness = clamp(effectiveness, 0, 3);
+    }
+    if (effect.introduceKipLieutenant) {
+      state.people.crew.kip.introduced = true;
+      state.people.crew.kip.recruited = true;
+      state.people.crew.kip.status = "active";
+      state.people.crew.kip.contactStage = "active";
+      state.people.dealers.kip.lieutenantIntroduced = true;
+    }
     if (effect.secondLoan) {
       state.player.cash += 500;
       state.lender.principal = 600;
@@ -1675,6 +2033,7 @@
     const beforeFeatures = featureAvailability(inputState);
     const state = copyState(inputState);
     if (state.run.status !== "playing" || state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return state;
+    reconcileCash(state);
     const random = makeRandom(state.run.rngState);
     const oldDay = state.run.day, oldSlot = state.run.slot;
     closeVisit(state, context.reason);
@@ -1687,7 +2046,9 @@
     expireEffects(state);
     evolveMarkets(state, random);
     resolveCrewAssignments(state, random);
+    resolveSoldierOperations(state, random, crossedDay);
     applyPressure(state, context, crossedDay);
+    resolveKipLaundering(state, random, crossedDay);
     if (crossedDay || finalSlot) {
       const nextDay = state.run.day, nextSlot = state.run.slot;
       state.run.day = oldDay; state.run.slot = 3;
@@ -1844,6 +2205,10 @@
           if (firearm || encounter.id === "late") state.flags.seriousViolence = true;
           state.rival.respect += 1;
           influenceChange(state, state.world.currentNeighborhoodId, 1);
+          if (encounter.id === "dre_collector") {
+            state.lender.collectorsKilled += 1;
+            state.lender.interestMultiplier = Math.min(DRE_COLLECTOR_INTEREST_CAP, state.lender.interestMultiplier + DRE_COLLECTOR_KILL_INTEREST_BUMP);
+          }
           finishEncounter(state, "win", firearm ? "The shot ends the argument and starts three new ones across the neighborhood." : "You stay on your feet after the other side cannot. Word moves before you do.");
         } else {
           encounter.feedback = `${weapon?.name || "Your hands"} lands for ${damage}. ${encounter.enemyHealth} resolve remains on the other side.`;
@@ -2231,7 +2596,7 @@
     }
 
     if (action.type === "STORE_CASH" || action.type === "RETRIEVE_CASH") {
-      if (!state.base.controlled || !state.base.visiting) return inputState;
+      if (!state.base.controlled) return inputState;
       const amount = Math.max(0, Math.floor(action.amount || 0));
       if (!amount) return inputState;
       if (action.type === "STORE_CASH") {
@@ -2458,7 +2823,7 @@
       const employer = base.world.locations.employer;
       const bonus = random.next() < 0.35 + base.player.attributes.discipline * 0.05 ? random.int(15, 30) : 0;
       const payout = 110 + bonus;
-      base.player.cash += payout;
+      addCleanCash(base, payout);
       employer.lastShiftDay = base.run.day;
       employer.standing = clamp(employer.standing + 1, 0, 5);
       employer.keptCommitments += 1;
@@ -2558,7 +2923,7 @@
       return advanceRun(base, { reason: "PAY_DEBT" });
     }
     if (action.type === "UPGRADE_BASE") {
-      if (!state.base.controlled || !state.base.visiting) return inputState;
+      if (!state.base.controlled) return inputState;
       const track = action.track, nextLevel = (state.base.tracks[track] || 0) + 1;
       const upgrade = BASE_UPGRADES.find((item) => item.track === track && item.level === nextLevel);
       if (!upgrade || state.player.cash < upgrade.cost) return inputState;
@@ -2568,7 +2933,7 @@
       return advanceRun(base, { reason: "UPGRADE_BASE" });
     }
     if (action.type === "BUY_GEAR") {
-      if (!state.base.controlled || !state.base.visiting) return inputState;
+      if (!state.base.controlled) return inputState;
       const item = GEAR_BY_ID[action.gearId];
       if (!item || state.player.cash < item.cost || (item.id !== "medical_kit" && hasGear(state, item.id))) return inputState;
       base.player.cash -= item.cost; base.stats.moneySpent.gear += item.cost;
@@ -2601,6 +2966,72 @@
       crew.assignment = action.assignment;
       logEntry(base, `${CREW_BY_ID[action.crewId].name.split(" ")[0]} leaves the garage with one assignment and one promised check-in.`, "");
       return advanceRun(base, { reason: "ASSIGN_CREW" });
+    }
+    if (action.type === "PROMOTE_LIEUTENANT" && action.crewId === "eli") {
+      if (!state.base.controlled) return inputState;
+      const readiness = eliPromotionAvailability(state);
+      if (!readiness.available) return inputState;
+      base.people.crew.eli.lieutenantStage = "operations_lieutenant";
+      const eli = base.people.crew.eli;
+      let effectiveness = 0;
+      if (base.flags.eliJudgmentTrusted) effectiveness += 1;
+      if (base.flags.eliOwnsShare || base.flags.eliPromisedFuture) effectiveness += 1;
+      if (base.flags.eliDocked || base.flags.eliToldNoFuture) effectiveness -= 1;
+      eli.lieutenantEffectiveness = clamp(effectiveness, 0, 3);
+      recordBehavior(base, "connector", 3, "eli:lieutenant", "lieutenant_promotion");
+      awardStreetRead(base, "eli:lieutenant", 25, "Promoted Eli to Operations");
+      logEntry(base, "Eli takes the garage's second set of keys. Corners, soldiers, and rotation are his call now.", "good");
+      return advanceRun(base, { reason: "PROMOTE_LIEUTENANT" });
+    }
+    if (action.type === "RECRUIT_SOLDIER") {
+      if (!state.base.controlled) return inputState;
+      const readiness = soldierRecruitAvailability(state);
+      if (!readiness.available) return inputState;
+      base.player.cash -= SOLDIER_RECRUIT_COST;
+      const id = `soldier_${base.world.nextSoldierId}`;
+      base.world.nextSoldierId += 1;
+      base.world.soldiers[id] = { id, blockId: null, hiredDay: base.run.day, status: "active" };
+      base.stats.moneySpent.crew += SOLDIER_RECRUIT_COST;
+      logEntry(base, `Another soldier goes on the payroll. Eli will find him a corner.`, "good");
+      return advanceRun(base, { reason: "RECRUIT_SOLDIER" });
+    }
+    if (action.type === "ASSIGN_SOLDIER") {
+      if (!state.base.controlled) return inputState;
+      const readiness = soldierAssignAvailability(state, action.soldierId, action.blockId);
+      if (!readiness.available) return inputState;
+      base.world.soldiers[action.soldierId].blockId = action.blockId;
+      base.world.territoryBlocks[action.blockId].soldiersAssigned.push(action.soldierId);
+      logEntry(base, `A soldier posts up on ${SPENARD_BLOCK_BY_ID[action.blockId].name}.`, "");
+      return advanceRun(base, { reason: "ASSIGN_SOLDIER" });
+    }
+    if (action.type === "CLAIM_BLOCK") {
+      if (!state.base.controlled) return inputState;
+      const readiness = blockClaimAvailability(state, action.blockId);
+      if (!readiness.available) return inputState;
+      const definition = SPENARD_BLOCK_BY_ID[action.blockId];
+      base.player.cash -= definition.claimCost;
+      base.stats.moneySpent.base += definition.claimCost;
+      const block = base.world.territoryBlocks[action.blockId];
+      block.owner = "player";
+      block.capturedDay = base.run.day;
+      base.rival.respect += 1;
+      recordBehavior(base, "stickup", 2, `block:${action.blockId}`, "territory_expansion");
+      awardStreetRead(base, `block:${action.blockId}`, 20, `Claimed ${definition.name}`);
+      logEntry(base, `${definition.name} answers to your operation now. Rook's people will hear about it.`, "good");
+      return advanceRun(base, { reason: "CLAIM_BLOCK" });
+    }
+    if (action.type === "LAUNDER_CASH") {
+      const readiness = launderAvailability(state, action.amount);
+      if (!readiness.available) return inputState;
+      const value = Math.floor(Number(action.amount) || 0);
+      const kip = base.people.crew.kip;
+      base.player.dirtyCash -= value;
+      base.player.cleanCash += readiness.net;
+      base.player.cash -= readiness.fee;
+      if (kip.launderingCapacityUsedDay !== base.run.day) { kip.launderingCapacityUsedDay = base.run.day; kip.launderingCapacityUsedToday = 0; }
+      kip.launderingCapacityUsedToday += value;
+      logEntry(base, `Kip's network turns $${value} dirty into $${readiness.net} clean. He keeps $${readiness.fee}.`, "good");
+      return advanceRun(base, { reason: "LAUNDER_CASH" });
     }
     if (action.type === "VISIT_MARA") {
       if (!state.people.mara.met) return inputState;
@@ -2708,6 +3139,8 @@
     VERSION, RUN_DAYS, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, STREET_READ_LEVELS, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
     STREET_NAME_MAX, DEFAULT_STREET_NAMES, ATTRIBUTE_DEFAULTS, LEGACY_ATTRIBUTES, STREET_IDENTITIES, sanitizeStreetName,
     CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS,
+    SPENARD_BLOCKS, KIP_BUSINESSES, SOLDIER_RECRUIT_COST, SOLDIER_BASE_CAPACITY, SOLDIER_CAPACITY_PER_BLOCK, SOLDIERS_PER_BLOCK_CAP,
+    KIP_LAUNDER_FEE, DRE_COLLECTOR_TIERS, ELI_LIEUTENANT_UNLOCK, KIP_LIEUTENANT_INCOME_THRESHOLD, KIP_LIEUTENANT_STANDING_MIN, RESPECT_STAGE_THRESHOLDS,
     buildEventForTest: activeEvent, storyCandidatesForTest: storyCandidates,
     recordBehaviorForTest: recordBehavior, awardStreetReadForTest: awardStreetRead, evaluateStreetIdentityForTest: evaluateStreetIdentity,
     createRun, hydrateRun, inspectSave, reduceGame, advanceRun, selectRunSummary,
@@ -2718,6 +3151,9 @@
       recruitedCrew, workingCapital, safeDebtPayment, debtPaymentPreview, featureAvailability, activityAvailability, layLowPreview, controlled, recruitmentCost, operationGearPower, crewPower,
       territoryPowerEstimate, territoryBenefits, tradeUnitPrices, tradeProjection, takeoverReadiness, robberyAvailability, eliTestRouteAvailability, maraThreatEligible,
       dealerRecord, dealerActions, dealerStandingLabel, dealerSupplyFactor,
+      controlledBlockCount, eliLieutenantActive, soldierCapacity, activeSoldierCount, blockSoldierCount, blockIntelVisible,
+      soldierRecruitAvailability, soldierAssignAvailability, blockClaimAvailability, eliPromotionAvailability,
+      weeklyIncomeEstimate, kipLieutenantAvailability, launderCapacity, launderAvailability,
     },
   };
 });

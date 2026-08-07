@@ -26,6 +26,9 @@ const strategies={
   gambler:{products:[],areas:['north_star_lot'],profit:2,heatCap:3,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['talk','run','pay','surrender'],mode:'gambler'},
   trainer:{products:[],areas:['north_star_lot'],profit:2,heatCap:3,plan:'defend',track:'recovery',gear:'running_shoes',crew:'eli',encounter:['run','talk','fight','surrender'],mode:'trainer'},
   mixed_freedom:{products:['weed','shrooms'],areas:['north_star_lot','downtown'],profit:1.12,heatCap:6,plan:'defend',track:'security',gear:'utility_knife',crew:'eli',encounter:['talk','run','fight','pay','surrender'],mode:'mixed',property:true},
+  // v1.0: recruits soldiers and claims Spenard blocks aggressively once Eli is
+  // an active lieutenant, to soak-test the new passive-income/raid systems.
+  operator:{products:['weed','shrooms'],areas:['north_star_lot','downtown'],profit:1.12,heatCap:8,plan:'defend',track:'operations',gear:'utility_knife',crew:'eli',encounter:['talk','run','fight','pay','surrender'],mode:'mixed',property:true,operator:true},
 };
 function settle(state,profile,beats){let s=state,guard=0;const note=(id)=>{if(beats&&(!beats.length||beats[beats.length-1].id!==id))beats.push({id,slot:(s.run.day-1)*4+s.run.slot})};while(guard++<12){if(s.run.daySummary){s=C.reduceGame(s,{type:'DISMISS_DAY_SUMMARY'});continue}if(s.run.pendingOperationResult){s=C.reduceGame(s,{type:'ACKNOWLEDGE_OPERATION_RESULT'});continue}if(s.run.pendingEvent){note(s.run.pendingEvent.id);const choices=s.run.pendingEvent.choices;let index=choices.findIndex(c=>(c.effect?.cash||0)>=0);if(index<0)index=choices.findIndex(c=>Math.abs(c.effect?.cash||0)<=s.player.cash);s=C.reduceGame(s,{type:'RESOLVE_EVENT',choiceIndex:index<0?choices.length-1:index});continue}if(s.run.pendingEncounter){note(s.run.pendingEncounter.id);const available=C.selectors.encounterChoices(s).map(c=>c.id);const choice=profile.encounter.find(id=>available.includes(id))||available[0];s=C.reduceGame(s,{type:'RESOLVE_ENCOUNTER',choiceId:choice});continue}break}return s}
 function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun({seed}),{type:'START_RUN'}),guard=0;const beats=[];while(s.run.status==='playing'&&guard++<400){s=settle(s,p,beats);if(s.run.status!=='playing')break;
@@ -45,6 +48,24 @@ function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun
     if(s.base.controlled&&s.run.day<=3&&!s.base.tracks[p.track]&&s.player.cash>=firstUpgrade.cost){s=operationAction();s=settle(s,p,beats);if(s.base.visiting)s=C.reduceGame(s,{type:'UPGRADE_BASE',track:p.track});continue}
     if(s.base.controlled&&s.run.day<=4&&!s.player.gear.owned.includes(p.gear)&&s.player.cash>=gear.cost){s=operationAction();s=settle(s,p,beats);if(s.base.visiting)s=C.reduceGame(s,{type:'BUY_GEAR',gearId:p.gear});continue}
     if(s.base.controlled&&s.run.day<=5&&crewState.introduced&&!crewState.recruited&&(p.crew!=='eli'||crewState.contactStage==='recruitable')&&s.player.cash>=C.selectors.recruitmentCost(s,p.crew)){s=operationAction();s=settle(s,p,beats);if(s.base.visiting)s=C.reduceGame(s,{type:'RECRUIT_CREW',crewId:p.crew});continue}
+    if(p.operator&&s.people.crew.eli.recruited&&C.selectors.eliPromotionAvailability(s).available){s=C.reduceGame(s,{type:'PROMOTE_LIEUTENANT',crewId:'eli'});continue}
+    if(p.operator&&C.selectors.soldierRecruitAvailability(s).available){s=C.reduceGame(s,{type:'RECRUIT_SOLDIER'});continue}
+    if(p.operator&&C.selectors.eliLieutenantActive(s)){
+      const claimable=C.SPENARD_BLOCKS.find(b=>C.selectors.blockClaimAvailability(s,b.id).available);
+      if(claimable){s=C.reduceGame(s,{type:'CLAIM_BLOCK',blockId:claimable.id});continue}
+      const unassigned=Object.values(s.world.soldiers).find(sol=>sol.status==='active'&&!sol.blockId);
+      const ownedBlock=C.SPENARD_BLOCKS.find(b=>s.world.territoryBlocks[b.id].owner==='player'&&C.selectors.soldierAssignAvailability(s,unassigned?.id,b.id).available);
+      if(unassigned&&ownedBlock){s=C.reduceGame(s,{type:'ASSIGN_SOLDIER',soldierId:unassigned.id,blockId:ownedBlock.id});continue}
+    }
+    if(p.operator&&C.selectors.kipLieutenantAvailability(s).available){
+      s.run.pendingEvent=C.buildEventForTest('kip_lieutenant_intro',s);
+      const idx=s.run.pendingEvent.choices.findIndex(c=>c.label.toLowerCase().includes('bring kip'));
+      s=C.reduceGame(s,{type:'RESOLVE_EVENT',choiceIndex:idx<0?0:idx});continue;
+    }
+    if(p.operator&&s.people.crew.kip.recruited&&s.player.dirtyCash>=100){
+      const avail=C.selectors.launderAvailability(s,Math.min(200,s.player.dirtyCash));
+      if(avail.available){s=C.reduceGame(s,{type:'LAUNDER_CASH',amount:Math.min(200,s.player.dirtyCash)});continue}
+    }
     if(p.dealer){
       const actions=C.selectors.dealerActions(s,p.dealer);
       if(actions.rob.available){s=C.reduceGame(s,{type:'ROB_DEALER',dealerId:p.dealer});continue}

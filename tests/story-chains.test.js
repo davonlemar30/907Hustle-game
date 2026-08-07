@@ -169,9 +169,13 @@ test("story order varies across seeds instead of walking a fixed ladder", () => 
     }
     orderings.add(seen.join("|"));
   }
-  // The v0.6 ladder produced exactly one ordering for every seed. The build
-  // currently measures 26-27; 20 is a floor that still proves the ladder is gone.
-  assert.ok(orderings.size >= 20, `expected 20+ distinct openings across 30 seeds, saw ${orderings.size}`);
+  // The v0.6 ladder produced exactly one ordering for every seed. Completing
+  // the Rook Respect migration (Respect is earned through wins, not simple
+  // travel the way pressure was) makes Rook's opening beat reachable later
+  // and less variably than before, which lowers this measurement from the
+  // pre-migration 26-27 to the high teens; 15 is a floor that still clearly
+  // proves the fixed ladder is gone.
+  assert.ok(orderings.size >= 15, `expected 15+ distinct openings across 30 seeds, saw ${orderings.size}`);
 });
 
 test("no chain fires three times running while another beat is eligible", () => {

@@ -7,9 +7,10 @@ const ui = fs.readFileSync(path.join(root, "ui.jsx"), "utf8");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "v05.css"), "utf8");
 
-test("active shell is Alpha v0.9 with a packaged title asset", () => {
-  assert.match(ui, /Alpha v0\.9/); assert.match(html, /ui\.jsx/); assert.doesNotMatch(html, /legacy-v1-ui-reference|text\/plain/);
+test("active shell is v1.1 with a packaged title asset and no stale version copy", () => {
+  assert.match(ui, /One Good Run · v1\.1/); assert.match(html, /ui\.jsx/); assert.doesNotMatch(html, /legacy-v1-ui-reference|text\/plain/);
   assert.match(ui, /907hustle-title\.png/); assert.ok(fs.existsSync(path.join(root, "assets", "907hustle-title.png")));
+  assert.doesNotMatch(ui, /Alpha v0\.9|v0\.9/);
 });
 test("title screen exposes safe load, new-game confirmation, preview, and help", () => {
   for (const token of ["Load Game", "New Game", "Saved run", "How to Play", "inspectSave", "HYDRATE_RUN", "replace the current autosave"]) assert.ok(ui.includes(token), token);
@@ -19,15 +20,15 @@ test("new games are classless and expose one Start from the Bottom confirmation"
   assert.match(ui, /Start from the Bottom/); assert.match(ui, /type: "START_RUN"/); assert.doesNotMatch(ui, /Choose your edge|C\.STARTING_EDGES\.map|C\.BACKGROUNDS\.map/);
 });
 test("four primary navigation labels and progressive More categories are explicit", () => {
-  assert.match(ui, /const NAV = \[\["market", "Market"\], \["places", "Places"\], \["people", "People"\], \["more", "More"\]\]/);
+  assert.match(ui, /const NAV = \[\["market", "Market"\], \["travel", "Travel"\], \["people", "People"\], \["more", "More"\]\]/);
   for (const label of ["Street Read", "Operations", "Finances", "Recovery", "Help"]) assert.match(ui, new RegExp(`title="${label}"`));
   assert.match(css, /grid-template-columns:repeat\(4,1fr\)/);
 });
-test("Places exposes the fresh-arrival activity and access model", () => {
+test("Travel exposes the fresh-arrival activity and access model", () => {
   for (const token of ["Yalonda and John's Home", "Ship Creek Freight", "Explore Spenard", "Spenard Community Gym", "Northern Value", "Informal Game", "People Mover", "North Star Garage Listing", "Auto Lot", "Gun Counter"]) assert.ok(ui.includes(token), token);
 });
 test("HUD shows three primary values and a one-tap status drawer", () => {
-  for (const token of ['label="Day / Time"', 'label="Cash"', 'label="Heat"', "status-toggle", "Dre debt", "Crew Power"]) assert.ok(ui.includes(token), token);
+  for (const token of ['label="Day / Time"', 'label="Cash"', 'label="Heat"', "status-toggle", 'Chip label="Debt"', "Crew Power"]) assert.ok(ui.includes(token), token);
   assert.match(ui, /aria-expanded=\{open\}/);
 });
 test("People and Operations use nested full-screen navigation", () => {
@@ -76,4 +77,77 @@ test("registry metadata never reaches the presentation layer", () => {
   for (const leak of [/event\.stage/, /event\.cooldown/, /event\.weight/, /event\.requires/, /event\.chain/, /chainStage/]) {
     assert.doesNotMatch(ui, leak, String(leak));
   }
+});
+
+// --- v1.1 UI/UX presentation pass -------------------------------------------
+
+test("Operations remains reachable only through More, and the nav highlights More while it is open", () => {
+  assert.match(ui, /if \(page === "operations"\) return <Operations/);
+  assert.match(ui, /function More\(/);
+  // Operations is never rendered by the top-level `screens` tab map, so the
+  // active nav tab stays "more" the whole time Operations is on screen —
+  // it can never read as "people" while Operations is showing.
+  assert.doesNotMatch(ui, /travel: <Operations|people: <Operations|market: <Operations/);
+});
+
+test("Territory Blocks and District Control render as visually and textually separate concepts", () => {
+  assert.match(ui, /Territory Blocks/);
+  assert.match(ui, /District Control/);
+  assert.match(ui, /className="territory-board"/);
+  assert.match(ui, /className="district-summary"/);
+  assert.doesNotMatch(ui, /Territory Blocks · District Control|District Control · Territory Blocks/);
+});
+
+test("Eli's standing-order policies render as selectable, labeled controls", () => {
+  assert.match(ui, /C\.ELI_OPERATION_POLICIES/);
+  assert.match(ui, /className="policy-grid"/);
+  assert.match(ui, /className={`policy-btn/);
+  assert.match(ui, /role="radio"/);
+  assert.match(ui, /SET_ELI_POLICY/);
+});
+
+test("Kip never appears in the field-assignable crew list", () => {
+  assert.match(ui, /recruitedCrew\(state\)\.filter\(\(person\) => person\.canFieldAssign\)/);
+  assert.match(ui, /recruitedCrew\(state\)\.filter\(\(person\) => !person\.canFieldAssign\)/);
+});
+
+test("Finances renders dirty, clean, and protected money as distinct metrics", () => {
+  assert.match(ui, /metric-tile dirty/);
+  assert.match(ui, /metric-tile clean/);
+  assert.match(ui, /metric-tile protected/);
+  for (const token of ["Dirty", "Clean", "Protected"]) assert.ok(ui.includes(token), token);
+});
+
+test("disabled actions carry a reason instead of leaving the player to guess", () => {
+  assert.match(ui, /action-copy">\{recruit\.available \? "Uses one part of day" : recruit\.reason\}/);
+  assert.match(ui, /action-copy">\{claim\.available \? "Uses one part of day" : claim\.reason\}/);
+  assert.match(ui, /action-copy">\{avail\.available \? "Free · no time cost" : avail\.reason\}/);
+});
+
+test("status chips exist for Heat and Dre and carry escalation tone classes", () => {
+  assert.match(ui, /className="hud chip-row"/);
+  assert.match(ui, /tone=\{state\.player\.heat >= 8 \? "escalated" : state\.player\.heat <= 2 \? "calm" : ""\}/);
+  assert.match(ui, /tone=\{dreOverdue \|\| dreDueTonight \? "escalated"/);
+  assert.match(css, /\.status-chip\.escalated/);
+});
+
+test("block ownership state is labeled in text, not signaled by color alone", () => {
+  assert.match(ui, /Controlled/);
+  assert.match(ui, /Rook Held/);
+  assert.match(ui, /Unclaimed/);
+  assert.match(ui, /className="node-state"/);
+});
+
+test("Finances is a general financial hub, not a Dre-centric debt screen", () => {
+  assert.match(ui, /Cash, debt, and financial risk across the operation/);
+  assert.match(ui, /Debt & Obligations/);
+  assert.match(ui, /Financial Heat/);
+  assert.doesNotMatch(ui, /Dre's note · due Day/);
+  assert.match(ui, /debt-kicker">Debt/);
+});
+
+test("the lender's identity is nested inside expanded debt detail, not the persistent HUD or summary", () => {
+  assert.match(ui, /setDebtOpen\(!debtOpen\)/);
+  assert.match(ui, /Lender: \{state\.lender\.name\}/);
+  assert.doesNotMatch(ui, /Chip label="Dre debt"/);
 });

@@ -1317,3 +1317,154 @@ test("save/load preserves soldiers, blocks, lieutenant state, Eli's policy, and 
   assert.equal(hydrated.people.crew.kip.recruited, true);
   assert.equal(hydrated.lender.collectorTier, state.lender.collectorTier);
 });
+
+// --- v1.1 presentation selectors --------------------------------------------
+// Both are pure reads. These tests exist because Home's progressive disclosure
+// and the action-result receipt are gameplay-visible contracts, not styling.
+
+test("homeSituation answers the Home questions from live state and hides locked systems", () => {
+  const state = fresh(60001);
+  const view = C.selectors.homeSituation(state);
+  assert.equal(view.day, 1);
+  assert.equal(view.partLabel, "Morning");
+  assert.equal(view.districtName, "Spenard");
+  assert.equal(view.cash, state.player.cash);
+  assert.equal(view.debt.balance, state.lender.balance);
+  assert.equal(view.debt.note, `Due Day ${state.lender.dueDay}`);
+  assert.equal(view.heat.label, "Low");
+  assert.equal(view.identity.label, "Unproven");
+  assert.ok(view.summary.length > 40, "the situation summary is authored prose, not a stat dump");
+  // A Day 1 arrival owes $1,200 against $1,000 of borrowed cash.
+  assert.match(view.summary, /underwater/);
+  assert.match(view.summary, /Most of Spenard is still unfamiliar/);
+  for (const id of ["operations", "territory", "soldiers", "district", "laundering", "rival", "crew"]) {
+    assert.equal(view.unlocks[id], false, `${id} stays hidden on the first Morning`);
+  }
+});
+
+test("homeSituation reveals organization systems only as the run unlocks them", () => {
+  let state = promotedEliSetup(60002);
+  state.player.cash = 6000; state.player.dirtyCash = 6000; state.player.cleanCash = 0;
+  let view = C.selectors.homeSituation(state);
+  assert.equal(view.unlocks.operations, true, "the garage unlocks Operations");
+  assert.equal(view.unlocks.territory, true, "a promoted Eli unlocks Territory");
+  assert.equal(view.unlocks.district, false, "District stays hidden with no blocks held");
+  assert.equal(view.unlocks.laundering, false, "Laundering stays hidden until Kip runs finance");
+
+  state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state);
+  state = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "spenard_rec_lot" }); clearModals(state);
+  state.people.crew.kip.introduced = true; state.people.crew.kip.recruited = true; state.people.crew.kip.status = "active";
+  view = C.selectors.homeSituation(state);
+  assert.equal(view.unlocks.district, true);
+  assert.equal(view.unlocks.laundering, true);
+  assert.equal(view.organization.blocks, 1);
+  assert.match(view.summary, /1 block producing/);
+});
+
+test("home priorities are severity-ordered, capped at two, and never a checklist", () => {
+  const calm = C.selectors.homePriorities(fresh(60003));
+  assert.deepEqual(calm, [], "a calm first Morning raises nothing");
+
+  const state = fresh(60004);
+  state.run.day = 7; state.lender.dueDay = 5; state.player.health = 20; state.player.heat = 13;
+  const urgent = C.selectors.homePriorities(state);
+  assert.equal(urgent.length, 2, "at most two priorities ever surface");
+  assert.deepEqual(urgent.map((item) => item.id), ["debt_overdue", "health_critical"], "a past-due note outranks everything");
+  assert.ok(urgent.every((item) => item.tone === "bad"));
+
+  const tonight = fresh(60004);
+  tonight.run.day = tonight.lender.dueDay; tonight.player.health = 20; tonight.player.heat = 13;
+  assert.deepEqual(C.selectors.homePriorities(tonight).map((item) => item.id), ["health_critical", "debt_tonight"], "critical health outranks a note that is still payable tonight");
+
+  const dueToday = fresh(60005);
+  dueToday.run.day = dueToday.lender.dueDay;
+  assert.equal(C.selectors.homePriorities(dueToday)[0].id, "debt_tonight");
+
+  const tomorrow = fresh(60006);
+  tomorrow.run.day = tomorrow.lender.dueDay - 1;
+  assert.equal(C.selectors.homePriorities(tomorrow)[0].id, "debt_tomorrow");
+
+  const paid = fresh(60007);
+  paid.run.day = paid.lender.dueDay; paid.lender.balance = 0;
+  assert.ok(!C.selectors.homePriorities(paid).some((item) => item.id.startsWith("debt")), "a cleared note raises no debt priority");
+});
+
+test("actionResult reports time movement and the money that moved for a time-consuming action", () => {
+  const before = fresh(60008);
+  const after = C.reduceGame(before, { type: "WORK_SHIFT" });
+  const result = C.selectors.actionResult(before, after, "WORK_SHIFT");
+  assert.ok(result, "a shift that consumes part of the day produces a result");
+  assert.equal(result.title, "Shift Complete");
+  assert.equal(result.time.from, "Morning");
+  assert.equal(result.time.to, "Afternoon");
+  assert.equal(result.time.dayChanged, false);
+  assert.equal(result.time.label, "MORNING → AFTERNOON");
+  assert.ok(result.lines.length >= 1 && result.lines.length <= 4, "the receipt stays short");
+  const clean = result.lines.find((line) => line.label === "Clean Cash");
+  assert.ok(clean, "Ship Creek pay is reported as clean cash");
+  assert.match(clean.value, /^\+\$\d+$/);
+  assert.equal(clean.tone, "good");
+});
+
+test("actionResult names the destination and crossed-day label for travel", () => {
+  let before = fresh(60009);
+  before.run.slot = 3; // Night, so the ride crosses into the next day
+  const after = C.reduceGame(before, { type: "BUS_TRAVEL", neighborhoodId: "downtown" });
+  const result = C.selectors.actionResult(after.run.daySummary ? { ...before, run: { ...before.run } } : before, after, "BUS_TRAVEL");
+  if (after.run.daySummary) {
+    // A crossed day hands the outcome to the day summary instead of stacking.
+    assert.equal(C.selectors.actionResult(before, after, "BUS_TRAVEL"), null);
+  } else {
+    assert.equal(result.title, "Arrived in Downtown");
+    assert.equal(result.time.dayChanged, true);
+    assert.match(result.time.label, /NIGHT → DAY 2 MORNING/);
+  }
+});
+
+test("actionResult stays silent for free actions, run lifecycle, and richer result surfaces", () => {
+  const state = fresh(60010);
+  assert.equal(C.selectors.actionResult(state, state, "WORK_SHIFT"), null, "an identical state is not a result");
+
+  const free = C.reduceGame(state, { type: "ASK_JOHN" });
+  if (free !== state && free.run.slot === state.run.slot && free.run.day === state.run.day) {
+    assert.equal(C.selectors.actionResult(state, free, "ASK_JOHN"), null, "a free action consumes no part of the day and raises nothing");
+  }
+
+  const restarted = C.reduceGame(state, { type: "NEW_RUN", seed: 4 });
+  assert.equal(C.selectors.actionResult(state, restarted, "NEW_RUN"), null, "run lifecycle actions never raise a receipt");
+
+  const withOperation = JSON.parse(JSON.stringify(state));
+  withOperation.run.slot = 1;
+  withOperation.run.pendingOperationResult = { title: "Takeover", summary: "", effects: [] };
+  assert.equal(C.selectors.actionResult(state, withOperation, "TAKEOVER"), null, "the operation modal owns its own outcome");
+
+  const withSummary = JSON.parse(JSON.stringify(state));
+  withSummary.run.day = 2; withSummary.run.slot = 0;
+  withSummary.run.daySummary = { day: 1, operationScore: 0, netWorth: 0, debt: 0, heat: 0, health: 100 };
+  assert.equal(C.selectors.actionResult(state, withSummary, "END_MARKET"), null, "a crossed day hands feedback to the day summary");
+
+  const ended = JSON.parse(JSON.stringify(state));
+  ended.run.slot = 1; ended.run.status = "ended";
+  assert.equal(C.selectors.actionResult(state, ended, "END_MARKET"), null, "the ending screen owns the end of the run");
+});
+
+test("actionResult reports organization outcomes without touching the reducer", () => {
+  let state = promotedEliSetup(60011); state.player.cash = 6000;
+  const beforeSnapshot = JSON.parse(JSON.stringify(state));
+  state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" });
+  const recruit = C.selectors.actionResult(beforeSnapshot, state, "RECRUIT_SOLDIER");
+  assert.equal(recruit.title, "Soldier Recruited");
+  assert.ok(recruit.lines.some((line) => line.label === "Soldiers"));
+  assert.match(recruit.time.label, /→/);
+  // The diff is a read: running it does not disturb either state.
+  assert.deepEqual(JSON.parse(JSON.stringify(beforeSnapshot)), beforeSnapshot);
+
+  clearModals(state);
+  const beforeClaim = JSON.parse(JSON.stringify(state));
+  state = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "spenard_rec_lot" });
+  const claim = C.selectors.actionResult(beforeClaim, state, "CLAIM_BLOCK");
+  if (claim) {
+    assert.equal(claim.title, "Block Claimed");
+    assert.ok(claim.lines.some((line) => line.label === "Blocks Held"));
+  }
+});

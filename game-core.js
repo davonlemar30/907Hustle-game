@@ -3369,6 +3369,199 @@
     };
   }
 
+  // ===========================================================================
+  // v1.1 presentation selectors.
+  //
+  // Both of these are pure reads over already-committed state. They never
+  // mutate, never advance time, and never touch the RNG — the UI layer decides
+  // when to call them. They live here rather than in ui.jsx so the Home model
+  // and the action-result diff can be unit tested in Node like every other
+  // selector.
+  // ===========================================================================
+
+  const cashText = (value) => `$${Math.round(Math.abs(value || 0))}`;
+  const signedCash = (value) => `${value >= 0 ? "+" : "−"}${cashText(value)}`;
+  const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+  // Which systems this run has actually unlocked. Home and the menus read this
+  // so a Day 1 arrival never inherits a Day 6 operator's interface: an empty
+  // system is hidden outright rather than shown as "Soldiers: 0".
+  function homeUnlocks(state) {
+    return {
+      crew: recruitedCrew(state).length > 0,
+      operations: !!state.base.controlled,
+      territory: eliLieutenantActive(state),
+      soldiers: eliLieutenantActive(state),
+      district: controlledBlockCount(state) > 0,
+      laundering: !!state.people.crew.kip?.recruited,
+      rival: state.rival.relationship !== "unaware",
+      recovery: state.player.health < 100 || state.player.heat > 0,
+    };
+  }
+
+  // At most two priorities, ordered by severity. This is deliberately not a
+  // task list — 907Hustle should never read like a checklist app.
+  function homePriorities(state) {
+    const out = [];
+    const push = (id, label, detail, tone) => { if (out.length < 2 && !out.some((item) => item.id === id)) out.push({ id, label, detail, tone }); };
+    const balance = state.lender.balance;
+    const daysLeft = state.lender.dueDay - state.run.day;
+    if (balance > 0 && daysLeft < 0) push("debt_overdue", "Debt is past due", "Collection is already moving.", "bad");
+    if (state.player.health < 35) push("health_critical", "Health is low", `${state.player.health} of 100. One bad night ends the run.`, "bad");
+    if (balance > 0 && daysLeft === 0) push("debt_tonight", "Debt comes due tonight", `${cashText(balance)} still owed.`, "bad");
+    if (state.player.heat >= 12) push("heat_critical", "Police attention is critical", "Anything visible carries a real risk.", "bad");
+    const pressured = SPENARD_BLOCKS.find((block) => {
+      const record = state.world.territoryBlocks[block.id];
+      return record && record.owner === "player" && record.lastRaidDay != null && state.run.day - record.lastRaidDay <= 1;
+    });
+    if (pressured) push("block_pressure", `${pressured.name} under pressure`, "Raided within the last day.", "warn");
+    if (balance > 0 && daysLeft === 1) push("debt_tomorrow", "Debt due tomorrow", `${cashText(balance)} still owed.`, "warn");
+    if (state.player.heat >= 8) push("heat_high", "Police attention is high", "Lay Low or stay off the corners.", "warn");
+    if (state.player.health < 60) push("health_hurt", "You are carrying an injury", `${state.player.health} of 100.`, "warn");
+    const idle = unassignedSoldiers(state).length;
+    if (idle > 0 && (state.people.crew.eli.operationPolicy || "manual") === "manual") push("soldiers_idle", `${plural(idle, "soldier")} unposted`, "Nobody earns on an empty corner.", "warn");
+    const wages = recruitedCrew(state).reduce((sum, person) => sum + (state.people.crew[person.id].wageDue || 0), 0);
+    if (wages > 0) push("wages_due", "Crew wages unpaid", `${cashText(wages)} owed.`, "warn");
+    return out;
+  }
+
+  // A short situation paragraph assembled from live state. Describes the
+  // player's life, never the game's mechanics.
+  function homeSummary(state) {
+    const cash = state.player.cash;
+    const balance = state.lender.balance;
+    const daysLeft = state.lender.dueDay - state.run.day;
+    const blocks = controlledBlockCount(state);
+    // Framed on net position, not raw cash: Day 1 starts with $1,000 of
+    // somebody else's money against a $1,200 note, and "money is moving" would
+    // be a lie on the first Morning.
+    const net = netWorth(state);
+    const clauses = [
+      cash < 150 ? "Cash is thin." : net < 0 ? "You are still underwater on what you owe." : net < 400 ? "You are barely ahead." : net < 2000 ? "Money is moving." : "There is real money running through the operation now.",
+      !balance ? "The note is clear." : daysLeft < 0 ? "The note is past due." : daysLeft === 0 ? "The note comes due tonight." : daysLeft === 1 ? "The note comes due tomorrow." : `The note comes due in ${daysLeft} days.`,
+    ];
+    if (blocks > 0) clauses.push(`${plural(blocks, "block")} producing with ${plural(activeSoldierCount(state), "soldier")} posted.`);
+    else if (eliLieutenantActive(state)) clauses.push("Eli can place people, but you hold no blocks yet.");
+    else if (state.base.controlled) clauses.push("The garage is yours and nobody runs it but you.");
+    else if (state.world.locations.explorationCount > 0) clauses.push("You know a few corners, but you own nothing yet.");
+    else clauses.push("Most of Spenard is still unfamiliar.");
+    if (state.player.heat >= 8) clauses.push("Police attention is high.");
+    else if (state.rival.relationship !== "unaware") clauses.push("Rook has started paying attention.");
+    return clauses.join(" ");
+  }
+
+  function homeSituation(state) {
+    const area = AREA_BY_ID[state.world.currentNeighborhoodId] || NEIGHBORHOODS[0];
+    const band = heatBand(state.player.heat);
+    const balance = state.lender.balance;
+    const daysLeft = state.lender.dueDay - state.run.day;
+    return {
+      day: state.run.day, runDays: RUN_DAYS, slot: state.run.slot, partLabel: SLOTS[state.run.slot],
+      districtName: area.name,
+      cash: state.player.cash, health: state.player.health,
+      heat: {
+        value: state.player.heat,
+        label: band.id === "warm" ? "Building" : `${band.label.charAt(0)}${band.label.slice(1).toLowerCase()}`,
+        tone: band.tone === "bad" ? "bad" : band.tone === "warn" ? "warn" : "good",
+      },
+      debt: {
+        balance, dueDay: state.lender.dueDay, daysLeft,
+        label: balance ? cashText(balance) : "Clear",
+        note: !balance ? "Paid in full" : daysLeft < 0 ? "Past due" : daysLeft === 0 ? "Due tonight" : daysLeft === 1 ? "Due tomorrow" : `Due Day ${state.lender.dueDay}`,
+        tone: !balance ? "good" : daysLeft <= 0 ? "bad" : daysLeft === 1 ? "warn" : "",
+      },
+      identity: STREET_IDENTITIES[state.player.streetIdentity] || STREET_IDENTITIES.unproven,
+      summary: homeSummary(state),
+      priorities: homePriorities(state),
+      unlocks: homeUnlocks(state),
+      organization: {
+        blocks: controlledBlockCount(state), blockTotal: SPENARD_BLOCKS.length,
+        soldiers: activeSoldierCount(state), soldierCapacity: soldierCapacity(state),
+        district: districtControlTier(state, "north_star_lot").label,
+        weeklyIncome: weeklyIncomeEstimate(state), respect: state.rival.respect,
+      },
+    };
+  }
+
+  // Titles for the compact action-result overlay. Keyed by dispatched action
+  // type; travel overrides this with the district it arrived in.
+  const ACTION_RESULT_TITLES = {
+    WORK_SHIFT: "Shift Complete", TRAIN_ATTRIBUTE: "Training Complete", EXPLORE_SPENARD: "Walk Complete",
+    SHOPLIFT: "Attempt Resolved", GAMBLE: "Game Resolved", END_MARKET: "Market Visit Closed",
+    SLEEP_HOME: "Night Passed", LAY_LOW: "Laid Low", HEAL: "Treatment Complete",
+    PAY_DEBT: "Payment Made", LAUNDER_CASH: "Cash Laundered", CLAIM_BLOCK: "Block Claimed",
+    RECRUIT_SOLDIER: "Soldier Recruited", RECRUIT_CREW: "Crew Recruited", PROMOTE_LIEUTENANT: "Lieutenant Promoted",
+    VISIT_BASE: "Garage Open", UPGRADE_BASE: "Upgrade Installed", BUY_GEAR: "Gear Acquired",
+    ASSIGN_CREW: "Assignment Given", ELI_TEST_ROUTE: "Test Route Complete", LEASE_GARAGE: "Property Leased",
+    VISIT_MARA: "Evening Spent", VISIT_NIGHT_OWL: "Night Owl Visit", ASK_JOHN: "Question Answered",
+    BUY_FROM_DEALER: "Deal Done", ASK_DEALER: "Word Passed", RESOLVE_EVENT: "Choice Made",
+  };
+
+  // Diffs two committed states into the compact "what just happened" card.
+  // Returns null when the action consumed no part of the day, when the run
+  // ended, or when a richer operation-result modal already owns the outcome —
+  // routine actions get a fast system receipt, story keeps its own surface.
+  const ACTION_RESULT_SKIPPED = ["NEW_RUN", "HYDRATE_RUN", "START_RUN", "CHOOSE_BACKGROUND"];
+  function actionResult(before, after, actionType) {
+    if (!before || !after || after === before) return null;
+    if (ACTION_RESULT_SKIPPED.includes(actionType)) return null;
+    if (after.run.status !== "playing") return null;
+    const dayChanged = after.run.day !== before.run.day;
+    const slotChanged = after.run.slot !== before.run.slot;
+    if (!dayChanged && !slotChanged) return null;
+    // Richer surfaces own their own outcome: a takeover gets the operation
+    // modal and a crossed day gets the day summary. Never stack two.
+    if (after.run.pendingOperationResult && !before.run.pendingOperationResult) return null;
+    if (after.run.daySummary && !before.run.daySummary) return null;
+
+    const lines = [];
+    const add = (label, value, tone) => { if (lines.length < 4 && !lines.some((line) => line.label === label)) lines.push({ label, value, tone: tone || "" }); };
+    const toneOf = (delta) => (delta >= 0 ? "good" : "bad");
+
+    const cleanDelta = after.player.cleanCash - before.player.cleanCash;
+    const dirtyDelta = after.player.dirtyCash - before.player.dirtyCash;
+    const cashDelta = after.player.cash - before.player.cash;
+    if (cleanDelta && dirtyDelta) { add("Clean Cash", signedCash(cleanDelta), toneOf(cleanDelta)); add("Dirty Cash", signedCash(dirtyDelta), toneOf(dirtyDelta)); }
+    else if (cleanDelta) add("Clean Cash", signedCash(cleanDelta), toneOf(cleanDelta));
+    else if (dirtyDelta) add("Dirty Cash", signedCash(dirtyDelta), toneOf(dirtyDelta));
+    else if (cashDelta) add("Cash", signedCash(cashDelta), toneOf(cashDelta));
+
+    const movedTo = after.world.currentNeighborhoodId !== before.world.currentNeighborhoodId ? AREA_BY_ID[after.world.currentNeighborhoodId] : null;
+    const raised = Object.keys(after.player.attributes).find((id) => after.player.attributes[id] > before.player.attributes[id]);
+    if (raised) add(`${raised.charAt(0).toUpperCase()}${raised.slice(1)}`, `${before.player.attributes[raised]} → ${after.player.attributes[raised]}`, "good");
+    const blockDelta = controlledBlockCount(after) - controlledBlockCount(before);
+    if (blockDelta) add("Blocks Held", `${controlledBlockCount(after)}/${SPENARD_BLOCKS.length}`, toneOf(blockDelta));
+    const soldierDelta = activeSoldierCount(after) - activeSoldierCount(before);
+    if (soldierDelta) add("Soldiers", `${activeSoldierCount(after)}/${soldierCapacity(after)}`, toneOf(soldierDelta));
+    const debtDelta = after.lender.balance - before.lender.balance;
+    if (debtDelta) add("Debt", after.lender.balance ? cashText(after.lender.balance) : "Paid in full", toneOf(-debtDelta));
+    const healthDelta = after.player.health - before.player.health;
+    if (healthDelta) add("Health", `${after.player.health}/100`, toneOf(healthDelta));
+    const heatDelta = after.player.heat - before.player.heat;
+    if (heatDelta) add("Heat", `${after.player.heat}/15 · ${heatBand(after.player.heat).label.toLowerCase()}`, toneOf(-heatDelta));
+    const respectDelta = after.rival.respect - before.rival.respect;
+    if (respectDelta) add("Respect", `${respectDelta > 0 ? "+" : "−"}${Math.abs(respectDelta)}`, toneOf(respectDelta));
+    const unlocked = PRODUCTS.filter((product) => after.world.productAccess[product.id] && !before.world.productAccess[product.id]);
+    if (unlocked.length) add("New Access", unlocked.map((product) => product.name).join(", "), "good");
+
+    const time = {
+      from: SLOTS[before.run.slot], to: SLOTS[after.run.slot],
+      fromDay: before.run.day, toDay: after.run.day, dayChanged,
+      label: dayChanged
+        ? `${SLOTS[before.run.slot].toUpperCase()} → DAY ${after.run.day} ${SLOTS[after.run.slot].toUpperCase()}`
+        : `${SLOTS[before.run.slot].toUpperCase()} → ${SLOTS[after.run.slot].toUpperCase()}`,
+    };
+    const newest = after.log[0];
+    return {
+      title: movedTo ? `Arrived in ${movedTo.name}` : ACTION_RESULT_TITLES[actionType] || "Action Complete",
+      actionType: actionType || null,
+      lines,
+      detail: newest && newest !== before.log[0] ? newest.text : null,
+      tone: newest && newest !== before.log[0] ? newest.tone || "" : "",
+      time,
+    };
+  }
+
   return {
     VERSION, RUN_DAYS, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, STREET_READ_LEVELS, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
     STREET_NAME_MAX, DEFAULT_STREET_NAMES, ATTRIBUTE_DEFAULTS, LEGACY_ATTRIBUTES, STREET_IDENTITIES, sanitizeStreetName,
@@ -3390,6 +3583,7 @@
       soldierRecruitAvailability, soldierAssignAvailability, blockClaimAvailability, eliPromotionAvailability,
       weeklyIncomeEstimate, kipLieutenantAvailability, launderCapacity, launderAvailability,
       districtControlTier, districtHasBlockLayer, unassignedSoldiers,
+      homeSituation, homeUnlocks, homePriorities, homeSummary, actionResult,
     },
   };
 });

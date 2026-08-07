@@ -19,10 +19,10 @@ test("title screen exposes safe load, new-game confirmation, preview, and help",
 test("new games are classless and expose one Start from the Bottom confirmation", () => {
   assert.match(ui, /Start from the Bottom/); assert.match(ui, /type: "START_RUN"/); assert.doesNotMatch(ui, /Choose your edge|C\.STARTING_EDGES\.map|C\.BACKGROUNDS\.map/);
 });
-test("four primary navigation labels and progressive More categories are explicit", () => {
-  assert.match(ui, /const NAV = \[\["market", "Market"\], \["travel", "Travel"\], \["people", "People"\], \["more", "More"\]\]/);
+test("five primary navigation labels lead with Home and progressive More categories are explicit", () => {
+  assert.match(ui, /const NAV = \[\["home", "Home"\], \["market", "Market"\], \["travel", "Travel"\], \["people", "People"\], \["more", "More"\]\]/);
   for (const label of ["Street Read", "Operations", "Finances", "Recovery", "Help"]) assert.match(ui, new RegExp(`title="${label}"`));
-  assert.match(css, /grid-template-columns:repeat\(4,1fr\)/);
+  assert.match(css, /grid-template-columns:repeat\(5,1fr\)/);
 });
 test("Travel exposes the fresh-arrival activity and access model", () => {
   for (const token of ["Yalonda and John's Home", "Ship Creek Freight", "Explore Spenard", "Spenard Community Gym", "Northern Value", "Informal Game", "People Mover", "North Star Garage Listing", "Auto Lot", "Gun Counter"]) assert.ok(ui.includes(token), token);
@@ -32,7 +32,7 @@ test("HUD shows three primary values and a one-tap status drawer", () => {
   assert.match(ui, /aria-expanded=\{open\}/);
 });
 test("People and Operations use nested full-screen navigation", () => {
-  for (const token of ["Key People", "Recent History", "Quick Score", "Territory", "Gear", "Safehouse", "← Back"]) assert.ok(ui.includes(token), token);
+  for (const token of ["Personal", "Recent History", "Quick Score", "Territory", "Gear", "Safehouse", "← Back"]) assert.ok(ui.includes(token), token);
   assert.match(ui, /page\.startsWith\("crew:"\)/); assert.match(ui, /page === "safehouse"/);
 });
 test("Finance exposes increments, clamped preview, and reserve wording", () => {
@@ -71,7 +71,7 @@ test("the optional Street Name is offered before classless confirmation and show
 test("Character is nested under More and hides identity internals", () => {
   for (const token of ["function Character", "Strength", "Endurance", "Reflexes", "Presence", "Insight", "Discipline", "Derived ratings", "Recent reputation", "legacyBackground"]) assert.ok(ui.includes(token), token);
   assert.doesNotMatch(ui, /behavior\.scores|pendingIdentityNights|25 percent|raw margin/i);
-  assert.equal((ui.match(/\[\["market", "Market"\]/g) || []).length, 1);
+  assert.equal((ui.match(/\["market", "Market"\]/g) || []).length, 1);
 });
 test("registry metadata never reaches the presentation layer", () => {
   for (const leak of [/event\.stage/, /event\.cooldown/, /event\.weight/, /event\.requires/, /event\.chain/, /chainStage/]) {
@@ -146,8 +146,165 @@ test("Finances is a general financial hub, not a Dre-centric debt screen", () =>
   assert.match(ui, /debt-kicker">Debt/);
 });
 
-test("the lender's identity is nested inside expanded debt detail, not the persistent HUD or summary", () => {
-  assert.match(ui, /setDebtOpen\(!debtOpen\)/);
+test("the lender's identity is nested inside the debt detail page, not the persistent HUD or summary", () => {
+  assert.match(ui, /function DebtPage\(/);
   assert.match(ui, /Lender: \{state\.lender\.name\}/);
   assert.doesNotMatch(ui, /Chip label="Dre debt"/);
+  // The debt hub row and the Home debt tile both describe the obligation, not
+  // the person collecting on it.
+  assert.match(ui, /title="Debt & Obligations"/);
+  assert.doesNotMatch(ui, /Pay Dre \{money/);
+});
+
+// --- v1.1 simplification, Home, menus, and action feedback -------------------
+
+test("Home exists, is the landing screen, and answers the situation questions", () => {
+  assert.match(ui, /function Home\(\{ state, navigate \}\)/);
+  assert.match(ui, /useState\(\{ tab: "home", more: "root", sub: null, token: 0 \}\)/);
+  assert.match(ui, /home: <Home state=\{state\} navigate=\{navigate\} \/>/);
+  for (const token of ["home-hero", "home-when", "home-where", "home-summary", "home-identity", "Street Identity", "Needs Attention"]) assert.ok(ui.includes(token), token);
+  assert.match(ui, /C\.selectors\.homeSituation\(state\)/);
+  // Home never renders the old dense action bar or a second copy of the log.
+  assert.doesNotMatch(ui, /<Feed entries=\{state\.log\} \/>[\s\S]{0,40}home/);
+});
+
+test("Home reveals systems only once the run has unlocked them", () => {
+  assert.match(ui, /view\.unlocks\.operations && </);
+  assert.match(ui, /view\.unlocks\.laundering && <MenuRow title="Laundering"/);
+  assert.match(ui, /view\.unlocks\.recovery && <MenuRow title="Recovery"/);
+  assert.match(ui, /view\.unlocks\.territory && <StatTile label="Blocks"/);
+  assert.match(ui, /view\.unlocks\.soldiers && <StatTile label="Soldiers"/);
+});
+
+test("the persistent HUD is progressive: pressure chips appear only under pressure", () => {
+  assert.match(ui, /const showHeat = state\.player\.heat >= 3/);
+  assert.match(ui, /const showDebt = state\.lender\.balance > 0 && state\.lender\.dueDay - state\.run\.day <= 2/);
+  assert.match(ui, /const showRespect = state\.rival\.respect > 0/);
+  assert.match(ui, /\(showHeat \|\| showDebt \|\| showRespect\) && <div className="hud chip-row">/);
+});
+
+test("primary navigation is a five-cell bottom bar with icons and stays above 44px", () => {
+  assert.match(ui, /function NavIcon\(/);
+  assert.match(ui, /<NavIcon id=\{id\} \/>/);
+  assert.match(css, /\.nav\{grid-template-columns:repeat\(5,1fr\)[^}]*border-top:1px solid var\(--line\)\}/);
+  assert.match(css, /\.nav button\{[^}]*min-height:52px/);
+  // Three shell rows now that navigation sits at the bottom edge.
+  assert.match(css, /\.app\{grid-template-rows:auto minmax\(0,1fr\) auto;/);
+});
+
+test("Travel is a hub of focused pages instead of one long scroll", () => {
+  for (const fn of ["function Destinations(", "function Transit(", "function AroundHere(", "function Household(", "function LocalIntel(", "function Listings("]) assert.ok(ui.includes(fn), fn);
+  assert.match(ui, /if \(page === "destinations"\) return <Destinations/);
+  assert.match(ui, /<MenuRow title="Destinations"/);
+  assert.match(ui, /<MenuRow title="Transit"/);
+  // Progressive: intel only once the run produced some, listings only while
+  // there is still property to acquire.
+  assert.match(ui, /hasIntel && <MenuRow title="Local Intel"/);
+  assert.match(ui, /!state\.base\.controlled && <MenuRow title="Listings"/);
+});
+
+test("Destinations answers one question and never leaks unvisited information", () => {
+  assert.match(ui, /sub="Where do you want to go\?"/);
+  assert.match(ui, /known \? `Risk \$\{area\.risk\}\/5` : "Risk unknown"/);
+  assert.match(ui, /known \? `Rival presence \$\{area\.rival\}\/5` : "Rival presence unknown"/);
+  assert.match(ui, /const knownOf = \{ north_star_lot: true, downtown: state\.world\.transport\.downtownKnown, airport_industrial: state\.world\.transport\.industrialRouteKnown \}/);
+});
+
+test("Operations and Finances are hubs with focused subpages and Back on every one", () => {
+  for (const fn of ["function OperationsOverview(", "function DistrictControlPage(", "function TerritoryBlocks(", "function FinanceOverview(", "function DebtPage(", "function FinancialRisk("]) assert.ok(ui.includes(fn), fn);
+  for (const page of ["overview", "territory", "district", "soldiers", "gear", "safehouse", "quick"]) assert.match(ui, new RegExp(`page === "${page}"`));
+  for (const page of ["overview", "debt", "laundering", "risk"]) assert.match(ui, new RegExp(`page === "${page}"`));
+  // Every nested page owns an explicit Back control.
+  assert.equal((ui.match(/onBack=\{\(\) => setPage\("root"\)\}/g) || []).length >= 8, true);
+});
+
+test("progressive disclosure hides categories that have nothing in them yet", () => {
+  assert.match(ui, /knownDealers > 0 && <MenuRow title="Street Contacts"/);
+  assert.match(ui, /introducedCrew > 0 && <MenuRow title="Crew"/);
+  assert.match(ui, /state\.people\.mara\.met && <MenuRow title="Mara Velez"/);
+  assert.match(ui, /state\.rival\.relationship !== "unaware" && <MenuRow title="Rook Mercer"/);
+  assert.match(ui, /state\.people\.crew\.kip\.recruited && <MenuRow title="Laundering"/);
+  assert.match(ui, /showRisk && <MenuRow title="Financial Risk"/);
+  assert.match(ui, /state\.world\.locations\.gamblingKnown && <div className=\{`card\$\{available\.gambling\.available/);
+});
+
+test("every dispatch is routed so the shell can raise an action result", () => {
+  assert.match(ui, /function act\(action\) \{ pending\.current = \{ type: action\.type, before: state \}; dispatch\(action\); \}/);
+  assert.match(ui, /setResult\(C\.selectors\.actionResult\(record\.before, state, record\.type\)\)/);
+  // Screens receive `act`, never the raw reducer dispatch, so no time-consuming
+  // action can slip past the result overlay.
+  for (const token of ["<Travel state={state} dispatch={act}", "<People state={state} dispatch={act}", "<More state={state} dispatch={act}"]) assert.ok(ui.includes(token), token);
+  assert.match(ui, /act\(\{ type: "END_MARKET" \}\)/);
+});
+
+test("the action-result overlay is a short system receipt with visible time movement", () => {
+  assert.match(ui, /function ActionResultOverlay\(/);
+  assert.match(ui, /className="result-title"/);
+  assert.match(ui, /className="result-lines"/);
+  assert.match(ui, /<div className="result-time">\{result\.time\.label\}<\/div>/);
+  assert.match(ui, /setTimeout\(\(\) => dismissRef\.current\(\), 4200\)/);
+  assert.match(ui, /result && <ActionResultOverlay result=\{result\} onDismiss=\{\(\) => setResult\(null\)\} \/>/);
+  // Sits above the story modals so dismissing it reveals the scene beneath.
+  assert.match(css, /\.result-backdrop\{position:fixed;inset:0;z-index:60/);
+  assert.match(css, /\.result-time\{[^}]*color:var\(--amber\)/);
+});
+
+test("action results and story events stay separate surfaces", () => {
+  // The receipt never carries choices, dialogue, or stakes.
+  const overlay = ui.slice(ui.indexOf("function ActionResultOverlay"), ui.indexOf("function nextPartLabel"));
+  for (const leak of ["choices", "stakes", "RESOLVE_EVENT", "dialogue"]) assert.ok(!overlay.includes(leak), leak);
+  assert.match(ui, /function EventModal\(/);
+});
+
+test("the street feed collapses to one line instead of owning 88px of every screen", () => {
+  assert.match(ui, /className="feed-toggle"/);
+  assert.match(ui, /\{open && <div className="feed-list">/);
+  assert.match(css, /\.feed\{max-height:none;overflow:visible;padding:0;border-top:0\}/);
+  assert.match(css, /\.feed-toggle\{[^}]*min-height:44px/);
+});
+
+test("the market close action is contextual to Market and no longer global chrome", () => {
+  assert.match(ui, /tab === "market" && <div className="action-bar one">/);
+  assert.doesNotMatch(ui, /className="action-bar two"/);
+});
+
+test("Safehouse is a hub instead of the longest page in the build", () => {
+  for (const fn of ["function ProtectedCash(", "function SafehouseStorage(", "function BaseUpgrades(", "function CrewAssignments("]) assert.ok(ui.includes(fn), fn);
+  assert.match(ui, /<MenuRow title="Protected Cash"/);
+  assert.match(ui, /<MenuRow title="Storage"/);
+  assert.match(ui, /<MenuRow title="Upgrades"/);
+  assert.match(ui, /crewCount > 0 && <MenuRow title="Assignments"/);
+  // Protected cash, inventory, four upgrade tracks and assignments no longer
+  // stack on one screen.
+  assert.doesNotMatch(ui, /Stored inventory · \$\{[\s\S]{0,80}Base upgrades/);
+});
+
+test("the play-screen header is one status line, not a wordmark row", () => {
+  assert.doesNotMatch(ui, /className="brand-row"/);
+  assert.match(ui, /<h1 className="sr-only">907Hustle: One Good Run · v1\.1<\/h1>/);
+  assert.match(ui, /<button className="menu-btn" onClick=\{onMenu\}>Menu<\/button>/);
+  assert.match(css, /\.primary-hud\{grid-template-columns:minmax\(0,1\.35fr\) minmax\(0,\.72fr\) auto auto/);
+});
+
+// --- pre-existing layout bug found by browser QA -----------------------------
+// `.app` and the number grids declared bare `1fr` tracks. A bare `1fr` is
+// `minmax(auto,1fr)`, and that `auto` floor is the item's min-content width, so
+// nowrap HUD/monospace content forced the shell to 687px inside a 320px
+// viewport and the whole page scrolled sideways. This reproduced on main.
+test("every grid track is clamped so nowrap content cannot force horizontal scroll", () => {
+  assert.match(css, /\.app\{grid-template-rows:auto minmax\(0,1fr\) auto;grid-template-columns:minmax\(0,1fr\)\}/);
+  for (const rule of [
+    /\.outcome-grid,\.trade-stats,\.trade-projection\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/,
+    /\.payment-preview,\.payment-buttons\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\)\}/,
+    /\.policy-grid,\.territory-board\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/,
+  ]) assert.match(css, rule);
+  assert.match(css, /\.outcome b,\.trade-stat b,\.trade-result b\{overflow:hidden;text-overflow:ellipsis;white-space:nowrap\}/);
+  // Earlier declarations in the file still carry the old bare `1fr` tracks;
+  // what matters is that the clamped rule is the last one to apply. Assert the
+  // cascade order rather than the absence of the original text.
+  for (const selector of [".outcome-grid", ".payment-preview", ".policy-grid", ".territory-board", ".trade-projection"]) {
+    const decls = [...css.matchAll(new RegExp(`\\${selector}[^{}]*\\{[^}]*grid-template-columns:([^;}]+)`, "g"))];
+    assert.ok(decls.length, selector);
+    assert.match(decls[decls.length - 1][1], /minmax\(0,/, `${selector} last declaration must clamp its tracks`);
+  }
 });

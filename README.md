@@ -143,36 +143,78 @@ The live story system remains data-driven through `STORY_REGISTRY` in `game-core
 
 ## UI / UX
 
-The current interface uses progressive disclosure and a mobile-first single shell.
+The interface is a mobile-first single shell built on menu hubs and progressive
+disclosure. A Day 1 arrival does not inherit a Day 6 operator's interface:
+systems appear in the menus only once the run has unlocked them.
 
-Primary navigation:
+### Primary navigation
 
-- Market
-- Travel
-- People
-- More
+Five bottom-bar destinations, icon over label:
 
-Nested surfaces include:
+- **Home** — situation overview and the run's anchor
+- **Market** — the hero trading surface, always one tap away
+- **Travel** — where to go, how to get there, what is around you
+- **People** — personal, street contacts, crew, lieutenants
+- **More** — Finances, Operations, Recovery, Character, Street Read, Help
 
-- Operations
-- Finances
-- Recovery
-- Character
-- Territory Blocks
-- District Control
-- Soldiers
-- Safehouse
-- laundering
+Navigation sits at the bottom edge where a thumb reaches it. The header is one
+status line (day part, district, cash, status drawer, menu); a pressure row of
+Heat / Debt / Respect chips appears only once one of them is applying pressure.
 
-Current mobile standards:
+### Home
 
-- 44px minimum visible control height
-- no horizontal overflow at 320, 375, 390, and 430px target widths
+Home is the landing screen for a new or loaded run and the calmest screen in the
+game. It answers where you are, what part of the day it is, what you have, what
+is pressing, and where you might go next — nothing else. Its model comes from
+`selectors.homeSituation`, which produces an authored situation summary, at most
+two priorities, and a per-system unlock map so empty systems stay hidden rather
+than rendering as `Soldiers: 0`.
+
+### Menu hubs
+
+Each hub lists destinations; each subpage answers one gameplay question and
+carries an explicit Back control.
+
+```text
+Travel      → Destinations · Around <district> · Home · Transit · Local Intel · Listings
+People      → Personal · Street Contacts · Crew · Lieutenants · Recent History
+Operations  → Overview · Safehouse · Territory · Soldiers · District Control · Gear · Quick Score
+Safehouse   → Protected Cash · Storage · Upgrades · Assignments
+Finances    → Overview · Debt & Obligations · Laundering · Financial Risk
+```
+
+High-level surfaces name systems and world state (Debt, Territory, District
+Control, Heat, Respect, Crew, Soldiers, Financial Heat). Character names appear
+in the detail that concerns them — the lender is named on the Debt page, not in
+the persistent HUD.
+
+### Action feedback
+
+Any action that consumes part of the day raises a compact action-result overlay:
+what happened, the money that moved, the important result, and — most
+prominently — the time it cost (`MORNING → AFTERNOON`). It auto-dismisses, and a
+tap anywhere closes it early, so routine actions never cost an extra deliberate
+tap.
+
+Action results are deliberately separate from story. The receipt is short and
+system-focused; narrative, choices, and relationship consequences keep their own
+event surfaces. Richer surfaces still own their outcomes: takeovers keep the
+operation modal and a crossed day keeps the day summary, and the receipt stays
+silent rather than stacking on top of them.
+
+The overlay is driven by `selectors.actionResult(before, after, actionType)`, a
+pure diff of two committed states. The shell routes every dispatch through one
+wrapper so no time-consuming action can slip past it, and the reducer is
+untouched.
+
+### Mobile standards
+
+- 44px minimum visible control height, verified by measurement in Chromium
+- zero horizontal overflow at 320, 375, 390, 430, and 375×560 reduced height
+- bottom navigation fully on screen with five cells above 44×44
 - player-facing time shown as day parts
 - nested screens use explicit Back controls
 - trading remains the strongest primary gameplay surface
-
-The **next planned build is a dedicated UI/UX and mobile-presentation pass**. Its focus is stronger visual hierarchy, reduced information density, clearer organization surfaces, improved warning/feedback states, and a more cohesive presentation for the v1.0 systems while preserving the established mobile shell.
 
 ## Deterministic Architecture
 
@@ -194,14 +236,35 @@ node --test tests/*.test.js
 node tests/simulate-runs.js
 ```
 
-Latest recorded v1.0 results:
+Latest recorded results (v1.1 navigation pass):
 
-- **138 / 138 automated tests passing**
-- **24 stabilization and regression tests added during PR #52**
-- **800 simulated runs across 10 strategies**
+- **171 / 171 automated tests passing**
+- **2,000 simulated runs across 10 strategies, byte-identical to the pre-pass baseline**
 - operator strategy covers garage, Eli, soldiers, territory, Kip, and laundering progression
 - zero simulation crashes reported
 - Node-driven end-to-end organization run completed through save/load
+
+The navigation pass added domain tests for the two new presentation selectors
+(`homeSituation`, `actionResult`) and UI-contract tests for Home, the five-cell
+bottom navigation, the Travel/Operations/Finances/Safehouse hubs, progressive
+disclosure, and the action-result overlay.
+
+### Rendered verification
+
+v1.1 was verified in real Chromium (Playwright) at 320×568, 375×667, 390×844,
+430×932, 375×560 reduced height, and 1280×800 desktop, driving the actual
+`index.html` with cache-busting and `no-store` so a stale preview cannot fake a
+pass: **486 measured checks, all passing**, covering horizontal overflow,
+touch-target height, bottom-nav reachability, action-result content and time
+label, every day-part transition, and the full save → title → load → Home cycle.
+
+That pass found a **pre-existing layout bug that also reproduces on the previous
+main**: `.app` and several number grids declared bare `1fr` tracks. A bare `1fr`
+is `minmax(auto,1fr)`, and that `auto` floor is the item's min-content width, so
+nowrap HUD and monospace content forced the shell to 687px inside a 320px
+viewport and the whole page scrolled sideways. Every affected track is now
+clamped to `minmax(0,1fr)`, with a regression test asserting the clamped rule is
+the last one to apply.
 
 The final v1.0 stabilization pass verified the full flow:
 
@@ -219,7 +282,14 @@ garage
 → save/load
 ```
 
-A final real-browser/mobile visual QA pass remains recommended because the development sandbox encountered a script-cache mismatch during the latest UI verification attempt.
+Human playtesting on a physical device is still recommended for feel and pacing.
+Two limitations of the automated rendered pass are worth naming: the sandbox
+proxy blocks `unpkg.com`, so React/ReactDOM/Babel were served from locally
+vendored copies of the exact pinned versions `index.html` requests, and Google
+Fonts were unavailable, so Anton and Barlow Condensed rendered as fallbacks.
+Every 907Hustle file under test — `index.html` markup, `v05.css`,
+`game-core.js`, `ui.jsx` — was the real one. Final typography and the title
+artwork tiers still deserve a look on a real handset.
 
 ## Run Locally
 
@@ -272,8 +342,8 @@ street-level survival
 
 Near-term development priority:
 
-1. UI/UX and mobile presentation pass
-2. human browser playtesting and balance validation of v1.0 organization systems
+1. human playtesting of the v1.1 navigation on a physical handset
+2. balance validation of the v1.0 organization systems
 3. stronger District Control rewards and capstone presentation
 4. later expansion of block territory into Downtown and Industrial
 

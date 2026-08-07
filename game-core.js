@@ -94,14 +94,23 @@
     { track: "recovery", level: 2, id: "safe_room", name: "Safe Room + Medical Contact", cost: 380, description: "Protects one person and can prevent a fatal ending." },
   ];
 
+  // Capability flags drive UI/reducer behavior instead of person-ID checks,
+  // so a new crew member's role determines what it can do without touching
+  // Safehouse/Operations rendering logic.
   const CREW = [
-    { id: "eli", name: "Eli ‘Shortcut’ Ward", role: "Runner", power: 3, recruitCost: 120, wage: 45, description: "Moves small bundles and knows service-road exits." },
-    { id: "miri", name: "Samira ‘Miri’ Cole", role: "Connector", power: 2, recruitCost: 180, wage: 60, description: "Opens buyers and supply through an aging Downtown list." },
-    { id: "tone", name: "Anton ‘Tone’ Bell", role: "Enforcer / Lookout", power: 5, recruitCost: 250, wage: 85, description: "Protects the garage and changes confrontation choices." },
+    { id: "eli", name: "Eli ‘Shortcut’ Ward", role: "Runner", power: 3, recruitCost: 120, wage: 45, description: "Moves small bundles and knows service-road exits.",
+      canFieldAssign: true, canRunTerritory: true, canLaunder: false, lieutenantRole: "operations" },
+    { id: "miri", name: "Samira ‘Miri’ Cole", role: "Connector", power: 2, recruitCost: 180, wage: 60, description: "Opens buyers and supply through an aging Downtown list.",
+      canFieldAssign: true, canRunTerritory: false, canLaunder: false, lieutenantRole: null },
+    { id: "tone", name: "Anton ‘Tone’ Bell", role: "Enforcer / Lookout", power: 5, recruitCost: 250, wage: 85, description: "Protects the garage and changes confrontation choices.",
+      canFieldAssign: true, canRunTerritory: false, canLaunder: false, lieutenantRole: null },
     // Kip does not fight or draw a wage; his catalog power stays 0. His cost is
     // the 15% he keeps on anything he launders. He is introduced through Eli,
-    // not recruited with cash, so recruitCost is unused for him.
-    { id: "kip", name: "Kip Sallis", role: "Finance Lieutenant", power: 0, recruitCost: 0, wage: 0, description: "Moves dirty cash through six Spenard businesses and keeps a cut." },
+    // not recruited with cash, so recruitCost is unused for him. He has no
+    // field assignment: canFieldAssign is false so Safehouse never tries to
+    // render corner-rotation buttons for him.
+    { id: "kip", name: "Kip Sallis", role: "Finance Lieutenant", power: 0, recruitCost: 0, wage: 0, description: "Moves dirty cash through six Spenard businesses and keeps a cut.",
+      canFieldAssign: false, canRunTerritory: false, canLaunder: true, lieutenantRole: "finance" },
   ];
 
   const TERRITORIES = [
@@ -147,7 +156,38 @@
   const KIP_LIEUTENANT_INCOME_THRESHOLD = 500;
   const KIP_LIEUTENANT_STANDING_MIN = 2;
 
+  // Eli's standing operating order once he is Operations Lieutenant. He
+  // evaluates whichever policy is active inside the existing advanceRun
+  // organization-resolution pass (resolveSoldierOperations) — there is no
+  // separate clock or lieutenant-management tick.
+  const ELI_OPERATION_POLICIES = {
+    balanced: { label: "Balanced", description: "Spreads soldiers evenly across controlled blocks for a mix of income and defense." },
+    maximize_income: { label: "Maximize Income", description: "Fills the highest-earning blocks first." },
+    hold_ground: { label: "Hold Ground", description: "Reinforces the blocks most exposed to Rook and patrols." },
+    stay_quiet: { label: "Stay Quiet", description: "Favors the lowest Heat and patrol-exposure blocks." },
+    manual: { label: "Manual", description: "Eli leaves placement to you." },
+  };
+  const ELI_EFFECTIVENESS_ATTRITION_DISCOUNT = 0.01; // per effectiveness point, off the idle-attrition roll
+
   const RESPECT_STAGE_THRESHOLDS = { mark: 0, tax: 2, cut: 5, mid: 6, day7: 8 };
+
+  // District Control is the strategic, neighborhood-wide layer (the old
+  // world.territories takeover system, relabeled for players). Territory
+  // Blocks are the tactical layer underneath it. Where an area has blocks
+  // (Spenard today), District Control tracks how many of them are held, plus
+  // a capstone condition, rather than double-counting the block income
+  // itself. Areas without a block layer yet (Downtown, Industrial) fall back
+  // to the plain owner boolean from the old takeover system.
+  const DISTRICT_CONTROL_TIERS = [
+    { minBlocks: 0, label: "Neutral" },
+    { minBlocks: 1, label: "Presence" },
+    { minBlocks: 3, label: "Influence" },
+    { minBlocks: 4, label: "Dominant" },
+  ];
+  const DISTRICT_CONTROL_CAPSTONE_BLOCKS = 6; // all Spenard blocks
+  const DISTRICT_CONTROL_CAPSTONE_RESPECT = RESPECT_STAGE_THRESHOLDS.mid; // Rook has to take the operation seriously first
+  const DISTRICT_CONTROL_LABEL = "District Control";
+  const DISTRICT_CONTROL_DISCOUNT_BONUS = 0.02; // stacks on top of the existing block-owner trade discount at Dominant+
 
   const SPENARD_BLOCKS = [
     { id: "wash_and_go_lot", name: "Wash & Go Lot", earningPotential: 55, heatExposure: 1, rookVisibility: 1, patrolFrequency: 1, claimCost: 220 },
@@ -213,6 +253,49 @@
         if (added > 0) state.player.financialHeat = clamp(state.player.financialHeat + added, 0, 10);
       }
     }
+  }
+  // player.cash === player.dirtyCash + player.cleanCash is a core invariant.
+  // reconcileCash() is called at the start of every player-facing action (see
+  // the copyState call sites below) so any drift from a prior action that
+  // used bare `player.cash +=`/`-=` is folded in before the new action reads
+  // or mutates the buckets — the invariant never waits for an advanceRun
+  // tick. New code should prefer these helpers over manual bucket math.
+  function spendCash(state, amount) {
+    const value = Math.max(0, Math.round(Number(amount) || 0));
+    if (!value || value > state.player.cash) return false;
+    state.player.cash -= value;
+    const fromDirty = Math.min(state.player.dirtyCash, value);
+    state.player.dirtyCash -= fromDirty;
+    state.player.cleanCash = Math.max(0, state.player.cleanCash - (value - fromDirty));
+    return true;
+  }
+  function spendDirtyCash(state, amount) {
+    const value = Math.max(0, Math.round(Number(amount) || 0));
+    if (!value || value > state.player.dirtyCash || value > state.player.cash) return false;
+    state.player.cash -= value;
+    state.player.dirtyCash -= value;
+    return true;
+  }
+  function spendCleanCash(state, amount) {
+    const value = Math.max(0, Math.round(Number(amount) || 0));
+    if (!value || value > state.player.cleanCash || value > state.player.cash) return false;
+    state.player.cash -= value;
+    state.player.cleanCash -= value;
+    return true;
+  }
+  // Converts dirty cash to clean cash at the given fee rate. Returns
+  // { fee, net } on success or null if the player does not actually have
+  // that much dirty cash right now (never approves spending money that has
+  // already left the economy).
+  function convertDirtyToClean(state, amount, feeRate) {
+    const value = Math.max(0, Math.round(Number(amount) || 0));
+    if (!value || value > state.player.dirtyCash || value > state.player.cash) return null;
+    const fee = Math.round(value * feeRate);
+    const net = value - fee;
+    state.player.dirtyCash -= value;
+    state.player.cleanCash += net;
+    state.player.cash -= fee;
+    return { fee, net };
   }
   function normalizedAttributes(state) { return { ...ATTRIBUTE_DEFAULTS, ...(state?.player?.attributes || {}) }; }
   function combatRating(state) { const a = normalizedAttributes(state); return clamp(Math.round(a.strength * 0.40 + a.reflexes * 0.35 + a.endurance * 0.25), 1, 5); }
@@ -344,7 +427,7 @@
       contactStage: "unknown", crisisResolved: false, status: "outside", outcomes: [],
       // Lieutenant fields are only meaningful for eli/kip but every crew record
       // carries the same shape so mergeDefaults/save-hydration stays uniform.
-      lieutenantStage: "none", lieutenantEffectiveness: 0,
+      lieutenantStage: "none", lieutenantEffectiveness: 0, operationPolicy: "manual",
       launderingCapacityUsedToday: 0, launderingCapacityUsedDay: null, businessesUnlocked: [],
     }]));
   }
@@ -503,6 +586,15 @@
     if (value.player?.dirtyCash === undefined) {
       state.player.dirtyCash = value.player?.cash ?? 0;
       state.player.cleanCash = 0;
+    }
+    // Rook's stage progression is now driven by Respect only; pressure no
+    // longer advances any stage. A save that already resolved a stage under
+    // the old pressure-OR gate keeps that story progress — we do not re-lock
+    // content the player already earned — but its Respect is raised to the
+    // minimum this stage now requires, so later Respect-gated checks stay
+    // internally consistent instead of reading as a contradiction.
+    if (state.flags.rookCutResolved && state.rival.respect < RESPECT_STAGE_THRESHOLDS.cut) {
+      state.rival.respect = RESPECT_STAGE_THRESHOLDS.cut;
     }
     for (const person of CREW) {
       const crew = state.people.crew[person.id];
@@ -681,7 +773,12 @@
   function territoryBenefits(state, areaId) {
     const territory = TERRITORIES.find((item) => item.areaId === areaId);
     if (!territory || !controlled(state, areaId)) return null;
-    return { buyDiscount: 0.04, sellBonus: 0.04, riskReduction: 1, dailyIncome: territory.dailyIncome, special: territory.special };
+    // Dominant/District Control tiers grant a modest additional trade edge on
+    // top of the base controlled-territory bonus, instead of stacking more
+    // passive income on top of what Territory Blocks already pay out.
+    const tier = districtControlTier(state, areaId);
+    const dominanceBonus = tier.label === "Dominant" || tier.label === DISTRICT_CONTROL_LABEL ? DISTRICT_CONTROL_DISCOUNT_BONUS : 0;
+    return { buyDiscount: 0.04 + dominanceBonus, sellBonus: 0.04 + dominanceBonus, riskReduction: 1, dailyIncome: territory.dailyIncome, special: territory.special };
   }
   function tradeUnitPrices(state, productId) {
     const areaId = state.world.currentNeighborhoodId;
@@ -757,12 +854,32 @@
   function controlledBlockCount(state) {
     return SPENARD_BLOCKS.reduce((sum, block) => sum + (state.world.territoryBlocks[block.id]?.owner === "player" ? 1 : 0), 0);
   }
+  // District Control (player-facing name for the old world.territories
+  // takeover system) tracks neighborhood-wide dominance. Where an area has a
+  // block layer (Spenard only, today), its tier is driven by how many blocks
+  // are held plus a Respect capstone, not by the takeover boolean directly —
+  // that keeps it distinct from Territory Blocks instead of just relabeling
+  // the same number twice. Areas without a block layer yet fall back to the
+  // plain owner boolean from the existing takeover mechanic.
+  function districtHasBlockLayer(areaId) { return areaId === "north_star_lot"; }
+  function districtBlockCount(state, areaId) { return districtHasBlockLayer(areaId) ? controlledBlockCount(state) : 0; }
+  function districtControlTier(state, areaId) {
+    if (!districtHasBlockLayer(areaId)) {
+      return { label: controlled(state, areaId) ? DISTRICT_CONTROL_LABEL : "Neutral", blocks: 0, capstone: false, hasBlockLayer: false };
+    }
+    const blocks = districtBlockCount(state, areaId);
+    const capstone = blocks >= DISTRICT_CONTROL_CAPSTONE_BLOCKS && state.rival.respect >= DISTRICT_CONTROL_CAPSTONE_RESPECT;
+    if (capstone) return { label: DISTRICT_CONTROL_LABEL, blocks, capstone: true, hasBlockLayer: true };
+    const tier = [...DISTRICT_CONTROL_TIERS].reverse().find((item) => blocks >= item.minBlocks) || DISTRICT_CONTROL_TIERS[0];
+    return { label: tier.label, blocks, capstone: false, hasBlockLayer: true };
+  }
   function eliLieutenantActive(state) { return state.people.crew.eli.recruited && state.people.crew.eli.lieutenantStage === "operations_lieutenant"; }
   function soldierCapacity(state) {
     if (!eliLieutenantActive(state)) return 0;
     return SOLDIER_BASE_CAPACITY + controlledBlockCount(state) * SOLDIER_CAPACITY_PER_BLOCK;
   }
   function activeSoldierCount(state) { return Object.values(state.world.soldiers).filter((item) => item.status === "active").length; }
+  function unassignedSoldiers(state) { return Object.values(state.world.soldiers).filter((item) => item.status === "active" && !item.blockId); }
   function blockSoldierCount(state, blockId) { return (state.world.territoryBlocks[blockId]?.soldiersAssigned || []).length; }
   function blockIntelVisible(state) { return !!state.flags.spenardBlocksRevealed; }
   function soldierRecruitAvailability(state) {
@@ -793,9 +910,9 @@
     if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
     if (!state.base.controlled) return { available: false, reason: "Control North Star Garage first." };
     if (!eliLieutenantActive(state)) return { available: false, reason: "Claiming corners needs an active Operations lieutenant." };
-    if (activeSoldierCount(state) < 1) return { available: false, reason: "Claiming a block needs at least one soldier to hold it." };
+    if (unassignedSoldiers(state).length < 1) return { available: false, reason: "All soldiers are already posted. Recruit or free one up first." };
     if (state.player.cash < definition.claimCost) return { available: false, reason: `Claiming this block costs $${definition.claimCost}.`, cost: definition.claimCost };
-    return { available: true, reason: "The block can be claimed.", cost: definition.claimCost };
+    return { available: true, reason: "Requires 1 available soldier.", cost: definition.claimCost };
   }
   function eliPromotionAvailability(state) {
     const eli = state.people.crew.eli;
@@ -835,7 +952,7 @@
     const remaining = Math.max(0, capacity - usedToday);
     const value = Math.max(0, Math.floor(Number(amount) || 0));
     if (value <= 0) return { available: false, reason: "Enter an amount to launder.", capacity, remaining };
-    if (value > state.player.dirtyCash) return { available: false, reason: "You do not have that much dirty cash.", capacity, remaining };
+    if (value > state.player.dirtyCash || value > state.player.cash) return { available: false, reason: "You do not have that much dirty cash.", capacity, remaining };
     if (value > remaining) return { available: false, reason: `Kip's network can only move $${remaining} more today.`, capacity, remaining };
     const fee = Math.round(value * KIP_LAUNDER_FEE);
     return { available: true, reason: "Kip can run this through the network.", fee, net: value - fee, capacity, remaining };
@@ -1057,11 +1174,54 @@
   // resolution live in one function sharing the tick's single RNG instance
   // rather than two passes. Only acts on crossedDay, matching how territory
   // income/wage accrual already only resolve once per day today.
+  // Ranks a controlled, non-full block for a given standing policy — higher
+  // is a better fit. "balanced" is handled separately (fewest soldiers
+  // first) since it is a relative comparison, not a per-block score.
+  function eliPolicyBlockScore(policy, block) {
+    if (policy === "maximize_income") return block.earningPotential;
+    if (policy === "hold_ground") return block.heatExposure + block.patrolFrequency + block.rookVisibility;
+    if (policy === "stay_quiet") return -(block.heatExposure + block.patrolFrequency);
+    return 0;
+  }
+  // Eli evaluates his standing policy inside the same passive pass that
+  // resolves income/raids — no separate clock, no extra player time. This
+  // both places newly recruited soldiers and redistributes anyone a lost
+  // block returned to the unassigned pool on an earlier tick.
+  function resolveEliAutoAssignment(state) {
+    const moved = [];
+    if (!eliLieutenantActive(state)) return moved;
+    const policy = state.people.crew.eli.operationPolicy || "manual";
+    if (policy === "manual") return moved;
+    const pending = unassignedSoldiers(state);
+    if (!pending.length) return moved;
+    const controlledBlocks = SPENARD_BLOCKS.filter((block) => state.world.territoryBlocks[block.id].owner === "player");
+    if (!controlledBlocks.length) return moved;
+    for (const soldier of pending) {
+      const candidates = controlledBlocks.filter((block) => state.world.territoryBlocks[block.id].soldiersAssigned.length < SOLDIERS_PER_BLOCK_CAP);
+      if (!candidates.length) break;
+      const best = policy === "balanced"
+        ? candidates.reduce((a, b) => (state.world.territoryBlocks[a.id].soldiersAssigned.length <= state.world.territoryBlocks[b.id].soldiersAssigned.length ? a : b))
+        : candidates.reduce((a, b) => (eliPolicyBlockScore(policy, b) > eliPolicyBlockScore(policy, a) ? b : a));
+      state.world.soldiers[soldier.id].blockId = best.id;
+      state.world.territoryBlocks[best.id].soldiersAssigned.push(soldier.id);
+      moved.push(best.name);
+    }
+    return moved;
+  }
+  // Passive organization activity is summarized into a single compact report
+  // per crossed day instead of one log line per block — a run with six
+  // controlled blocks would otherwise flood the feed every night. Block
+  // losses are the one exception ("major incidents"): each still gets its
+  // own line, since losing a corner is worth reading on its own.
   function resolveSoldierOperations(state, random, crossedDay) {
     if (!crossedDay) return;
+    const movedBlocks = resolveEliAutoAssignment(state);
     const eli = state.people.crew.eli;
     const effectivenessDiscount = eli.lieutenantStage === "operations_lieutenant" ? eli.lieutenantEffectiveness * 0.05 : 0;
     let totalIncome = 0;
+    let raidedCount = 0;
+    let attritionCount = 0;
+    const raidedBlockNames = [];
     for (const block of SPENARD_BLOCKS) {
       const record = state.world.territoryBlocks[block.id];
       if (record.owner !== "player") continue;
@@ -1084,27 +1244,44 @@
           record.raidCount += 1;
           state.player.heat = clamp(state.player.heat + 1, 0, 15);
           state.rival.pressure = clamp(state.rival.pressure + 1, 0, 15);
-          logEntry(state, `Rook's people hit ${block.name}. One soldier does not check back in.`, "bad");
+          raidedCount += 1;
+          raidedBlockNames.push(block.name);
           if (random.next() < RAID_BLOCK_LOSS_CHANCE) {
             record.owner = "rook";
-            logEntry(state, `${block.name} slips back under Rook's people after the raid.`, "bad");
+            const survivors = record.soldiersAssigned;
+            for (const survivorId of survivors) {
+              const survivor = state.world.soldiers[survivorId];
+              if (survivor) survivor.blockId = null;
+            }
+            record.soldiersAssigned = [];
+            logEntry(state, survivors.length
+              ? `Rook takes ${block.name}. ${survivors.length} of Eli's people make it back to the garage.`
+              : `${block.name} slips back under Rook's people after the raid.`, "bad");
           }
         }
       }
+      const attritionChance = Math.max(0, SOLDIER_ATTRITION_BASE_CHANCE - eli.lieutenantEffectiveness * ELI_EFFECTIVENESS_ATTRITION_DISCOUNT);
       for (const id of [...record.soldiersAssigned]) {
         const soldier = state.world.soldiers[id];
         if (!soldier || soldier.status !== "active") continue;
-        if (random.next() < SOLDIER_ATTRITION_BASE_CHANCE) {
+        if (random.next() < attritionChance) {
           soldier.status = "lost";
           soldier.blockId = null;
           record.soldiersAssigned = record.soldiersAssigned.filter((sid) => sid !== id);
-          logEntry(state, `One of the soldiers on ${block.name} does not show up again.`, "warn");
+          attritionCount += 1;
         }
       }
     }
-    if (totalIncome > 0) {
-      addDirtyCash(state, totalIncome);
-      logEntry(state, `Soldiers on the block bring in $${totalIncome} while you were elsewhere.`, "good");
+    if (totalIncome > 0) addDirtyCash(state, totalIncome);
+    if (totalIncome > 0 || movedBlocks.length || raidedCount || attritionCount) {
+      const parts = [];
+      if (totalIncome > 0) parts.push(`+$${totalIncome} territory income`);
+      if (movedBlocks.length === 1) parts.push(`1 soldier moved to ${movedBlocks[0]}`);
+      else if (movedBlocks.length > 1) parts.push(`${movedBlocks.length} soldiers moved (${movedBlocks.slice(0, 2).join(", ")}${movedBlocks.length > 2 ? "…" : ""})`);
+      if (raidedCount) parts.push(`${raidedBlockNames.slice(0, 2).join(", ")}${raidedCount > 2 ? " and others" : ""} drew police attention`);
+      if (attritionCount) parts.push(`${attritionCount} soldier${attritionCount === 1 ? "" : "s"} lost to attrition`);
+      if (!raidedCount && !attritionCount) parts.push("No casualties");
+      logEntry(state, `Eli's report: ${parts.join(" · ")}`, raidedCount || attritionCount ? "warn" : "good");
     }
   }
 
@@ -1127,6 +1304,10 @@
       let territoryIncome = 0;
       for (const definition of TERRITORIES) {
         if (!controlled(state, definition.areaId)) continue;
+        // Once an area has its own Territory Blocks, soldier income already
+        // pays out per block (resolveSoldierOperations) — the flat District
+        // Control daily income would double-pay the same neighborhood.
+        if (districtHasBlockLayer(definition.areaId)) continue;
         territoryIncome += definition.dailyIncome;
         state.world.territories[definition.areaId].incomeCollected += definition.dailyIncome;
       }
@@ -1172,6 +1353,16 @@
         state.player.heat = clamp(state.player.heat + 1, 0, 15);
         logEntry(state, `Dre leaves the new total under the Mini-Mart wiper: $${state.lender.balance}. No greeting.`, "bad");
       }
+    }
+    // Fresh-arrival runs set dueDay === RUN_DAYS, so `day > dueDay` can never
+    // become true inside a seven-day run and missedDays/collectorTier would
+    // stay 0 forever — the Day 7 deadline itself never produces a consequence.
+    // Reaching that boundary with debt still owed is the first enforcement
+    // trigger for this run length; severity scales with how much is unpaid.
+    if (crossedDay && state.lender.balance > 0 && state.run.day >= RUN_DAYS && state.lender.collectorTier < 1) {
+      const owedRatio = state.lender.principal > 0 ? state.lender.balance / state.lender.principal : 1;
+      state.lender.collectorTier = owedRatio >= 0.9 ? 2 : 1;
+      logEntry(state, "Dre's patience runs out with the note still open. Somebody is coming to collect in person.", "bad");
     }
     state.lender.relationship = relationshipForLender(state.lender, state.run.day);
     state.rival.relationship = relationshipForRival(state.rival);
@@ -1538,8 +1729,14 @@
       mid: { title: "Rook's Loading-Bay Test", description: "Rook's people close both ends of Bay Nine. They know about the garage, the crew, and which route you used to get here.", enemyName: "Rook's Crew", enemyHealth: 42, guard: 0.14, evasion: 0.10, pursuit: 0.16, attack: [8, 14], pay: 180 },
       late: { title: "The Seventh-Night Consequence", description: "The final plan reaches the garage before you do. Red-and-blue light washes over Rook's sedan while everybody waits to see who you protect.", enemyName: "Final Opposition", enemyHealth: 58, guard: 0.18, evasion: 0.13, pursuit: 0.20, attack: [10, 18], pay: 320 },
     };
-    const template = templates[id];
+    let template = templates[id];
     if (!template) return;
+    // A collector's severity scales with how much of the debt is still
+    // unpaid: a player who owes almost nothing faces a lighter encounter
+    // than one who has paid down nothing at all.
+    if (id === "dre_collector" && state.lender.collectorTier >= 2) {
+      template = { ...template, enemyHealth: Math.round(template.enemyHealth * 1.3), pay: Math.round(template.pay * 1.3), attack: [Math.round(template.attack[0] * 1.2), Math.round(template.attack[1] * 1.2)] };
+    }
     state.run.pendingEncounter = { id, step: 1, enemyHealth: template.enemyHealth, feedback: template.description, finishAfter: !!finishAfter, ...template };
     const identity = state.player.streetIdentity;
     const preview = identity === "stickup" ? "They arrived expecting you to make this physical."
@@ -1617,7 +1814,13 @@
     return !!state.flags[resolvedFlagName(id)];
   }
   const maraOpen = (state) => state.people.mara.available !== false && state.people.mara.status !== "gone";
-  const rivalAttentionEarned = (state) => state.rival.pressure > 0 || state.player.heat >= 3 || state.stats.robbery.attempts > 0 || state.people.dealers?.kip?.robbedCount > 0 || Object.values(state.world.influence).some((value) => value > 0);
+  // Respect is the active numeric driver of Rook's stage progression; pressure
+  // no longer advances any Rook stage (it remains a live secondary value that
+  // still colors "aggressive"/"competitive" relationship labels elsewhere).
+  // "Has Rook noticed you at all" for the opening beat can still come from
+  // other visible signals — Heat, robbery, a robbed dealer, district
+  // influence — none of which are the pressure field itself.
+  const rivalAttentionEarned = (state) => state.rival.respect > 0 || state.player.heat >= 3 || state.stats.robbery.attempts > 0 || state.people.dealers?.kip?.robbedCount > 0 || Object.values(state.world.influence).some((value) => value > 0);
 
   const STORY_REGISTRY = [
     // --- The Night Owl -------------------------------------------------------
@@ -1675,8 +1878,8 @@
       requires: (s) => s.lender.afterPayoffOffer === "available", area: null,
       earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 10, exit: null },
     { id: "dre_collector", chain: "dre_note", stage: 4, classification: "threat", trigger: "chain", kind: "encounter",
-      requires: (s) => s.lender.collectorTier >= 2, area: null,
-      earliest: { day: 5, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: (s) => s.lender.balance <= 0 },
+      requires: (s) => s.lender.collectorTier >= 1, area: null,
+      earliest: { day: 5, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: (s) => s.lender.balance <= 0 },
     { id: "dre_day7", chain: "dre_note", stage: 5, classification: "ending_setup", trigger: "chain",
       requires: (s) => !!s.flags.dreTermsResolved, area: null,
       earliest: { day: 7, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
@@ -1689,12 +1892,13 @@
     { id: "rook_tax", chain: "rook_pressure", stage: 3, classification: "main_chapter", trigger: "chain",
       requires: (s) => !!s.flags.earlyThreatResolved, area: null,
       earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
-    // Respect is an additive OR-branch alongside the original pressure gate, not
-    // a replacement: every pressure-driven path that already reached this beat
-    // keeps working exactly as before. Territory-block claimers who never build
-    // up much pressure get a second legitimate path via Respect instead.
+    // Respect is now the sole numeric driver of this stage — the migration
+    // from the old pressure-OR-area.rival gate is complete. Legacy saves that
+    // already resolved this beat under the old gate are migrated in
+    // hydrateRun (respect is raised to this threshold), so they are not
+    // re-locked out of content they already earned.
     { id: "rook_cut", chain: "rook_pressure", stage: 4, classification: "callback", trigger: "chain",
-      requires: (s) => !!s.flags.rookTaxResolved && (s.rival.pressure >= 5 || AREA_BY_ID[s.world.currentNeighborhoodId].rival >= 3 || s.rival.respect >= RESPECT_STAGE_THRESHOLDS.cut),
+      requires: (s) => !!s.flags.rookTaxResolved && s.rival.respect >= RESPECT_STAGE_THRESHOLDS.cut,
       area: null, earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 6, exit: null },
     { id: "mid", chain: "rook_pressure", stage: 5, classification: "threat", trigger: "chain", kind: "encounter",
       requires: (s) => !!s.flags.rookTaxResolved, area: null,
@@ -1932,6 +2136,7 @@
       if (state.flags.eliOwnsShare || state.flags.eliPromisedFuture) effectiveness += 1;
       if (state.flags.eliDocked || state.flags.eliToldNoFuture) effectiveness -= 1;
       eli.lieutenantEffectiveness = clamp(effectiveness, 0, 3);
+      eli.operationPolicy = "balanced";
     }
     if (effect.introduceKipLieutenant) {
       state.people.crew.kip.introduced = true;
@@ -2138,6 +2343,7 @@
   function reduceEncounter(inputState, action) {
     const state = copyState(inputState), encounter = state.run.pendingEncounter;
     if (!encounter) return inputState;
+    reconcileCash(state);
     const available = encounterChoices(state).map((item) => item.id);
     if (!available.includes(action.choiceId)) return inputState;
     const random = makeRandom(state.run.rngState);
@@ -2218,6 +2424,7 @@
     }
     state.people.mara.status = maraStatus(state.people.mara);
     state.run.rngState = random.state;
+    reconcileCash(state);
     return state;
   }
 
@@ -2233,6 +2440,7 @@
     const availability = robberyAvailability(inputState);
     if (!availability.available) return inputState;
     const state = copyState(inputState);
+    reconcileCash(state);
     state.stats.robbery = normalizeRobberyStats(state.stats.robbery, state);
     const random = makeRandom(state.run.rngState);
     const success = random.next() < availability.chance;
@@ -2286,6 +2494,7 @@
     const definition = DEALER_BY_ID[dealerId];
     const first = definition.name.split(" ")[0];
     const state = copyState(inputState);
+    reconcileCash(state);
     const record = state.people.dealers[dealerId];
     const random = makeRandom(state.run.rngState);
     const success = random.next() < actions.rob.chance;
@@ -2347,6 +2556,7 @@
     const availability = eliTestRouteAvailability(inputState);
     if (!availability.available) return inputState;
     const state = copyState(inputState);
+    reconcileCash(state);
     const random = makeRandom(state.run.rngState);
     state.player.cash -= availability.cost;
     state.stats.moneySpent.crew += availability.cost;
@@ -2381,6 +2591,7 @@
     if (!readiness.available) return inputState;
     const definition = TERRITORIES.find((item) => item.areaId === areaId);
     const state = copyState(inputState);
+    reconcileCash(state);
     const random = makeRandom(state.run.rngState);
     const attackPower = crewPower(state, includePlayer);
     const defensePower = state.world.territories[areaId].power;
@@ -2473,6 +2684,8 @@
       state.player.streetName = chosenName || (action.type === "CHOOSE_BACKGROUND" ? DEFAULT_STREET_NAMES[background.id] : DEFAULT_STREET_NAMES.neutral);
       state.player.streetNameChosen = !!chosenName;
       state.player.cash = action.type === "CHOOSE_BACKGROUND" ? 375 : 1000;
+      state.player.dirtyCash = state.player.cash;
+      state.player.cleanCash = 0;
       state.player.heat = action.type === "CHOOSE_BACKGROUND" ? 1 : 0;
       if (action.type === "CHOOSE_BACKGROUND") {
         state.run.premise = "legacy_established";
@@ -2503,6 +2716,7 @@
     if (action.type === "TAKEOVER") return executeTakeover(inputState, action.neighborhoodId, !!action.includePlayer);
 
     const state = copyState(inputState);
+    reconcileCash(state);
     if (state.run.status !== "playing" && action.type !== "DISMISS_DAY_SUMMARY") return inputState;
     if (action.type === "DISMISS_DAY_SUMMARY") { state.run.daySummary = null; return state; }
     if (action.type === "DISMISS_OPENING") { state.run.openingPending = false; return state; }
@@ -2547,6 +2761,7 @@
       state.run.rngState = random.state;
       announceFeatureUnlocks(state, beforeFeatures);
       if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
+      reconcileCash(state);
       return state;
     }
 
@@ -2566,6 +2781,7 @@
       state.run.currentVisit.trades += 1;
       state.run.currentVisit.grossBuy += cost;
       logEntry(state, `You move ${qty} ${product.name} into the bag for $${cost}.`, "good");
+      reconcileCash(state);
       return state;
     }
     if (action.type === "SELL") {
@@ -2592,6 +2808,7 @@
         state.world.tradeInfluenceGranted[state.world.currentNeighborhoodId] = true;
       }
       logEntry(state, `The buyer takes ${qty} ${product.name}. You count $${total} before leaving the block.`, profit >= 0 ? "good" : "bad");
+      reconcileCash(state);
       return state;
     }
 
@@ -2608,6 +2825,7 @@
         state.base.storedCash -= amount; state.player.cash += amount;
         logEntry(state, `You pull $${amount} back into street cash.`, "warn");
       }
+      reconcileCash(state);
       return state;
     }
     if (action.type === "HOME_STORE_CASH" || action.type === "HOME_RETRIEVE_CASH") {
@@ -2622,6 +2840,7 @@
         state.home.storedCash -= amount; state.player.cash += amount;
         logEntry(state, `You take $${amount} back into street cash.`, "");
       }
+      reconcileCash(state);
       return state;
     }
     if (action.type === "HOME_STORE_PRODUCT" || action.type === "HOME_RETRIEVE_PRODUCT") {
@@ -2711,6 +2930,7 @@
       state.player.cash -= amount; crew.wageDue = 0; crew.loyalty += 1; state.stats.moneySpent.crew += amount;
       recordBehavior(state, "earner", 2, `crew_pay:${action.crewId}:${state.run.day}`, "crew_pay");
       logEntry(state, `${CREW_BY_ID[action.crewId].name.split(" ")[0]} folds the full $${amount} into a pocket and stays for the next plan.`, "good");
+      reconcileCash(state);
       return state;
     }
 
@@ -2958,11 +3178,11 @@
       return advanceRun(base, { reason: "RECRUIT_CREW" });
     }
     if (action.type === "ASSIGN_CREW") {
-      if (!state.base.controlled || !state.base.visiting || !CREW_BY_ID[action.crewId]) return inputState;
+      if (!state.base.controlled || !state.base.visiting || !CREW_BY_ID[action.crewId] || !CREW_BY_ID[action.crewId].canFieldAssign) return inputState;
       const crew = state.people.crew[action.crewId];
       if (!crew.recruited || crew.assignment) return inputState;
       const allowed = { eli: ["north_run", "outer_run"], miri: ["source_cocaine", "source_meth"], tone: ["guard_base", "intimidate_buyer"] };
-      if (!allowed[action.crewId].includes(action.assignment)) return inputState;
+      if (!allowed[action.crewId] || !allowed[action.crewId].includes(action.assignment)) return inputState;
       crew.assignment = action.assignment;
       logEntry(base, `${CREW_BY_ID[action.crewId].name.split(" ")[0]} leaves the garage with one assignment and one promised check-in.`, "");
       return advanceRun(base, { reason: "ASSIGN_CREW" });
@@ -2978,6 +3198,7 @@
       if (base.flags.eliOwnsShare || base.flags.eliPromisedFuture) effectiveness += 1;
       if (base.flags.eliDocked || base.flags.eliToldNoFuture) effectiveness -= 1;
       eli.lieutenantEffectiveness = clamp(effectiveness, 0, 3);
+      eli.operationPolicy = "balanced";
       recordBehavior(base, "connector", 3, "eli:lieutenant", "lieutenant_promotion");
       awardStreetRead(base, "eli:lieutenant", 25, "Promoted Eli to Operations");
       logEntry(base, "Eli takes the garage's second set of keys. Corners, soldiers, and rotation are his call now.", "good");
@@ -3002,22 +3223,36 @@
       base.world.soldiers[action.soldierId].blockId = action.blockId;
       base.world.territoryBlocks[action.blockId].soldiersAssigned.push(action.soldierId);
       logEntry(base, `A soldier posts up on ${SPENARD_BLOCK_BY_ID[action.blockId].name}.`, "");
-      return advanceRun(base, { reason: "ASSIGN_SOLDIER" });
+      // Once Eli is running Operations, hand-placing an individual soldier is
+      // a radio call, not a trip — it costs no player time, same as changing
+      // his standing policy. The point of the promotion is fewer required
+      // actions, not the same actions with an extra title on them.
+      return base;
+    }
+    if (action.type === "SET_ELI_POLICY") {
+      if (!eliLieutenantActive(state) || !ELI_OPERATION_POLICIES[action.policy]) return inputState;
+      base.people.crew.eli.operationPolicy = action.policy;
+      logEntry(base, `Eli switches to a ${ELI_OPERATION_POLICIES[action.policy].label} standing order.`, "");
+      return base;
     }
     if (action.type === "CLAIM_BLOCK") {
       if (!state.base.controlled) return inputState;
       const readiness = blockClaimAvailability(state, action.blockId);
       if (!readiness.available) return inputState;
       const definition = SPENARD_BLOCK_BY_ID[action.blockId];
+      const occupier = unassignedSoldiers(base)[0];
+      if (!occupier) return inputState;
       base.player.cash -= definition.claimCost;
       base.stats.moneySpent.base += definition.claimCost;
       const block = base.world.territoryBlocks[action.blockId];
       block.owner = "player";
       block.capturedDay = base.run.day;
+      base.world.soldiers[occupier.id].blockId = action.blockId;
+      block.soldiersAssigned.push(occupier.id);
       base.rival.respect += 1;
       recordBehavior(base, "stickup", 2, `block:${action.blockId}`, "territory_expansion");
       awardStreetRead(base, `block:${action.blockId}`, 20, `Claimed ${definition.name}`);
-      logEntry(base, `${definition.name} answers to your operation now. Rook's people will hear about it.`, "good");
+      logEntry(base, `${definition.name} answers to your operation now. One soldier posts up immediately. Rook's people will hear about it.`, "good");
       return advanceRun(base, { reason: "CLAIM_BLOCK" });
     }
     if (action.type === "LAUNDER_CASH") {
@@ -3025,12 +3260,11 @@
       if (!readiness.available) return inputState;
       const value = Math.floor(Number(action.amount) || 0);
       const kip = base.people.crew.kip;
-      base.player.dirtyCash -= value;
-      base.player.cleanCash += readiness.net;
-      base.player.cash -= readiness.fee;
+      const result = convertDirtyToClean(base, value, KIP_LAUNDER_FEE);
+      if (!result) return inputState;
       if (kip.launderingCapacityUsedDay !== base.run.day) { kip.launderingCapacityUsedDay = base.run.day; kip.launderingCapacityUsedToday = 0; }
       kip.launderingCapacityUsedToday += value;
-      logEntry(base, `Kip's network turns $${value} dirty into $${readiness.net} clean. He keeps $${readiness.fee}.`, "good");
+      logEntry(base, `Kip's network turns $${value} dirty into $${result.net} clean. He keeps $${result.fee}.`, "good");
       return advanceRun(base, { reason: "LAUNDER_CASH" });
     }
     if (action.type === "VISIT_MARA") {
@@ -3141,6 +3375,7 @@
     CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS,
     SPENARD_BLOCKS, KIP_BUSINESSES, SOLDIER_RECRUIT_COST, SOLDIER_BASE_CAPACITY, SOLDIER_CAPACITY_PER_BLOCK, SOLDIERS_PER_BLOCK_CAP,
     KIP_LAUNDER_FEE, DRE_COLLECTOR_TIERS, ELI_LIEUTENANT_UNLOCK, KIP_LIEUTENANT_INCOME_THRESHOLD, KIP_LIEUTENANT_STANDING_MIN, RESPECT_STAGE_THRESHOLDS,
+    DISTRICT_CONTROL_TIERS, DISTRICT_CONTROL_CAPSTONE_BLOCKS, DISTRICT_CONTROL_LABEL, ELI_OPERATION_POLICIES,
     buildEventForTest: activeEvent, storyCandidatesForTest: storyCandidates,
     recordBehaviorForTest: recordBehavior, awardStreetReadForTest: awardStreetRead, evaluateStreetIdentityForTest: evaluateStreetIdentity,
     createRun, hydrateRun, inspectSave, reduceGame, advanceRun, selectRunSummary,
@@ -3154,6 +3389,7 @@
       controlledBlockCount, eliLieutenantActive, soldierCapacity, activeSoldierCount, blockSoldierCount, blockIntelVisible,
       soldierRecruitAvailability, soldierAssignAvailability, blockClaimAvailability, eliPromotionAvailability,
       weeklyIncomeEstimate, kipLieutenantAvailability, launderCapacity, launderAvailability,
+      districtControlTier, districtHasBlockLayer, unassignedSoldiers,
     },
   };
 });

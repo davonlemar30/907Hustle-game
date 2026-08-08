@@ -88,8 +88,16 @@ test("every registered beat builds renderable copy with concrete choices", () =>
     assert.ok(built, `${item.id} has no factory`);
     assert.ok(built.title && built.title.split(/\s+/).length <= 8, `${item.id}: title length`);
     assert.ok(built.who && built.where && built.stakes, `${item.id}: missing who/where/stakes`);
+    // v1.2 two-layer popup contract: the description is the collapsed layer a
+    // modal shows by default and stays under 40 words. Cut backstory moves to
+    // `flavor`, which the "More" toggle reveals.
     const words = built.description.split(/\s+/).length;
-    assert.ok(words >= 30 && words <= 110, `${item.id}: description is ${words} words`);
+    assert.ok(words <= 40, `${item.id}: collapsed description is ${words} words`);
+    assert.ok(words >= 20, `${item.id}: collapsed description is thin at ${words} words`);
+    if (built.flavor !== null) {
+      assert.equal(typeof built.flavor, "string", `${item.id}: flavor must be a string or null`);
+      assert.ok(built.flavor.split(/\s+/).length >= 15, `${item.id}: thin flavor layer`);
+    }
     assert.ok(built.choices.length >= 2 && built.choices.length <= 4, `${item.id}: ${built.choices.length} choices`);
     for (const choice of built.choices) {
       assert.ok(choice.label.length > 0 && choice.label.split(/\s+/).length <= 8, `${item.id}: choice label "${choice.label}"`);
@@ -259,4 +267,42 @@ test("Rook escalates through pressure before the collision", () => {
   assert.ok(stages.rook_mark < stages.rook_tax, "he notices before he asks");
   assert.ok(stages.rook_tax < stages.mid, "he asks before it turns physical");
   assert.ok(stages.mid < stages.rook_day7, "the collision precedes the reckoning");
+});
+
+test("the entity registry backs every tappable name with recall copy", () => {
+  const ids = Object.keys(C.ENTITY_REGISTRY);
+  assert.ok(ids.length >= 15, `only ${ids.length} entities registered`);
+  for (const id of ids) {
+    const entity = C.ENTITY_REGISTRY[id];
+    assert.equal(entity.id, id, `${id}: id mismatch`);
+    assert.ok(["person", "place"].includes(entity.kind), `${id}: kind`);
+    assert.ok(entity.title && entity.title.length > 0, `${id}: title`);
+    assert.ok(entity.aliases.length >= 1, `${id}: aliases`);
+    const words = entity.text.split(/\s+/).length;
+    assert.ok(words >= 10 && words <= 45, `${id}: recall copy is ${words} words`);
+    assert.doesNotMatch(entity.text, /[—–]/, `${id}: em dash`);
+  }
+  // Longest alias first so "Rook Mercer" is matched before "Rook".
+  const lengths = C.ENTITY_MATCH_ORDER.map((entry) => entry.alias.length);
+  assert.deepEqual(lengths, [...lengths].sort((a, b) => b - a), "match order is not longest-first");
+  for (const entry of C.ENTITY_MATCH_ORDER) assert.ok(C.ENTITY_REGISTRY[entry.id], `${entry.alias}: unknown entity`);
+});
+
+test("every named character and district in popup copy resolves to a registry card", () => {
+  const state = C.createRun(4242, "Rookie");
+  state.base.controlled = true;
+  state.player.cash = 4000;
+  const aliases = C.ENTITY_MATCH_ORDER.map((entry) => entry.alias);
+  const pattern = new RegExp(`\\b(${aliases.map((a) => a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`);
+  const named = ["Dre", "Mara", "Rook", "Eli", "Kip"];
+  const covered = new Set();
+  for (const item of REGISTRY) {
+    if (item.kind === "encounter") continue;
+    const built = C.buildEventForTest(item.id, state);
+    if (!built) continue;
+    for (const name of named) if (built.description.includes(name)) covered.add(name);
+    const match = built.description.match(pattern);
+    if (match) assert.ok(C.ENTITY_REGISTRY[C.ENTITY_MATCH_ORDER.find((e) => e.alias === match[1]).id], `${item.id}: ${match[1]}`);
+  }
+  for (const name of named) assert.ok(covered.has(name), `${name} never appears in collapsed popup copy`);
 });

@@ -161,7 +161,7 @@ test("recent local price context is unavailable without history and directional 
 
 test("v3 autosave state survives JSON hydration without migration", () => {
   let state = run(5150); state.player.cash = 777; state.player.inventory.weed = { qty: 4, avgCost: 31.25 };
-  const hydrated = JSON.parse(JSON.stringify(state));
+  const hydrated = JSON.parse(C.serializeRun(state));
   assert.equal(hydrated.version, C.VERSION); assert.equal(hydrated.player.inventory.weed.avgCost, 31.25);
   const next = C.reduceGame(hydrated, { type: "SELL", productId: "weed", qty: 1 });
   assert.equal(next.player.inventory.weed.qty, 3);
@@ -711,14 +711,6 @@ test("bus opens Downtown but fresh runs cannot travel to Industrial without a ro
   assert.equal(state.world.currentNeighborhoodId, "downtown"); assert.equal(state.player.cash, 995); assert.equal(state.run.slot, 1);
 });
 
-test("Street Read awards deduplicate and remain separate from score and identity", () => {
-  const state = fresh(9007); const score = C.selectors.operationScore(state);
-  assert.equal(C.awardStreetReadForTest(state, "test:first", 40, "Test"), true);
-  assert.equal(C.awardStreetReadForTest(state, "test:first", 40, "Test"), false);
-  assert.equal(state.stats.streetRead.xp, 40); assert.equal(state.stats.streetRead.level, 1);
-  assert.equal(state.player.streetIdentity, "unproven"); assert.equal(C.selectors.operationScore(state), score);
-});
-
 test("legacy v3 saves retain garage ownership while v0.9 acquisition advances once", () => {
   const legacy = run(9008); const raw = JSON.parse(JSON.stringify(legacy)); delete raw.base.controlled; delete raw.run.premise;
   const hydrated = C.hydrateRun(raw); assert.equal(hydrated.run.premise, "legacy_established"); assert.equal(hydrated.base.controlled, true);
@@ -736,7 +728,7 @@ function operatorSetup(seed = 42000) {
   state.people.crew.eli.introduced = true; state.people.crew.eli.contactStage = "recruitable"; state.base.visiting = true;
   state = C.reduceGame(state, { type: "RECRUIT_CREW", crewId: "eli" });
   clearModals(state);
-  state.people.crew.eli.loyalty = 3; state.stats.streetRead.level = 2; state.base.visiting = false;
+  state.people.crew.eli.loyalty = 3; state.base.visiting = false;
   return state;
 }
 
@@ -747,7 +739,7 @@ function promotedEliSetup(seed = 42000) {
   return state;
 }
 
-test("Eli lieutenant promotion is gated on loyalty and Street Read level, not garage presence", () => {
+test("Eli lieutenant promotion is gated on loyalty, not garage presence", () => {
   let state = operatorSetup(42001);
   state.people.crew.eli.loyalty = 0;
   const blocked = C.reduceGame(state, { type: "PROMOTE_LIEUTENANT", crewId: "eli" });
@@ -1108,7 +1100,7 @@ test("cash equals dirty plus clean after purchases, debt payments, recruitment, 
   state = C.reduceGame(state, { type: "RECRUIT_CREW", crewId: "eli" }); clearModals(state); checkInvariant(state, "after crew recruitment");
   state.player.cash += 400; state.player.dirtyCash += 400;
   state = C.reduceGame(state, { type: "PAY_DEBT", amount: 200 }); checkInvariant(state, "after a debt payment");
-  state.people.crew.eli.loyalty = 3; state.stats.streetRead.level = 2; state.base.visiting = false;
+  state.people.crew.eli.loyalty = 3; state.base.visiting = false;
   state = C.reduceGame(state, { type: "PROMOTE_LIEUTENANT", crewId: "eli" }); clearModals(state); checkInvariant(state, "after lieutenant promotion");
   state.player.cash += 5000; state.player.dirtyCash += 5000;
   state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state); checkInvariant(state, "after soldier recruitment");

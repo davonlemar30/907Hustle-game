@@ -21,7 +21,7 @@ test("new games are classless and expose one Start from the Bottom confirmation"
 });
 test("five primary navigation labels lead with Home and progressive More categories are explicit", () => {
   assert.match(ui, /const NAV = \[\["home", "Home"\], \["market", "Market"\], \["travel", "Travel"\], \["people", "People"\], \["more", "More"\]\]/);
-  for (const label of ["Street Read", "Operations", "Finances", "Recovery", "Help"]) assert.match(ui, new RegExp(`title="${label}"`));
+  for (const label of ["Character", "Operations", "Finances", "Recovery", "Help"]) assert.match(ui, new RegExp(`title="${label}"`));
   assert.match(css, /grid-template-columns:repeat\(5,1fr\)/);
 });
 test("Travel exposes the fresh-arrival activity and access model", () => {

@@ -12,7 +12,6 @@
   const WORKING_CAPITAL_RESERVE = 150;
   const STREET_NAME_MAX = 16;
   const GARAGE_DEPOSIT = 650;
-  const STREET_READ_LEVELS = [40, 110, 210, 340];
   const ATTRIBUTE_THRESHOLDS = { 2: 10, 3: 18, 4: 28 };
   const DEFAULT_STREET_NAMES = { shooter: "Steady", hustler: "Silver", strategist: "Quiet", neutral: "Rookie" };
   const ATTRIBUTE_DEFAULTS = { strength: 2, endurance: 2, reflexes: 2, presence: 2, insight: 2, discipline: 2 };
@@ -156,7 +155,7 @@
   const DRE_COLLECTOR_KILL_INTEREST_BUMP = 0.25;
   const DRE_COLLECTOR_INTEREST_CAP = 3.0;
 
-  const ELI_LIEUTENANT_UNLOCK = { minLoyalty: 3, minStreetReadLevel: 2 };
+  const ELI_LIEUTENANT_UNLOCK = { minLoyalty: 3 };
   const KIP_LIEUTENANT_INCOME_THRESHOLD = 500;
   const KIP_LIEUTENANT_STANDING_MIN = 2;
 
@@ -306,8 +305,18 @@
   function charismaRating(state) { const a = normalizedAttributes(state); return clamp(Math.round(a.presence * 0.70 + a.discipline * 0.30), 1, 5); }
   function intelligenceRating(state) { const a = normalizedAttributes(state); return clamp(Math.round(a.insight * 0.70 + a.discipline * 0.30), 1, 5); }
   function derivedRatings(state) { return { combat: combatRating(state), charisma: charismaRating(state), intelligence: intelligenceRating(state) }; }
+  // Street Read is the only Set-bearing branch of state, and state reaches the
+  // reducer by more than one route: hydrateRun, structuredClone, and - in the
+  // autosave-reload path a test pins - a raw JSON.parse with no hydration at
+  // all. Normalizing here means every reducer entry point sees real Sets
+  // regardless of how the state got there, instead of each hook guarding itself.
+  function streetReadIsHydrated(read) {
+    return !!read && !!read.categories && Object.values(read.categories).every((value) => value instanceof Set);
+  }
   function copyState(state) {
-    return typeof structuredClone === "function" ? structuredClone(state) : JSON.parse(JSON.stringify(state));
+    const copy = typeof structuredClone === "function" ? structuredClone(state) : JSON.parse(JSON.stringify(state));
+    if (state && typeof state === "object" && !streetReadIsHydrated(copy.streetRead)) copy.streetRead = deserializeStreetRead(copy.streetRead);
+    return copy;
   }
   function slotNumber(day, slot) { return (day - 1) * 4 + slot; }
   function normalizeSeed(seed) {
@@ -397,15 +406,283 @@
     if (behavior.meaningfulActions >= 8 && state.player.streetIdentity === "unproven") evaluateStreetIdentity(state, false);
     return true;
   }
-  function awardStreetRead(state, awardId, xp, label) {
-    const streetRead = state.stats?.streetRead;
-    if (!streetRead || !awardId || streetRead.awards[awardId]) return false;
-    streetRead.awards[awardId] = { xp, day: state.run.day, slot: state.run.slot, label };
-    streetRead.xp += xp;
-    const prior = streetRead.level;
-    streetRead.level = STREET_READ_LEVELS.filter((threshold) => streetRead.xp >= threshold).length;
-    if (streetRead.level > prior) logEntry(state, `Street Read ${streetRead.level}: the city is becoming easier to read.`, "good");
+  // Street Read is deliberately invisible. It measures how much of the city a
+  // run has actually touched - not how much it has earned - and pays that back
+  // as convenience: sharper price copy, a contact who volunteers something, a
+  // shop that happens to have the thing you needed. The player is never told
+  // any of this exists, which is the point. A visible bar turns variety into a
+  // checklist, and a checklist is exactly the grind this replaces.
+  //
+  // It is scored on breadth first (how many kinds of thing you did) and depth
+  // second (how many distinct instances), with a staleness penalty so that
+  // front-loading variety on Day 1 and then grinding one loop decays back down.
+  // Entirely separate from Street Identity: identity reads WHO you are from a
+  // weighted behavior ledger, this reads HOW WELL YOU KNOW THE STREETS from
+  // set-membership. They share the nightly tick and nothing else.
+  const STREET_READ_CATEGORIES = {
+    trading: 3, social: 2, exploration: 3, risk: 1, routine: 4, recovery: 1, income: 1,
+  };
+  const STREET_READ_TIER_THRESHOLDS = [25, 50, 75];
+  const STREET_READ_DEPTH_CAP = 40;
+  const STREET_READ_BREADTH_WEIGHT = 60;
+
+  function createStreetRead() {
+    return {
+      categories: Object.fromEntries(Object.keys(STREET_READ_CATEGORIES).map((key) => [key, new Set()])),
+      score: 0, tier: 0, lastVarietyDay: 0, totalLifetimeEntries: 0, intelDay: null,
+    };
+  }
+  function streetReadTier(state) { return state?.streetRead?.tier || 0; }
+  // Tier 3 buys exactly one point of slack against any interaction/trust/standing
+  // gate. Capped at 1 on purpose: it should feel like knowing the right door, not
+  // like skipping a tier of progression.
+  function streetReadAccessBonus(state) { return streetReadTier(state) >= 3 ? 1 : 0; }
+
+  function addStreetReadEntry(state, category, key) {
+    const read = state?.streetRead;
+    if (!read || !key) return false;
+    const set = read.categories[category];
+    if (!set || set.has(key)) return false;
+    set.add(key);
+    read.totalLifetimeEntries += 1;
+    read.lastVarietyDay = state.run.day;
     return true;
+  }
+
+  function recalculateStreetRead(state) {
+    const read = state?.streetRead;
+    if (!read) return;
+    let met = 0, entries = 0;
+    for (const [category, threshold] of Object.entries(STREET_READ_CATEGORIES)) {
+      const size = read.categories[category]?.size || 0;
+      entries += size;
+      if (size >= threshold) met += 1;
+    }
+    const breadth = (met / Object.keys(STREET_READ_CATEGORIES).length) * STREET_READ_BREADTH_WEIGHT;
+    const depth = Math.min(entries, STREET_READ_DEPTH_CAP);
+    const idle = state.run.day - read.lastVarietyDay;
+    const staleness = idle >= 2 ? (idle - 1) * 5 : 0;
+    read.score = clamp(Math.round(breadth + depth - staleness), 0, 100);
+    read.tier = STREET_READ_TIER_THRESHOLDS.filter((threshold) => read.score >= threshold).length;
+  }
+
+  // Sets do not survive JSON. Everything that leaves this module as a string
+  // goes through these two, including the autosave in ui.jsx.
+  function serializeStreetRead(read) {
+    if (!read) return createStreetReadSerialized();
+    return { ...read, categories: Object.fromEntries(Object.entries(read.categories).map(([key, value]) => [key, [...value]])) };
+  }
+  function createStreetReadSerialized() { return serializeStreetRead(createStreetRead()); }
+  // Tolerates: a fresh Set-bearing object, a serialized array form, a pre-Street-Read
+  // save with no field at all, and the `{}` that a naive JSON.stringify of a Set
+  // produces if anything ever bypasses serializeRun().
+  function deserializeStreetRead(value) {
+    const fresh = createStreetRead();
+    if (!value || typeof value !== "object") return fresh;
+    for (const key of Object.keys(fresh.categories)) {
+      const saved = value.categories ? value.categories[key] : undefined;
+      fresh.categories[key] = new Set(Array.isArray(saved) ? saved.filter((entry) => typeof entry === "string") : saved instanceof Set ? [...saved] : []);
+    }
+    fresh.score = clamp(Math.floor(Number(value.score) || 0), 0, 100);
+    fresh.tier = clamp(Math.floor(Number(value.tier) || 0), 0, 3);
+    fresh.lastVarietyDay = Math.max(0, Math.floor(Number(value.lastVarietyDay) || 0));
+    fresh.totalLifetimeEntries = Math.max(0, Math.floor(Number(value.totalLifetimeEntries) || 0));
+    fresh.intelDay = value.intelDay == null ? null : Math.floor(Number(value.intelDay) || 0);
+    return fresh;
+  }
+
+  // Maps the advanceRun() reason - the one place every slot-consuming action
+  // funnels through - onto a routine activity class.
+  const STREET_READ_ACTIVITY = {
+    BUY: "trade", SELL: "trade", END_MARKET: "trade",
+    VISIT_NIGHT_OWL: "social", RECRUIT_CREW: "social", ASSIGN_CREW: "social", PROMOTE_LIEUTENANT: "social", PAY_DEBT: "social", RECRUIT_SOLDIER: "social",
+    HEAL: "heal", HEAL_AT_BASE: "heal", LAY_LOW: "rest", SLEEP_HOME: "rest",
+    WORK_SHIFT: "work", SHOPLIFT: "work",
+    EXPLORE_SPENARD: "explore", VISIT_BASE: "explore", LEASE_GARAGE: "explore", TRAIN_ATTRIBUTE: "explore", BUY_GEAR: "explore", UPGRADE_BASE: "explore", LAUNDER_CASH: "explore",
+    GAMBLE: "gamble",
+    TRAVEL: "travel", BUS_TRAVEL: "travel", WALK_HOME: "travel",
+    QUICK_SCORE: "risk", ROB_DEALER: "risk", TAKEOVER: "risk", ELI_TEST_ROUTE: "risk", CLAIM_BLOCK: "risk",
+  };
+
+  // Tier 2 pays out as a contact volunteering something once a day. The line is
+  // picked by area, then rotated by day, so a run that stays in one district
+  // still hears different voices. Nothing here names a system or a number - it
+  // reads as a person telling you a thing they noticed.
+  const STREET_READ_INTEL = {
+    north_star_lot: [
+      "Kip: Northern Value's been dry all week. Might restock tomorrow.",
+      "Mara: Two guys in a gray sedan have been circling since noon.",
+      "Kip: Somebody's been buying up small and paying full. New money, probably.",
+      "Mara: Night Owl's had the same car in the lot three nights running.",
+      "Eli: Service road behind the garage is clear this week. Nobody's watching it.",
+      "Kip: My guy up north says the good stuff is a week out. Don't overpay before then.",
+      "Mara: Patrol changed shift times. They come through later now.",
+      "Eli: Rec center lot's been quiet. Quiet usually doesn't last.",
+      "Kip: Somebody asked about you by description, not by name. That's better than the other way.",
+    ],
+    downtown: [
+      "Eli: Saw Rook's driver parked outside the gear shop.",
+      "Miri: Someone at the bar was buying in bulk last night.",
+      "Eli: Cameras on the corner have been dark since the storm. Nobody's fixed them.",
+      "Miri: The club crowd is paying stupid prices this week. They don't know better.",
+      "Eli: Rook's people are short a runner. They're stretched thinner than they look.",
+      "Miri: There's a buyer working the late crowd who pays cash and doesn't haggle.",
+      "Eli: Two cruisers sat on Fourth for an hour doing nothing. That's not nothing.",
+      "Miri: My old list still has three numbers that answer. Downtown remembers.",
+      "Eli: Somebody got taken off near the parking structure. Word travels fast down here.",
+    ],
+    airport_industrial: [
+      "Eli: Freight office has been busy. Might mean new supply hitting.",
+      "Eli: Loading Bay Seven has a guy who doesn't ask questions and doesn't come back.",
+      "Miri: Industrial's paying premium right now because nobody wants to drive out there.",
+      "Eli: Service roads flood at the north end. Take the long way if it's been raining.",
+      "Kip: Anything moving through freight is either very clean or very not. No middle.",
+      "Eli: Security out there works one gate and pretends the other two don't exist.",
+      "Miri: Rook doesn't have people past the fence line. That's why it costs what it costs.",
+      "Eli: Somebody's been sleeping in the lot by the hangars. Watch your bag.",
+      "Kip: Price out there swings hard. Don't commit your whole roll on one trip.",
+    ],
+  };
+
+  // Tier 1 pays out as one extra observed detail about a contact you have
+  // actually dealt with. Flavor only - it never encodes a number the player
+  // could act on directly.
+  const STREET_READ_FLAVOR = {
+    mara: ["She mentioned something about a sedan last time.", "Her shift schedule changed. Might mean something.", "She's been parking around the back lately."],
+    eli: ["He's been eyeing the freight routes lately.", "Said something about owing money on that car.", "He counts the exits before he sits down."],
+    rook: ["His driver's been making rounds more often.", "Word is he lost a supplier last week.", "He's been asking who works which corner."],
+    dre: ["He's been counting slower. Might be testing patience.", "His phone went off three times during your last talk.", "He wrote something down after you left."],
+    kip: ["He mentioned a new grower up north.", "Seemed jumpy about someone following his supply runs.", "He's been weighing light and hoping nobody checks."],
+    miri: ["She's been working an old list harder than usual.", "Somebody from before called her and she didn't call back.", "She knows which bartender talks."],
+    tone: ["He's been sleeping at the garage more nights than not.", "Somebody from his past has been asking around.", "He checks the street twice before he unlocks anything."],
+  };
+
+  // Tier 2 shop bonus. Useful, cheap, never load-bearing: the point is that the
+  // shelf happens to have the thing you needed, not that the shop got better.
+  const STREET_READ_BONUS_STOCK = ["larger_bag", "burner_phone", "medical_kit", "running_shoes"];
+
+  // Tier 2, at most once per calendar day, and only for a run that has actually
+  // dealt with people - an unsolicited tip from nobody you know reads as noise.
+  function maybeStreetReadIntel(state, random) {
+    const read = state.streetRead;
+    if (!read || read.tier < 2 || state.run.status !== "playing") return;
+    if (read.intelDay === state.run.day) return;
+    if (!read.categories.social.size) return;
+    const lines = STREET_READ_INTEL[state.world.currentNeighborhoodId];
+    if (!lines || !lines.length) return;
+    read.intelDay = state.run.day;
+    logEntry(state, lines[(state.run.day + random.int(0, lines.length - 1)) % lines.length], "good");
+  }
+
+  // Tier 1 surfaces one extra observed detail about a contact the run has
+  // actually dealt with. Returns null for everyone else, including at tier 0.
+  function streetReadRecall(state, entityKey) {
+    const read = state?.streetRead;
+    if (!read || read.tier < 1 || !entityKey) return null;
+    const lines = STREET_READ_FLAVOR[entityKey];
+    if (!lines || !lines.length) return null;
+    const known = [...read.categories.social].some((entry) => entry.split(":")[0] === entityKey);
+    if (!known) return null;
+    return lines[(state.run.day - 1) % lines.length];
+  }
+
+  // Tier 2 adds one rotating item to the shelf. Rotation is by day so a run does
+  // not see the same bonus every time it walks in.
+  function streetReadBonusStock(state) {
+    if (streetReadTier(state) < 2) return [];
+    const id = STREET_READ_BONUS_STOCK[(state.run.day - 1) % STREET_READ_BONUS_STOCK.length];
+    return GEAR_BY_ID[id] ? [id] : [];
+  }
+
+  // Four standalone scenes, all outside the authored Dre/Mara/Rook arcs. Each
+  // extra option is the one a person who had been paying attention all week
+  // would already have seen: a second exit, a price they have watched hold, a
+  // bag put down before it is asked about. Better expected value than the
+  // default lines, never strictly dominant - each still costs something.
+  const STREET_SMART_CHOICES = {
+    courier: {
+      label: "Counter with what this lane actually pays",
+      effect: { cash: 95, heat: 1, setFlags: { helpedIndustrialCourier: true } },
+      preview: "+$95 and +1 Heat. You take a cut instead of the whole case.",
+      result: "You get the cuff off, take a number off the route sheet that matches what you have watched this lane pay all week, and leave the rest of it cuffed to him. He counts out the difference himself rather than argue about it. The headlights turn into the far bay and stop there, and whoever is in them decides this is not the night.",
+    },
+    door_knock: {
+      label: "Put the bag down before they get here",
+      effect: { heat: -3, setFlags: { movedBagOnIce: true } },
+      preview: "−3 Heat. You lose nothing, because there is nothing to find.",
+      result: "You have watched them work this row twice this week and you know they take the landing before the stairwell. The bag goes into the utility closet on the half-landing, behind a water heater that belongs to the building rather than to anyone. When the knock comes you open the door with both hands empty and answer three questions about a car you do not own.",
+    },
+    careful_customer: {
+      label: "Step back and clock the second exit",
+      effect: { heat: -1, setFlags: { readCarefulCustomer: true } },
+      preview: "−1 Heat. No sale, but you leave knowing what he was.",
+      result: "You take one step back to where you can see the whole line and the service door behind the coolers at the same time, and you let him ask his question a third time without answering it. Somebody at the far end of the lot straightens up when you move. That is all the confirmation the question needed. You are out the side door before either of them decides what to do about it.",
+    },
+    sedan_rumor: {
+      label: "Change the route and watch who changes with you",
+      effect: { heat: -2, setFlags: { readSedanRumor: true } },
+      preview: "−2 Heat. Costs you the afternoon, tells you whether it was real.",
+      result: "You take the long way twice, at different hours, past two places you would have no reason to be. Nothing follows either time. Whatever the sedan was, it was not for you this week, and knowing that is worth more than the hours it cost to find out.",
+    },
+  };
+
+  // Event id prefixes map onto the contact the scene is actually about.
+  const STREET_READ_EVENT_NPC = { dre: "dre", mara: "mara", eli: "eli", rook: "rook", kip: "kip", miri: "miri", tone: "tone" };
+
+  // Tier 3 adds one practical option to a small set of standalone scenes. Never
+  // added to Dre/Mina/Rook chain beats - those are authored arcs, not a place to
+  // reward breadth. The extra choice is appended, so existing choice indices and
+  // every test that addresses them by position stay valid at tier 0.
+  function withStreetSmartChoice(state, event, descriptor) {
+    if (!event || !Array.isArray(event.choices)) return event;
+    if (streetReadTier(state) < 3) return event;
+    if (descriptor && descriptor.chain) return event;
+    const extra = STREET_SMART_CHOICES[event.id];
+    if (!extra || event.choices.length < 3) return event;
+    return { ...event, choices: [...event.choices, extra] };
+  }
+
+  // Every gear item is always on the shelf in this build, so the tier-2 payoff
+  // lands as the shop happening to have one useful thing cheap this week rather
+  // than as a new row appearing. Same pool, same rotation, existing surface.
+  const STREET_READ_SHELF_DISCOUNT = 0.25;
+  function streetReadShelfItem(state) {
+    const stock = streetReadBonusStock(state);
+    return stock.length ? stock[0] : null;
+  }
+  function gearPrice(state, gearId) {
+    const item = GEAR_BY_ID[gearId];
+    if (!item) return 0;
+    return streetReadShelfItem(state) === gearId ? Math.round(item.cost * (1 - STREET_READ_SHELF_DISCOUNT)) : item.cost;
+  }
+  // Both of these used to read a visible level. They now read the hidden tier,
+  // and the UI only ever sees the resulting number or boolean.
+  function treatmentCost(state, baseCost) {
+    return streetReadTier(state) >= 3 ? Math.round(baseCost * 0.9) : baseCost;
+  }
+  function debtGuidanceAvailable(state) { return streetReadTier(state) >= 3; }
+  function gearShopStock(state) {
+    return GEAR.map((item) => {
+      const price = gearPrice(state, item.id);
+      return { ...item, price, discounted: price < item.cost };
+    });
+  }
+
+  // Story beats are authored arcs and are never reweighted. Only the generic
+  // opportunity/threat pool moves, and only at tier 2+.
+  function streetReadEventCategory(descriptor) {
+    if (descriptor.category) return descriptor.category;
+    if (descriptor.chain) return "story";
+    if (descriptor.classification === "opportunity") return "opportunity";
+    if (descriptor.classification === "threat") return "punishment";
+    return "neutral";
+  }
+  function streetReadWeightMultiplier(state, descriptor) {
+    if (streetReadTier(state) < 2) return 1;
+    const category = streetReadEventCategory(descriptor);
+    if (category === "opportunity") return 1.15;
+    if (category === "punishment") return 0.90;
+    return 1;
   }
 
   function initialMarket(area, random) {
@@ -540,7 +817,6 @@
       effects: { rumors: [], modifiers: [] },
       stats: {
         startingNetWorth: -200, bestTrade: 0, largestLoss: 0, highestHeat: 0,
-        streetRead: { xp: 0, level: 0, awards: {}, lastAskDay: null },
         productsMoved: Object.fromEntries(PRODUCTS.map((item) => [item.id, 0])),
         decisions: 0, pipelineAdvances: 0, marketUpdates: 0, visits: [], majorDecisions: [],
         moneySpent: { debt: 0, base: 0, gear: 0, crew: 0, healing: 0, relationships: 0, events: 0 },
@@ -548,6 +824,7 @@
         robbery: { attempts: 0, successes: 0, failures: 0, totalPayout: 0, lastAttemptedDay: null, attempted: false, success: false, payout: 0 },
         takeovers: { attempts: 0, wins: 0, losses: 0, crewLost: 0, income: 0 },
       },
+      streetRead: createStreetRead(),
       log: [],
     };
     logEntry(state, "You do not choose what the block calls you. The week decides.", "warn");
@@ -596,6 +873,9 @@
     state.player.behavior.history = Array.isArray(state.player.behavior.history) ? state.player.behavior.history.slice(-50) : [];
     state.player.behavior.caps = state.player.behavior.caps && typeof state.player.behavior.caps === "object" ? state.player.behavior.caps : {};
     state.stats.robbery = normalizeRobberyStats(value.stats?.robbery, state);
+    // mergeDefaults cannot carry a Set through, and pre-Street-Read saves have
+    // no field here at all. Both cases land on a valid, empty-but-usable object.
+    state.streetRead = deserializeStreetRead(value.streetRead);
     state.flags.featureNotices = state.flags.featureNotices && typeof state.flags.featureNotices === "object" ? state.flags.featureNotices : {};
     state.people.mara.available = state.people.mara.available !== false && state.people.mara.status !== "gone";
     // Preserve established v3 runs that already met Kip while fresh runs keep
@@ -633,6 +913,12 @@
     return state;
   }
 
+  // The autosave path. Anything that writes state to a string must go through
+  // here, because state now contains Sets and JSON.stringify silently drops them.
+  function serializeRun(state) {
+    return JSON.stringify({ ...state, streetRead: serializeStreetRead(state.streetRead) });
+  }
+
   function inspectSave(serialized) {
     if (serialized == null || serialized === "") return { exists: false, valid: false, state: null, error: null, preview: null };
     try {
@@ -657,6 +943,8 @@
   function storedCashCapacity(state) { return state.base.tracks.storage === 0 ? 0 : state.base.tracks.storage === 1 ? 300 : 1200; }
   function homeStoredCargoUsed(state) { return PRODUCTS.reduce((sum, item) => sum + (state.home?.storedInventory?.[item.id]?.qty || 0), 0); }
   function recruitedCrew(state) { return CREW.filter((person) => state.people.crew[person.id].recruited && state.people.crew[person.id].status === "active"); }
+  // Third crew slot is the tier-3 payoff. The UI reads the number, never the reason.
+  function crewCapacityFor(state) { return streetReadTier(state) >= 3 ? 3 : 2; }
   function influenceLabel(value) { return ["Unknown", "Active", "Established", "Contested", "Controlled"][clamp(value, 0, 4)]; }
   function inventoryValue(state) {
     const market = state.world.markets[state.world.currentNeighborhoodId];
@@ -986,8 +1274,10 @@
     const eli = state.people.crew.eli;
     if (!eli.recruited) return { available: false, reason: "Eli needs to be recruited first." };
     if (eli.lieutenantStage === "operations_lieutenant") return { available: false, reason: "Eli already runs Operations." };
-    if (eli.loyalty < ELI_LIEUTENANT_UNLOCK.minLoyalty) return { available: false, reason: `Eli's loyalty needs to reach ${ELI_LIEUTENANT_UNLOCK.minLoyalty}.` };
-    if (state.stats.streetRead.level < ELI_LIEUTENANT_UNLOCK.minStreetReadLevel) return { available: false, reason: `Street Read needs to reach level ${ELI_LIEUTENANT_UNLOCK.minStreetReadLevel}.` };
+    // Softened by one for a run that has covered enough ground. The player only
+    // ever sees the loyalty number that is actually being asked of them.
+    const required = Math.max(1, ELI_LIEUTENANT_UNLOCK.minLoyalty - streetReadAccessBonus(state));
+    if (eli.loyalty < required) return { available: false, reason: `Eli's loyalty needs to reach ${required}.` };
     return { available: true, reason: "Eli is ready to run Operations." };
   }
   function weeklyIncomeEstimate(state) {
@@ -1121,19 +1411,56 @@
     if (heat >= 4) return { id: "warm", label: "WARM", tone: "warn" };
     return { id: "low", label: "LOW", tone: "" };
   }
+  // TODO: when market intelligence ships, move this logic there. Street Read's
+  // tier should become an accuracy modifier on that system's output rather than
+  // a second, parallel source of price copy.
+  //
+  // The magnitude hint is deliberately given to exactly one product per market,
+  // chosen deterministically from the day and area so it is stable while the
+  // player is looking at it. One sharpened line reads as noticing something;
+  // four reads as a readout.
+  function streetReadMagnitude(price, anchor) {
+    const delta = Math.abs(price - anchor) / Math.max(1, anchor);
+    if (delta > 0.20) return "way";
+    if (delta >= 0.10) return "noticeably";
+    return "slightly";
+  }
+  // Chosen across the full product list rather than the unlocked subset: the
+  // market screen prices every product whether or not the player can source it
+  // yet, and gating the hint on access made tier 1 silently do nothing for the
+  // first days of a run - which is exactly when it is supposed to be noticed.
+  function streetReadHintedProduct(state, areaId) {
+    let hash = state.run.day * 31;
+    for (let index = 0; index < areaId.length; index += 1) hash = (hash * 33 + areaId.charCodeAt(index)) >>> 0;
+    return PRODUCTS[hash % PRODUCTS.length].id;
+  }
   function priceSignal(state, areaId, productId) {
     const product = PRODUCT_BY_ID[productId], area = AREA_BY_ID[areaId], market = state.world.markets[areaId];
     if (!product || !area || !market) return { id: "normal", label: "—", symbol: "—" };
-    const anchor = product.base * area.bias[productId], price = market.prices[productId];
-    if (price >= anchor * 1.22) return { id: "high", label: "HIGH", symbol: "▲" };
-    if (price <= anchor * 0.8) return { id: "low", label: "LOW", symbol: "▼" };
+    const anchor = product.base * (area.bias[productId] || 1), price = market.prices[productId];
+    const tier = streetReadTier(state);
+    // Tier 1 sharpens one product per market with a magnitude word. Tier 3 keeps
+    // that single hint but stops hiding direction on anything else.
+    const hint = tier >= 1 && streetReadHintedProduct(state, areaId) === productId ? streetReadMagnitude(price, anchor) : null;
+    const decorate = (signal) => {
+      const enriched = hint && signal.id !== "normal" ? { ...signal, label: `${signal.label} ${hint.toUpperCase()}`, magnitude: hint } : { ...signal };
+      return enriched;
+    };
+    if (price >= anchor * 1.22) return decorate({ id: "high", label: "HIGH", symbol: "▲" });
+    if (price <= anchor * 0.8) return decorate({ id: "low", label: "LOW", symbol: "▼" });
     const history = market.history[productId] || [];
     if (history.length >= 2) {
       const prior = history[history.length - 2];
-      if (price > prior * 1.08) return { id: "up", label: "RISING", symbol: "↗" };
-      if (price < prior * 0.92) return { id: "down", label: "FALLING", symbol: "↘" };
+      if (price > prior * 1.08) return decorate({ id: "up", label: "RISING", symbol: "↗" });
+      if (price < prior * 0.92) return decorate({ id: "down", label: "FALLING", symbol: "↘" });
     }
-    return { id: "normal", label: "STEADY", symbol: "—" };
+    // Tier 3 reads a drift the standard signal rounds off to STEADY.
+    if (tier >= 3 && history.length >= 2) {
+      const prior = history[history.length - 2];
+      if (price > prior * 1.02) return decorate({ id: "up", label: "RISING", symbol: "↗" });
+      if (price < prior * 0.98) return decorate({ id: "down", label: "FALLING", symbol: "↘" });
+    }
+    return decorate({ id: "normal", label: "STEADY", symbol: "—" });
   }
 
   function relationshipForLender(lender, day) {
@@ -2164,7 +2491,7 @@
     });
   }
   function weightedPick(candidates, state, random) {
-    const weights = candidates.map((item) => Math.max(0.01, item.weight));
+    const weights = candidates.map((item) => Math.max(0.01, item.weight) * streetReadWeightMultiplier(state, item));
     const total = weights.reduce((sum, value) => sum + value, 0);
     let roll = random.next() * total;
     for (let index = 0; index < candidates.length; index += 1) {
@@ -2194,7 +2521,7 @@
       state.run.chainBeatsToday += 1;
     }
     if (descriptor.kind === "encounter") startEncounter(state, descriptor.id, false);
-    else setPendingEvent(state, activeEvent(descriptor.id, state));
+    else setPendingEvent(state, withStreetSmartChoice(state, activeEvent(descriptor.id, state), descriptor));
   }
   function scheduleStory(state, context, random) {
     if (state.run.pendingEvent || state.run.pendingEncounter || state.run.status !== "playing") return;
@@ -2421,6 +2748,11 @@
     reconcileCash(state);
     const random = makeRandom(state.run.rngState);
     const oldDay = state.run.day, oldSlot = state.run.slot;
+    // Every slot-consuming action funnels through here, which makes this the one
+    // honest place to record which part of the day gets spent on what. Logged
+    // before the clock moves so the entry is stamped with the day it happened.
+    const activity = STREET_READ_ACTIVITY[context.reason];
+    if (activity) addStreetReadEntry(state, "routine", `${SLOTS[oldSlot].toLowerCase()}:${activity}`);
     closeVisit(state, context.reason);
     const finalSlot = oldDay === RUN_DAYS && oldSlot === 3;
     if (!finalSlot) {
@@ -2438,9 +2770,14 @@
       const nextDay = state.run.day, nextSlot = state.run.slot;
       state.run.day = oldDay; state.run.slot = 3;
       evaluateStreetIdentity(state, true);
+      // Strictly after the identity pass. The two systems share this tick and
+      // nothing else - neither reads the other's data - but the ordering is
+      // fixed so a run's tier can never be scored against a half-updated day.
+      recalculateStreetRead(state);
       checkHomeContraband(state, random);
       state.run.day = nextDay; state.run.slot = nextSlot;
     }
+    maybeStreetReadIntel(state, random);
     state.stats.pipelineAdvances += 1;
     state.stats.decisions += 1;
     announceFeatureUnlocks(state, beforeFeatures);
@@ -2636,7 +2973,7 @@
       state.player.heat = clamp(state.player.heat + addedHeat, 0, 15);
       state.rival.pressure = clamp(state.rival.pressure + Math.min(3, attemptNumber), 0, 15);
       state.stats.robbery.successes += 1;
-      awardStreetRead(state, "quick_score:first_success", 20, "Completed a first Quick Score");
+      addStreetReadEntry(state, "risk", `quick_score:${state.world.currentNeighborhoodId}`);
       state.stats.robbery.totalPayout += payout;
       state.stats.robbery.success = true;
       state.stats.robbery.payout = state.stats.robbery.totalPayout;
@@ -2691,7 +3028,7 @@
       if (!productId) return inputState;
       const units = random.int(2, 4);
       state.player.cash += payout;
-      awardStreetRead(state, "dealer_robbery:first_success", 20, "Completed a first dealer robbery");
+      addStreetReadEntry(state, "risk", `robbery:${state.world.currentNeighborhoodId}`);
       applyEventEffect(state, { addProduct: { id: productId, qty: units, unitCost: 0 } }, random);
       state.player.heat = clamp(state.player.heat + 2, 0, 15);
       record.standing = Math.max(-5, record.standing - 3);
@@ -2766,7 +3103,8 @@
     state.flags.eliTestRouteResolved = true;
     state.stats.majorDecisions.push(`Eli test route: ${success ? "clean" : "compromised"}`);
     recordBehavior(state, "connector", 2, `eli_test_route:${state.run.day}`, "eli_route");
-    awardStreetRead(state, "contact_job:eli", 25, "Completed Eli's test route");
+    addStreetReadEntry(state, "risk", `contact_route:${state.world.currentNeighborhoodId}`);
+    addStreetReadEntry(state, "social", "eli:business");
     state.run.rngState = random.state;
     logEntry(state, result.summary, result.tone);
     const advanced = advanceRun(state, { reason: "ELI_TEST_ROUTE", suppressStory: true });
@@ -2806,7 +3144,7 @@
     const effects = [`-$${definition.attackCost} operation cost`];
     if (won) {
       state.stats.takeovers.wins += 1;
-      awardStreetRead(state, `territory:${areaId}`, 35, `Took ${AREA_BY_ID[areaId].name}`);
+      addStreetReadEntry(state, "risk", `takeover:${areaId}`);
       state.world.territories[areaId].owner = "player";
       state.world.territories[areaId].capturedDay = state.run.day;
       state.world.influence[areaId] = 4;
@@ -2941,6 +3279,13 @@
       applyEventEffect(state, choice.effect || {}, random);
       const eventCategory = current.id.startsWith("dre_") ? "earner" : current.id.startsWith("rook_") ? "stickup" : current.id.startsWith("eli_") || current.id.startsWith("mara_") ? "connector" : current.id.startsWith("kip_") ? "mover" : null;
       if (eventCategory) recordBehavior(state, eventCategory, current.id.endsWith("day7") ? 2 : 1, `event:${current.id}`, "story_choice");
+      // A scene the player engaged with counts as knowing the person in it, and
+      // a choice authored as risky counts as having taken that kind of risk.
+      if (!/^(leave|cancel|walk away|say nothing)/i.test(choice.label)) {
+        const npc = STREET_READ_EVENT_NPC[current.id.split("_")[0]];
+        if (npc) addStreetReadEntry(state, "social", `${npc}:${choice.trustBuilding ? "trust_choice" : "conversation"}`);
+      }
+      if (choice.risky) addStreetReadEntry(state, "risk", `event_risk:${state.world.currentNeighborhoodId}`);
       logEntry(state, choice.result, (choice.effect?.cash || 0) >= 0 ? "good" : "warn");
       state.stats.majorDecisions.push(`${current.title}: ${choice.label}`);
       state.run.recentEvents = [current.id, ...state.run.recentEvents.filter((id) => id !== current.id)].slice(0, 4);
@@ -2952,7 +3297,6 @@
         state.flags.maraIntroResolved = true;
       }
       const descriptor = STORY_BY_ID[current.id];
-      if (descriptor?.chain && Object.keys(state.stats.streetRead.awards).filter((id) => id.startsWith("story:")).length < 6) awardStreetRead(state, `story:${current.id}`, 15, `Resolved ${current.title}`);
       if (descriptor && descriptor.chain === "mara_spenard") {
         state.people.mara.chainStage = Math.max(state.people.mara.chainStage || 0, descriptor.stage);
         state.people.mara.outcomes.push({ stage: descriptor.stage, id: current.id, choice: choice.label, day: state.run.day });
@@ -2987,6 +3331,8 @@
       state.player.heat = clamp(state.player.heat + Math.floor((product.heat * qty) / 5), 0, 15);
       state.run.currentVisit.trades += 1;
       state.run.currentVisit.grossBuy += cost;
+      addStreetReadEntry(state, "trading", `${state.world.currentNeighborhoodId}:${product.id}`);
+      if (state.player.heat >= 8) addStreetReadEntry(state, "risk", `high_heat_trade:${state.world.currentNeighborhoodId}`);
       logEntry(state, `You move ${qty} ${product.name} into the bag for $${cost}.`, "good");
       const record = plugRecord(state, plug.id);
       if (record && record.lastPurchaseDay !== state.run.day) {
@@ -3018,12 +3364,12 @@
       state.player.cash += total;
       state.run.currentVisit.trades += 1;
       state.run.currentVisit.grossSell += total;
+      addStreetReadEntry(state, "trading", `${state.world.currentNeighborhoodId}:${product.id}`);
+      if (state.player.heat >= 8) addStreetReadEntry(state, "risk", `high_heat_trade:${state.world.currentNeighborhoodId}`);
       state.stats.productsMoved[product.id] += qty;
       state.stats.bestTrade = Math.max(state.stats.bestTrade, total);
       state.stats.largestLoss = Math.max(state.stats.largestLoss, Math.max(0, -profit));
       if (profit >= 20) recordBehavior(state, "mover", profit >= 100 ? 2 : 1, `sale:${state.run.day}:${state.world.currentNeighborhoodId}:${state.run.currentVisit.trades}:${product.id}`, "sale");
-      if (profit >= 50) awardStreetRead(state, "sale:first_profit_50", 15, "Cleared $50 profit on a sale");
-      if (profit > 0) awardStreetRead(state, `sale:district:${state.world.currentNeighborhoodId}`, 12, `Completed a profitable sale in ${AREA_BY_ID[state.world.currentNeighborhoodId].name}`);
       if (profit > 0 && qty >= 3 && !state.world.tradeInfluenceGranted[state.world.currentNeighborhoodId]) {
         influenceChange(state, state.world.currentNeighborhoodId, 1);
         state.world.tradeInfluenceGranted[state.world.currentNeighborhoodId] = true;
@@ -3102,21 +3448,10 @@
     if (action.type === "ASK_JOHN") {
       if (state.people.household.evicted || state.people.household.lastQuestionDay === state.run.day) return inputState;
       state.people.household.lastQuestionDay = state.run.day;
-      if (recordBehavior(state, "connector", 1, "household:john_first_advice", "family_contact")) awardStreetRead(state, "contact:john", 8, "Asked John for local context");
+      recordBehavior(state, "connector", 1, "household:john_first_advice", "family_contact");
+      addStreetReadEntry(state, "social", "john:advice");
       state.effects.rumors.push({ id: `john_${state.run.day}`, areaId: "north_star_lot", productId: "weed", reliable: true, text: "John says the bus is reliable for Downtown, Ship Creek hires early, and the Industrial roads need a ride you trust.", expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
       logEntry(state, "John gives you one careful answer without pretending the city is safer than it is.", "good");
-      return state;
-    }
-    if (action.type === "ASK_AROUND") {
-      if (state.stats.streetRead.level < 2 || state.stats.streetRead.lastAskDay === state.run.day) return inputState;
-      const random = makeRandom(state.run.rngState);
-      const area = random.pick(NEIGHBORHOODS);
-      const product = random.pick(PRODUCTS.filter((item) => state.world.productAccess[item.id]));
-      if (!product) return inputState;
-      state.stats.streetRead.lastAskDay = state.run.day;
-      state.effects.rumors.push({ id: `street_read_${state.run.day}`, areaId: area.id, productId: product.id, reliable: true, text: `A reliable answer points to ${product.name} in ${area.name}.`, expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
-      state.run.rngState = random.state;
-      logEntry(state, `Street Read turns one conversation into a reliable ${area.name} lead.`, "good");
       return state;
     }
     if (action.type === "HOUSE_VIOLATION") {
@@ -3159,6 +3494,8 @@
     if (action.type === "VISIT_NIGHT_OWL") {
       if (state.world.currentNeighborhoodId !== "north_star_lot") return inputState;
       base.flags.nightOwlVisited = true;
+      addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:night_owl`);
+      if (base.people.mara.met) addStreetReadEntry(base, "social", "mara:visit");
       logEntry(base, state.people.mara.met ? "You stop at the Night Owl without treating Mara's shift like an obligation." : "You step into the Night Owl for the first time and study a coffee machine you have never used.", "");
       const next = advanceRun(base, { reason: "VISIT_NIGHT_OWL", suppressStory: true });
       if (next.run.status === "playing" && !next.people.mara.met && !next.run.pendingEvent) fireStory(next, STORY_BY_ID.mara_intro);
@@ -3171,7 +3508,7 @@
       base.base.acquiredDay = base.run.day;
       base.stats.moneySpent.base += GARAGE_DEPOSIT;
       recordBehavior(base, "mover", 3, "property:north_star", "property");
-      awardStreetRead(base, "property:north_star", 25, "Acquired North Star Garage");
+      addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:garage`);
       logEntry(base, `You put $${GARAGE_DEPOSIT} down on North Star Garage. The first week is included; storage, upgrades, recovery, and crew operations are now yours to build.`, "good");
       return advanceRun(base, { reason: "LEASE_GARAGE" });
     }
@@ -3184,7 +3521,7 @@
       base.player.cash -= available.cost;
       gym.sessionsToday += 1;
       const improved = improveAttribute(base, attribute, available.progress);
-      if (improved) awardStreetRead(base, `training:${attribute}:${base.player.attributes[attribute]}`, 15, `Raised ${attribute}`);
+      if (improved) addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:training`);
       logEntry(base, `Gym session: $${available.cost}, +${available.progress} hidden ${attribute} progress${improved ? ", milestone reached" : ""}.`, "good");
       return advanceRun(base, { reason: "TRAIN_ATTRIBUTE" });
     }
@@ -3202,7 +3539,7 @@
       const game = base.world.locations.gambling;
       game.plays += 1; game[won ? "wins" : "losses"] += 1; game.net += won ? stake : -stake;
       if (game.plays === 1) recordBehavior(base, "connector", 1, "gambling:first_contact", "gambling_contact");
-      if (game.plays === 1) awardStreetRead(base, "gambling:first", 10, "Found and played the informal game");
+      addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:gambling`);
       base.run.rngState = random.state;
       logEntry(base, won ? `The ${approach} approach holds. You leave the game $${stake} ahead.` : `The room takes your $${stake}. Nobody offers credit, and the next choice is yours.`, won ? "good" : "bad");
       return advanceRun(base, { reason: "GAMBLE" });
@@ -3221,7 +3558,7 @@
         base.player.cash += reward;
         base.player.heat = clamp(base.player.heat + (store.suspicion >= 4 ? 1 : 0), 0, 15);
         if (store.suspicion >= 3) recordBehavior(base, "stickup", 1, `shoplift_pattern:${base.run.day}`, "shoplift_pattern");
-        awardStreetRead(base, "shoplifting:first_success", 12, "Completed a first shoplifting attempt");
+        addStreetReadEntry(base, "risk", `shoplifting:${base.world.currentNeighborhoodId}`);
         logEntry(base, `You leave Northern Value with small goods worth $${reward}. The store remembers more than the payout justifies.`, "good");
       } else {
         base.player.heat = clamp(base.player.heat + 2, 0, 15);
@@ -3234,6 +3571,7 @@
       const random = makeRandom(base.run.rngState);
       const count = base.world.locations.explorationCount;
       base.world.locations.explorationCount += 1;
+      addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:explore`);
       const meetsKip = base.run.day >= 2 && !base.flags.kipEncounterSeen;
       if (!meetsKip && !base.world.locations.gamblingKnown && count > 0) {
         base.world.locations.gamblingKnown = true;
@@ -3269,7 +3607,7 @@
       employer.keptCommitments += 1;
       recordBehavior(base, "earner", employer.standing >= 3 ? 2 : 1, `work:${base.run.day}`, "legal_work");
       if (employer.standing >= 3) base.flags.legalCover = true;
-      awardStreetRead(base, "work:first_shift", 15, "Completed a legitimate work shift");
+      addStreetReadEntry(base, "income", `job:${base.world.currentNeighborhoodId}`);
       base.run.rngState = random.state;
       logEntry(base, `Ship Creek Freight pays $${payout}${bonus ? `, including a $${bonus} extra-load bonus` : ""}. Your employer standing is ${employer.standing}.`, "good");
       return advanceRun(base, { reason: "WORK_SHIFT" });
@@ -3293,9 +3631,7 @@
       base.player.cash -= cost;
       base.world.currentNeighborhoodId = destination;
       base.world.transport.busRides += 1;
-      awardStreetRead(base, "transport:first_bus", 10, "Used the bus");
       if (destination === "downtown") base.world.transport.downtownKnown = true;
-      awardStreetRead(base, `travel:${destination}`, 10, `Reached ${AREA_BY_ID[destination].name}`);
       logEntry(base, `The People Mover carries you to ${AREA_BY_ID[destination].name}${cost ? " for $5" : " on your pass"}.`, "");
       return advanceRun(base, { reason: "BUS_TRAVEL" });
     }
@@ -3311,7 +3647,6 @@
       if (state.run.premise === "fresh_arrival" && action.neighborhoodId === "downtown") return inputState;
       if (state.run.premise === "fresh_arrival" && action.neighborhoodId === "airport_industrial" && !state.world.transport.industrialRouteKnown) return inputState;
       base.world.currentNeighborhoodId = action.neighborhoodId;
-      awardStreetRead(base, `travel:${action.neighborhoodId}`, 10, `Reached ${AREA_BY_ID[action.neighborhoodId].name}`);
       logEntry(base, `You reach ${AREA_BY_ID[action.neighborhoodId].name} before the same headlights can settle behind you.`, "");
       return advanceRun(base, { reason: "TRAVEL" });
     }
@@ -3320,6 +3655,7 @@
       if (state.people.household.evicted) return inputState;
       base.player.health = clamp(base.player.health + 12, 0, 100);
       logEntry(base, "Yalonda keeps the house quiet. You sleep, eat something basic, and recover twelve Health.", "good");
+      addStreetReadEntry(base, "recovery", "rest");
       return advanceRun(base, { reason: "SLEEP_HOME" });
     }
     if (action.type === "LAY_LOW") { logEntry(base, state.base.watched ? "You kill the garage lights, but the sedan across the street never leaves." : "You kill the lights and let North Star forget your vehicle for a few hours.", ""); return advanceRun(base, { reason: "LAY_LOW" }); }
@@ -3335,6 +3671,7 @@
       if (!amount || state.player.health >= 100 || state.player.cash < cost) return inputState;
       base.player.cash -= cost; base.player.health = clamp(base.player.health + amount, 0, 100); base.stats.moneySpent.healing += cost;
       logEntry(base, `The clinic worker closes the curtain and repairs ${amount} health for $${cost}.`, "good");
+      addStreetReadEntry(base, "recovery", action.amount >= 40 ? "hospital" : "clinic");
       return advanceRun(base, { reason: "HEAL" });
     }
     if (action.type === "HEAL_AT_BASE") {
@@ -3343,6 +3680,7 @@
       if (state.player.cash < cost) return inputState;
       base.player.cash -= cost; base.player.health = clamp(base.player.health + amount, 0, 100); base.stats.moneySpent.healing += cost;
       logEntry(base, `The garage first-aid table puts ${amount} health back before the next knock.`, "good");
+      addStreetReadEntry(base, "recovery", "base_heal");
       return advanceRun(base, { reason: "HEAL_AT_BASE" });
     }
     if (action.type === "PAY_DEBT") {
@@ -3357,8 +3695,7 @@
       }
       base.lender.relationship = relationshipForLender(base.lender, base.run.day);
       recordBehavior(base, "earner", amount >= 150 || !base.lender.balance ? 2 : 1, `dre_payment:${base.run.day}:${base.lender.paymentCount}`, "dre_payment");
-      awardStreetRead(base, `debt:payment:${base.run.day}`, 12, "Made a payment to Dre");
-      if (!base.lender.balance) awardStreetRead(base, "debt:cleared", 40, "Cleared Dre's note");
+      addStreetReadEntry(base, "social", "dre:payment");
       logEntry(base, base.lender.balance ? `Dre counts $${amount} behind the Mini-Mart. $${base.lender.balance} stays written on the note.` : "Dre counts the final stack, tears the note in half, and keeps one piece.", "good");
       return advanceRun(base, { reason: "PAY_DEBT" });
     }
@@ -3375,8 +3712,10 @@
     if (action.type === "BUY_GEAR") {
       if (!state.base.controlled) return inputState;
       const item = GEAR_BY_ID[action.gearId];
-      if (!item || state.player.cash < item.cost || (item.id !== "medical_kit" && hasGear(state, item.id))) return inputState;
-      base.player.cash -= item.cost; base.stats.moneySpent.gear += item.cost;
+      const price = gearPrice(state, item.id);
+      if (!item || state.player.cash < price || (item.id !== "medical_kit" && hasGear(state, item.id))) return inputState;
+      base.player.cash -= price; base.stats.moneySpent.gear += price;
+      addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:gear_shop`);
       if (item.id === "medical_kit") base.player.gear.consumables.medical_kit += 1;
       else {
         base.player.gear.owned.push(item.id);
@@ -3386,14 +3725,14 @@
       return advanceRun(base, { reason: "BUY_GEAR" });
     }
     if (action.type === "RECRUIT_CREW") {
-      const crewCapacity = state.stats.streetRead.level >= 4 ? 3 : 2;
+      const crewCapacity = crewCapacityFor(state);
       if (!state.base.controlled || !state.base.visiting || !CREW_BY_ID[action.crewId] || recruitedCrew(state).length >= crewCapacity) return inputState;
       const person = CREW_BY_ID[action.crewId], crew = state.people.crew[action.crewId], cost = recruitmentCost(state, action.crewId);
       if (!crew.introduced || crew.recruited || state.player.cash < cost || (person.id === "eli" && crew.contactStage !== "recruitable")) return inputState;
       base.player.cash -= cost; crew.recruited = true; crew.status = "active"; crew.loyalty += 1; crew.wageDue = person.wage; base.stats.moneySpent.crew += cost;
       crew.contactStage = "active";
       recordBehavior(base, "connector", 3, `recruit:${action.crewId}`, "recruit");
-      awardStreetRead(base, `crew:recruit:${action.crewId}`, 20, `Recruited ${person.name}`);
+      addStreetReadEntry(base, "social", `${action.crewId}:recruitment`);
       logEntry(base, `${person.name} takes the chair at the garage table. The operation has another person to answer for.`, "good");
       return advanceRun(base, { reason: "RECRUIT_CREW" });
     }
@@ -3420,7 +3759,7 @@
       eli.lieutenantEffectiveness = clamp(effectiveness, 0, 3);
       eli.operationPolicy = "balanced";
       recordBehavior(base, "connector", 3, "eli:lieutenant", "lieutenant_promotion");
-      awardStreetRead(base, "eli:lieutenant", 25, "Promoted Eli to Operations");
+      addStreetReadEntry(base, "social", "eli:promotion");
       logEntry(base, "Eli takes the garage's second set of keys. Corners, soldiers, and rotation are his call now.", "good");
       return advanceRun(base, { reason: "PROMOTE_LIEUTENANT" });
     }
@@ -3471,7 +3810,7 @@
       block.soldiersAssigned.push(occupier.id);
       base.rival.respect += 1;
       recordBehavior(base, "stickup", 2, `block:${action.blockId}`, "territory_expansion");
-      awardStreetRead(base, `block:${action.blockId}`, 20, `Claimed ${definition.name}`);
+      addStreetReadEntry(base, "risk", `block_claim:${base.world.currentNeighborhoodId}`);
       logEntry(base, `${definition.name} answers to your operation now. One soldier posts up immediately. Rook's people will hear about it.`, "good");
       return advanceRun(base, { reason: "CLAIM_BLOCK" });
     }
@@ -3525,6 +3864,7 @@
         }
       }
       recordBehavior(base, "mover", 1, `dealer_buy:${action.dealerId}:${base.run.day}`, "dealer_buy");
+      addStreetReadEntry(base, "social", `${action.dealerId}:business`);
       base.run.rngState = random.state;
       logEntry(base, `${first} counts out ${units} off the books at $${unitPrice} a unit and remembers that you paid without arguing.`, "good");
       const advanced = advanceRun(base, { reason: "BUY_FROM_DEALER", suppressStory: !!introduction });
@@ -3543,6 +3883,7 @@
       const product = random.pick(PRODUCTS.filter((item) => definition.products.includes(item.id)));
       record.lastAskedDay = base.run.day;
       recordBehavior(base, "mover", 1, `dealer_ask:${action.dealerId}:${base.run.day}`, "dealer_ask");
+      addStreetReadEntry(base, "social", `${action.dealerId}:conversation`);
       base.effects.rumors.push({
         id: `dealer_${action.dealerId}_${base.run.day}_${base.run.slot}`,
         areaId: area.id, productId: product.id, reliable: true,
@@ -3567,7 +3908,6 @@
       base.run.finalPlan = action.planId; base.run.finalPlanPrepared = true;
       base.stats.majorDecisions.push(`Prepared final plan: ${action.planId}`);
       recordBehavior(base, "earner", 2, `final_plan:${action.planId}`, "day7_plan");
-      awardStreetRead(base, "plan:day7", 25, "Prepared the Day 7 plan");
       logEntry(base, `The garage table is cleared for one final plan: ${action.planId.replace("_", " ")}.`, "warn");
       return advanceRun(base, { reason: "PREPARE_FINAL_PLAN" });
     }
@@ -3598,7 +3938,6 @@
       lenderRelationship: state.lender.relationship, rivalRelationship: state.rival.relationship,
       bestTrade: state.stats.bestTrade, largestLoss: state.stats.largestLoss, highestHeat: state.stats.highestHeat,
       productsMoved: { ...state.stats.productsMoved }, majorDecisions: [...state.stats.majorDecisions],
-      streetRead: { xp: state.stats.streetRead.xp, level: state.stats.streetRead.level },
       territories, robbery: { ...state.stats.robbery }, takeovers: { ...state.stats.takeovers },
     };
   }
@@ -3797,19 +4136,31 @@
   }
 
   return {
-    VERSION, RUN_DAYS, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, STREET_READ_LEVELS, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
+    VERSION, RUN_DAYS, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
     STREET_NAME_MAX, DEFAULT_STREET_NAMES, ATTRIBUTE_DEFAULTS, LEGACY_ATTRIBUTES, STREET_IDENTITIES, sanitizeStreetName,
     CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS, ENTITY_REGISTRY, ENTITY_MATCH_ORDER, PLUGS,
     SPENARD_BLOCKS, KIP_BUSINESSES, SOLDIER_RECRUIT_COST, SOLDIER_BASE_CAPACITY, SOLDIER_CAPACITY_PER_BLOCK, SOLDIERS_PER_BLOCK_CAP,
     KIP_LAUNDER_FEE, DRE_COLLECTOR_TIERS, ELI_LIEUTENANT_UNLOCK, KIP_LIEUTENANT_INCOME_THRESHOLD, KIP_LIEUTENANT_STANDING_MIN, RESPECT_STAGE_THRESHOLDS,
     DISTRICT_CONTROL_TIERS, DISTRICT_CONTROL_CAPSTONE_BLOCKS, DISTRICT_CONTROL_LABEL, ELI_OPERATION_POLICIES,
     buildEventForTest: activeEvent, storyCandidatesForTest: storyCandidates,
-    recordBehaviorForTest: recordBehavior, awardStreetReadForTest: awardStreetRead, evaluateStreetIdentityForTest: evaluateStreetIdentity,
+    recordBehaviorForTest: recordBehavior, evaluateStreetIdentityForTest: evaluateStreetIdentity,
+    // Street Read is invisible to the player but has to be reachable by tests.
+    // Nothing here is imported by ui.jsx.
+    streetRead: {
+      createStreetRead, addStreetReadEntry, recalculateStreetRead, serializeStreetRead, deserializeStreetRead,
+      streetReadTier, streetReadAccessBonus, streetReadRecall, streetReadBonusStock, streetReadShelfItem,
+      streetReadWeightMultiplier, streetReadEventCategory, withStreetSmartChoice, maybeStreetReadIntel,
+      CATEGORIES: STREET_READ_CATEGORIES, TIER_THRESHOLDS: STREET_READ_TIER_THRESHOLDS,
+      INTEL: STREET_READ_INTEL, FLAVOR: STREET_READ_FLAVOR, BONUS_STOCK: STREET_READ_BONUS_STOCK,
+      SMART_CHOICES: STREET_SMART_CHOICES, ACTIVITY: STREET_READ_ACTIVITY,
+    },
+    serializeRun,
     createRun, hydrateRun, inspectSave, reduceGame, advanceRun, selectRunSummary,
     selectors: {
       cargoUsed, cargoCapacity, storedCargoUsed, storageCapacity, storedCashCapacity, inventoryValue, netWorth,
       combatRating, charismaRating, intelligenceRating, derivedRatings,
       operationScore, baseValue, gearValue, heatBand, priceSignal, influenceLabel, encounterChoices, endingLabel,
+      crewCapacityFor, gearShopStock, gearPrice, treatmentCost, debtGuidanceAvailable,
       recruitedCrew, workingCapital, safeDebtPayment, debtPaymentPreview, featureAvailability, activityAvailability, layLowPreview, controlled, recruitmentCost, operationGearPower, crewPower,
       territoryPowerEstimate, territoryBenefits, tradeUnitPrices, tradeProjection, takeoverReadiness, robberyAvailability, eliTestRouteAvailability, maraThreatEligible,
       dealerRecord, dealerActions, dealerStandingLabel, dealerSupplyFactor,

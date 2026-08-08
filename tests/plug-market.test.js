@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const C = require("../game-core.js");
+const root = path.join(__dirname, "..");
 
 function fresh(seed = 907) {
   return C.reduceGame(C.createRun({ seed }), { type: "START_RUN" });
@@ -30,8 +31,25 @@ test("Market tab and market actions stay hidden until a plug is unlocked", () =>
   assert.equal(C.selectors.featureAvailability(state).market.available, false);
   assert.deepEqual(C.selectors.visibleMarketProducts(state), []);
   assert.equal(C.reduceGame(state, { type: "BUY", productId: "weed", qty: 1 }), state);
-  const ui = fs.readFileSync(path.join(__dirname, "..", "ui.jsx"), "utf8");
+  const ui = fs.readFileSync(path.join(root, "ui.jsx"), "utf8");
   assert.match(ui, /id !== "market" \|\| marketVisible/);
+});
+
+test("v1.1 shell passes market visibility through the icon nav and keeps hidden travel on Travel", () => {
+  const ui = fs.readFileSync(path.join(root, "ui.jsx"), "utf8");
+  const css = fs.readFileSync(path.join(root, "v05.css"), "utf8");
+  assert.match(ui, /<Navigation tab=\{tab\} setTab=\{setTab\} features=\{features\} marketVisible=\{state\.market\.visible\}/);
+  assert.match(ui, /setTab\(state\.market\.visible \? "market" : "travel"\)/);
+  assert.match(css, /\.nav\.market-hidden\{grid-template-columns:repeat\(4,1fr\)\}/);
+});
+
+test("pre-market v1.1 copy does not teach or advertise the hidden drug market", () => {
+  const ui = fs.readFileSync(path.join(root, "ui.jsx"), "utf8");
+  assert.doesNotMatch(ui, /market trading remains the stronger long-term plan/);
+  assert.doesNotMatch(ui, /Trading inside an open market visit costs no time/);
+  assert.match(ui, /legal work remains the safer long-term plan/);
+  assert.match(ui, /purpose=\{state\.market\.visible \?/);
+  assert.match(ui, /\{marketVisible && <div className="card"><h2>Market visits<\/h2>/);
 });
 
 test("Day 2 Spenard exploration offers one short transactional Kip encounter", () => {
@@ -77,6 +95,79 @@ test("standing four triggers the next plug introduction and reveals that plug's 
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
   assert.deepEqual(state.plugs.unlocked, ["kip", "tasha"]);
   assert.deepEqual(C.selectors.visibleMarketProducts(state).map((product) => product.id), ["weed", "shrooms", "pills", "lean"]);
+});
+
+test("linear introductions continue from Tasha to Malik in order", () => {
+  let state = stock(meetKip(), "weed");
+  state.plugs.records.kip.standing = 3;
+  state.people.dealers.kip.standing = 3;
+  state.plugs.records.kip.lastPurchaseDay = state.run.day - 1;
+  state = C.reduceGame(state, { type: "BUY", productId: "weed", qty: 1 });
+  state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
+  stock(state, "pills");
+  state.plugs.records.tasha.standing = 3;
+  state.plugs.records.tasha.lastPurchaseDay = state.run.day - 1;
+  state = C.reduceGame(state, { type: "BUY", productId: "pills", qty: 1 });
+  assert.equal(state.run.pendingEvent?.id, "malik_plug_intro");
+  state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
+  assert.deepEqual(state.plugs.unlocked, ["kip", "tasha", "malik"]);
+  assert.deepEqual(C.selectors.visibleMarketProducts(state).map((product) => product.id), ["weed", "shrooms", "pills", "lean", "coke", "molly"]);
+});
+
+test("each plug enforces its purchase limit and Malik earns bulk pricing at standing three", () => {
+  let state = stock(meetKip(), "weed");
+  assert.equal(C.selectors.plugMaxUnits(state, "weed"), 3);
+  assert.equal(C.reduceGame(state, { type: "BUY", productId: "weed", qty: 4 }), state);
+
+  state.plugs.unlocked.push("tasha", "malik");
+  for (const id of ["tasha", "malik"]) for (const product of C.PLUGS.find((plug) => plug.id === id).products) state.world.productAccess[product.id] = true;
+  stock(state, "pills"); stock(state, "coke");
+  assert.equal(C.selectors.plugMaxUnits(state, "pills"), 5);
+  assert.equal(C.reduceGame(state, { type: "BUY", productId: "pills", qty: 6 }), state);
+  assert.equal(C.selectors.plugMaxUnits(state, "coke"), 8);
+  assert.equal(C.reduceGame(state, { type: "BUY", productId: "coke", qty: 9 }), state);
+
+  state.plugs.records.malik.standing = 2;
+  const regular = C.selectors.tradeProjection(state, "coke", 5, "buy").unitPrice;
+  state.plugs.records.malik.standing = 3;
+  const bulk = C.selectors.tradeProjection(state, "coke", 5, "buy").unitPrice;
+  assert.ok(bulk < regular);
+});
+
+test("save hydration rebuilds market visibility and product access from plug state", () => {
+  const state = meetKip();
+  state.plugs.records.kip.standing = 2;
+  state.market.visible = false;
+  state.world.productAccess.weed = false;
+  state.world.productAccess.shrooms = false;
+  const hydrated = C.hydrateRun(JSON.parse(C.serializeRun(state)));
+  assert.equal(hydrated.market.visible, true);
+  assert.deepEqual(hydrated.plugs.unlocked, ["kip"]);
+  assert.equal(hydrated.plugs.records.kip.standing, 2);
+  assert.deepEqual(C.selectors.visibleMarketProducts(hydrated).map((product) => product.id), ["weed", "shrooms"]);
+});
+
+test("Kip's encounter fires exactly once even when the first offer is declined", () => {
+  let state = fresh(919);
+  state.run.day = 2;
+  state = C.reduceGame(state, { type: "EXPLORE_SPENARD" });
+  assert.equal(state.run.pendingEvent?.id, "kip_corner_intro");
+  state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 1 });
+  assert.equal(state.flags.kipEncounterSeen, true);
+  for (let index = 0; index < 3; index += 1) {
+    state.run.pendingEvent = null;
+    state = C.reduceGame(state, { type: "EXPLORE_SPENARD" });
+    assert.notEqual(state.run.pendingEvent?.id, "kip_corner_intro");
+  }
+  assert.equal(state.market.visible, false);
+});
+
+test("buying directly from Kip cannot bypass the shrooms standing threshold", () => {
+  let state = stock(meetKip(922), "weed");
+  state.world.markets[state.world.currentNeighborhoodId].availability.shrooms = 50;
+  state = C.reduceGame(state, { type: "BUY_FROM_DEALER", dealerId: "kip" });
+  assert.ok(state.player.inventory.weed.qty > 0);
+  assert.equal(state.player.inventory.shrooms.qty, 0);
 });
 
 test("robbing Kip never reveals products from a locked plug", () => {

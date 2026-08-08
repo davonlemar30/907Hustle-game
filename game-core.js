@@ -883,8 +883,9 @@
     if (value.plugs === undefined && value.people?.dealers?.kip?.known) {
       state.plugs.records.kip.standing = Math.max(0, value.people.dealers.kip.standing || 0);
       unlockPlug(state, "kip");
-      syncPlugProductAccess(state, "kip", false);
     }
+    state.market.visible = state.plugs.unlocked.length > 0;
+    for (const plugId of state.plugs.unlocked) syncPlugProductAccess(state, plugId, false);
     // Pre-v1.0 saves have no dirty/clean split. Treat all existing wealth as
     // unlaundered street money: nothing in pre-v1.0 gameplay ever laundered
     // anything, so this is the narratively honest default.
@@ -3842,7 +3843,9 @@
       const first = definition.name.split(" ")[0];
       const record = base.people.dealers[action.dealerId];
       const random = makeRandom(base.run.rngState);
-      const productId = random.pick(definition.products);
+      const availableProducts = definition.products.filter((productId) => !!unlockedPlugForProduct(state, productId));
+      const productId = random.pick(availableProducts);
+      if (!productId) return inputState;
       const unitPrice = Math.max(1, Math.round(tradeUnitPrices(state, productId).buy * (1 - actions.buy.discount)));
       const room = cargoCapacity(state) - cargoUsed(state);
       const units = Math.min(actions.buy.units, room, Math.floor(state.player.cash / unitPrice));

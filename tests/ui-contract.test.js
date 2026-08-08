@@ -364,3 +364,14 @@ test("player-facing modal copy carries no em dashes or vague intensifiers", () =
   assert.doesNotMatch(modalLayer, /[—–]/);
   assert.doesNotMatch(modalLayer, /\b(really|very|truly|actually|basically|literally)\b/i);
 });
+
+test("encounters are narrative-first, acknowledge results, and fit the 320px mobile shell", () => {
+  const encounter = ui.slice(ui.indexOf("function EncounterModal"), ui.indexOf("function OperationResultModal"));
+  assert.match(html, /encounters\.js[\s\S]*game-core\.js/);
+  assert.match(encounter, /ACKNOWLEDGE_ENCOUNTER/);
+  assert.match(encounter, /encounter\.loot/);
+  assert.doesNotMatch(encounter, /Their resolve|enemyHealth|Your Health/);
+  assert.match(css, /\.encounter-modal\{[^}]*overflow-x:hidden/);
+  assert.match(css, /@media\(max-width:340px\)/);
+  assert.match(css, /\.encounter-modal-backdrop\{[^}]*z-index:58/);
+});

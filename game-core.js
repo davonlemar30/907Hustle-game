@@ -1,8 +1,9 @@
 (function (root, factory) {
-  const api = factory();
+  const encounters = typeof module === "object" && module.exports ? require("./encounters.js") : root.EncounterSystem;
+  const api = factory(encounters);
   if (typeof module === "object" && module.exports) module.exports = api;
   root.GameCore = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (EncounterSystem) {
   "use strict";
 
   const VERSION = 3;
@@ -834,6 +835,7 @@
       },
       home: { storedCash: 0, storedInventory: Object.fromEntries(PRODUCTS.map((item) => [item.id, { qty: 0, avgCost: 0 }])), hiddenWeapon: null },
       flags: { featureNotices: {} },
+      encounterLog: { resolved: [], activeFlags: {}, randomKills: 0, randomFights: 0 },
       effects: { rumors: [], modifiers: [] },
       stats: {
         startingNetWorth: -200, bestTrade: 0, largestLoss: 0, highestHeat: 0,
@@ -879,6 +881,12 @@
     const defaults = createRun({ seed: value.run.seed });
     const state = mergeDefaults(defaults, value);
     state.version = VERSION;
+    if (state.run.pendingEncounter && state.run.pendingEncounter.type === undefined) {
+      Object.assign(state.run.pendingEncounter, {
+        active: true, type: "authored", phase: Math.max(0, (state.run.pendingEncounter.step || 1) - 1),
+        choices: [], npc: null, resolved: false, choicesMade: [], result: null, loot: null, engine: "legacy_authored",
+      });
+    }
     if (value.run.premise === undefined) state.run.premise = "legacy_established";
     if (value.base?.controlled === undefined) {
       state.base.controlled = true;
@@ -1124,8 +1132,9 @@
       gambling: !state.world.locations.gamblingKnown ? { available: false, reason: "Explore Spenard to find the informal game." }
         : ![2, 3].includes(state.run.slot) ? { available: false, reason: "The game runs in the Evening and at Night." }
           : { available: true, reason: "Seeded risk; reading the room improves a chance, never guarantees it." },
-      shoplifting: store.lastAttemptDay === state.run.day ? { available: false, reason: "Northern Value is watching for you today." }
-        : { available: true, reason: "One attempt per day. Reflexes lead; Insight, Heat, and suspicion matter." },
+      shoplifting: state.boost?.visible ? { available: false, reason: "Use the Boost tab for known targets." }
+        : store.lastAttemptDay === state.run.day ? { available: false, reason: "Northern Value is watching for you today." }
+          : { available: true, reason: "One attempt per day. Reflexes lead; Insight, Heat, and suspicion matter." },
     };
   }
 
@@ -2361,7 +2370,11 @@
     if (id === "dre_collector" && state.lender.collectorTier >= 2) {
       template = { ...template, enemyHealth: Math.round(template.enemyHealth * 1.3), pay: Math.round(template.pay * 1.3), attack: [Math.round(template.attack[0] * 1.2), Math.round(template.attack[1] * 1.2)] };
     }
-    state.run.pendingEncounter = { id, step: 1, enemyHealth: template.enemyHealth, feedback: template.description, finishAfter: !!finishAfter, ...template };
+    state.run.pendingEncounter = {
+      active: true, id, type: "authored", phase: 0, step: 1, choices: [], npc: null,
+      resolved: false, choicesMade: [], result: null, loot: null, engine: "legacy_authored",
+      enemyHealth: template.enemyHealth, feedback: template.description, finishAfter: !!finishAfter, ...template,
+    };
     const identity = state.player.streetIdentity;
     const preview = identity === "stickup" ? "They arrived expecting you to make this physical."
       : identity === "connector" ? "They keep looking past you for whoever might answer your call."
@@ -2815,7 +2828,7 @@
     if (state.player.heat >= 15) return "arrested";
     if (state.base.damage >= 3) return "base_lost";
     const plan = state.run.finalPlan;
-    const maraIntact = state.people.mara.trust >= 3 && !state.people.mara.usedWithoutConsent && state.people.mara.available !== false;
+    const maraIntact = state.people.mara.trust >= 3 && !state.people.mara.usedWithoutConsent && state.people.mara.available !== false && !state.flags.seriousViolence;
     if (plan === "escape" && maraIntact) return "mara_escape";
     if (plan === "escape") return "clean_exit";
     if (state.people.mara.available === false && state.people.mara.chainStage >= 6) return "mara_gone";
@@ -2863,6 +2876,21 @@
     householdWarning(state, repeatedWeapon ? 2 : 1, repeatedWeapon ? "John finds the weapon after the first warning. Yalonda tells you the house cannot survive another night like this." : "Yalonda finds what you hid. The contraband leaves the house, and the warning does not.", false);
   }
 
+  function encounterActivityContext(state, context, oldSlot, visit) {
+    const reason = context.reason;
+    let activity = null;
+    if (reason === "END_MARKET" && (visit?.grossSell || 0) > 0) activity = "selling";
+    else if (reason === "QUICK_SCORE" || reason === "ROB_DEALER") activity = "robbery";
+    else if (["TRAVEL", "BUS_TRAVEL", "WALK_HOME"].includes(reason) && cargoUsed(state) > 0) activity = "movement";
+    else if (state.world.currentNeighborhoodId === "airport_industrial" && oldSlot >= 2
+      && !["LAY_LOW", "SLEEP_HOME", "HEAL", "HEAL_AT_BASE"].includes(reason)) activity = "late_activity";
+    return {
+      activity, areaId: state.world.currentNeighborhoodId, slot: oldSlot,
+      cargoValue: inventoryValue(state), visibleCash: state.player.cash,
+      grossSell: visit?.grossSell || 0, cashDelta: context.cashDelta || 0,
+    };
+  }
+
   function advanceRun(inputState, context) {
     const beforeFeatures = featureAvailability(inputState);
     const state = copyState(inputState);
@@ -2870,6 +2898,7 @@
     reconcileCash(state);
     const random = makeRandom(state.run.rngState);
     const oldDay = state.run.day, oldSlot = state.run.slot;
+    const completedVisit = { ...(state.run.currentVisit || {}) };
     // Every slot-consuming action funnels through here, which makes this the one
     // honest place to record which part of the day gets spent on what. Logged
     // before the clock moves so the entry is stamped with the day it happened.
@@ -2910,7 +2939,14 @@
     }
     if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
     else if (finalSlot) endRun(state);
-    else if (!context.suppressStory) scheduleStory(state, context, random);
+    else {
+      const encounterContext = encounterActivityContext(state, context, oldSlot, completedVisit);
+      const triggered = EncounterSystem?.checkEncounterTrigger(state, oldDay, oldSlot, { ...encounterContext, rng: random });
+      if (triggered) {
+        triggered.choices = EncounterSystem.getEligibleChoices(triggered, state).map((item) => item.id);
+        state.run.pendingEncounter = triggered;
+      } else if (!context.suppressStory) scheduleStory(state, context, random);
+    }
     state.run.rngState = random.state;
     return state;
   }
@@ -2920,6 +2956,8 @@
   function encounterChoices(state) {
     const encounter = state.run.pendingEncounter;
     if (!encounter) return [];
+    if (encounter.engine === "consequence" && encounter.resolved) return [{ id: "continue", label: "Continue", description: "Return to the run." }];
+    if (encounter.engine === "consequence") return EncounterSystem.getEligibleChoices(encounter, state);
     const choices = [
       { id: "talk", label: "Talk them down", description: "Use Charisma, influence, and relationships." },
       { id: "run", label: "Break for an exit", description: "Health, Intelligence, shoes, and a light bag matter." },
@@ -2948,6 +2986,9 @@
   }
   function finishEncounter(state, result, text) {
     const encounter = state.run.pendingEncounter;
+    state.encounterLog = state.encounterLog || { resolved: [], activeFlags: {}, randomKills: 0, randomFights: 0 };
+    state.encounterLog.resolved.push({ id: encounter.id, type: encounter.type || "authored", day: state.run.day, slot: state.run.slot, choicesMade: [result], outcome: result, loot: null });
+    state.encounterLog.activeFlags[`${encounter.id}Resolved`] = true;
     state.run.pendingEncounter = null;
     state.run.encounterCount += 1;
     state.flags[`${encounter.id}ThreatResolved`] = true;
@@ -2980,6 +3021,30 @@
   }
 
   function reduceEncounter(inputState, action) {
+    if (inputState.run.pendingEncounter?.engine === "consequence") {
+      if (inputState.run.pendingEncounter.resolved && action.choiceId === "continue") {
+        const state = copyState(inputState);
+        const finishAfter = !!state.run.pendingEncounter.finishAfter;
+        state.run.pendingEncounter = null;
+        if (finishAfter) endRun(state);
+        return state;
+      }
+      const random = makeRandom(inputState.run.rngState);
+      const state = EncounterSystem.resolveEncounterChoice(inputState.run.pendingEncounter, action.choiceId, inputState, random);
+      if (state === inputState) return inputState;
+      state.run.rngState = random.state;
+      if (state.run.pendingEncounter?.resolved) {
+        const choice = action.choiceId === "draw" ? "fight" : ["fight", "run", "talk", "pay"].includes(action.choiceId) ? action.choiceId : "other";
+        state.stats.encounterChoices[choice] += 1;
+        if (["fight", "draw"].includes(action.choiceId)) recordBehavior(state, "stickup", action.choiceId === "draw" ? 2 : 1, `encounter:${state.run.pendingEncounter.id}`, "confrontation");
+        else if (["talk", "call_crew", "use_relationship"].includes(action.choiceId)) recordBehavior(state, "connector", 1, `encounter:${state.run.pendingEncounter.id}`, "relationship");
+        logEntry(state, state.run.pendingEncounter.result?.prose || "The confrontation ends and the run keeps moving.", ["won", "escaped", "talked", "crew_win", "relationship"].includes(state.run.pendingEncounter.result?.outcome) ? "good" : "warn");
+      }
+      state.stats.highestHeat = Math.max(state.stats.highestHeat, state.player.heat);
+      if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
+      reconcileCash(state);
+      return state;
+    }
     const state = copyState(inputState), encounter = state.run.pendingEncounter;
     if (!encounter) return inputState;
     reconcileCash(state);
@@ -3388,6 +3453,10 @@
       return state;
     }
     if (action.type === "RESOLVE_ENCOUNTER") return reduceEncounter(inputState, action);
+    if (action.type === "ACKNOWLEDGE_ENCOUNTER") {
+      if (!inputState.run.pendingEncounter?.resolved) return inputState;
+      return reduceEncounter(inputState, { type: "RESOLVE_ENCOUNTER", choiceId: "continue" });
+    }
     if (action.type === "ROBBERY" || action.type === "QUICK_SCORE") return executeRobbery(inputState);
     if (action.type === "ELI_TEST_ROUTE") return executeEliTestRoute(inputState);
     if (action.type === "ROB_DEALER") return executeDealerRobbery(inputState, action.dealerId);
@@ -3710,6 +3779,7 @@
       if (!target && action.type === "SHOPLIFT") target = legacyFirst ? BOOST_TARGET_BY_ID.night_owl : visibleBoostTargets(base)[0];
       if (!target) return inputState;
       if (!legacyFirst && !boostTargetAvailability(base, target.id).available) return inputState;
+      if (action.type === "SHOPLIFT") base.world.locations.discountStore.lastAttemptDay = base.run.day;
       const random = makeRandom(base.run.rngState);
       resolveBoostAttempt(base, target, random, action);
       base.run.rngState = random.state;
@@ -4240,6 +4310,7 @@
     // modal and a crossed day gets the day summary. Never stack two.
     if (after.run.pendingOperationResult && !before.run.pendingOperationResult) return null;
     if (after.run.daySummary && !before.run.daySummary) return null;
+    if (after.run.pendingEncounter && !before.run.pendingEncounter) return null;
 
     const lines = [];
     const add = (label, value, tone) => { if (lines.length < 4 && !lines.some((line) => line.label === label)) lines.push({ label, value, tone: tone || "" }); };

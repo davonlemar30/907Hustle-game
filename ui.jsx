@@ -107,16 +107,18 @@ function Header({ state, onMenu }) {
 const NAV_ICONS = {
   home: "M12 3 3 10.4V21h6v-6h6v6h6V10.4z",
   market: "M6.2 6h14l-1.7 8.7a2.2 2.2 0 0 1-2.2 1.8H9.4a2.2 2.2 0 0 1-2.2-1.8L5 3.5H1.6v-2H6.6zM9.5 21.5a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2m7 0a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2",
+  boost: "M4 5h16v4H4zM6 10h12l-1 11H7zM9 2h6v3H9zm1 11h4v5h-4z",
   travel: "M12 1.8a7.2 7.2 0 0 0-7.2 7.2c0 5.4 7.2 13.2 7.2 13.2s7.2-7.8 7.2-13.2A7.2 7.2 0 0 0 12 1.8m0 9.9A2.7 2.7 0 1 1 12 6.3a2.7 2.7 0 0 1 0 5.4",
   people: "M9 12a4.1 4.1 0 1 0 0-8.2A4.1 4.1 0 0 0 9 12m0 1.9c-4.1 0-7.4 2.1-7.4 4.7v2.6h14.8v-2.6c0-2.6-3.3-4.7-7.4-4.7m8.8-2.1a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4m.4 2.1c-.8 0-1.5.1-2.2.3 1.9 1.1 3.1 2.7 3.1 4.4v2.6h5.3v-2.9c0-2.4-2.8-4.4-6.2-4.4",
   more: "M6 12a2.2 2.2 0 1 1-4.4 0A2.2 2.2 0 0 1 6 12m8.2 0a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 0 1 4.4 0m8.2 0a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 0 1 4.4 0",
 };
 function NavIcon({ id }) { return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d={NAV_ICONS[id]} fill="currentColor" /></svg>; }
 
-const NAV = [["home", "Home"], ["market", "Market"], ["travel", "Travel"], ["people", "People"], ["more", "More"]];
+const NAV = [["home", "Home"], ["market", "Market"], ["boost", "Boost"], ["travel", "Travel"], ["people", "People"], ["more", "More"]];
 function Navigation({ tab, setTab, features, marketVisible }) {
-  return <nav className={`nav${marketVisible ? "" : " market-hidden"}`} aria-label="Primary game navigation">{NAV.filter(([id]) => id !== "market" || marketVisible).map(([id, label]) => {
-    const enabled = id === "home" || id === "market" || id === "travel" || id === "more" || features[id]?.available;
+  const items = NAV.filter(([id]) => (id !== "market" || marketVisible) && (id !== "boost" || features.boost.available));
+  return <nav className="nav" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }} aria-label="Primary game navigation">{items.map(([id, label]) => {
+    const enabled = id === "home" || id === "market" || id === "boost" || id === "travel" || id === "more" || features[id]?.available;
     return <button key={id} disabled={!enabled} className={tab === id ? "active" : ""} onClick={() => enabled && setTab(id)}><NavIcon id={id} />{label}{!enabled && <small>Locked</small>}</button>;
   })}</nav>;
 }
@@ -185,6 +187,24 @@ function Market({ state, onTrade }) {
     {C.selectors.visibleMarketProducts(state).map((product) => { const open = true; const signal = C.selectors.priceSignal(state, area.id, product.id); const prices = C.selectors.tradeUnitPrices(state, product.id); return <div key={product.id} className={`card product market-grid signal-${signal.id}${open ? "" : " locked"}`} role="button" tabIndex={open ? 0 : -1} onClick={() => open && onTrade(product.id)} onKeyDown={(event) => event.key === "Enter" && open && onTrade(product.id)}>
       <div><div className="product-name">{product.name}</div><div className="role">{open ? `${product.role} · ${market.availability[product.id]} available` : `Locked · ${product.access} access`}</div></div><div className="price">{open ? money(prices.buy) : "—"}</div><div className="signal">{open ? `${signal.symbol} ${signal.label}` : "LOCK"}</div><div className="own">{state.player.inventory[product.id].qty}</div>
     </div>; })}
+  </div></>;
+}
+
+function Boost({ state, dispatch }) {
+  const targets = C.selectors.visibleBoostTargets(state);
+  const fieldCrew = C.selectors.recruitedCrew(state).filter((person) => person.canFieldAssign);
+  return <><PageHead title="Boost" sub={`Tier ${state.boost.tier} · ${areaOf(state).name} · technique stays off the street`} /><div className="scroll">
+    {state.boost.tier >= 3 && <div className="card"><div className="card-title">Boost crew<small>{state.boost.crewAssigned ? C.CREW.find((person) => person.id === state.boost.crewAssigned)?.name : "UNASSIGNED"}</small></div><div className="btn-row">{fieldCrew.map((person) => <button className="btn secondary" key={person.id} onClick={() => dispatch({ type: "ASSIGN_BOOST_CREW", crewId: person.id })}>{person.name.split(" ")[0]}</button>)}</div></div>}
+    {targets.map((target) => {
+      const availability = C.selectors.boostTargetAvailability(state, target.id);
+      const banned = state.boost.storeBans.includes(target.id);
+      const hit = state.boost.dailyHits[target.id] === state.run.day;
+      const discovered = state.boost.discoveredWindows.includes(target.id);
+      const window = target.tier === 2 && discovered ? `Best window: ${C.SLOTS[target.windowSlot]}` : null;
+      const encounter = target.tier === 1 ? `You're browsing ${target.name}. The camera has a blind spot by the back aisle.` : target.tier === 2 ? `${target.name} has what you need behind minimal security. Move now or wait for a better window.` : "Pick the target, keep the crew moving, and deliver the merchandise to the fence.";
+      return <div className={`card boost-target${availability.available ? "" : " locked"}`} key={target.id}><div className="card-title">{target.name}<small>TIER {target.tier} · ${target.take[0]}–${target.take[1]}</small></div><p className="compact">{encounter}</p><div className="outcome-grid"><Outcome label="Status" value={banned ? "Banned" : hit ? "Hit today" : "Ready"} />{target.tier === 2 && <Outcome label="Window" value={window || "Unknown"} />}</div>{target.tier === 2 && !discovered && <button className="btn full secondary" onClick={() => dispatch({ type: "ASK_BOOST_WINDOW", targetId: target.id })}>Ask around<span className="action-copy">Uses one social action</span></button>}<button className="btn full primary" disabled={!availability.available} onClick={() => dispatch({ type: "BOOST", targetId: target.id })}>Make the lift<span className="action-copy">{availability.available ? "Uses one part of day" : availability.reason}</span></button></div>;
+    })}
+    {state.boost.tier >= 3 && <div className="card"><div className="card-title">Fence<small>{Math.round(C.selectors.boostFenceRate(state.boost.fenceStanding) * 100)}% RATE</small></div><p className="compact">He looks at what you brought, quotes a number. Take it or try somewhere else.</p><button className="btn full good-btn" disabled={!state.boost.merchandise} onClick={() => dispatch({ type: "FENCE_BOOST_GOODS" })}>Sell ${state.boost.merchandise} merchandise<span className="action-copy">Standing {state.boost.fenceStanding}/5 · no time cost</span></button></div>}
   </div></>;
 }
 
@@ -261,7 +281,6 @@ function AroundHere({ state, dispatch, onBack }) {
     <PlaceAction title="Explore Spenard" status={state.world.locations.explorationCount ? `${state.world.locations.explorationCount} walks` : "NEW ARRIVAL"} purpose={state.market.visible ? "Learn the neighborhood and discover contacts, games, routes, and useful local details." : "Learn the neighborhood and discover games, routes, work, and useful local details."} cost="$0" time="One part of day" disabled={false} reason={available.explore.reason} onClick={() => dispatch({ type: "EXPLORE_SPENARD" })} />
     <PlaceAction title="Night Owl" status={state.people.mara.met ? "MARA KNOWN" : "OPEN"} purpose="A warm counter, a drink, and a possible first meeting with Mara." cost="Browse free" time="Conversation may use time" disabled={false} reason="Mara's introduction is a first meeting, never a prior routine." onClick={() => dispatch({ type: "VISIT_NIGHT_OWL" })} />
     <div className="card"><div className="card-title">Spenard Community Gym<small>{money(available.gym.cost)} · +{available.gym.progress} progress</small></div><p className="compact">Train one physical attribute. Every session uses one part of day; repeated same-day sessions cost more and give less progress.</p><div className="btn-row">{[["strength", "Strength"], ["endurance", "Endurance"], ["reflexes", "Reflexes"]].map(([id, label]) => <button className="btn secondary" key={id} disabled={!available.gym.available || state.player.attributes[id] >= 5} onClick={() => dispatch({ type: "TRAIN_ATTRIBUTE", attribute: id })}>{label} {state.player.attributes[id]}</button>)}</div><p className="muted compact">Session {available.gym.sessionsToday + 1} today · cost {money(available.gym.cost)} · one part of day</p></div>
-    <PlaceAction title="Northern Value" status={`SUSPICION ${state.world.locations.discountStore.suspicion}`} purpose="One small shoplifting opportunity per day. Reflexes lead; Insight, Heat, and remembered suspicion matter." cost="$0" time="One part of day" disabled={!available.shoplifting.available} reason={available.shoplifting.reason} onClick={() => dispatch({ type: "SHOPLIFT" })} />
     {state.world.locations.gamblingKnown && <div className={`card${available.gambling.available ? "" : " locked"}`}><div className="card-title">Informal Game<small>EVENING / NIGHT</small></div><p className="compact">Choose an approach, then risk $20, $50, or $100. Attributes inform the seeded result but never guarantee profit. No debt is offered.</p><select aria-label="Gambling approach" value={gambleApproach} onChange={(event) => setGambleApproach(event.target.value)}><option value="read">Read the room · Insight</option><option value="steady">Play disciplined · Discipline</option><option value="press">Work the table · Presence</option></select><div className="btn-row">{[20, 50, 100].map((stake) => <button className="btn secondary" key={stake} disabled={!available.gambling.available || state.player.cash < stake} onClick={() => dispatch({ type: "GAMBLE", stake, approach: gambleApproach })}>Risk ${stake}</button>)}</div><p className="muted compact">{available.gambling.reason}</p></div>}
   </div></>;
 }
@@ -972,11 +991,13 @@ function GameShell({ state, dispatch, onTitle }) {
   useEffect(() => { if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult || state.run.status === "ended") setTrade(null); }, [state.run.pendingEvent, state.run.pendingEncounter, state.run.pendingOperationResult, state.run.status]);
   useEffect(() => { if (tab === "people" && !features.people.available) setTab(state.market.visible ? "market" : "home"); }, [tab, features.people.available, state.market.visible]);
   useEffect(() => { if (tab === "market" && !state.market.visible) setTab("home"); }, [tab, state.market.visible]);
+  useEffect(() => { if (tab === "boost" && !state.boost.visible) setTab("home"); }, [tab, state.boost.visible]);
   if (state.run.status === "creating_character") return <CharacterCreation dispatch={dispatch} />;
   const navigateMore = () => navigate("more", "finances", "debt");
   const screens = {
     home: <Home state={state} navigate={navigate} />,
     market: state.market.visible ? <Market state={state} onTrade={setTrade} /> : null,
+    boost: state.boost.visible ? <Boost state={state} dispatch={act} /> : null,
     travel: <Travel state={state} dispatch={act} setTab={setTab} page={travelPage} setPage={setTravelPage} />,
     people: <People state={state} dispatch={act} navigateMore={navigateMore} />,
     more: <More state={state} dispatch={act} features={features} page={nav.more} setPage={setMorePage} sub={nav.sub} subToken={nav.token} />,

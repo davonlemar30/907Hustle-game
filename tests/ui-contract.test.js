@@ -19,13 +19,13 @@ test("title screen exposes safe load, new-game confirmation, preview, and help",
 test("new games are classless and expose one Start from the Bottom confirmation", () => {
   assert.match(ui, /Start from the Bottom/); assert.match(ui, /type: "START_RUN"/); assert.doesNotMatch(ui, /Choose your edge|C\.STARTING_EDGES\.map|C\.BACKGROUNDS\.map/);
 });
-test("five primary navigation labels lead with Home and progressive More categories are explicit", () => {
-  assert.match(ui, /const NAV = \[\["home", "Home"\], \["market", "Market"\], \["travel", "Travel"\], \["people", "People"\], \["more", "More"\]\]/);
+test("progressive primary navigation leads with Home and keeps Boost after Market", () => {
+  assert.match(ui, /const NAV = \[\["home", "Home"\], \["market", "Market"\], \["boost", "Boost"\], \["travel", "Travel"\], \["people", "People"\], \["more", "More"\]\]/);
   for (const label of ["Character", "Operations", "Finances", "Recovery", "Help"]) assert.match(ui, new RegExp(`title="${label}"`));
   assert.match(css, /grid-template-columns:repeat\(5,1fr\)/);
 });
 test("Travel exposes the fresh-arrival activity and access model", () => {
-  for (const token of ["Yalonda and John's Home", "Ship Creek Freight", "Explore Spenard", "Spenard Community Gym", "Northern Value", "Informal Game", "People Mover", "North Star Garage Listing", "Auto Lot", "Gun Counter"]) assert.ok(ui.includes(token), token);
+  for (const token of ["Yalonda and John's Home", "Ship Creek Freight", "Explore Spenard", "Spenard Community Gym", "Informal Game", "People Mover", "North Star Garage Listing", "Auto Lot", "Gun Counter"]) assert.ok(ui.includes(token), token);
 });
 test("HUD shows three primary values and a one-tap status drawer", () => {
   for (const token of ['label="Day / Time"', 'label="Cash"', 'label="Heat"', "status-toggle", 'Chip label="Debt"', "Crew Power"]) assert.ok(ui.includes(token), token);

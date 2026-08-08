@@ -216,6 +216,22 @@
   const GEAR_BY_ID = Object.fromEntries(GEAR.map((item) => [item.id, item]));
   const CREW_BY_ID = Object.fromEntries(CREW.map((item) => [item.id, item]));
 
+  const BOOST_TARGETS = [
+    { id: "night_owl", name: "Night Owl Mini-Mart", areaId: "north_star_lot", tier: 1, take: [15, 40] },
+    { id: "spenard_fuel", name: "Spenard Fuel", areaId: "north_star_lot", tier: 1, take: [15, 40] },
+    { id: "fourth_ave_market", name: "Fourth Avenue Market", areaId: "downtown", tier: 1, take: [15, 40] },
+    { id: "downtown_fuel", name: "Downtown Fuel", areaId: "downtown", tier: 1, take: [15, 40] },
+    { id: "service_stop", name: "Service Road Stop", areaId: "airport_industrial", tier: 1, take: [15, 40] },
+    { id: "airport_fuel", name: "Airport Fuel", areaId: "airport_industrial", tier: 1, take: [15, 40] },
+    { id: "northern_value", name: "Northern Value", areaId: "north_star_lot", tier: 2, take: [60, 150], windowSlot: 1 },
+    { id: "midtown_pharmacy", name: "Midtown Pharmacy", areaId: "north_star_lot", tier: 2, take: [60, 150], windowSlot: 2 },
+    { id: "fourth_ave_electronics", name: "Fourth Avenue Electronics", areaId: "downtown", tier: 2, take: [60, 150], windowSlot: 3 },
+    { id: "warehouse_club", name: "Warehouse Club", areaId: "north_star_lot", tier: 3, take: [200, 500] },
+    { id: "loading_dock_seven", name: "Loading Dock Seven", areaId: "airport_industrial", tier: 3, take: [200, 500] },
+    { id: "delivery_route_4", name: "Delivery Route 4", areaId: "downtown", tier: 3, take: [200, 500] },
+  ];
+  const BOOST_TARGET_BY_ID = Object.fromEntries(BOOST_TARGETS.map((target) => [target.id, target]));
+
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
   // Dirty/clean cash is a bookkeeping layer on top of the single pervasive
   // player.cash pool every existing reducer already reads/writes directly.
@@ -497,7 +513,7 @@
     BUY: "trade", SELL: "trade", END_MARKET: "trade",
     VISIT_NIGHT_OWL: "social", RECRUIT_CREW: "social", ASSIGN_CREW: "social", PROMOTE_LIEUTENANT: "social", PAY_DEBT: "social", RECRUIT_SOLDIER: "social",
     HEAL: "heal", HEAL_AT_BASE: "heal", LAY_LOW: "rest", SLEEP_HOME: "rest",
-    WORK_SHIFT: "work", SHOPLIFT: "work",
+    WORK_SHIFT: "work", SHOPLIFT: "work", BOOST: "work", ASK_BOOST_WINDOW: "social",
     EXPLORE_SPENARD: "explore", VISIT_BASE: "explore", LEASE_GARAGE: "explore", TRAIN_ATTRIBUTE: "explore", BUY_GEAR: "explore", UPGRADE_BASE: "explore", LAUNDER_CASH: "explore",
     GAMBLE: "gamble",
     TRAVEL: "travel", BUS_TRAVEL: "travel", WALK_HOME: "travel",
@@ -812,6 +828,10 @@
       },
       plugs: createPlugState(),
       market: { visible: false },
+      boost: {
+        visible: false, tier: 0, technique: 0, storeBans: [], fenceStanding: 0,
+        dailyHits: {}, crewAssigned: null, merchandise: 0, discoveredWindows: [],
+      },
       home: { storedCash: 0, storedInventory: Object.fromEntries(PRODUCTS.map((item) => [item.id, { qty: 0, avgCost: 0 }])), hiddenWeapon: null },
       flags: { featureNotices: {} },
       effects: { rumors: [], modifiers: [] },
@@ -886,6 +906,10 @@
     }
     state.market.visible = state.plugs.unlocked.length > 0;
     for (const plugId of state.plugs.unlocked) syncPlugProductAccess(state, plugId, false);
+    state.boost.storeBans = Array.isArray(state.boost.storeBans) ? [...new Set(state.boost.storeBans.filter((id) => BOOST_TARGET_BY_ID[id]))] : [];
+    state.boost.discoveredWindows = Array.isArray(state.boost.discoveredWindows) ? [...new Set(state.boost.discoveredWindows.filter((id) => BOOST_TARGET_BY_ID[id]?.tier === 2))] : [];
+    state.boost.dailyHits = state.boost.dailyHits && typeof state.boost.dailyHits === "object" ? state.boost.dailyHits : {};
+    updateBoostTier(state);
     // Pre-v1.0 saves have no dirty/clean split. Treat all existing wealth as
     // unlaundered street money: nothing in pre-v1.0 gameplay ever laundered
     // anything, so this is the narratively honest default.
@@ -944,6 +968,101 @@
   function storedCashCapacity(state) { return state.base.tracks.storage === 0 ? 0 : state.base.tracks.storage === 1 ? 300 : 1200; }
   function homeStoredCargoUsed(state) { return PRODUCTS.reduce((sum, item) => sum + (state.home?.storedInventory?.[item.id]?.qty || 0), 0); }
   function recruitedCrew(state) { return CREW.filter((person) => state.people.crew[person.id].recruited && state.people.crew[person.id].status === "active"); }
+  function updateBoostTier(state) {
+    if (!state.boost) return 0;
+    let unlocked = state.boost.visible ? 1 : 0;
+    if (state.boost.technique >= 5) unlocked = 2;
+    if (state.boost.technique >= 13 && recruitedCrew(state).some((person) => person.canFieldAssign)) unlocked = 3;
+    state.boost.tier = Math.max(state.boost.tier || 0, unlocked);
+    return state.boost.tier;
+  }
+  function boostTier(state) {
+    if (!state.boost?.visible) return 0;
+    if (state.boost.technique >= 13 && recruitedCrew(state).some((person) => person.canFieldAssign)) return 3;
+    if (state.boost.technique >= 5) return 2;
+    return 1;
+  }
+  function visibleBoostTargets(state) {
+    if (!state.boost?.visible) return [];
+    const tier = Math.max(state.boost.tier || 0, boostTier(state));
+    return BOOST_TARGETS.filter((target) => target.areaId === state.world.currentNeighborhoodId && target.tier <= tier);
+  }
+  function boostFenceRate(standing) {
+    const value = clamp(Math.floor(Number(standing) || 0), 0, 5);
+    if (value >= 5) return 0.60;
+    if (value >= 3) return 0.55;
+    return 0.40 + value * 0.05;
+  }
+  function boostChance(state, target) {
+    const a = normalizedAttributes(state);
+    const skill = target.tier === 1 ? (a.reflexes + a.insight) / 2
+      : target.tier === 2 ? (a.reflexes + a.discipline) / 2
+        : (a.discipline + a.presence) / 2;
+    const base = target.tier === 1 ? 0.80 : target.tier === 2 ? 0.55 : 0.40;
+    const windowBonus = target.tier === 2 && state.run.slot === target.windowSlot ? 0.20 : 0;
+    return clamp(base + (skill - 2) * 0.10 + windowBonus, 0.10, 0.95);
+  }
+  function boostTargetAvailability(state, targetId) {
+    const target = BOOST_TARGET_BY_ID[targetId];
+    if (!state.boost?.visible || !target || target.areaId !== state.world.currentNeighborhoodId || target.tier > Math.max(state.boost.tier || 0, boostTier(state))) return { available: false, reason: "That target is not available." };
+    if (state.boost.storeBans.includes(target.id)) return { available: false, reason: "You are burned at this store for the rest of the run." };
+    if (state.boost.dailyHits[target.id] === state.run.day) return { available: false, reason: "Already hit today." };
+    if (target.tier === 3) {
+      const crew = state.people.crew[state.boost.crewAssigned];
+      if (!crew?.recruited || crew.status !== "active" || !CREW_BY_ID[state.boost.crewAssigned]?.canFieldAssign) return { available: false, reason: "Assign active field crew first." };
+    }
+    return { available: true, reason: "Ready.", chance: boostChance(state, target) };
+  }
+  function resolveBoostAttempt(state, target, random, options) {
+    const chance = boostChance(state, target);
+    const roll = Number.isFinite(options?.roll) ? options.roll : random.next();
+    const success = roll < chance;
+    state.boost.dailyHits[target.id] = state.run.day;
+    if (target.tier === 2 && !state.boost.discoveredWindows.includes(target.id)) state.boost.discoveredWindows.push(target.id);
+    if (success) {
+      const take = random.int(target.take[0], target.take[1]);
+      state.boost.visible = true;
+      state.boost.technique += 1;
+      state.player.heat = clamp(state.player.heat + (target.tier === 1 ? 0.5 : target.tier === 2 ? 1 : 2), 0, 15);
+      if (target.tier === 3) {
+        state.boost.merchandise += take;
+        const crew = state.people.crew[state.boost.crewAssigned];
+        if (crew) crew.loyalty += 1;
+        logEntry(state, `${target.name} lands. $${take} in merchandise is waiting for the fence.`, "good");
+      } else {
+        addDirtyCash(state, take);
+        logEntry(state, `You leave ${target.name} with goods worth $${take}.`, "good");
+      }
+      addStreetReadEntry(state, "risk", `boost:${target.areaId}:${target.id}`);
+      recordBehavior(state, "stickup", 1, `boost:${state.run.day}:${target.id}`, "shoplift_pattern");
+      updateBoostTier(state);
+    } else if (target.tier === 1) {
+      state.player.heat = clamp(state.player.heat + 1, 0, 15);
+      if (!state.boost.storeBans.includes(target.id)) state.boost.storeBans.push(target.id);
+      logEntry(state, "Security grabbed your arm. You dropped it and walked out.", "bad");
+    } else if (target.tier === 2) {
+      const chaseRoll = Number.isFinite(options?.chaseRoll) ? options.chaseRoll : random.next();
+      const escaped = chaseRoll < clamp(0.45 + normalizedAttributes(state).reflexes * 0.08, 0.25, 0.85);
+      state.player.heat = clamp(state.player.heat + (escaped ? 1 : 2), 0, 15);
+      if (!escaped) {
+        if (!state.boost.storeBans.includes(target.id)) state.boost.storeBans.push(target.id);
+        if (state.player.heat > 6) state.flags.boostArrestRisk = true;
+      }
+      logEntry(state, escaped ? "Security gives chase, but you lose them outside." : "Security runs you down. The store has your face now.", escaped ? "warn" : "bad");
+    } else {
+      state.player.heat = clamp(state.player.heat + 3, 0, 15);
+      const crewId = state.boost.crewAssigned;
+      const caughtRoll = Number.isFinite(options?.crewCaughtRoll) ? options.crewCaughtRoll : random.next();
+      if (crewId && caughtRoll < 0.30) {
+        state.people.crew[crewId].status = "arrested";
+        state.flags.crewBailPending = crewId;
+        state.boost.crewAssigned = null;
+      }
+      state.boost.merchandise = 0;
+      logEntry(state, crewId && state.flags.crewBailPending === crewId ? `${CREW_BY_ID[crewId].name} gets caught. Bail is now your problem.` : "The ring breaks empty-handed and leaves Heat behind.", "bad");
+    }
+    return { success, chance };
+  }
   // Third crew slot is the tier-3 payoff. The UI reads the number, never the reason.
   function crewCapacityFor(state) { return streetReadTier(state) >= 3 ? 3 : 2; }
   function influenceLabel(value) { return ["Unknown", "Active", "Established", "Contested", "Controlled"][clamp(value, 0, 4)]; }
@@ -975,6 +1094,7 @@
     const someoneIntroduced = state.people.mara.met || CREW.some((person) => state.people.crew[person.id]?.introduced);
     return {
       market: { available: !!state.market?.visible, hint: state.market?.visible ? "Available now." : "Meet a supplier to unlock the Market." },
+      boost: { available: !!state.boost?.visible, hint: state.boost?.visible ? "Available now." : "Hidden until your first clean lift." },
       finances: { available: true, hint: "Available now." },
       help: { available: true, hint: "Available now." },
       travel: { available: true, hint: "Places and local travel are available now." },
@@ -2608,6 +2728,7 @@
       unlockPlug(state, effect.unlockPlug);
       if (effect.unlockPlug === "kip" && !state.world.locations.discoveries.includes("kip_supplier")) state.world.locations.discoveries.push("kip_supplier");
     }
+    if (effect.boostTargetId && BOOST_TARGET_BY_ID[effect.boostTargetId]) resolveBoostAttempt(state, BOOST_TARGET_BY_ID[effect.boostTargetId], random, effect.boostOptions);
     if (effect.maraJobAtRisk) state.people.mara.jobAtRisk = true;
     if (effect.maraDeparts) { state.people.mara.available = false; state.people.mara.status = "gone"; }
     if (effect.baseDamage) state.base.damage += effect.baseDamage;
@@ -3213,6 +3334,18 @@
     };
   }
 
+  function firstBoostOpportunityEvent() {
+    return {
+      id: "boost_first_opportunity", title: "Blind Spot", who: "You", where: "Night Owl Mini-Mart",
+      stakes: "Pocket something or keep walking.",
+      description: "You're browsing Night Owl Mini-Mart. The camera has a blind spot by the back aisle. Pocket something or keep walking.",
+      choices: [
+        { label: "Pocket it", effect: { boostTargetId: "night_owl", setFlags: { boostOpportunitySeen: true } }, preview: "Try a small lift.", result: "You make the move before the camera swings back." },
+        { label: "Keep walking", effect: { setFlags: { boostOpportunitySeen: true } }, preview: "Leave it alone.", result: "You leave the shelf untouched." },
+      ],
+    };
+  }
+
   function reduceGame(inputState, action) {
     if (!inputState || !action || !action.type) return inputState;
     if (action.type === "HYDRATE_RUN") return hydrateRun(action.state) || inputState;
@@ -3545,28 +3678,42 @@
       logEntry(base, won ? `The ${approach} approach holds. You leave the game $${stake} ahead.` : `The room takes your $${stake}. Nobody offers credit, and the next choice is yours.`, won ? "good" : "bad");
       return advanceRun(base, { reason: "GAMBLE" });
     }
-    if (action.type === "SHOPLIFT") {
-      const available = activityAvailability(state).shoplifting;
-      if (!available.available) return inputState;
+    if (action.type === "ASSIGN_BOOST_CREW") {
+      const crew = base.people.crew[action.crewId];
+      if (!base.boost.visible || base.boost.tier < 3 || !crew?.recruited || crew.status !== "active" || !CREW_BY_ID[action.crewId]?.canFieldAssign) return inputState;
+      base.boost.crewAssigned = action.crewId;
+      logEntry(base, `${CREW_BY_ID[action.crewId].name} is assigned to boost duty.`, "good");
+      return base;
+    }
+    if (action.type === "ASK_BOOST_WINDOW") {
+      const target = BOOST_TARGET_BY_ID[action.targetId];
+      if (!base.boost.visible || base.boost.tier < 2 || target?.tier !== 2 || target.areaId !== base.world.currentNeighborhoodId || base.boost.discoveredWindows.includes(target.id)) return inputState;
+      base.boost.discoveredWindows.push(target.id);
+      logEntry(base, `Word is ${target.name} is softest during ${SLOTS[target.windowSlot]}.`, "good");
+      return advanceRun(base, { reason: "ASK_BOOST_WINDOW" });
+    }
+    if (action.type === "FENCE_BOOST_GOODS") {
+      if (!base.boost.visible || base.boost.tier < 3 || base.boost.merchandise <= 0) return inputState;
+      const rate = boostFenceRate(base.boost.fenceStanding);
+      const gross = base.boost.merchandise;
+      const payout = Math.round(gross * rate);
+      base.boost.merchandise = 0;
+      base.boost.fenceStanding = clamp(base.boost.fenceStanding + 1, 0, 5);
+      addDirtyCash(base, payout);
+      logEntry(base, `He looks at what you brought, quotes $${payout}, and takes the merchandise.`, "good");
+      return base;
+    }
+    if (action.type === "BOOST" || action.type === "SHOPLIFT") {
+      updateBoostTier(base);
+      let target = BOOST_TARGET_BY_ID[action.targetId];
+      const legacyFirst = action.type === "SHOPLIFT" && !base.boost.visible;
+      if (!target && action.type === "SHOPLIFT") target = legacyFirst ? BOOST_TARGET_BY_ID.night_owl : visibleBoostTargets(base)[0];
+      if (!target) return inputState;
+      if (!legacyFirst && !boostTargetAvailability(base, target.id).available) return inputState;
       const random = makeRandom(base.run.rngState);
-      const store = base.world.locations.discountStore;
-      const chance = clamp(0.30 + base.player.attributes.reflexes * 0.08 + base.player.attributes.insight * 0.03 - base.player.heat * 0.025 - store.suspicion * 0.04, 0.15, 0.72);
-      const success = random.next() < chance;
-      store.lastAttemptDay = base.run.day;
-      store.suspicion = clamp(store.suspicion + (success ? 1 : 2), 0, 8);
-      if (success) {
-        const reward = random.int(25, 65);
-        base.player.cash += reward;
-        base.player.heat = clamp(base.player.heat + (store.suspicion >= 4 ? 1 : 0), 0, 15);
-        if (store.suspicion >= 3) recordBehavior(base, "stickup", 1, `shoplift_pattern:${base.run.day}`, "shoplift_pattern");
-        addStreetReadEntry(base, "risk", `shoplifting:${base.world.currentNeighborhoodId}`);
-        logEntry(base, `You leave Northern Value with small goods worth $${reward}. The store remembers more than the payout justifies.`, "good");
-      } else {
-        base.player.heat = clamp(base.player.heat + 2, 0, 15);
-        logEntry(base, "Northern Value security walks you out empty-handed. The store remembers your face, and Heat rises by 2.", "bad");
-      }
+      resolveBoostAttempt(base, target, random, action);
       base.run.rngState = random.state;
-      return advanceRun(base, { reason: "SHOPLIFT" });
+      return advanceRun(base, { reason: action.type });
     }
     if (action.type === "EXPLORE_SPENARD") {
       const random = makeRandom(base.run.rngState);
@@ -3574,11 +3721,12 @@
       base.world.locations.explorationCount += 1;
       addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:explore`);
       const meetsKip = base.run.day >= 2 && !base.flags.kipEncounterSeen;
-      if (!meetsKip && !base.world.locations.gamblingKnown && count > 0) {
+      const meetsBoost = !meetsKip && !base.flags.boostOpportunitySeen && !base.boost.visible && (count === 0 || base.world.locations.gamblingKnown);
+      if (!meetsBoost && !meetsKip && !base.world.locations.gamblingKnown && count > 0) {
         base.world.locations.gamblingKnown = true;
         base.world.locations.discoveries.push("informal_game");
         logEntry(base, "A back-room dice game announces itself through the people leaving. No sign, no door number. Evening and Night games are now visible.", "good");
-      } else if (!meetsKip) {
+      } else if (!meetsBoost && !meetsKip) {
         const discoveries = [
           "John's bus advice matches the posted Downtown timetable.",
           "A freight worker confirms Ship Creek hires before breakfast.",
@@ -3588,8 +3736,10 @@
         logEntry(base, random.pick(discoveries), "");
       }
       base.run.rngState = random.state;
-      const advanced = advanceRun(base, { reason: "EXPLORE_SPENARD", suppressStory: meetsKip });
-      if (meetsKip && advanced.run.status === "playing") {
+      const advanced = advanceRun(base, { reason: "EXPLORE_SPENARD", suppressStory: meetsBoost || meetsKip });
+      if (meetsBoost && advanced.run.status === "playing") {
+        advanced.run.pendingEvent = firstBoostOpportunityEvent();
+      } else if (meetsKip && advanced.run.status === "playing") {
         advanced.flags.kipEncounterSeen = true;
         advanced.run.pendingEvent = plugIntroductionEvent("kip");
       }
@@ -3732,6 +3882,7 @@
       if (!crew.introduced || crew.recruited || state.player.cash < cost || (person.id === "eli" && crew.contactStage !== "recruitable")) return inputState;
       base.player.cash -= cost; crew.recruited = true; crew.status = "active"; crew.loyalty += 1; crew.wageDue = person.wage; base.stats.moneySpent.crew += cost;
       crew.contactStage = "active";
+      updateBoostTier(base);
       recordBehavior(base, "connector", 3, `recruit:${action.crewId}`, "recruit");
       addStreetReadEntry(base, "social", `${action.crewId}:recruitment`);
       logEntry(base, `${person.name} takes the chair at the garage table. The operation has another person to answer for.`, "good");
@@ -4063,7 +4214,7 @@
   // type; travel overrides this with the district it arrived in.
   const ACTION_RESULT_TITLES = {
     WORK_SHIFT: "Shift Complete", TRAIN_ATTRIBUTE: "Training Complete", EXPLORE_SPENARD: "Walk Complete",
-    SHOPLIFT: "Attempt Resolved", GAMBLE: "Game Resolved", END_MARKET: "Market Visit Closed",
+    SHOPLIFT: "Attempt Resolved", BOOST: "Boost Resolved", ASK_BOOST_WINDOW: "Window Learned", GAMBLE: "Game Resolved", END_MARKET: "Market Visit Closed",
     SLEEP_HOME: "Night Passed", LAY_LOW: "Laid Low", HEAL: "Treatment Complete",
     PAY_DEBT: "Payment Made", LAUNDER_CASH: "Cash Laundered", CLAIM_BLOCK: "Block Claimed",
     RECRUIT_SOLDIER: "Soldier Recruited", RECRUIT_CREW: "Crew Recruited", PROMOTE_LIEUTENANT: "Lieutenant Promoted",
@@ -4141,7 +4292,7 @@
   return {
     VERSION, RUN_DAYS, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
     STREET_NAME_MAX, DEFAULT_STREET_NAMES, ATTRIBUTE_DEFAULTS, LEGACY_ATTRIBUTES, STREET_IDENTITIES, sanitizeStreetName,
-    CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS, ENTITY_REGISTRY, ENTITY_MATCH_ORDER, PLUGS,
+    CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS, ENTITY_REGISTRY, ENTITY_MATCH_ORDER, PLUGS, BOOST_TARGETS,
     SPENARD_BLOCKS, KIP_BUSINESSES, SOLDIER_RECRUIT_COST, SOLDIER_BASE_CAPACITY, SOLDIER_CAPACITY_PER_BLOCK, SOLDIERS_PER_BLOCK_CAP,
     KIP_LAUNDER_FEE, DRE_COLLECTOR_TIERS, ELI_LIEUTENANT_UNLOCK, KIP_LIEUTENANT_INCOME_THRESHOLD, KIP_LIEUTENANT_STANDING_MIN, RESPECT_STAGE_THRESHOLDS,
     DISTRICT_CONTROL_TIERS, DISTRICT_CONTROL_CAPSTONE_BLOCKS, DISTRICT_CONTROL_LABEL, ELI_OPERATION_POLICIES,
@@ -4168,6 +4319,7 @@
       territoryPowerEstimate, territoryBenefits, tradeUnitPrices, tradeProjection, takeoverReadiness, robberyAvailability, eliTestRouteAvailability, maraThreatEligible,
       dealerRecord, dealerActions, dealerStandingLabel, dealerSupplyFactor,
       visibleMarketProducts, plugMaxUnits, unlockedPlugForProduct,
+      visibleBoostTargets, boostTargetAvailability, boostChance, boostFenceRate, boostTier,
       controlledBlockCount, eliLieutenantActive, soldierCapacity, activeSoldierCount, blockSoldierCount, blockIntelVisible,
       soldierRecruitAvailability, soldierAssignAvailability, blockClaimAvailability, eliPromotionAvailability,
       weeklyIncomeEstimate, kipLieutenantAvailability, launderCapacity, launderAvailability,

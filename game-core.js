@@ -40,6 +40,10 @@
   const PRODUCTS = [
     { id: "weed", name: "Weed", role: "Dependable", base: 34, min: 18, max: 68, volatility: 0.12, heat: 0, access: "open" },
     { id: "shrooms", name: "Shrooms", role: "Volatile", base: 82, min: 35, max: 180, volatility: 0.25, heat: 0, access: "open" },
+    { id: "pills", name: "Pills", role: "Steady margin", base: 105, min: 55, max: 220, volatility: 0.18, heat: 1, access: "plug" },
+    { id: "lean", name: "Lean", role: "Premium", base: 155, min: 80, max: 330, volatility: 0.22, heat: 1, access: "plug" },
+    { id: "coke", name: "Coke", role: "High margin", base: 290, min: 145, max: 690, volatility: 0.30, heat: 1, access: "plug" },
+    { id: "molly", name: "Molly", role: "Club demand", base: 215, min: 105, max: 480, volatility: 0.28, heat: 1, access: "plug" },
     { id: "cocaine", name: "Cocaine", role: "Premium", base: 290, min: 145, max: 690, volatility: 0.30, heat: 1, access: "supplier" },
     { id: "meth", name: "Meth", role: "Extreme Risk", base: 185, min: 70, max: 560, volatility: 0.38, heat: 2, access: "industrial" },
   ];
@@ -49,19 +53,19 @@
       id: "north_star_lot", name: "Spenard", role: "Home", risk: 1, police: 1, rival: 0,
       accent: "#d7d7d7", blurb: "North Star Garage, the Night Owl Mini-Mart, and familiar blocks that offer the week's safest footing.",
       bias: { weed: 0.78, shrooms: 0.88, cocaine: 1.02, meth: 0.95 },
-      availability: { weed: 1, shrooms: 0.88, cocaine: 0.55, meth: 0.48 },
+      availability: { weed: 1, shrooms: 0.88, pills: 0.82, lean: 0.7, coke: 0.62, molly: 0.68, cocaine: 0.55, meth: 0.48 },
     },
     {
       id: "downtown", name: "Downtown", role: "Commercial", risk: 2, police: 3, rival: 1,
       accent: "#e14332", blurb: "Nightlife money moves fast under cameras and through Rook's buyers.",
       bias: { weed: 1.08, shrooms: 1.32, cocaine: 1.46, meth: 1.08 },
-      availability: { weed: 0.9, shrooms: 0.9, cocaine: 0.78, meth: 0.58 },
+      availability: { weed: 0.9, shrooms: 0.9, pills: 0.82, lean: 0.78, coke: 0.8, molly: 0.86, cocaine: 0.78, meth: 0.58 },
     },
     {
       id: "airport_industrial", name: "Industrial Service Roads", role: "Outer", risk: 4, police: 2, rival: 3,
       accent: "#9a1d18", blurb: "Loading yards, warehouses, service roads, rare supply, and expensive mistakes.",
       bias: { weed: 1.12, shrooms: 1.18, cocaine: 1.32, meth: 1.62 },
-      availability: { weed: 0.72, shrooms: 0.7, cocaine: 0.7, meth: 0.86 },
+      availability: { weed: 0.72, shrooms: 0.7, pills: 0.7, lean: 0.74, coke: 0.78, molly: 0.72, cocaine: 0.7, meth: 0.86 },
     },
   ];
 
@@ -438,6 +442,18 @@
     { id: "kip", name: "Kip Sallis", where: "the Wash & Go lot on Spenard Road", areaId: "north_star_lot", products: ["weed", "shrooms"] },
   ];
   const DEALER_BY_ID = Object.fromEntries(DEALERS.map((item) => [item.id, item]));
+  const PLUGS = [
+    { id: "kip", name: "Kip", products: [{ id: "weed", standing: 0 }, { id: "shrooms", standing: 2 }], priceModifier: 1, maxUnits: 3, introducesNext: "tasha" },
+    { id: "tasha", name: "Tasha", products: [{ id: "pills", standing: 0 }, { id: "lean", standing: 0 }], priceModifier: 0.90, maxUnits: 5, introducesNext: "malik" },
+    { id: "malik", name: "Malik", products: [{ id: "coke", standing: 0 }, { id: "molly", standing: 0 }], priceModifier: 0.82, maxUnits: 8, introducesNext: null, bulkStanding: 3 },
+  ];
+  const PLUG_BY_ID = Object.fromEntries(PLUGS.map((plug) => [plug.id, plug]));
+  function createPlugState() {
+    return {
+      unlocked: [],
+      records: Object.fromEntries(PLUGS.map((plug) => [plug.id, { standing: 0, lastPurchaseDay: null, introducedNext: false }])),
+    };
+  }
   function createDealerState() {
     return Object.fromEntries(DEALERS.map((item) => [item.id, {
       known: false, standing: 0, robbedCount: 0, lastRobbedDay: null, lastTradedDay: null,
@@ -477,7 +493,7 @@
         currentNeighborhoodId: "north_star_lot", markets,
         influence: { north_star_lot: 0, downtown: 0, airport_industrial: 0 },
         tradeInfluenceGranted: { north_star_lot: false, downtown: false, airport_industrial: false },
-        productAccess: { weed: false, shrooms: false, cocaine: false, meth: false },
+        productAccess: Object.fromEntries(PRODUCTS.map((product) => [product.id, false])),
         transport: { dayPassDay: null, weekPass: false, busRides: 0, downtownKnown: false, industrialRouteKnown: false },
         locations: {
           explorationCount: 0, discoveries: [], gamblingKnown: false,
@@ -517,6 +533,8 @@
         crew: createCrewState(),
         dealers: createDealerState(),
       },
+      plugs: createPlugState(),
+      market: { visible: false },
       home: { storedCash: 0, storedInventory: Object.fromEntries(PRODUCTS.map((item) => [item.id, { qty: 0, avgCost: 0 }])), hiddenWeapon: null },
       flags: { featureNotices: {} },
       effects: { rumors: [], modifiers: [] },
@@ -580,6 +598,13 @@
     state.stats.robbery = normalizeRobberyStats(value.stats?.robbery, state);
     state.flags.featureNotices = state.flags.featureNotices && typeof state.flags.featureNotices === "object" ? state.flags.featureNotices : {};
     state.people.mara.available = state.people.mara.available !== false && state.people.mara.status !== "gone";
+    // Preserve established v3 runs that already met Kip while fresh runs keep
+    // the market completely absent until the transactional introduction.
+    if (value.plugs === undefined && value.people?.dealers?.kip?.known) {
+      state.plugs.records.kip.standing = Math.max(0, value.people.dealers.kip.standing || 0);
+      unlockPlug(state, "kip");
+      syncPlugProductAccess(state, "kip", false);
+    }
     // Pre-v1.0 saves have no dirty/clean split. Treat all existing wealth as
     // unlaundered street money: nothing in pre-v1.0 gameplay ever laundered
     // anything, so this is the narratively honest default.
@@ -660,7 +685,7 @@
     const returning = state.run.day > 1 || state.stats.pipelineAdvances >= 4;
     const someoneIntroduced = state.people.mara.met || CREW.some((person) => state.people.crew[person.id]?.introduced);
     return {
-      market: { available: true, hint: "Available now." },
+      market: { available: !!state.market?.visible, hint: state.market?.visible ? "Available now." : "Meet a supplier to unlock the Market." },
       finances: { available: true, hint: "Available now." },
       help: { available: true, hint: "Available now." },
       travel: { available: true, hint: "Places and local travel are available now." },
@@ -780,11 +805,52 @@
     const dominanceBonus = tier.label === "Dominant" || tier.label === DISTRICT_CONTROL_LABEL ? DISTRICT_CONTROL_DISCOUNT_BONUS : 0;
     return { buyDiscount: 0.04 + dominanceBonus, sellBonus: 0.04 + dominanceBonus, riskReduction: 1, dailyIncome: territory.dailyIncome, special: territory.special };
   }
+  function plugRecord(state, plugId) { return state.plugs?.records?.[plugId] || null; }
+  function syncPlugProductAccess(state, plugId, announce) {
+    const plug = PLUG_BY_ID[plugId];
+    const record = plugRecord(state, plugId);
+    if (!plug || !record) return;
+    for (const product of plug.products) {
+      const wasVisible = !!state.world.productAccess[product.id];
+      const visible = product.standing === 0 || record.standing >= product.standing;
+      state.world.productAccess[product.id] = visible;
+      if (announce && visible && !wasVisible) logEntry(state, `${plug.name} says he can get you ${PRODUCT_BY_ID[product.id].name.toLowerCase()} now too.`, "good");
+    }
+  }
+  function unlockPlug(state, plugId) {
+    const plug = PLUG_BY_ID[plugId];
+    if (!plug || state.plugs.unlocked.includes(plugId)) return false;
+    state.plugs.unlocked.push(plugId);
+    state.market.visible = true;
+    syncPlugProductAccess(state, plugId, false);
+    if (plugId === "kip" && state.people.dealers?.kip) state.people.dealers.kip.known = true;
+    return true;
+  }
+  function unlockedPlugForProduct(state, productId) {
+    for (const plugId of state.plugs?.unlocked || []) {
+      const plug = PLUG_BY_ID[plugId];
+      const record = plugRecord(state, plugId);
+      if (plug?.products.some((product) => product.id === productId && (product.standing === 0 || (record?.standing || 0) >= product.standing))) return plug;
+    }
+    return null;
+  }
+  function visibleMarketProducts(state) { return PRODUCTS.filter((product) => !!unlockedPlugForProduct(state, product.id)); }
+  function plugMaxUnits(state, productId) {
+    const plug = unlockedPlugForProduct(state, productId);
+    return plug ? plug.maxUnits : 0;
+  }
+  function plugPriceModifier(state, productId) {
+    const plug = unlockedPlugForProduct(state, productId);
+    if (!plug) return 1;
+    const standing = plugRecord(state, plug.id)?.standing || 0;
+    const relationshipDiscount = standing >= 4 ? 0.94 : standing >= 2 ? 0.97 : 1;
+    return plug.priceModifier * relationshipDiscount;
+  }
   function tradeUnitPrices(state, productId) {
     const areaId = state.world.currentNeighborhoodId;
     const marketPriceValue = state.world.markets[areaId]?.prices[productId] || 0;
     const control = controlled(state, areaId);
-    const buy = Math.round(marketPriceValue * (control ? 0.96 : 1));
+    const buy = Math.round(marketPriceValue * (control ? 0.96 : 1) * plugPriceModifier(state, productId));
     const charismaBonus = Math.max(0, charismaRating(state) - 1) * 0.015;
     const influenceBonus = Math.min(0.02, state.world.influence[areaId] * 0.005);
     const sell = Math.round(marketPriceValue * (0.96 + charismaBonus + influenceBonus + (control ? 0.04 : 0)));
@@ -798,7 +864,9 @@
     const qty = Math.max(0, Math.floor(Number(quantity) || 0));
     if (!product || !item || (mode !== "buy" && mode !== "sell")) return null;
     const prices = tradeUnitPrices(state, productId);
-    const unitPrice = mode === "buy" ? prices.buy : prices.sell;
+    const plug = mode === "buy" ? unlockedPlugForProduct(state, productId) : null;
+    const bulk = plug?.bulkStanding && (plugRecord(state, plug.id)?.standing || 0) >= plug.bulkStanding && qty >= 5;
+    const unitPrice = mode === "buy" ? Math.round(prices.buy * (bulk ? 0.94 : 1)) : prices.sell;
     const total = unitPrice * qty;
     const costBasis = item.avgCost * qty;
     const market = state.world.markets[state.world.currentNeighborhoodId];
@@ -1005,10 +1073,12 @@
     if (state.world.currentNeighborhoodId !== definition.areaId) return blocked(`${definition.name.split(" ")[0]} works out of ${AREA_BY_ID[definition.areaId].name}.`);
     if (state.run.day === RUN_DAYS && state.run.slot === 3) return blocked("There is no part of the week left for this.");
 
-    const discount = record.standing >= 3 ? 0.18 : 0.12;
+    const plug = PLUG_BY_ID[id];
+    const discount = record.standing >= 4 ? 0.06 : record.standing >= 2 ? 0.03 : 0;
     // An offer you cannot take must not present as available: the button would
     // enable and then do nothing, and an agent would loop on it forever.
-    const cheapest = Math.min(...definition.products.map((id) => Math.round(tradeUnitPrices(state, id).buy * (1 - discount))));
+    const availableProducts = definition.products.filter((productId) => !!unlockedPlugForProduct(state, productId));
+    const cheapest = availableProducts.length ? Math.min(...availableProducts.map((productId) => Math.round(tradeUnitPrices(state, productId).buy * (1 - discount)))) : Infinity;
     const room = cargoCapacity(state) - cargoUsed(state);
     const buy = record.lastTradedDay === state.run.day
       ? { available: false, reason: "You already bought off him today." }
@@ -1016,7 +1086,7 @@
         ? { available: false, reason: "You have nothing left to carry it in." }
         : state.player.cash < cheapest
           ? { available: false, reason: "You cannot cover even one unit at his price." }
-          : { available: true, reason: `${Math.round(discount * 100)}% under the block price on three units.`, discount, units: 3 };
+          : { available: true, reason: `${discount ? `${Math.round(discount * 100)}% under` : "At"} the block price on up to ${plug?.maxUnits || 3} units.`, discount, units: plug?.maxUnits || 3 };
     const ask = record.standing < 2
       ? { available: false, reason: "He does not talk business with you yet." }
       : record.lastAskedDay === state.run.day
@@ -1608,7 +1678,7 @@
       },
       courier: () => event("courier", "Courier Behind Bay Twelve", "A courier is down beside Bay Twelve, split lip, locked case cuffed to his wrist. Headlights turn into the Industrial lane and slow down. They know what they are looking for. Move now.", [
         { label: "Spend supplies helping", effect: { cash: -55, heat: 1, setFlags: { helpedIndustrialCourier: true } }, preview: "−$55 and +1 Heat. He owes you something and knows it.", result: "You get the cuff off and get him breathing evenly against the wall. He does not thank you for it. Before he goes he tells you which service road closes on Day 6, and that the closure has nothing to do with construction." },
-        { label: "Search the case", effect: { cash: 160, heat: 2, setFlags: { robbedIndustrialCourier: true } }, preview: "+$160 and +2 Heat. He is awake for all of it.", result: "The case holds cash and a route sheet folded open to the current week, and you take both. He watches you do it from the ground with his eyes open the whole time, and the bay light is more than good enough for him to keep your face." },
+        { label: "Search the case", risky: true, effect: { cash: 160, heat: 2, setFlags: { robbedIndustrialCourier: true } }, preview: "+$160 and +2 Heat. He is awake for all of it.", result: "The case holds cash and a route sheet folded open to the current week, and you take both. He watches you do it from the ground with his eyes open the whole time, and the bay light is more than good enough for him to keep your face." },
         { label: "Leave before the headlights arrive", effect: {}, preview: "Nothing gained. Whatever is in the case ends up somewhere else.", result: "You are back in the vehicle before the headlights reach the bay. Two nights later the same locked case turns up open in Rook's hand at the Downtown exit lane, and nobody has to explain to you how it got there." },
       ]),
       dre_after_payoff: () => event("dre_after_payoff", "Dre Opens Another Door", "Dre tears the note in half and keeps one piece. Then he stays, which he has not done before. He has three ways for you to use the name you just earned. Pick one.", [
@@ -2015,7 +2085,7 @@
 
     // --- The Wash & Go -------------------------------------------------------
     { id: "kip_corner_intro", chain: "kip_corner", stage: 1, classification: "character_intro", trigger: "chain",
-      requires: (s) => !!s.people.dealers?.kip?.known, area: "north_star_lot", earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 7, exit: null },
+      requires: () => false, area: "north_star_lot", earliest: { day: 2, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 7, exit: null },
     // Stage 2 is a branch: he comes back at you, or the person who vouched does.
     { id: "kip_retaliation", chain: "kip_corner", stage: 2, classification: "threat", trigger: "chain", kind: "encounter",
       requires: (s) => { const k = s.people.dealers?.kip; return !!k && k.robbedCount > 0 && k.lastRobbedDay != null && s.run.day >= k.lastRobbedDay + 2; },
@@ -2205,6 +2275,10 @@
     if (effect.dealerStanding && state.people.dealers?.[effect.dealerStanding.id]) {
       const record = state.people.dealers[effect.dealerStanding.id];
       record.standing = clamp(record.standing + effect.dealerStanding.delta, -5, 5);
+    }
+    if (effect.unlockPlug) {
+      unlockPlug(state, effect.unlockPlug);
+      if (effect.unlockPlug === "kip" && !state.world.locations.discoveries.includes("kip_supplier")) state.world.locations.discoveries.push("kip_supplier");
     }
     if (effect.maraJobAtRisk) state.people.mara.jobAtRisk = true;
     if (effect.maraDeparts) { state.people.mara.available = false; state.people.mara.status = "gone"; }
@@ -2612,7 +2686,9 @@
 
     if (success) {
       const payout = 90 + state.run.day * 12 + random.int(0, 60);
-      const productId = random.pick(definition.products);
+      const availableProducts = definition.products.filter((productId) => !!unlockedPlugForProduct(state, productId));
+      const productId = random.pick(availableProducts);
+      if (!productId) return inputState;
       const units = random.int(2, 4);
       state.player.cash += payout;
       awardStreetRead(state, "dealer_robbery:first_success", 20, "Completed a first dealer robbery");
@@ -2643,6 +2719,12 @@
         summary: `He is not alone and he is not surprised. You come out of the Wash & Go lot with ${damage} less health, nothing in your hands, and a face he will describe accurately to anyone who asks.`,
         effects,
       };
+    }
+
+    const robbedPlug = plugRecord(state, dealerId);
+    if (robbedPlug) {
+      robbedPlug.standing = Math.min(robbedPlug.standing, record.standing);
+      syncPlugProductAccess(state, dealerId, false);
     }
 
     if (state.people.mara.chainStage >= 2 && state.people.mara.trust >= 1 && state.people.mara.available !== false) {
@@ -2774,6 +2856,24 @@
     return advanced;
   }
 
+  function plugIntroductionEvent(plugId) {
+    const plug = PLUG_BY_ID[plugId];
+    const copy = {
+      kip: { title: "Kip at the Wash & Go", who: "Kip", where: "Wash & Go, Spenard", description: "Guy outside the Wash & Go catches your eye and asks if you're looking. He's got weed, nothing crazy. Prices are mid. Take it or leave it." },
+      tasha: { title: "Kip's Introduction", who: "Tasha", where: "Spenard", description: "Kip sends a number. Tasha answers, quotes pills and lean, and names the most she'll move at once. Cash only. No small talk." },
+      malik: { title: "Tasha's Introduction", who: "Malik", where: "Downtown", description: "Tasha sends Malik's number. He quotes coke and molly, says he has weight, and asks what quantity you can pay for today." },
+    }[plugId];
+    if (!plug || !copy) return null;
+    return {
+      id: plugId === "kip" ? "kip_corner_intro" : `${plugId}_plug_intro`,
+      title: copy.title, who: copy.who, where: copy.where, stakes: "Open this supply line or leave it alone.", description: copy.description,
+      choices: [
+        { label: "Accept", effect: { unlockPlug: plugId }, preview: `Unlock ${plug.products.filter((product) => product.standing === 0).map((product) => PRODUCT_BY_ID[product.id].name).join(" and ")}.`, result: `${plug.name} gives you the current price and the maximum order. Business is open.` },
+        { label: "Decline", effect: { setFlags: { [`${plugId}PlugDeclined`]: true } }, preview: "No deal. Nothing unlocks.", result: `${plug.name} pockets the phone. No deal.` },
+      ],
+    };
+  }
+
   function reduceGame(inputState, action) {
     if (!inputState || !action || !action.type) return inputState;
     if (action.type === "HYDRATE_RUN") return hydrateRun(action.state) || inputState;
@@ -2874,7 +2974,8 @@
     if (action.type === "BUY") {
       const product = PRODUCT_BY_ID[action.productId], market = state.world.markets[state.world.currentNeighborhoodId];
       const qty = Math.max(0, Math.floor(action.qty || 0));
-      if (!product || qty < 1 || !state.world.productAccess[product.id]) return inputState;
+      const plug = product ? unlockedPlugForProduct(state, product.id) : null;
+      if (!state.market?.visible || !product || !plug || qty < 1 || qty > plugMaxUnits(state, product.id)) return inputState;
       const projection = tradeProjection(state, product.id, qty, "buy");
       const cost = projection.purchaseCost, available = market.availability[product.id] || 0;
       if (qty > available || cost > state.player.cash || cargoUsed(state) + qty > cargoCapacity(state)) return inputState;
@@ -2887,13 +2988,27 @@
       state.run.currentVisit.trades += 1;
       state.run.currentVisit.grossBuy += cost;
       logEntry(state, `You move ${qty} ${product.name} into the bag for $${cost}.`, "good");
+      const record = plugRecord(state, plug.id);
+      if (record && record.lastPurchaseDay !== state.run.day) {
+        record.lastPurchaseDay = state.run.day;
+        record.standing = Math.min(5, record.standing + 1);
+        if (plug.id === "kip" && state.people.dealers?.kip) {
+          state.people.dealers.kip.standing = record.standing;
+          state.people.dealers.kip.lastTradedDay = state.run.day;
+        }
+        syncPlugProductAccess(state, plug.id, true);
+        if (record.standing >= 4 && plug.introducesNext && !record.introducedNext && !state.plugs.unlocked.includes(plug.introducesNext)) {
+          record.introducedNext = true;
+          state.run.pendingEvent = plugIntroductionEvent(plug.introducesNext);
+        }
+      }
       reconcileCash(state);
       return state;
     }
     if (action.type === "SELL") {
       const product = PRODUCT_BY_ID[action.productId], market = state.world.markets[state.world.currentNeighborhoodId];
       const qty = Math.max(0, Math.floor(action.qty || 0));
-      if (!product || qty < 1 || state.player.inventory[product.id].qty < qty) return inputState;
+      if (!state.market?.visible || !product || !unlockedPlugForProduct(state, product.id) || qty < 1 || state.player.inventory[product.id].qty < qty) return inputState;
       const item = state.player.inventory[product.id];
       const projection = tradeProjection(state, product.id, qty, "sell");
       const unitPrice = projection.unitPrice;
@@ -3119,18 +3234,12 @@
       const random = makeRandom(base.run.rngState);
       const count = base.world.locations.explorationCount;
       base.world.locations.explorationCount += 1;
-      if (count === 0) {
-        base.people.dealers.kip.known = true;
-        base.world.productAccess.weed = true;
-        base.world.productAccess.shrooms = true;
-        base.world.locations.discoveries.push("kip_supplier");
-        awardStreetRead(base, "supplier:first", 20, "Discovered a supplier");
-        logEntry(base, "A walk down Spenard ends at the Wash & Go lot. Kip gives you a first price. Trust comes later; his corner is now a supplier option in People.", "good");
-      } else if (!base.world.locations.gamblingKnown) {
+      const meetsKip = base.run.day >= 2 && !base.flags.kipEncounterSeen;
+      if (!meetsKip && !base.world.locations.gamblingKnown && count > 0) {
         base.world.locations.gamblingKnown = true;
         base.world.locations.discoveries.push("informal_game");
         logEntry(base, "A back-room dice game announces itself through the people leaving. No sign, no door number. Evening and Night games are now visible.", "good");
-      } else {
+      } else if (!meetsKip) {
         const discoveries = [
           "John's bus advice matches the posted Downtown timetable.",
           "A freight worker confirms Ship Creek hires before breakfast.",
@@ -3140,7 +3249,12 @@
         logEntry(base, random.pick(discoveries), "");
       }
       base.run.rngState = random.state;
-      return advanceRun(base, { reason: "EXPLORE_SPENARD" });
+      const advanced = advanceRun(base, { reason: "EXPLORE_SPENARD", suppressStory: meetsKip });
+      if (meetsKip && advanced.run.status === "playing") {
+        advanced.flags.kipEncounterSeen = true;
+        advanced.run.pendingEvent = plugIntroductionEvent("kip");
+      }
+      return advanced;
     }
     if (action.type === "WORK_SHIFT") {
       const available = activityAvailability(state).work;
@@ -3398,10 +3512,24 @@
       applyEventEffect(base, { addProduct: { id: productId, qty: units, unitCost: unitPrice } }, random);
       record.standing = Math.min(5, record.standing + 1);
       record.lastTradedDay = base.run.day;
+      const plug = PLUG_BY_ID[action.dealerId];
+      const plugState = plugRecord(base, action.dealerId);
+      let introduction = null;
+      if (plug && plugState && plugState.lastPurchaseDay !== base.run.day) {
+        plugState.lastPurchaseDay = base.run.day;
+        plugState.standing = Math.max(plugState.standing, record.standing);
+        syncPlugProductAccess(base, plug.id, true);
+        if (plugState.standing >= 4 && plug.introducesNext && !plugState.introducedNext && !base.plugs.unlocked.includes(plug.introducesNext)) {
+          plugState.introducedNext = true;
+          introduction = plugIntroductionEvent(plug.introducesNext);
+        }
+      }
       recordBehavior(base, "mover", 1, `dealer_buy:${action.dealerId}:${base.run.day}`, "dealer_buy");
       base.run.rngState = random.state;
       logEntry(base, `${first} counts out ${units} off the books at $${unitPrice} a unit and remembers that you paid without arguing.`, "good");
-      return advanceRun(base, { reason: "BUY_FROM_DEALER" });
+      const advanced = advanceRun(base, { reason: "BUY_FROM_DEALER", suppressStory: !!introduction });
+      if (introduction && advanced.run.status === "playing" && !advanced.run.daySummary) advanced.run.pendingEvent = introduction;
+      return advanced;
     }
     if (action.type === "ASK_DEALER") {
       const actions = dealerActions(state, action.dealerId);
@@ -3671,7 +3799,7 @@
   return {
     VERSION, RUN_DAYS, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, STREET_READ_LEVELS, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
     STREET_NAME_MAX, DEFAULT_STREET_NAMES, ATTRIBUTE_DEFAULTS, LEGACY_ATTRIBUTES, STREET_IDENTITIES, sanitizeStreetName,
-    CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS, ENTITY_REGISTRY, ENTITY_MATCH_ORDER,
+    CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS, ENTITY_REGISTRY, ENTITY_MATCH_ORDER, PLUGS,
     SPENARD_BLOCKS, KIP_BUSINESSES, SOLDIER_RECRUIT_COST, SOLDIER_BASE_CAPACITY, SOLDIER_CAPACITY_PER_BLOCK, SOLDIERS_PER_BLOCK_CAP,
     KIP_LAUNDER_FEE, DRE_COLLECTOR_TIERS, ELI_LIEUTENANT_UNLOCK, KIP_LIEUTENANT_INCOME_THRESHOLD, KIP_LIEUTENANT_STANDING_MIN, RESPECT_STAGE_THRESHOLDS,
     DISTRICT_CONTROL_TIERS, DISTRICT_CONTROL_CAPSTONE_BLOCKS, DISTRICT_CONTROL_LABEL, ELI_OPERATION_POLICIES,
@@ -3685,6 +3813,7 @@
       recruitedCrew, workingCapital, safeDebtPayment, debtPaymentPreview, featureAvailability, activityAvailability, layLowPreview, controlled, recruitmentCost, operationGearPower, crewPower,
       territoryPowerEstimate, territoryBenefits, tradeUnitPrices, tradeProjection, takeoverReadiness, robberyAvailability, eliTestRouteAvailability, maraThreatEligible,
       dealerRecord, dealerActions, dealerStandingLabel, dealerSupplyFactor,
+      visibleMarketProducts, plugMaxUnits, unlockedPlugForProduct,
       controlledBlockCount, eliLieutenantActive, soldierCapacity, activeSoldierCount, blockSoldierCount, blockIntelVisible,
       soldierRecruitAvailability, soldierAssignAvailability, blockClaimAvailability, eliPromotionAvailability,
       weeklyIncomeEstimate, kipLieutenantAvailability, launderCapacity, launderAvailability,

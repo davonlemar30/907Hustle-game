@@ -3,7 +3,10 @@ const assert = require("node:assert/strict");
 const C = require("../game-core.js");
 
 function run(seed = 907) {
-  return C.reduceGame(C.createRun({ seed }), { type: "CHOOSE_BACKGROUND", backgroundId: "shooter" });
+  const state = C.reduceGame(C.createRun({ seed }), { type: "CHOOSE_BACKGROUND", backgroundId: "shooter" });
+  // Legacy-established fixtures predate the fresh-arrival plug encounter.
+  state.market.visible = true; state.plugs.unlocked = ["kip"]; state.world.productAccess.weed = true;
+  return state;
 }
 function fresh(seed = 907) {
   return C.reduceGame(C.createRun({ seed }), { type: "START_RUN" });
@@ -328,7 +331,7 @@ test("v3 hydration preserves Strategist capability as legacy history", () => {
 
 test("fresh runs expose Places and People while garage operations remain earned", () => {
   let state = fresh(); let features = C.selectors.featureAvailability(state);
-  assert.equal(features.market.available, true); assert.equal(features.finances.available, true); assert.equal(features.help.available, true);
+  assert.equal(features.market.available, false); assert.equal(features.finances.available, true); assert.equal(features.help.available, true);
   assert.equal(features.travel.available, true); assert.equal(features.operations.available, false); assert.equal(features.people.available, true); assert.equal(features.recovery.available, false);
   state.player.cash = C.GARAGE_DEPOSIT; state = C.reduceGame(state, { type: "LEASE_GARAGE" }); features = C.selectors.featureAvailability(state);
   assert.equal(features.operations.available, true); assert.equal(state.base.controlled, true);
@@ -661,7 +664,7 @@ test("fresh v0.9 runs begin at the family home with only cash and fixed debt", (
   assert.equal(state.run.premise, "fresh_arrival"); assert.equal(state.run.openingPending, true);
   assert.equal(state.player.cash, 1000); assert.equal(state.player.heat, 0); assert.equal(state.lender.principal, 1000); assert.equal(state.lender.balance, 1200); assert.equal(state.lender.dueDay, 7);
   assert.equal(state.base.controlled, false); assert.equal(state.rival.pressure, 0); assert.equal(state.rival.relationship, "unaware");
-  assert.deepEqual(Object.values(state.player.inventory).map((item) => item.qty), [0, 0, 0, 0]);
+  assert.ok(Object.values(state.player.inventory).every((item) => item.qty === 0));
   assert.deepEqual([state.people.household.yalondaTrust, state.people.household.johnTrust, state.people.household.warnings], [2, 1, 0]);
   assert.equal(state.world.productAccess.weed, false); assert.equal(state.people.dealers.kip.known, false);
 });
@@ -693,8 +696,10 @@ test("gym costs escalate, progress diminishes, and attributes cap at five", () =
   assert.equal(state.player.attributes.strength, 3); assert.equal(state.player.attributeProgress.strength, 2);
 });
 
-test("exploration guarantees a supplier before later seeded discoveries", () => {
-  let state = fresh(9005); state = C.reduceGame(state, { type: "EXPLORE_SPENARD" });
+test("Day 2 exploration guarantees Kip's transactional supplier encounter", () => {
+  let state = fresh(9005); state.run.day = 2; state = C.reduceGame(state, { type: "EXPLORE_SPENARD" });
+  assert.equal(state.run.pendingEvent.id, "kip_corner_intro");
+  state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
   assert.equal(state.people.dealers.kip.known, true); assert.equal(state.world.productAccess.weed, true); assert.ok(state.world.locations.discoveries.includes("kip_supplier"));
   state.run.pendingEvent = null; state = C.reduceGame(state, { type: "EXPLORE_SPENARD" });
   assert.equal(state.world.locations.gamblingKnown, true);
@@ -1128,7 +1133,7 @@ test("buying product then attempting to launder in the same visit cannot launder
   state.world.productAccess.weed = true;
   state.world.markets[state.world.currentNeighborhoodId].availability.weed = 100;
   const price = C.selectors.tradeUnitPrices(state, "weed").buy;
-  const qty = Math.floor(161 / price);
+  const qty = Math.min(C.selectors.plugMaxUnits(state, "weed"), Math.floor(161 / price));
   state = C.reduceGame(state, { type: "BUY", productId: "weed", qty });
   assert.equal(state.player.cash, state.player.dirtyCash + state.player.cleanCash, "invariant holds immediately after the purchase");
   const stillReportedDirty = 171; // what dirtyCash would have shown under the old lazy-reconciliation bug

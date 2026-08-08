@@ -114,8 +114,8 @@ const NAV_ICONS = {
 function NavIcon({ id }) { return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d={NAV_ICONS[id]} fill="currentColor" /></svg>; }
 
 const NAV = [["home", "Home"], ["market", "Market"], ["travel", "Travel"], ["people", "People"], ["more", "More"]];
-function Navigation({ tab, setTab, features }) {
-  return <nav className="nav" aria-label="Primary game navigation">{NAV.map(([id, label]) => {
+function Navigation({ tab, setTab, features, marketVisible }) {
+  return <nav className={`nav${marketVisible ? "" : " market-hidden"}`} aria-label="Primary game navigation">{NAV.filter(([id]) => id !== "market" || marketVisible).map(([id, label]) => {
     const enabled = id === "home" || id === "market" || id === "travel" || id === "more" || features[id]?.available;
     return <button key={id} disabled={!enabled} className={tab === id ? "active" : ""} onClick={() => enabled && setTab(id)}><NavIcon id={id} />{label}{!enabled && <small>Locked</small>}</button>;
   })}</nav>;
@@ -182,7 +182,7 @@ function Market({ state, onTrade }) {
   const area = areaOf(state); const market = state.world.markets[area.id];
   return <><PageHead title="Street Market" sub={`${area.name} · buy and sell freely; finishing the visit uses one part of day`} /><div className="scroll">
     <div className="market-grid market-head"><span>Product</span><span>Buy</span><span>Signal</span><span>Own</span></div>
-    {C.PRODUCTS.map((product) => { const open = state.world.productAccess[product.id]; const signal = C.selectors.priceSignal(state, area.id, product.id); const prices = C.selectors.tradeUnitPrices(state, product.id); return <div key={product.id} className={`card product market-grid signal-${signal.id}${open ? "" : " locked"}`} role="button" tabIndex={open ? 0 : -1} onClick={() => open && onTrade(product.id)} onKeyDown={(event) => event.key === "Enter" && open && onTrade(product.id)}>
+    {C.selectors.visibleMarketProducts(state).map((product) => { const open = true; const signal = C.selectors.priceSignal(state, area.id, product.id); const prices = C.selectors.tradeUnitPrices(state, product.id); return <div key={product.id} className={`card product market-grid signal-${signal.id}${open ? "" : " locked"}`} role="button" tabIndex={open ? 0 : -1} onClick={() => open && onTrade(product.id)} onKeyDown={(event) => event.key === "Enter" && open && onTrade(product.id)}>
       <div><div className="product-name">{product.name}</div><div className="role">{open ? `${product.role} · ${market.availability[product.id]} available` : `Locked · ${product.access} access`}</div></div><div className="price">{open ? money(prices.buy) : "—"}</div><div className="signal">{open ? `${signal.symbol} ${signal.label}` : "LOCK"}</div><div className="own">{state.player.inventory[product.id].qty}</div>
     </div>; })}
   </div></>;
@@ -692,7 +692,7 @@ function Recovery({ state, dispatch, onBack }) {
   return <><PageHead title="Recovery" sub="Essential care first; larger options appear when the damage justifies them" onBack={onBack} /><div className="scroll"><div className="card"><div className="card-title">Health<small>{state.player.health}/100</small></div><div className="meter"><span style={{ width: `${state.player.health}%`, background: state.player.health < 40 ? "var(--red)" : "var(--green)" }} /></div></div>{treatment(18, 55, "First aid", "Basic low-cost treatment")}{state.player.health <= 82 && treatment(40, 135, "Clinic visit", "Larger treatment for a serious injury")}{state.player.health <= 55 && (doctorOpen ? treatment(75, 290, "No-Questions Doctor", "Private care unlocked through trust or Safehouse recovery") : <div className="card locked"><div className="card-title">Private medical contact<small>Locked</small></div><p className="muted">Build a trusted medical relationship or install the Safe Room recovery upgrade.</p></div>)}<div className="card"><div className="card-title">Lay Low<small>Next part of day</small></div><p>Expected immediate result: lower Heat by {layLow.heatReduction}. Debt, wages, markets, and Rook continue moving while the lights are off.</p><button className="btn full secondary" onClick={() => dispatch({ type: "LAY_LOW" })}>Lay Low<span className="action-copy">Lowers Heat and advances time</span></button></div></div></>;
 }
 
-function Help({ onBack }) { return <><PageHead title="How to Play" sub="The four-part rhythm of One Good Run" onBack={onBack} /><div className="scroll"><div className="card"><h2>Seven days</h2><p>Each day contains Morning, Afternoon, Evening, and Night. Consuming Day 7 Night ends the run.</p></div><div className="card"><h2>Market visits</h2><p>Buy and sell several times at locked prices. Trading does not advance time until you close the visit.</p></div><div className="card"><h2>Major actions</h2><p>Travel, closing the market, recovery, meetings, debt payments, and operations advance to the next part of day. Resolve an event choice without paying a second time cost.</p></div><div className="card"><h2>The week</h2><p>Protect working capital, pay Dre, manage Heat and Health, build relationships, and decide whether territory or a clean exit is worth the risk.</p></div></div></>; }
+function Help({ onBack, marketVisible }) { return <><PageHead title="How to Play" sub="The four-part rhythm of One Good Run" onBack={onBack} /><div className="scroll"><div className="card"><h2>Seven days</h2><p>Each day contains Morning, Afternoon, Evening, and Night. Consuming Day 7 Night ends the run.</p></div><div className="card"><h2>Market visits</h2><p>Buy and sell several times at locked prices. Trading does not advance time until you close the visit.</p></div><div className="card"><h2>Major actions</h2><p>Travel, closing the market, recovery, meetings, debt payments, and operations advance to the next part of day. Resolve an event choice without paying a second time cost.</p></div><div className="card"><h2>The week</h2><p>Protect working capital, pay Dre, manage Heat and Health, build relationships, and decide whether territory or a clean exit is worth the risk.</p></div></div></>; }
 
 function Character({ state, onBack }) {
   const identity = C.STREET_IDENTITIES[state.player.streetIdentity] || C.STREET_IDENTITIES.unproven;
@@ -730,7 +730,7 @@ function More({ state, dispatch, features, page, setPage, sub, subToken }) {
   if (page === "recovery") return <Recovery state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   if (page === "character") return <Character state={state} onBack={() => setPage("root")} />;
   if (page === "street-read") return <StreetRead state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
-  if (page === "help") return <Help onBack={() => setPage("root")} />;
+  if (page === "help") return <Help marketVisible={state.market.visible} onBack={() => setPage("root")} />;
   const identity = (C.STREET_IDENTITIES[state.player.streetIdentity] || C.STREET_IDENTITIES.unproven).label;
   const opsSummary = features.operations.available ? `${C.selectors.controlledBlockCount(state)} blocks · ${C.selectors.activeSoldierCount(state)} soldiers` : "Locked";
   const daysLeft = state.lender.dueDay - state.run.day;
@@ -901,7 +901,7 @@ function OperationResultModal({ result, dispatch }) {
     <button className="btn full primary" onClick={() => dispatch({ type: "ACKNOWLEDGE_OPERATION_RESULT" })}>Continue the run</button>
   </Modal>;
 }
-function DayModal({ summary, dispatch }) { return <Modal title={`End of Day ${summary.day}`}><p>The market closes. Wages, territory income, debt, and rival pressure have all moved.</p><div className="outcome-grid"><Outcome label="Operation Score" value={summary.operationScore} /><Outcome label="Net worth" value={money(summary.netWorth)} /><Outcome label="Debt" value={money(summary.debt)} /><Outcome label="Heat / Health" value={`${summary.heat} / ${summary.health}`} /></div><button className="btn full primary" onClick={() => dispatch({ type: "DISMISS_DAY_SUMMARY" })}>Start Day {summary.day + 1}</button></Modal>; }
+function DayModal({ summary, dispatch, marketVisible }) { return <Modal title={`End of Day ${summary.day}`}><p>{marketVisible ? "The market closes. " : "The day closes. "}Wages, territory income, debt, and rival pressure have all moved.</p><div className="outcome-grid"><Outcome label="Operation Score" value={summary.operationScore} /><Outcome label="Net worth" value={money(summary.netWorth)} /><Outcome label="Debt" value={money(summary.debt)} /><Outcome label="Heat / Health" value={`${summary.heat} / ${summary.health}`} /></div><button className="btn full primary" onClick={() => dispatch({ type: "DISMISS_DAY_SUMMARY" })}>Start Day {summary.day + 1}</button></Modal>; }
 function EndModal({ state, onTitle }) { const summary = C.selectRunSummary(state); return <Modal title={summary.endingLabel}><p className="popup-lead">Seven days as {summary.streetName}, known now as {summary.streetIdentityLabel}. This is the operation that survived, and the damage that came with it.</p><div className="outcome-grid"><Outcome label="Operation Score" value={summary.operationScore} /><Outcome label="Net worth" value={money(summary.netWorth)} /><Outcome label="Territories" value={`${summary.territories.filter((item) => item.owner === "player").length}/3`} /><Outcome label="Takeovers" value={`${summary.takeovers.wins}W / ${summary.takeovers.losses}L`} /><Outcome label="Debt" value={money(summary.debt)} /><Outcome label="Crew" value={summary.crew.length} /></div><div className="recap">Dre: {summary.lenderRelationship}. Rook: {summary.rivalRelationship}. {summary.majorDecisions.slice(-3).join(" ")}</div><button className="btn full primary" onClick={onTitle}>Return to title</button></Modal>; }
 // Two actions plus a close control. Save-slot internals sit behind "More".
 function MenuModal({ state, dispatch, onClose, onTitle }) {
@@ -981,12 +981,13 @@ function GameShell({ state, dispatch, onTitle }) {
   }, [state]);
 
   useEffect(() => { if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult || state.run.status === "ended") setTrade(null); }, [state.run.pendingEvent, state.run.pendingEncounter, state.run.pendingOperationResult, state.run.status]);
-  useEffect(() => { if (tab === "people" && !features.people.available) setTab("market"); }, [tab, features.people.available]);
+  useEffect(() => { if (tab === "people" && !features.people.available) setTab(state.market.visible ? "market" : "home"); }, [tab, features.people.available, state.market.visible]);
+  useEffect(() => { if (tab === "market" && !state.market.visible) setTab("home"); }, [tab, state.market.visible]);
   if (state.run.status === "creating_character") return <CharacterCreation dispatch={dispatch} />;
   const navigateMore = () => navigate("more", "finances", "debt");
   const screens = {
     home: <Home state={state} navigate={navigate} />,
-    market: <Market state={state} onTrade={setTrade} />,
+    market: state.market.visible ? <Market state={state} onTrade={setTrade} /> : null,
     travel: <Travel state={state} dispatch={act} setTab={setTab} page={travelPage} setPage={setTravelPage} />,
     people: <People state={state} dispatch={act} navigateMore={navigateMore} />,
     more: <More state={state} dispatch={act} features={features} page={nav.more} setPage={setMorePage} sub={nav.sub} subToken={nav.token} />,
@@ -1002,7 +1003,7 @@ function GameShell({ state, dispatch, onTitle }) {
     {trade && <TradeModal state={state} productId={trade} dispatch={act} onClose={() => setTrade(null)} />}
     {menu && <MenuModal state={state} dispatch={dispatch} onClose={() => setMenu(false)} onTitle={onTitle} />}
     {state.run.openingPending && <OpeningModal dispatch={act} />}
-    {state.run.daySummary && state.run.status === "playing" && <DayModal summary={state.run.daySummary} dispatch={act} />}
+    {state.run.daySummary && state.run.status === "playing" && <DayModal summary={state.run.daySummary} dispatch={act} marketVisible={state.market.visible} />}
     {!state.run.daySummary && state.run.pendingOperationResult && <OperationResultModal result={state.run.pendingOperationResult} dispatch={act} />}
     {!state.run.daySummary && !state.run.pendingOperationResult && state.run.pendingEvent && <EventModal event={state.run.pendingEvent} dispatch={act} />}
     {!state.run.daySummary && !state.run.pendingOperationResult && state.run.pendingEncounter && <EncounterModal state={state} dispatch={act} />}

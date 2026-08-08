@@ -65,37 +65,118 @@ function Header({ state, onMenu }) {
   const dreOverdue = state.lender.balance > 0 && state.run.day > state.lender.dueDay;
   const dreDueTonight = state.lender.balance > 0 && state.run.day === state.lender.dueDay;
   const dreValue = !state.lender.balance ? "Clear" : dreDueTonight ? "Due tonight" : dreOverdue ? "Overdue" : money(state.lender.balance);
+  // Progressive HUD. The pressure row only renders once something on it is
+  // actually applying pressure, so a first-Morning arrival gets one calm line
+  // instead of inheriting a Day 6 operator's chrome. Every value stays one tap
+  // away in the status drawer, and Home always shows the full situation.
+  const showHeat = state.player.heat >= 3;
+  const showDebt = state.lender.balance > 0 && state.lender.dueDay - state.run.day <= 2;
+  const showRespect = state.rival.respect > 0;
+  const showCrew = C.selectors.recruitedCrew(state).length > 0;
+  const showRook = state.rival.relationship !== "unaware";
+  // The wordmark belongs to the title screen. On a play screen it was a full
+  // 50px row of branding above every page, so it is now a screen-reader
+  // heading and the Menu button rides the HUD line instead.
   return <header className="top">
-    <div className="brand-row"><div className="brand">907<b>Hustle</b><small>One Good Run · v1.1</small></div><button className="menu-btn" onClick={onMenu}>Menu</button></div>
+    <h1 className="sr-only">907Hustle: One Good Run · v1.1</h1>
     <div className="hud primary-hud">
       <Hud label="Day / Time" value={`${state.run.day}/7 · ${C.SLOTS[state.run.slot]} · ${area.name}`} good />
       <Hud label="Cash" value={money(state.player.cash)} good />
-      <button className="status-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>Status <span>{open ? "Hide" : "View"}</span></button>
+      <button className="status-toggle" aria-expanded={open} aria-label="Show more status" onClick={() => setOpen(!open)}>Status <span>{open ? "Hide" : "View"}</span></button>
+      <button className="menu-btn" onClick={onMenu}>Menu</button>
     </div>
-    <div className="hud chip-row">
-      <Chip label="Heat" value={`${state.player.heat}/15 · ${heatLabel}`} tone={state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : ""} />
-      <Chip label="Debt" value={dreValue} tone={dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : ""} />
-      <Chip label="Respect" value={state.rival.respect} tone="" />
-    </div>
+    {(showHeat || showDebt || showRespect) && <div className="hud chip-row">
+      {showHeat && <Chip label="Heat" value={`${state.player.heat}/15 · ${heatLabel}`} tone={state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : ""} />}
+      {showDebt && <Chip label="Debt" value={dreValue} tone={dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : ""} />}
+      {showRespect && <Chip label="Respect" value={state.rival.respect} tone="" />}
+    </div>}
     {open && <div className="hud status-drawer">
       <Hud label="Health" value={`${state.player.health}/100`} danger={state.player.health < 40} />
+      <Hud label="Heat" value={`${state.player.heat}/15 · ${heatLabel}`} danger={state.player.heat >= 8} />
+      <Hud label="Debt" value={dreValue} danger={dreOverdue || dreDueTonight} />
       <Hud label="Cargo" value={`${cargo}/${C.selectors.cargoCapacity(state)}`} danger={cargo >= C.selectors.cargoCapacity(state)} />
-      <Hud label="Crew Power" value={C.selectors.crewPower(state, false)} />
-      <Hud label="Rook" value={state.rival.relationship} />
+      <Hud label="Respect" value={state.rival.respect} />
+      {showCrew && <Hud label="Crew Power" value={C.selectors.crewPower(state, false)} />}
+      {showRook && <Hud label="Rook" value={state.rival.relationship} />}
     </div>}
   </header>;
 }
 
-const NAV = [["market", "Market"], ["travel", "Travel"], ["people", "People"], ["more", "More"]];
+// Single-path glyphs, inlined so the bottom bar never waits on a font or an
+// external request. Icons carry the tap target; the label names it.
+const NAV_ICONS = {
+  home: "M12 3 3 10.4V21h6v-6h6v6h6V10.4z",
+  market: "M6.2 6h14l-1.7 8.7a2.2 2.2 0 0 1-2.2 1.8H9.4a2.2 2.2 0 0 1-2.2-1.8L5 3.5H1.6v-2H6.6zM9.5 21.5a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2m7 0a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2",
+  travel: "M12 1.8a7.2 7.2 0 0 0-7.2 7.2c0 5.4 7.2 13.2 7.2 13.2s7.2-7.8 7.2-13.2A7.2 7.2 0 0 0 12 1.8m0 9.9A2.7 2.7 0 1 1 12 6.3a2.7 2.7 0 0 1 0 5.4",
+  people: "M9 12a4.1 4.1 0 1 0 0-8.2A4.1 4.1 0 0 0 9 12m0 1.9c-4.1 0-7.4 2.1-7.4 4.7v2.6h14.8v-2.6c0-2.6-3.3-4.7-7.4-4.7m8.8-2.1a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4m.4 2.1c-.8 0-1.5.1-2.2.3 1.9 1.1 3.1 2.7 3.1 4.4v2.6h5.3v-2.9c0-2.4-2.8-4.4-6.2-4.4",
+  more: "M6 12a2.2 2.2 0 1 1-4.4 0A2.2 2.2 0 0 1 6 12m8.2 0a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 0 1 4.4 0m8.2 0a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 0 1 4.4 0",
+};
+function NavIcon({ id }) { return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d={NAV_ICONS[id]} fill="currentColor" /></svg>; }
+
+const NAV = [["home", "Home"], ["market", "Market"], ["travel", "Travel"], ["people", "People"], ["more", "More"]];
 function Navigation({ tab, setTab, features }) {
   return <nav className="nav" aria-label="Primary game navigation">{NAV.map(([id, label]) => {
-    const enabled = id === "market" || id === "travel" || id === "more" || features[id]?.available;
-    return <button key={id} disabled={!enabled} className={tab === id ? "active" : ""} onClick={() => enabled && setTab(id)}>{label}{!enabled && <small>Locked</small>}</button>;
+    const enabled = id === "home" || id === "market" || id === "travel" || id === "more" || features[id]?.available;
+    return <button key={id} disabled={!enabled} className={tab === id ? "active" : ""} onClick={() => enabled && setTab(id)}><NavIcon id={id} />{label}{!enabled && <small>Locked</small>}</button>;
   })}</nav>;
 }
 function PageHead({ title, sub, onBack }) { return <div className="page-head">{onBack && <button className="back-btn" onClick={onBack}>← Back</button>}<h1>{title}</h1><p>{sub}</p></div>; }
 function Outcome({ label, value }) { return <div className="outcome"><span className="muted">{label}</span><b>{value}</b></div>; }
 function CategoryCard({ title, status, description, onClick, disabled }) { return <button className={`card category-card${disabled ? " locked" : ""}`} disabled={disabled} onClick={onClick}><div className="card-title">{title}<small>{status}</small></div><p>{description}</p><span className="category-arrow">Open →</span></button>; }
+// Menu-hub row. Shorter than CategoryCard: hubs list destinations, and a wall
+// of paragraphs is the density problem this pass exists to remove.
+function MenuRow({ title, status, description, onClick, disabled, tone }) { return <button className={`menu-row${tone ? ` ${tone}` : ""}${disabled ? " locked" : ""}`} disabled={disabled} onClick={onClick}><span className="menu-row-main"><b>{title}</b>{description && <small>{description}</small>}</span><span className="menu-row-meta">{status}<span className="menu-row-arrow" aria-hidden="true">›</span></span></button>; }
+function StatTile({ label, value, note, tone, text }) { return <div className={`stat-tile${tone ? ` ${tone}` : ""}${text ? " text" : ""}`}><span className="k">{label}</span><span className="v">{value}</span>{note && <span className="n">{note}</span>}</div>; }
+
+// Home priorities are not a task list — they are shortcuts to the one screen
+// that can actually resolve the pressure they name.
+const PRIORITY_TARGETS = {
+  debt_overdue: ["more", "finances", "debt"], debt_tonight: ["more", "finances", "debt"], debt_tomorrow: ["more", "finances", "debt"],
+  health_critical: ["more", "recovery"], health_hurt: ["more", "recovery"], heat_critical: ["more", "recovery"], heat_high: ["more", "recovery"],
+  block_pressure: ["more", "operations", "territory"], soldiers_idle: ["more", "operations", "soldiers"], wages_due: ["people"],
+};
+
+// The calmest screen in the game. Where am I, what time is it, what do I have,
+// what is pressing, and where might I go — nothing else. Everything below the
+// situation block is gated on progression, so Day 1 renders four tiles and a
+// sentence while Day 6 renders the organization the player actually built.
+function Home({ state, navigate }) {
+  const view = C.selectors.homeSituation(state);
+  const org = view.organization;
+  const showOrgStats = view.unlocks.territory || view.unlocks.soldiers || view.unlocks.district || view.unlocks.rival;
+  return <div className="scroll home">
+    <div className="home-hero">
+      <div className="home-when">Day {view.day} of {view.runDays} · {view.partLabel}</div>
+      <h1 className="home-where">{view.districtName}</h1>
+      <p className="home-summary">{view.summary}</p>
+      <div className="home-identity"><span className="k">Street Identity</span><b>{view.identity.label}</b></div>
+    </div>
+    <div className="stat-row">
+      <StatTile label="Cash" value={money(view.cash)} tone="good" />
+      <StatTile label="Health" value={view.health} note="of 100" tone={view.health < 40 ? "bad" : view.health < 70 ? "warn" : ""} />
+      <StatTile label="Heat" value={view.heat.label} note={`${view.heat.value} of 15`} tone={view.heat.tone === "good" ? "" : view.heat.tone} text />
+      <StatTile label="Debt" value={view.debt.label} note={view.debt.note} tone={view.debt.tone} />
+    </div>
+    {view.priorities.length > 0 && <>
+      <div className="section-label">Needs Attention</div>
+      {view.priorities.map((item) => <button key={item.id} className={`priority-row ${item.tone}`} onClick={() => navigate(...(PRIORITY_TARGETS[item.id] || ["home"]))}><span className="menu-row-main"><b>{item.label}</b><small>{item.detail}</small></span><span className="menu-row-arrow" aria-hidden="true">›</span></button>)}
+    </>}
+    {view.unlocks.operations && <>
+      <div className="section-label">Your Operation</div>
+      {showOrgStats && <div className="stat-row">
+        {view.unlocks.territory && <StatTile label="Blocks" value={`${org.blocks}/${org.blockTotal}`} />}
+        {view.unlocks.soldiers && <StatTile label="Soldiers" value={`${org.soldiers}/${org.soldierCapacity}`} />}
+        {view.unlocks.district && <StatTile label="District" value={org.district} text />}
+        {view.unlocks.rival && <StatTile label="Respect" value={org.respect} />}
+      </div>}
+      <MenuRow title="Operations" status="Open" description={view.unlocks.territory ? "Territory, soldiers, safehouse, and gear." : "Safehouse, gear, and a quick score."} onClick={() => navigate("more", "operations")} />
+    </>}
+    <div className="section-label">Manage</div>
+    <MenuRow title="Finances" status={view.debt.note} description="Cash, debt, and financial risk." onClick={() => navigate("more", "finances")} />
+    {view.unlocks.laundering && <MenuRow title="Laundering" status="Available" description="Turn dirty cash into clean cash." onClick={() => navigate("more", "finances", "laundering")} />}
+    {view.unlocks.recovery && <MenuRow title="Recovery" status={`Health ${view.health}`} description="Treat injuries or lay low to cool Heat." onClick={() => navigate("more", "recovery")} />}
+  </div>;
+}
 
 function Market({ state, onTrade }) {
   const area = areaOf(state); const market = state.world.markets[area.id];
@@ -111,31 +192,150 @@ function PlaceAction({ title, status, purpose, cost, time, disabled, reason, onC
   return <div className={`card area-card${disabled ? " locked" : ""}`}><div className="card-title">{title}<small>{status}</small></div><p>{purpose}</p><div className="area-meta"><span>Cost {cost}</span><span>{time}</span></div><button className="btn full secondary" disabled={disabled} onClick={onClick}>{disabled ? "Unavailable" : "Go"}<span className="action-copy">{reason}</span></button></div>;
 }
 
-function Travel({ state, dispatch, setTab }) {
-  const [gambleApproach, setGambleApproach] = useState("read");
-  const [homeCash, setHomeCash] = useState(100);
+// ---------------------------------------------------------------------------
+// Travel. Previously one page carrying home storage, work, four Spenard
+// activities, transit, two districts and three property listings — the single
+// worst scroll in the build. It is now a hub of focused pages, each answering
+// one question.
+// ---------------------------------------------------------------------------
+
+// Where do I want to go? Nothing else. Unknown districts stay unknown: the
+// page never leaks risk or market numbers for somewhere the player has not
+// reached.
+function Destinations({ state, dispatch, setTab, onBack }) {
   const available = C.selectors.activityAvailability(state);
   const covered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
-  const storedProducts = C.PRODUCTS.reduce((total, product) => total + state.home.storedInventory[product.id].qty, 0);
-  const industrialArea = C.NEIGHBORHOODS.find((item) => item.id === "airport_industrial") || { risk: 4, rival: 3 };
-  const carriedWeapon = C.GEAR.find((item) => item.slot === "weapon" && state.player.gear.owned.includes(item.id));
-  return <><PageHead title="Travel" sub="Daily life, opportunities, listings, and transit, visible from the first Morning" /><div className="scroll">
-    <div className="section-label">Home and work</div>
-    <div className={`card${state.people.household.evicted ? " locked" : ""}`}><div className="card-title">Yalonda and John's Home<small>{state.people.household.evicted ? "EVICTED" : `${state.people.household.warnings}/3 WARNINGS`}</small></div><p>Temporary shelter with house rules. Cash is safe; contraband is not. The room holds at most two product units and one concealable weapon.</p><div className="outcome-grid"><Outcome label="Stored cash" value={money(state.home.storedCash)} /><Outcome label="Stored product" value={`${storedProducts}/2`} /><Outcome label="Hidden weapon" value={state.home.hiddenWeapon ? (C.GEAR.find((item) => item.id === state.home.hiddenWeapon)?.name || state.home.hiddenWeapon) : "None"} /><Outcome label="John's question" value={state.people.household.lastQuestionDay === state.run.day ? "Used today" : "Available"} /></div><div className="btn-row"><input aria-label="Home cash amount" type="number" min="1" value={homeCash} onChange={(event) => setHomeCash(Math.max(1, Number(event.target.value) || 1))} /><button className="btn secondary" disabled={state.people.household.evicted || homeCash > state.player.cash} onClick={() => dispatch({ type: "HOME_STORE_CASH", amount: homeCash })}>Store cash</button><button className="btn secondary" disabled={state.people.household.evicted || homeCash > state.home.storedCash} onClick={() => dispatch({ type: "HOME_RETRIEVE_CASH", amount: homeCash })}>Retrieve</button></div><div className="btn-row">{C.PRODUCTS.map((product) => <React.Fragment key={product.id}>{state.player.inventory[product.id].qty > 0 && storedProducts < 2 && <button className="btn secondary" onClick={() => dispatch({ type: "HOME_STORE_PRODUCT", productId: product.id, qty: 1 })}>Hide 1 {product.name}</button>}{state.home.storedInventory[product.id].qty > 0 && <button className="btn secondary" onClick={() => dispatch({ type: "HOME_RETRIEVE_PRODUCT", productId: product.id, qty: 1 })}>Take 1 {product.name}</button>}</React.Fragment>)}</div><div className="btn-row">{carriedWeapon && !state.home.hiddenWeapon && <button className="btn secondary" onClick={() => dispatch({ type: "HOME_HIDE_WEAPON", gearId: carriedWeapon.id })}>Hide {carriedWeapon.name}</button>}{state.home.hiddenWeapon && <button className="btn secondary" onClick={() => dispatch({ type: "HOME_RETRIEVE_WEAPON" })}>Take hidden weapon</button>}</div><button className="btn full secondary" disabled={state.people.household.evicted || state.people.household.lastQuestionDay === state.run.day} onClick={() => dispatch({ type: "ASK_JOHN" })}>Ask John one local question<span className="action-copy">Free · once daily</span></button><button className="btn full primary" disabled={state.people.household.evicted} onClick={() => dispatch({ type: "SLEEP_HOME" })}>Sleep at home<span className="action-copy">$0 · uses one part of day</span></button></div>
-    <PlaceAction title="Ship Creek Freight" status={state.world.locations.employer.standing >= 3 ? "LEGAL COVER" : "DAY LABOR"} purpose="One legitimate freight shift per day. Reliability builds employer standing." cost="$0" time="Morning · one part of day" disabled={!available.work.available} reason={available.work.reason} onClick={() => dispatch({ type: "WORK_SHIFT" })} />
-    <div className="section-label">Around Spenard</div>
+  const here = state.world.currentNeighborhoodId;
+  const knownOf = { north_star_lot: true, downtown: state.world.transport.downtownKnown, airport_industrial: state.world.transport.industrialRouteKnown };
+  function go(area) {
+    if (area.id === "north_star_lot") { dispatch({ type: covered || state.player.cash >= 5 ? "BUS_TRAVEL" : "WALK_HOME", neighborhoodId: area.id }); setTab("travel"); return; }
+    if (area.id === "downtown") { dispatch({ type: "BUS_TRAVEL", neighborhoodId: area.id }); setTab("market"); return; }
+    dispatch({ type: "TRAVEL", neighborhoodId: area.id }); setTab("market");
+  }
+  return <><PageHead title="Destinations" sub="Where do you want to go?" onBack={onBack} /><div className="scroll">
+    {C.NEIGHBORHOODS.map((area) => {
+      const current = area.id === here;
+      const known = knownOf[area.id] || current;
+      const walking = area.id === "north_star_lot" && !covered && state.player.cash < 5;
+      const access = area.id === "airport_industrial" ? available.industrial : area.id === "downtown" ? available.busDowntown : { available: true, reason: covered ? "Your pass covers this ride." : walking ? "No fare left. You walk and lose 3 Health." : "$5 single ride." };
+      const fare = area.id === "north_star_lot" ? (covered ? "Pass covers it" : walking ? "$0 · −3 Health" : "$5") : area.id === "downtown" ? (covered ? "Pass covers it" : "$5") : "Route required";
+      return <div className={`card destination-card${current ? " cleared-card" : ""}${!current && !access.available ? " locked" : ""}`} key={area.id}>
+        <div className="card-title">{area.name}<small>{current ? "YOU ARE HERE" : known ? area.role.toUpperCase() : "UNVISITED"}</small></div>
+        <p className="compact">{known ? area.blurb : "You have not been out here yet. What sells, what it costs you, and who works the block are all unknown until you go."}</p>
+        <div className="destination-meta">
+          <span>Fare {fare}</span>
+          <span>{current ? "You are already here" : "One part of day"}</span>
+          <span>{known ? `Risk ${area.risk}/5` : "Risk unknown"}</span>
+          <span>{known ? `Rival presence ${area.rival}/5` : "Rival presence unknown"}</span>
+        </div>
+        {!current && <button className="btn full primary" disabled={!access.available} onClick={() => go(area)}>Go to {area.name}<span className="action-copy">{access.available ? `${access.reason} Uses one part of day.` : access.reason}</span></button>}
+      </div>;
+    })}
+  </div></>;
+}
+
+// Fares and passes only.
+function Transit({ state, dispatch, onBack }) {
+  const covered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
+  return <><PageHead title="Transit" sub="Fares, day passes, and weekly passes" onBack={onBack} /><div className="scroll">
+    <div className="card"><div className="card-title">People Mover<small>{state.world.transport.weekPass ? "7-DAY PASS" : covered ? "DAY PASS" : "$5 A RIDE"}</small></div>
+      <p className="compact">A single ride costs $5. A pass covers every ride it is valid for, and buying one costs no time.</p>
+      <div className="outcome-grid"><Outcome label="Rides taken" value={state.world.transport.busRides} /><Outcome label="Today's fares" value={covered ? "Covered" : "$5 each"} /></div>
+      <div className="btn-row">
+        <button className="btn secondary" disabled={state.player.cash < 12 || covered} onClick={() => dispatch({ type: "BUY_BUS_PASS", passType: "day" })}>Day pass · $12<span className="action-copy">{covered ? "Already covered today" : "No time cost"}</span></button>
+        <button className="btn secondary" disabled={state.player.cash < 45 || state.world.transport.weekPass} onClick={() => dispatch({ type: "BUY_BUS_PASS", passType: "week" })}>7-day pass · $45<span className="action-copy">{state.world.transport.weekPass ? "Already held" : "No time cost"}</span></button>
+      </div>
+    </div>
+    <div className="card"><div className="card-title">Industrial Route<small>{state.world.transport.industrialRouteKnown ? "KNOWN" : "UNKNOWN"}</small></div><p className="compact muted">{state.world.transport.industrialRouteKnown ? "A trusted route out to the service roads is available whenever you want it." : "The service roads need Eli, a trusted ride, or a specific route. No fare buys the way in."}</p></div>
+  </div></>;
+}
+
+// What can I do without leaving? Work, walking the neighborhood, training,
+// the store, and the game — the daily-life layer, kept off the travel page.
+function AroundHere({ state, dispatch, onBack }) {
+  const [gambleApproach, setGambleApproach] = useState("read");
+  const available = C.selectors.activityAvailability(state);
+  const area = areaOf(state);
+  return <><PageHead title={`Around ${area.name}`} sub="What you can do without leaving the neighborhood" onBack={onBack} /><div className="scroll">
+    <PlaceAction title="Ship Creek Freight" status={state.world.locations.employer.standing >= 3 ? "LEGAL COVER" : "DAY LABOR"} purpose="One legitimate freight shift per day. Reliability builds employer standing, and the pay lands as clean cash." cost="$0" time="Morning · one part of day" disabled={!available.work.available} reason={available.work.reason} onClick={() => dispatch({ type: "WORK_SHIFT" })} />
     <PlaceAction title="Explore Spenard" status={state.world.locations.explorationCount ? `${state.world.locations.explorationCount} walks` : "NEW ARRIVAL"} purpose="Learn the neighborhood and discover suppliers, games, routes, and useful local details." cost="$0" time="One part of day" disabled={false} reason={available.explore.reason} onClick={() => dispatch({ type: "EXPLORE_SPENARD" })} />
     <PlaceAction title="Night Owl" status={state.people.mara.met ? "MARA KNOWN" : "OPEN"} purpose="A warm counter, a drink, and a possible first meeting with Mara." cost="Browse free" time="Conversation may use time" disabled={false} reason="Mara's introduction is a first meeting, never a prior routine." onClick={() => dispatch({ type: "VISIT_NIGHT_OWL" })} />
-    <div className="card"><div className="card-title">Spenard Community Gym<small>{money(available.gym.cost)} · +{available.gym.progress} progress</small></div><p>Train one physical attribute. Every session uses one part of day; repeated same-day sessions cost more and give less progress.</p><div className="btn-row">{[["strength", "Strength"], ["endurance", "Endurance"], ["reflexes", "Reflexes"]].map(([id, label]) => <button className="btn secondary" key={id} disabled={!available.gym.available || state.player.attributes[id] >= 5} onClick={() => dispatch({ type: "TRAIN_ATTRIBUTE", attribute: id })}>{label} {state.player.attributes[id]}</button>)}</div><p className="muted compact">Session {available.gym.sessionsToday + 1} today · cost {money(available.gym.cost)} · one part of day</p></div>
+    <div className="card"><div className="card-title">Spenard Community Gym<small>{money(available.gym.cost)} · +{available.gym.progress} progress</small></div><p className="compact">Train one physical attribute. Every session uses one part of day; repeated same-day sessions cost more and give less progress.</p><div className="btn-row">{[["strength", "Strength"], ["endurance", "Endurance"], ["reflexes", "Reflexes"]].map(([id, label]) => <button className="btn secondary" key={id} disabled={!available.gym.available || state.player.attributes[id] >= 5} onClick={() => dispatch({ type: "TRAIN_ATTRIBUTE", attribute: id })}>{label} {state.player.attributes[id]}</button>)}</div><p className="muted compact">Session {available.gym.sessionsToday + 1} today · cost {money(available.gym.cost)} · one part of day</p></div>
     <PlaceAction title="Northern Value" status={`SUSPICION ${state.world.locations.discountStore.suspicion}`} purpose="One small shoplifting opportunity per day. Reflexes lead; Insight, Heat, and remembered suspicion matter." cost="$0" time="One part of day" disabled={!available.shoplifting.available} reason={available.shoplifting.reason} onClick={() => dispatch({ type: "SHOPLIFT" })} />
-    <div className={`card${available.gambling.available ? "" : " locked"}`}><div className="card-title">Informal Game<small>{state.world.locations.gamblingKnown ? "EVENING / NIGHT" : "UNDISCOVERED"}</small></div><p>Choose an approach, then risk $20, $50, or $100. Attributes inform the seeded result but never guarantee profit. No debt is offered.</p><select aria-label="Gambling approach" value={gambleApproach} onChange={(event) => setGambleApproach(event.target.value)}><option value="read">Read the room · Insight</option><option value="steady">Play disciplined · Discipline</option><option value="press">Work the table · Presence</option></select><div className="btn-row">{[20, 50, 100].map((stake) => <button className="btn secondary" key={stake} disabled={!available.gambling.available || state.player.cash < stake} onClick={() => dispatch({ type: "GAMBLE", stake, approach: gambleApproach })}>Risk ${stake}</button>)}</div><p className="muted compact">{available.gambling.reason}</p></div>
-    <div className="section-label">Transit</div>
-    <div className="card"><div className="card-title">People Mover<small>{state.world.transport.weekPass ? "7-DAY PASS" : covered ? "DAY PASS" : "$5 A RIDE"}</small></div><p>Downtown is one time slot away. Industrial remains locked without a trusted route.</p><div className="btn-row"><button className="btn secondary" disabled={state.player.cash < 12 || covered} onClick={() => dispatch({ type: "BUY_BUS_PASS", passType: "day" })}>Day pass · $12</button><button className="btn secondary" disabled={state.player.cash < 45 || state.world.transport.weekPass} onClick={() => dispatch({ type: "BUY_BUS_PASS", passType: "week" })}>7-day pass · $45</button></div><button className="btn full primary" disabled={state.world.currentNeighborhoodId === "downtown" || !available.busDowntown.available} onClick={() => { dispatch({ type: "BUS_TRAVEL", neighborhoodId: "downtown" }); setTab("market"); }}>Ride Downtown<span className="action-copy">{available.busDowntown.reason} Uses one part of day.</span></button>{state.world.currentNeighborhoodId !== "north_star_lot" && <button className="btn full secondary" onClick={() => { dispatch({ type: covered || state.player.cash >= 5 ? "BUS_TRAVEL" : "WALK_HOME", neighborhoodId: "north_star_lot" }); setTab("travel"); }}>{covered || state.player.cash >= 5 ? "Ride home to Spenard" : "Walk home to Spenard"}<span className="action-copy">{covered ? "Pass covers fare" : state.player.cash >= 5 ? "$5 fare" : "$0 · −3 Health"} · one part of day</span></button>}</div>
-    <PlaceAction title="Industrial Service Roads" status={available.industrial.available ? "ROUTE KNOWN" : "LOCKED ROUTE"} purpose={`Outer supply corridor. Known risk ${industrialArea.risk}/5 · rival presence ${industrialArea.rival}/5. Premium meth access opens here.`} cost="Route required" time="One part of day" disabled={!available.industrial.available} reason={available.industrial.reason} onClick={() => dispatch({ type: "TRAVEL", neighborhoodId: "airport_industrial" })} />
-    <div className="section-label">Browse without spending time</div>
+    {state.world.locations.gamblingKnown && <div className={`card${available.gambling.available ? "" : " locked"}`}><div className="card-title">Informal Game<small>EVENING / NIGHT</small></div><p className="compact">Choose an approach, then risk $20, $50, or $100. Attributes inform the seeded result but never guarantee profit. No debt is offered.</p><select aria-label="Gambling approach" value={gambleApproach} onChange={(event) => setGambleApproach(event.target.value)}><option value="read">Read the room · Insight</option><option value="steady">Play disciplined · Discipline</option><option value="press">Work the table · Presence</option></select><div className="btn-row">{[20, 50, 100].map((stake) => <button className="btn secondary" key={stake} disabled={!available.gambling.available || state.player.cash < stake} onClick={() => dispatch({ type: "GAMBLE", stake, approach: gambleApproach })}>Risk ${stake}</button>)}</div><p className="muted compact">{available.gambling.reason}</p></div>}
+  </div></>;
+}
+
+// The spare room: storage, house rules, and sleep.
+function Household({ state, dispatch, onBack }) {
+  const [homeCash, setHomeCash] = useState(100);
+  const storedProducts = C.PRODUCTS.reduce((total, product) => total + state.home.storedInventory[product.id].qty, 0);
+  const carriedWeapon = C.GEAR.find((item) => item.slot === "weapon" && state.player.gear.owned.includes(item.id));
+  return <><PageHead title="Yalonda and John's Home" sub="Temporary shelter with house rules" onBack={onBack} /><div className="scroll">
+    <div className={`card${state.people.household.evicted ? " locked" : ""}`}><div className="card-title">House standing<small>{state.people.household.evicted ? "EVICTED" : `${state.people.household.warnings}/3 WARNINGS`}</small></div><p className="compact">Cash is safe here; contraband is not. The room holds at most two product units and one concealable weapon.</p>
+      <div className="outcome-grid"><Outcome label="Stored cash" value={money(state.home.storedCash)} /><Outcome label="Stored product" value={`${storedProducts}/2`} /><Outcome label="Hidden weapon" value={state.home.hiddenWeapon ? (C.GEAR.find((item) => item.id === state.home.hiddenWeapon)?.name || state.home.hiddenWeapon) : "None"} /><Outcome label="John's question" value={state.people.household.lastQuestionDay === state.run.day ? "Used today" : "Available"} /></div>
+    </div>
+    <div className="section-label">Storage</div>
+    <div className="card">
+      <div className="field-row"><input aria-label="Home cash amount" type="number" min="1" value={homeCash} onChange={(event) => setHomeCash(Math.max(1, Number(event.target.value) || 1))} /><button className="btn secondary" disabled={state.people.household.evicted || homeCash > state.player.cash} onClick={() => dispatch({ type: "HOME_STORE_CASH", amount: homeCash })}>Store cash</button><button className="btn secondary" disabled={state.people.household.evicted || homeCash > state.home.storedCash} onClick={() => dispatch({ type: "HOME_RETRIEVE_CASH", amount: homeCash })}>Retrieve</button></div>
+      <div className="btn-row">{C.PRODUCTS.map((product) => <React.Fragment key={product.id}>{state.player.inventory[product.id].qty > 0 && storedProducts < 2 && <button className="btn secondary" onClick={() => dispatch({ type: "HOME_STORE_PRODUCT", productId: product.id, qty: 1 })}>Hide 1 {product.name}</button>}{state.home.storedInventory[product.id].qty > 0 && <button className="btn secondary" onClick={() => dispatch({ type: "HOME_RETRIEVE_PRODUCT", productId: product.id, qty: 1 })}>Take 1 {product.name}</button>}</React.Fragment>)}</div>
+      <div className="btn-row">{carriedWeapon && !state.home.hiddenWeapon && <button className="btn secondary" onClick={() => dispatch({ type: "HOME_HIDE_WEAPON", gearId: carriedWeapon.id })}>Hide {carriedWeapon.name}</button>}{state.home.hiddenWeapon && <button className="btn secondary" onClick={() => dispatch({ type: "HOME_RETRIEVE_WEAPON" })}>Take hidden weapon</button>}</div>
+    </div>
+    <button className="btn full secondary" disabled={state.people.household.evicted || state.people.household.lastQuestionDay === state.run.day} onClick={() => dispatch({ type: "ASK_JOHN" })}>Ask John one local question<span className="action-copy">{state.people.household.lastQuestionDay === state.run.day ? "Already asked today" : "Free · once daily"}</span></button>
+    <button className="btn full primary" disabled={state.people.household.evicted} onClick={() => dispatch({ type: "SLEEP_HOME" })}>Sleep at home<span className="action-copy">$0 · uses one part of day</span></button>
+  </div></>;
+}
+
+// Exploration stores discovery ids; the player never sees an id.
+const DISCOVERY_LABELS = { kip_supplier: "A supplier holding weight on a Spenard corner.", informal_game: "An informal card game that runs evenings and nights." };
+// What the run has actually taught the player about the city.
+function LocalIntel({ state, dispatch, onBack }) {
+  const read = state.stats.streetRead;
+  const discoveries = state.world.locations.discoveries || [];
+  return <><PageHead title="Local Intel" sub="Routes, discoveries, and what the street is saying" onBack={onBack} /><div className="scroll">
+    <div className="card"><div className="card-title">Known routes<small>{[state.world.transport.downtownKnown, state.world.transport.industrialRouteKnown].filter(Boolean).length + 1}/3</small></div>
+      <div className="detail-list">
+        <span><b>Spenard:</b> home ground.</span>
+        <span><b>Downtown:</b> {state.world.transport.downtownKnown ? "ridden and mapped." : "one bus ride away, still unseen."}</span>
+        <span><b>Industrial Service Roads:</b> {state.world.transport.industrialRouteKnown ? "a trusted route is open." : "no way in yet."}</span>
+      </div>
+    </div>
+    <div className="card"><div className="card-title">Walks taken<small>{state.world.locations.explorationCount}</small></div>{discoveries.length ? <div className="detail-list">{discoveries.map((entry, index) => <span key={index}>{DISCOVERY_LABELS[entry] || "A local detail worth remembering."}</span>)}</div> : <p className="muted compact">Nothing found yet. Walking Spenard is how the neighborhood opens up.</p>}</div>
+    <div className="card"><div className="card-title">Street Read<small>Level {read.level}</small></div><p className="muted compact">Run-scoped experience from meaningful first accomplishments. Level 2 unlocks a daily rumor.</p>
+      {read.level >= 2 && <button className="btn full secondary" disabled={read.lastAskDay === state.run.day} onClick={() => dispatch({ type: "ASK_AROUND" })}>Ask around<span className="action-copy">{read.lastAskDay === state.run.day ? "Already used today" : "One reliable rumor · free action"}</span></button>}
+    </div>
+  </div></>;
+}
+
+// Property. Only reachable while there is still something to acquire.
+function Listings({ state, dispatch, onBack }) {
+  return <><PageHead title="Listings" sub="Property and counters you can look at before you commit" onBack={onBack} /><div className="scroll">
     <PlaceAction title="North Star Garage Listing" status={state.base.controlled ? "CONTROLLED" : `$${C.GARAGE_DEPOSIT} DEPOSIT`} purpose="Lease-to-control property; storage, upgrades, crew operations, and recovery unlock after acquisition." cost={state.base.controlled ? "Paid" : money(C.GARAGE_DEPOSIT)} time={state.base.controlled ? "Browsing is free" : "Leasing uses one part of day"} disabled={state.base.controlled || state.player.cash < C.GARAGE_DEPOSIT} reason={state.base.controlled ? "Already controlled." : state.player.cash < C.GARAGE_DEPOSIT ? `You need ${money(C.GARAGE_DEPOSIT - state.player.cash)} more.` : "Deposit and first week included; future rent is documented, not charged in this build."} onClick={() => dispatch({ type: "LEASE_GARAGE" })} />
     <PlaceAction title="Auto Lot" status="BROWSE ONLY" purpose="See what future vehicle ownership could change." cost="$0" time="Free information" disabled={true} reason="Vehicle ownership is deferred." />
     <PlaceAction title="Gun Counter" status="BROWSE ONLY" purpose="Review legal firearm options without buying." cost="$0" time="Free information" disabled={true} reason="Purchasing is deferred pending combat balance." />
+  </div></>;
+}
+
+function Travel({ state, dispatch, setTab, page, setPage }) {
+  if (page === "destinations") return <Destinations state={state} dispatch={dispatch} setTab={setTab} onBack={() => setPage("root")} />;
+  if (page === "transit") return <Transit state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
+  if (page === "around") return <AroundHere state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
+  if (page === "household") return <Household state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
+  if (page === "intel") return <LocalIntel state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
+  if (page === "listings") return <Listings state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
+  const covered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
+  const area = areaOf(state);
+  const available = C.selectors.activityAvailability(state);
+  // Local Intel stays hidden until the run has produced intel worth reading,
+  // and Listings disappears once the only acquirable property is yours.
+  const hasIntel = state.world.locations.explorationCount > 0 || state.world.transport.downtownKnown || state.world.transport.industrialRouteKnown || state.stats.streetRead.level >= 2;
+  return <><PageHead title="Travel" sub="Where to go, how to get there, and what is around you" /><div className="scroll">
+    <MenuRow title="Destinations" status={`In ${area.name}`} description="Spenard, Downtown, and the service roads." onClick={() => setPage("destinations")} />
+    <MenuRow title={`Around ${area.name}`} status={available.work.available ? "Shift open" : "Open"} description="Work, walk the neighborhood, train, the store, and the game." onClick={() => setPage("around")} />
+    {!state.people.household.evicted && <MenuRow title="Home" status={`${state.people.household.warnings}/3 warnings`} description="The spare room: storage, John's question, and sleep." onClick={() => setPage("household")} />}
+    <MenuRow title="Transit" status={state.world.transport.weekPass ? "7-day pass" : covered ? "Day pass" : "$5 a ride"} description="People Mover fares and passes." onClick={() => setPage("transit")} />
+    {hasIntel && <MenuRow title="Local Intel" status={`${state.world.locations.explorationCount} walks`} description="Known routes, discoveries, and rumors." onClick={() => setPage("intel")} />}
+    {!state.base.controlled && <MenuRow title="Listings" status={`${money(C.GARAGE_DEPOSIT)} deposit`} description="North Star Garage and other counters worth a look." onClick={() => setPage("listings")} />}
   </div></>;
 }
 
@@ -215,18 +415,28 @@ function People({ state, dispatch, navigateMore }) {
     const title = id === "yalonda" ? "Yalonda" : id === "john" ? "John" : id === "mara" ? "Mara" : id === "dre" ? "Dre" : "Rook";
     return <><PageHead title={title} sub="Current relationship context" onBack={() => setPage("key")} /><div className="scroll">{body}</div></>;
   }
-  if (page === "key") return <><PageHead title="Key People" sub="Relationships that can change access, pressure, and the ending" onBack={() => setPage("root")} /><div className="scroll">
-    <CategoryCard title="Yalonda" status="Family" description="Your sister, host, and the person enforcing the house rules." onClick={() => setPage("person:yalonda")} />
-    <CategoryCard title="John" status={state.people.household.lastQuestionDay === state.run.day ? "Asked today" : "Daily question available"} description="Former police, longtime Anchorage resident, and the person who introduced Dre." onClick={() => setPage("person:john")} />
-    <CategoryCard title="Mara Velez" status={state.people.mara.met ? state.people.mara.status : "Not introduced"} description={state.people.mara.met ? "The Night Owl clerk remembers how your first real conversation went." : "A familiar face on the late shift; her introduction has not happened yet."} onClick={() => setPage("person:mara")} />
-    <CategoryCard title="Dre Holloway" status={state.lender.relationship} description={`${money(state.lender.balance)} remains on the note due Day ${state.lender.dueDay}.`} onClick={() => setPage("person:dre")} />
-    <CategoryCard title="Rook Mercer" status={state.rival.relationship} description={state.rival.relationship === "unaware" ? "A city power who has no reason to notice you yet." : `His pressure is ${state.rival.pressure}; his crew still owns ${C.TERRITORIES.filter((item) => !C.selectors.controlled(state, item.areaId)).length} districts.`} onClick={() => setPage("person:rook")} />
+  if (page === "key") return <><PageHead title="Personal" sub="Family, the lender, and anyone who has entered your life" onBack={() => setPage("root")} /><div className="scroll">
+    <MenuRow title="Yalonda" status="Family" description="Your sister, host, and the person enforcing the house rules." onClick={() => setPage("person:yalonda")} />
+    <MenuRow title="John" status={state.people.household.lastQuestionDay === state.run.day ? "Asked today" : "Question available"} description="Former police, longtime Anchorage resident, and the person who introduced the lender." onClick={() => setPage("person:john")} />
+    {state.people.mara.met && <MenuRow title="Mara Velez" status={state.people.mara.status} description="The Night Owl clerk remembers how your first real conversation went." onClick={() => setPage("person:mara")} />}
+    <MenuRow title="Dre Holloway" status={state.lender.relationship} description={`${money(state.lender.balance)} remains on the note due Day ${state.lender.dueDay}.`} onClick={() => setPage("person:dre")} />
+    {state.rival.relationship !== "unaware" && <MenuRow title="Rook Mercer" status={state.rival.relationship} description={`His pressure is ${state.rival.pressure}; his crew still owns ${C.TERRITORIES.filter((item) => !C.selectors.controlled(state, item.areaId)).length} districts.`} onClick={() => setPage("person:rook")} />}
   </div></>;
   if (page === "crew") return <><PageHead title="Crew" sub={`${C.selectors.recruitedCrew(state).length}/2 active · introduced contacts, recruitment, wages, and assignments`} onBack={() => setPage("root")} /><div className="scroll">{C.CREW.map((person) => { const crew = state.people.crew[person.id]; return <CategoryCard key={person.id} title={person.name} status={crew.recruited ? `Active · ${money(crew.wageDue)} due` : crew.introduced ? crew.contactStage.replaceAll("_", " ") : "Not introduced"} description={`${person.role} · Power ${person.power}. ${crew.introduced ? person.description : "This contact has not entered the run yet."}`} disabled={!crew.introduced} onClick={() => setPage(`crew:${person.id}`)} />; })}</div></>;
   if (page === "lieutenants") { const lieutenants = C.CREW.filter((person) => person.lieutenantRole && state.people.crew[person.id].recruited); return <><PageHead title="Lieutenants" sub="People running part of the operation without a check-in each time" onBack={() => setPage("root")} /><div className="scroll">{lieutenants.map((person) => { const crew = state.people.crew[person.id]; const status = person.lieutenantRole === "operations" ? (crew.lieutenantStage === "operations_lieutenant" ? `${C.ELI_OPERATION_POLICIES[crew.operationPolicy]?.label || "Balanced"} · Eff ${crew.lieutenantEffectiveness}/3` : "Crew, not yet promoted") : "Finance · laundering active"; return <CategoryCard key={person.id} title={person.name} status={status} description={`${person.lieutenantRole === "operations" ? "Operations" : "Finance"} lieutenant. ${person.description}`} onClick={() => setPage(`crew:${person.id}`)} />; })}</div></>; }
   if (page === "history") return <><PageHead title="Recent History" sub="Choices and callbacks from this run" onBack={() => setPage("root")} /><div className="scroll">{state.stats.majorDecisions.slice().reverse().map((entry, index) => <div className="card compact" key={index}>{entry}</div>)}</div></>;
   const activeLieutenants = C.CREW.filter((person) => person.lieutenantRole && state.people.crew[person.id].recruited);
-  return <><PageHead title="People" sub="Personal, street contacts, crew, and lieutenants stay separate" /><div className="scroll"><CategoryCard title="Personal" status={state.people.mara.met ? "Yalonda · John · Mara · Dre" : "Yalonda · John · Dre"} description="Family, an optional personal contact, the lender, and any rival attention." onClick={() => setPage("key")} /><CategoryCard title="Street Contacts" status={C.DEALERS.some((item) => state.people.dealers?.[item.id]?.known) ? "Known" : "None yet"} description="Corner suppliers must be discovered. Buy, ask what is moving, or take it off them." onClick={() => setPage("dealers")} /><CategoryCard title="Crew" status={`${C.selectors.recruitedCrew(state).length}/${state.stats.streetRead.level >= 4 ? 3 : 2} active`} description="Introduced contacts, recruitment stages, wages, assignments, and crew capacity." onClick={() => setPage("crew")} />{activeLieutenants.length > 0 && <CategoryCard title="Lieutenants" status={`${activeLieutenants.length} active`} description="Eli (Operations) and Kip (Finance) once they are running part of the organization." onClick={() => setPage("lieutenants")} />}{state.stats.majorDecisions.length > 0 && <CategoryCard title="Recent History" status={`${state.stats.majorDecisions.length} decisions`} description="Review important choices that later scenes may call back." onClick={() => setPage("history")} />}</div></>;
+  const knownDealers = C.DEALERS.filter((item) => state.people.dealers?.[item.id]?.known).length;
+  const introducedCrew = C.CREW.filter((person) => state.people.crew[person.id].introduced).length;
+  // Categories appear as the run produces people to put in them. An empty
+  // "Crew 0/2" row on the first Morning teaches the player nothing.
+  return <><PageHead title="People" sub="Personal, street contacts, crew, and lieutenants stay separate" /><div className="scroll">
+    <MenuRow title="Personal" status={state.people.mara.met ? "Yalonda · John · Mara · Dre" : "Yalonda · John · Dre"} description="Family, the lender, and anyone else who has entered your life." onClick={() => setPage("key")} />
+    {knownDealers > 0 && <MenuRow title="Street Contacts" status={`${knownDealers} known`} description="Corner suppliers. Buy, ask what is moving, or take it off them." onClick={() => setPage("dealers")} />}
+    {introducedCrew > 0 && <MenuRow title="Crew" status={`${C.selectors.recruitedCrew(state).length}/${state.stats.streetRead.level >= 4 ? 3 : 2} active`} description="Recruitment stages, wages, assignments, and crew capacity." onClick={() => setPage("crew")} />}
+    {activeLieutenants.length > 0 && <MenuRow title="Lieutenants" status={`${activeLieutenants.length} active`} description="The people running part of the organization without a check-in." onClick={() => setPage("lieutenants")} />}
+    {state.stats.majorDecisions.length > 0 && <MenuRow title="Recent History" status={`${state.stats.majorDecisions.length} decisions`} description="Choices that later scenes may call back." onClick={() => setPage("history")} />}
+  </div></>;
 }
 
 function QuickScore({ state, dispatch, onBack }) {
@@ -236,83 +446,156 @@ function QuickScore({ state, dispatch, onBack }) {
 
 function Gear({ state, dispatch, onBack }) { return <><PageHead title="Gear" sub="Weapons, armor, tools, utility, and consumables" onBack={onBack} /><div className="scroll">{!state.base.visiting && <p className="warn">Visit North Star Garage in Safehouse before buying gear.</p>}{C.GEAR.map((gear) => { const owned = state.player.gear.owned.includes(gear.id); return <div className="card" key={gear.id}><div className="card-title">{gear.name}<small>{owned ? "EQUIPPED" : money(gear.cost)}</small></div><p className="compact muted">{gear.description}</p><button className="btn full secondary" disabled={!state.base.visiting || state.player.cash < gear.cost || (owned && gear.id !== "medical_kit")} onClick={() => dispatch({ type: "BUY_GEAR", gearId: gear.id })}>{owned ? "Owned" : "Buy"}<span className="action-copy">Uses one part of day</span></button></div>; })}</div></>; }
 
-function Safehouse({ state, dispatch, onBack }) {
-  const [amount, setAmount] = useState(0); const cashCap = C.selectors.storedCashCapacity(state); const storeAmount = Math.min(Math.max(0, Number(amount) || 0), state.player.cash, Math.max(0, cashCap - state.base.storedCash)); const retrieveAmount = Math.min(Math.max(0, Number(amount) || 0), state.base.storedCash);
-  const assignments = { eli: [["north_run", "Spenard run"], ["outer_run", "Industrial route"]], miri: [["source_cocaine", "Source Cocaine"], ["source_meth", "Source Meth"]], tone: [["guard_base", "Guard the garage"], ["intimidate_buyer", "Pressure a buyer"]] };
-  return <><PageHead title="Safehouse" sub="North Star Garage · protected cash, storage, upgrades, and assignments" onBack={onBack} /><div className="scroll">{!state.base.controlled ? <div className="card locked"><div className="card-title">North Star Garage<small>NOT OWNED</small></div><p>Lease the property through Travel → Real Estate before using storage, upgrades, recovery, gear, or crew operations.</p></div> : !state.base.visiting ? <div className="card"><div className="card-title">Visit North Star Garage<small>Uses one part of day</small></div><p>Close the current market and roll down the garage door. Management remains available until another time-consuming action moves you on.</p><button className="btn full primary" onClick={() => dispatch({ type: "VISIT_BASE" })}>Go to the garage</button></div> : <><div className="tag good">GARAGE OPEN</div><div className="card"><div className="card-title">Protected cash<small>{money(state.base.storedCash)} / {money(cashCap)}</small></div><p className="muted">Cash here is included in working capital and protected by storage upgrades.</p><div className="field-row"><input aria-label="Protected cash amount" type="number" min="0" value={amount || ""} placeholder="Amount" onChange={(event) => setAmount(event.target.value)} /><button className="btn secondary" disabled={!storeAmount} onClick={() => dispatch({ type: "STORE_CASH", amount: storeAmount })}>Store</button><button className="btn secondary" disabled={!retrieveAmount} onClick={() => dispatch({ type: "RETRIEVE_CASH", amount: retrieveAmount })}>Retrieve</button></div>{cashCap === 0 && <p className="warn compact">Buy Hidden Compartment below to unlock protected cash.</p>}</div>
-  <div className="section-label">Stored inventory · {C.selectors.storedCargoUsed(state)}/{C.selectors.storageCapacity(state)}</div>{C.PRODUCTS.map((product) => { const carried = state.player.inventory[product.id]; const stored = state.base.storedInventory[product.id]; return <div className="card inventory-row" key={product.id}><div><div className="card-title">{product.name}</div><div className="muted">Carried {carried.qty} · stored {stored.qty}</div></div><button className="btn secondary" disabled={!carried.qty || C.selectors.storedCargoUsed(state) >= C.selectors.storageCapacity(state)} onClick={() => dispatch({ type: "STORE_PRODUCT", productId: product.id, qty: Math.min(carried.qty, C.selectors.storageCapacity(state) - C.selectors.storedCargoUsed(state)) })}>Store</button><button className="btn secondary" disabled={!stored.qty || C.selectors.cargoUsed(state) >= C.selectors.cargoCapacity(state)} onClick={() => dispatch({ type: "RETRIEVE_PRODUCT", productId: product.id, qty: Math.min(stored.qty, C.selectors.cargoCapacity(state) - C.selectors.cargoUsed(state)) })}>Take</button></div>; })}
-  <div className="section-label">Base upgrades</div>{["security", "storage", "operations", "recovery"].map((track) => { const next = C.BASE_UPGRADES.find((item) => item.track === track && item.level === state.base.tracks[track] + 1); return <div className="card" key={track}><div className="card-title">{track}<small>Level {state.base.tracks[track]}/2</small></div>{next ? <><p>{next.name} · {money(next.cost)}</p><p className="muted compact">{next.description}</p><button className="btn full secondary" disabled={state.player.cash < next.cost} onClick={() => dispatch({ type: "UPGRADE_BASE", track })}>Install upgrade<span className="action-copy">Uses one part of day</span></button></> : <p className="muted">Track complete.</p>}</div>; })}
-  <div className="section-label">Crew assignments</div>{C.selectors.recruitedCrew(state).filter((person) => person.canFieldAssign).map((person) => { const crew = state.people.crew[person.id]; return <div className="card" key={person.id}><div className="card-title">{person.name}<small>{crew.assignment || "Available"}</small></div>{!crew.assignment && <div className="btn-row">{assignments[person.id].map(([id, label]) => <button className="btn secondary" key={id} onClick={() => dispatch({ type: "ASSIGN_CREW", crewId: person.id, assignment: id })}>{label}<span className="action-copy">Uses one part of day</span></button>)}</div>}</div>; })}
-  {C.selectors.recruitedCrew(state).filter((person) => !person.canFieldAssign).map((person) => { const crew = state.people.crew[person.id]; return <div className="card cleared-card" key={person.id}><div className="card-title">{person.name}<small>{person.lieutenantRole ? `${person.lieutenantRole} lieutenant` : "Contact"}</small></div><p className="muted compact">Runs the network, not a corner. No field assignment.</p></div>; })}</>}</div></>;
+// Safehouse was the longest page in the build (over five screens of content at
+// 320px). It is now a hub: protected cash, storage, upgrades, and assignments
+// each get a page that answers one question.
+const CREW_ASSIGNMENTS = { eli: [["north_run", "Spenard run"], ["outer_run", "Industrial route"]], miri: [["source_cocaine", "Source Cocaine"], ["source_meth", "Source Meth"]], tone: [["guard_base", "Guard the garage"], ["intimidate_buyer", "Pressure a buyer"]] };
+
+function ProtectedCash({ state, dispatch, onBack }) {
+  const [amount, setAmount] = useState(0); const cashCap = C.selectors.storedCashCapacity(state);
+  const storeAmount = Math.min(Math.max(0, Number(amount) || 0), state.player.cash, Math.max(0, cashCap - state.base.storedCash));
+  const retrieveAmount = Math.min(Math.max(0, Number(amount) || 0), state.base.storedCash);
+  return <><PageHead title="Protected Cash" sub="Money the street cannot reach" onBack={onBack} /><div className="scroll">
+    <div className="card"><div className="card-title">Protected cash<small>{money(state.base.storedCash)} / {money(cashCap)}</small></div><p className="muted compact">Cash here is included in working capital and protected by storage upgrades.</p>
+      <div className="field-row"><input aria-label="Protected cash amount" type="number" min="0" value={amount || ""} placeholder="Amount" onChange={(event) => setAmount(event.target.value)} /><button className="btn secondary" disabled={!storeAmount} onClick={() => dispatch({ type: "STORE_CASH", amount: storeAmount })}>Store</button><button className="btn secondary" disabled={!retrieveAmount} onClick={() => dispatch({ type: "RETRIEVE_CASH", amount: retrieveAmount })}>Retrieve</button></div>
+      {cashCap === 0 && <p className="warn compact">Install the Hidden Compartment upgrade to unlock protected cash.</p>}
+    </div>
+  </div></>;
 }
 
-function Operations({ state, dispatch, onBack }) {
+function SafehouseStorage({ state, dispatch, onBack }) {
+  return <><PageHead title="Storage" sub={`Stored inventory · ${C.selectors.storedCargoUsed(state)}/${C.selectors.storageCapacity(state)}`} onBack={onBack} /><div className="scroll">
+    {C.PRODUCTS.map((product) => { const carried = state.player.inventory[product.id]; const stored = state.base.storedInventory[product.id]; return <div className="card inventory-row" key={product.id}><div><div className="card-title">{product.name}</div><div className="muted">Carried {carried.qty} · stored {stored.qty}</div></div><button className="btn secondary" disabled={!carried.qty || C.selectors.storedCargoUsed(state) >= C.selectors.storageCapacity(state)} onClick={() => dispatch({ type: "STORE_PRODUCT", productId: product.id, qty: Math.min(carried.qty, C.selectors.storageCapacity(state) - C.selectors.storedCargoUsed(state)) })}>Store</button><button className="btn secondary" disabled={!stored.qty || C.selectors.cargoUsed(state) >= C.selectors.cargoCapacity(state)} onClick={() => dispatch({ type: "RETRIEVE_PRODUCT", productId: product.id, qty: Math.min(stored.qty, C.selectors.cargoCapacity(state) - C.selectors.cargoUsed(state)) })}>Take</button></div>; })}
+  </div></>;
+}
+
+function BaseUpgrades({ state, dispatch, onBack }) {
+  return <><PageHead title="Upgrades" sub="Security, storage, operations, and recovery tracks" onBack={onBack} /><div className="scroll">
+    {["security", "storage", "operations", "recovery"].map((track) => { const next = C.BASE_UPGRADES.find((item) => item.track === track && item.level === state.base.tracks[track] + 1); return <div className="card" key={track}><div className="card-title">{track}<small>Level {state.base.tracks[track]}/2</small></div>{next ? <><p className="compact">{next.name} · {money(next.cost)}</p><p className="muted compact">{next.description}</p><button className="btn full secondary" disabled={state.player.cash < next.cost} onClick={() => dispatch({ type: "UPGRADE_BASE", track })}>Install upgrade<span className="action-copy">{state.player.cash < next.cost ? `You need ${money(next.cost - state.player.cash)} more.` : "Uses one part of day"}</span></button></> : <p className="muted compact">Track complete.</p>}</div>; })}
+  </div></>;
+}
+
+function CrewAssignments({ state, dispatch, onBack }) {
+  const fieldCrew = C.selectors.recruitedCrew(state).filter((person) => person.canFieldAssign);
+  const network = C.selectors.recruitedCrew(state).filter((person) => !person.canFieldAssign);
+  return <><PageHead title="Assignments" sub="Who works with you and what they are doing" onBack={onBack} /><div className="scroll">
+    {!fieldCrew.length && !network.length && <p className="muted compact">Nobody works with you yet. Recruit through People → Crew.</p>}
+    {fieldCrew.map((person) => { const crew = state.people.crew[person.id]; return <div className="card" key={person.id}><div className="card-title">{person.name}<small>{crew.assignment || "Available"}</small></div>{!crew.assignment && <div className="btn-row">{CREW_ASSIGNMENTS[person.id].map(([id, label]) => <button className="btn secondary" key={id} onClick={() => dispatch({ type: "ASSIGN_CREW", crewId: person.id, assignment: id })}>{label}<span className="action-copy">Uses one part of day</span></button>)}</div>}</div>; })}
+    {network.map((person) => <div className="card cleared-card" key={person.id}><div className="card-title">{person.name}<small>{person.lieutenantRole ? `${person.lieutenantRole} lieutenant` : "Contact"}</small></div><p className="muted compact">Runs the network, not a corner. No field assignment.</p></div>)}
+  </div></>;
+}
+
+function Safehouse({ state, dispatch, onBack }) {
   const [page, setPage] = useState("root");
+  if (page === "cash") return <ProtectedCash state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
+  if (page === "storage") return <SafehouseStorage state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
+  if (page === "upgrades") return <BaseUpgrades state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
+  if (page === "assignments") return <CrewAssignments state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
+  if (!state.base.controlled) return <><PageHead title="Safehouse" sub="North Star Garage" onBack={onBack} /><div className="scroll"><div className="card locked"><div className="card-title">North Star Garage<small>NOT OWNED</small></div><p className="compact">Lease the property through Travel → Listings before using storage, upgrades, recovery, gear, or crew operations.</p></div></div></>;
+  if (!state.base.visiting) return <><PageHead title="Safehouse" sub="North Star Garage" onBack={onBack} /><div className="scroll"><div className="card"><div className="card-title">Visit North Star Garage<small>Uses one part of day</small></div><p className="compact">Close the current market and roll down the garage door. Management remains available until another time-consuming action moves you on.</p><button className="btn full primary" onClick={() => dispatch({ type: "VISIT_BASE" })}>Go to the garage<span className="action-copy">Uses one part of day</span></button></div></div></>;
+  const crewCount = C.selectors.recruitedCrew(state).length;
+  const nextUpgrade = ["security", "storage", "operations", "recovery"].filter((track) => state.base.tracks[track] < 2).length;
+  return <><PageHead title="Safehouse" sub="North Star Garage · the garage is open" onBack={onBack} /><div className="scroll">
+    <div className="tag good">GARAGE OPEN</div>
+    <MenuRow title="Protected Cash" status={`${money(state.base.storedCash)} / ${money(C.selectors.storedCashCapacity(state))}`} description="Store and retrieve money the street cannot reach." onClick={() => setPage("cash")} />
+    <MenuRow title="Storage" status={`${C.selectors.storedCargoUsed(state)}/${C.selectors.storageCapacity(state)}`} description="Move product between what you carry and what stays here." onClick={() => setPage("storage")} />
+    <MenuRow title="Upgrades" status={nextUpgrade ? `${nextUpgrade} tracks open` : "Complete"} description="Security, storage, operations, and recovery." onClick={() => setPage("upgrades")} />
+    {crewCount > 0 && <MenuRow title="Assignments" status={`${crewCount} crew`} description="Send field crew out on a run, a source, or a guard job." onClick={() => setPage("assignments")} />}
+  </div></>;
+}
+
+// Short organization snapshot, kept off the Operations hub so the hub stays a
+// list of destinations rather than a dashboard.
+function OperationsOverview({ state, onBack }) {
+  const eliActive = C.selectors.eliLieutenantActive(state);
+  const eli = state.people.crew.eli;
+  const report = findEliReport(state);
+  return <><PageHead title="Overview" sub="What the organization looks like right now" onBack={onBack} /><div className="scroll">
+    <div className="metric-row">
+      <div className="metric-tile"><span className="k">Soldiers</span><span className="v">{C.selectors.activeSoldierCount(state)}/{C.selectors.soldierCapacity(state)}</span></div>
+      <div className="metric-tile"><span className="k">Blocks</span><span className="v">{C.selectors.controlledBlockCount(state)}/{C.SPENARD_BLOCKS.length}</span></div>
+      <div className="metric-tile"><span className="k">District</span><span className="v">{C.selectors.districtControlTier(state, "north_star_lot").label}</span></div>
+      <div className="metric-tile"><span className="k">Respect</span><span className="v">{state.rival.respect}</span></div>
+    </div>
+    {eliActive && <div className="card"><div className="card-title">Standing order<small>{C.ELI_OPERATION_POLICIES[eli.operationPolicy]?.label || "Balanced"}</small></div><p className="compact muted">Effectiveness {eli.lieutenantEffectiveness}/3 · estimated weekly income {money(C.selectors.weeklyIncomeEstimate(state))}. Change the order in People → Lieutenants.</p></div>}
+    {report && <EliReportCard state={state} />}
+    {state.base.controlled && !eliActive && <div className="warning-card"><div className="card-title">No Operations Lieutenant</div><p className="compact">Nobody is running the field for you. Soldiers and Territory Blocks stay locked until Eli is promoted in People → Crew.</p></div>}
+  </div></>;
+}
+
+// Strategic layer. Deliberately separate from the Territory block board so the
+// two never read as the same number twice.
+function DistrictControlPage({ state, dispatch, onBack }) {
+  const district = C.selectors.districtControlTier(state, "north_star_lot");
+  return <><PageHead title="District Control" sub="Neighborhood-wide dominance, not another income line" onBack={onBack} /><div className="scroll">
+    <div className="district-summary">
+      <div className="card-title">District Control<small>Spenard</small></div>
+      <div className="tier">{district.label}</div>
+      <p className="compact muted">{district.blocks}/{C.SPENARD_BLOCKS.length} blocks held{district.capstone ? " · capstone requirement met" : ""}. Strategic dominance on top of income; the blocks already pay for themselves.</p>
+      <div className="district-meter"><span style={{ width: `${Math.min(100, Math.round((district.blocks / C.SPENARD_BLOCKS.length) * 100))}%` }} /></div>
+    </div>
+    <div className="section-label">Other Districts</div>
+    {C.TERRITORIES.filter((definition) => definition.areaId !== "north_star_lot").map((definition) => <TerritoryCard key={definition.areaId} state={state} dispatch={dispatch} definition={definition} />)}
+  </div></>;
+}
+
+// Tactical layer: the block board and one selected block's detail.
+function TerritoryBlocks({ state, dispatch, onBack, openDistrict }) {
   const [selectedBlock, setSelectedBlock] = useState(null);
   const eliActive = C.selectors.eliLieutenantActive(state);
-  if (page === "quick") return <QuickScore state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
-  if (page === "territory") {
-    const district = C.selectors.districtControlTier(state, "north_star_lot");
-    const selected = C.SPENARD_BLOCKS.find((item) => item.id === selectedBlock);
-    return <><PageHead title="Territory" sub="Territory Blocks are tactical; District Control is strategic" onBack={() => { setPage("root"); setSelectedBlock(null); }} /><div className="scroll">
-      <div className="section-label">Territory Blocks · Spenard</div>
-      {!eliActive ? <div className="warning-card"><div className="card-title">Blocks Locked</div><p className="compact">Promote Eli to Operations Lieutenant before claiming Spenard corners.</p></div> : <>
-        <div className="territory-board" aria-label="Spenard territory blocks">
-          {C.SPENARD_BLOCKS.map((block) => {
-            const record = state.world.territoryBlocks[block.id];
-            const ownState = record.owner === "player" ? "player" : record.owner === "rook" ? "rook" : "unknown";
-            const label = record.owner === "player" ? "Controlled" : record.owner === "rook" ? "Rook Held" : "Unclaimed";
-            return <button key={block.id} className={`block-node ${ownState}${selectedBlock === block.id ? " selected" : ""}`} aria-pressed={selectedBlock === block.id} onClick={() => setSelectedBlock(selectedBlock === block.id ? null : block.id)}>
-              <span className="node-name">{block.name}</span>
-              <span className="node-state">{label}</span>
-            </button>;
-          })}
-        </div>
-        {selected && <SpenardBlockCard state={state} dispatch={dispatch} block={selected} />}
-        {!selected && <p className="muted compact">Tap a block to see its detail and claim it.</p>}
-      </>}
-      <div className="district-summary">
-        <div className="card-title">District Control<small>Spenard</small></div>
-        <div className="tier">{district.label}</div>
-        <p className="compact muted">{district.blocks}/{C.SPENARD_BLOCKS.length} blocks held{district.capstone ? " · capstone requirement met" : ""}. Strategic dominance, not another income source — blocks already pay for themselves.</p>
-        <div className="district-meter"><span style={{ width: `${Math.min(100, Math.round((district.blocks / C.SPENARD_BLOCKS.length) * 100))}%` }} /></div>
+  const district = C.selectors.districtControlTier(state, "north_star_lot");
+  const selected = C.SPENARD_BLOCKS.find((item) => item.id === selectedBlock);
+  return <><PageHead title="Territory" sub="What do you control, and where can you expand?" onBack={onBack} /><div className="scroll">
+    <div className="section-label">Territory Blocks · Spenard</div>
+    {!eliActive ? <div className="warning-card"><div className="card-title">Blocks Locked</div><p className="compact">Promote Eli to Operations Lieutenant before claiming Spenard corners.</p></div> : <>
+      <div className="territory-board" aria-label="Spenard territory blocks">
+        {C.SPENARD_BLOCKS.map((block) => {
+          const record = state.world.territoryBlocks[block.id];
+          const ownState = record.owner === "player" ? "player" : record.owner === "rook" ? "rook" : "unknown";
+          const label = record.owner === "player" ? "Controlled" : record.owner === "rook" ? "Rook Held" : "Unclaimed";
+          return <button key={block.id} className={`block-node ${ownState}${selectedBlock === block.id ? " selected" : ""}`} aria-pressed={selectedBlock === block.id} onClick={() => setSelectedBlock(selectedBlock === block.id ? null : block.id)}>
+            <span className="node-name">{block.name}</span>
+            <span className="node-state">{label}</span>
+          </button>;
+        })}
       </div>
-      <div className="section-label">Other Districts</div>
-      {C.TERRITORIES.filter((definition) => definition.areaId !== "north_star_lot").map((definition) => <TerritoryCard key={definition.areaId} state={state} dispatch={dispatch} definition={definition} />)}
-    </div></>;
-  }
+      {selected && <SpenardBlockCard state={state} dispatch={dispatch} block={selected} />}
+      {!selected && <p className="muted compact">Tap a block to see its detail and claim it.</p>}
+    </>}
+    <MenuRow title="District Control" status={district.label} description={`${district.blocks}/${C.SPENARD_BLOCKS.length} blocks held. Strategic dominance and other districts.`} onClick={openDistrict} />
+  </div></>;
+}
+
+function Operations({ state, dispatch, onBack, initialPage }) {
+  const [page, setPage] = useState(initialPage || "root");
+  const eliActive = C.selectors.eliLieutenantActive(state);
+  if (page === "overview") return <OperationsOverview state={state} onBack={() => setPage("root")} />;
+  if (page === "quick") return <QuickScore state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
+  if (page === "territory") return <TerritoryBlocks state={state} dispatch={dispatch} onBack={() => setPage("root")} openDistrict={() => setPage("district")} />;
+  if (page === "district") return <DistrictControlPage state={state} dispatch={dispatch} onBack={() => setPage("territory")} />;
   if (page === "soldiers") return <Soldiers state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   if (page === "gear") return <Gear state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   if (page === "safehouse") return <Safehouse state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   const score = C.selectors.robberyAvailability(state);
   const blockCount = C.selectors.controlledBlockCount(state);
-  const spenardDistrict = C.selectors.districtControlTier(state, "north_star_lot");
   const activeSoldiers = C.selectors.activeSoldierCount(state);
-  const eli = state.people.crew.eli;
-  const weeklyIncome = C.selectors.weeklyIncomeEstimate(state);
-  const report = findEliReport(state);
   const noLieutenantWarning = state.base.controlled && !eliActive;
   return <><PageHead title="Operations" sub="Run what you built" onBack={onBack} /><div className="scroll">
-    <div className="overview-card">
-      <div className="card-title">Organization Overview</div>
-      <div className="metric-row">
-        <div className="metric-tile"><span className="k">Eli</span><span className="v">{!eli.recruited ? "Not recruited" : eliActive ? "Lieutenant" : "Crew"}</span></div>
-        <div className="metric-tile"><span className="k">Soldiers</span><span className="v">{activeSoldiers}/{C.selectors.soldierCapacity(state)}</span></div>
-        <div className="metric-tile"><span className="k">Blocks</span><span className="v">{blockCount}/{C.SPENARD_BLOCKS.length}</span></div>
-        <div className="metric-tile"><span className="k">District</span><span className="v">{spenardDistrict.label}</span></div>
-      </div>
-      {eliActive && <p className="compact muted">Policy: {C.ELI_OPERATION_POLICIES[eli.operationPolicy]?.label || "Balanced"} · Effectiveness {eli.lieutenantEffectiveness}/3 · Est. weekly income {money(weeklyIncome)}</p>}
-      {report && <EliReportCard state={state} />}
-      {noLieutenantWarning && <div className="warning-card"><div className="card-title">No Operations Lieutenant</div><p className="compact">Eli is not running Operations yet. Soldiers and Territory Blocks stay locked until he is promoted in People → Crew.</p></div>}
-    </div>
-    <div className="section-label">Systems</div>
-    <CategoryCard title="Quick Score" status={score.available ? "Available today" : "Unavailable"} description={score.reason} disabled={!state.base.controlled} onClick={() => setPage("quick")} />
-    <CategoryCard title="District Control" status={`Spenard: ${spenardDistrict.label}${eliActive ? ` · Blocks ${blockCount}/${C.SPENARD_BLOCKS.length}` : ""}`} description="Review district dominance, claim Territory Blocks, and launch a crew-based takeover." disabled={!state.base.controlled} onClick={() => setPage("territory")} />
-    {eliActive && <CategoryCard title="Soldiers" status={`${activeSoldiers}/${C.selectors.soldierCapacity(state)}`} description="Recruit anonymous manpower and post it on controlled blocks." onClick={() => setPage("soldiers")} />}
-    <CategoryCard title="Gear" status={`${state.player.gear.owned.length} owned`} description="Weapons, armor, utility, tools, and consumables." disabled={!state.base.controlled} onClick={() => setPage("gear")} />
-    <CategoryCard title="Safehouse" status={!state.base.controlled ? "Lease required" : state.base.visiting ? "Garage open" : `${money(state.base.storedCash)} protected`} description={state.base.controlled ? "Visit North Star Garage; manage protected cash, inventory, upgrades, and assignments." : `Lease North Star Garage for ${money(C.GARAGE_DEPOSIT)} through Travel.`} onClick={() => setPage("safehouse")} />
+    {noLieutenantWarning && <div className="warning-card"><div className="card-title">No Operations Lieutenant</div><p className="compact">Eli is not running Operations yet. Soldiers and Territory Blocks stay locked until he is promoted in People → Crew.</p></div>}
+    <MenuRow title="Overview" status={eliActive ? `${blockCount} blocks · ${activeSoldiers} soldiers` : "Snapshot"} description="A short read on the organization and Eli's latest report." onClick={() => setPage("overview")} />
+    <MenuRow title="Safehouse" status={!state.base.controlled ? "Lease required" : state.base.visiting ? "Garage open" : `${money(state.base.storedCash)} protected`} description="North Star Garage: protected cash, storage, upgrades, and assignments." onClick={() => setPage("safehouse")} />
+    {eliActive && <MenuRow title="Territory" status={`${blockCount}/${C.SPENARD_BLOCKS.length} blocks`} description="Claim and hold Spenard blocks; District Control sits behind it." onClick={() => setPage("territory")} />}
+    {eliActive && <MenuRow title="Soldiers" status={`${activeSoldiers}/${C.selectors.soldierCapacity(state)}`} description="Recruit anonymous manpower and post it on controlled blocks." onClick={() => setPage("soldiers")} />}
+    {!eliActive && <MenuRow title="District Control" status={C.selectors.districtControlTier(state, "north_star_lot").label} description="Neighborhood dominance and crew-based takeovers." disabled={!state.base.controlled} onClick={() => setPage("district")} />}
+    <MenuRow title="Gear" status={`${state.player.gear.owned.length} owned`} description="Weapons, armor, utility, tools, and consumables." disabled={!state.base.controlled} onClick={() => setPage("gear")} />
+    <MenuRow title="Quick Score" status={score.available ? "Available today" : "Unavailable"} description="A risky comeback option when the week turns against you." disabled={!state.base.controlled} onClick={() => setPage("quick")} />
   </div></>;
 }
+
+// ---------------------------------------------------------------------------
+// Finances. A hub broad enough to absorb future financial systems without a
+// redesign: today Overview, Debt & Obligations, Laundering, and Financial Risk.
+// ---------------------------------------------------------------------------
 
 function LaunderingPanel({ state, dispatch }) {
   const [amount, setAmount] = useState(0);
@@ -326,36 +609,80 @@ function LaunderingPanel({ state, dispatch }) {
   </div>;
 }
 
-function Finances({ state, dispatch, onBack, openSafehouse }) {
-  const [amount, setAmount] = useState(0); const preview = C.selectors.debtPaymentPreview(state, amount); const safe = C.selectors.safeDebtPayment(state);
-  const [debtOpen, setDebtOpen] = useState(false);
-  function add(value) { setAmount(C.selectors.debtPaymentPreview(state, preview.amount + value).amount); }
-  function pay() { if (preview.breaksReserve && !window.confirm(`This leaves less than ${money(C.WORKING_CAPITAL_RESERVE)} in working cash. Pay it anyway?`)) return; dispatch({ type: "PAY_DEBT", amount: preview.amount }); setAmount(0); }
-  const fixedTotal = state.run.premise === "fresh_arrival" ? 1200 : state.lender.principal + state.lender.interest;
-  const daysLeft = state.lender.dueDay - state.run.day;
-  const debtUrgency = !state.lender.balance ? null : daysLeft > 1 ? `Due Day ${state.lender.dueDay}` : daysLeft === 1 ? "1 day left" : daysLeft === 0 ? "Due tonight" : "Overdue. Enforcement active";
-  return <><PageHead title="Finances" sub="Cash, debt, and financial risk across the operation" onBack={onBack} /><div className="scroll">
-    <div className="section-label">Money Snapshot</div>
+function FinanceOverview({ state, onBack }) {
+  return <><PageHead title="Overview" sub="Where the money actually sits" onBack={onBack} /><div className="scroll">
     <div className="metric-row">
       <div className="metric-tile dirty"><span className="k">Dirty</span><span className="v">{money(state.player.dirtyCash)}</span></div>
       <div className="metric-tile clean"><span className="k">Clean</span><span className="v">{money(state.player.cleanCash)}</span></div>
       <div className="metric-tile protected"><span className="k">Protected</span><span className="v">{money(state.base.storedCash + state.home.storedCash)}</span></div>
     </div>
     <div className="outcome-grid"><Outcome label="Street cash" value={money(state.player.cash)} /><Outcome label="Net worth" value={money(C.selectors.netWorth(state))} /><Outcome label="Financial Heat" value={state.player.financialHeat} /><Outcome label="Debt paid" value={money(state.lender.payments)} /></div>
+    <p className="muted compact">Dirty cash spends, but spending it where records are kept builds Financial Heat. Clean cash does not.</p>
+  </div></>;
+}
 
-    <div className="section-label">Debt & Obligations</div>
-    <button className={`card debt-card${daysLeft <= 0 && state.lender.balance > 0 ? " warning-card" : ""}`} aria-expanded={debtOpen} onClick={() => setDebtOpen(!debtOpen)}>
+// What do I owe, and what can I do about it? The lender's identity lives here,
+// in the detail, rather than in the persistent HUD.
+function DebtPage({ state, dispatch, onBack }) {
+  const [amount, setAmount] = useState(0); const preview = C.selectors.debtPaymentPreview(state, amount); const safe = C.selectors.safeDebtPayment(state);
+  function add(value) { setAmount(C.selectors.debtPaymentPreview(state, preview.amount + value).amount); }
+  function pay() { if (preview.breaksReserve && !window.confirm(`This leaves less than ${money(C.WORKING_CAPITAL_RESERVE)} in working cash. Pay it anyway?`)) return; dispatch({ type: "PAY_DEBT", amount: preview.amount }); setAmount(0); }
+  const fixedTotal = state.run.premise === "fresh_arrival" ? 1200 : state.lender.principal + state.lender.interest;
+  const daysLeft = state.lender.dueDay - state.run.day;
+  const debtUrgency = !state.lender.balance ? null : daysLeft > 1 ? `Due Day ${state.lender.dueDay}` : daysLeft === 1 ? "1 day left" : daysLeft === 0 ? "Due tonight" : "Overdue. Enforcement active";
+  return <><PageHead title="Debt & Obligations" sub="What you owe and what you can do about it" onBack={onBack} /><div className="scroll">
+    <div className={`card debt-card${daysLeft <= 0 && state.lender.balance > 0 ? " warning-card" : ""}`}>
       <div className="debt-kicker">Debt{debtUrgency ? ` · ${debtUrgency}` : ""}</div>
       <div className="debt-amount">{state.lender.balance ? money(state.lender.balance) : "Paid in full"}</div>
-      <span className="category-arrow">{debtOpen ? "Hide detail ↑" : "Detail →"}</span>
-    </button>
-    {debtOpen && <div className="card">
+    </div>
+    <div className="card">
       <div className="debt-meta"><span>Lender: {state.lender.name}</span><span>{state.lender.relationship}</span></div>
       <div className="debt-meta"><span>Principal {money(state.lender.principal)} · fixed total {money(fixedTotal)}</span></div>
       {state.lender.collectorTier > 0 && <p className="warn compact">Collector enforcement active. Tier {state.lender.collectorTier}. Interest is running {Math.round((state.lender.interestMultiplier - 1) * 100)}% higher.</p>}
-      {state.lender.balance > 0 && <><div className="payment-buttons"><button className="btn secondary" onClick={() => add(25)}>+$25</button><button className="btn secondary" onClick={() => add(50)}>+$50</button><button className="btn secondary" onClick={() => add(100)}>+$100</button><button className="btn secondary" onClick={() => setAmount(safe)}>Safe Maximum</button><button className="btn secondary" onClick={() => setAmount(preview.maximum)}>Pay Full</button>{state.stats.streetRead.level >= 3 && <button className="btn secondary" onClick={() => setAmount(Math.min(state.lender.balance, Math.max(25, Math.floor(safe / Math.max(1, 8 - state.run.day)))))}>Recommended</button>}</div><input aria-label="Debt payment amount" type="number" min="0" max={preview.maximum} value={preview.amount || ""} placeholder="Payment amount" onChange={(event) => setAmount(C.selectors.debtPaymentPreview(state, event.target.value).amount)} /><div className="outcome-grid payment-preview"><Outcome label="Payment" value={money(preview.amount)} /><Outcome label="Cash remaining" value={money(preview.cashAfter)} /><Outcome label="Debt remaining" value={money(preview.debtAfter)} /></div>{preview.breaksReserve && <p className="warn compact">Warning: this crosses the {money(C.WORKING_CAPITAL_RESERVE)} working-capital reserve.</p>}<button className="btn full primary" disabled={!preview.amount} onClick={pay}>Pay Dre {money(preview.amount)}<span className="action-copy">Uses one part of day</span></button></>}</div>}
-    <LaunderingPanel state={state} dispatch={dispatch} />
-    <button className="btn full secondary" disabled={!state.base.controlled} onClick={openSafehouse}>Manage protected cash in Safehouse</button>
+    </div>
+    {state.lender.balance > 0 && <div className="card">
+      <div className="payment-buttons"><button className="btn secondary" onClick={() => add(25)}>+$25</button><button className="btn secondary" onClick={() => add(50)}>+$50</button><button className="btn secondary" onClick={() => add(100)}>+$100</button><button className="btn secondary" onClick={() => setAmount(safe)}>Safe Maximum</button><button className="btn secondary" onClick={() => setAmount(preview.maximum)}>Pay Full</button>{state.stats.streetRead.level >= 3 && <button className="btn secondary" onClick={() => setAmount(Math.min(state.lender.balance, Math.max(25, Math.floor(safe / Math.max(1, 8 - state.run.day)))))}>Recommended</button>}</div>
+      <input aria-label="Debt payment amount" type="number" min="0" max={preview.maximum} value={preview.amount || ""} placeholder="Payment amount" onChange={(event) => setAmount(C.selectors.debtPaymentPreview(state, event.target.value).amount)} />
+      <div className="outcome-grid payment-preview"><Outcome label="Payment" value={money(preview.amount)} /><Outcome label="Cash remaining" value={money(preview.cashAfter)} /><Outcome label="Debt remaining" value={money(preview.debtAfter)} /></div>
+      {preview.breaksReserve && <p className="warn compact">Warning: this crosses the {money(C.WORKING_CAPITAL_RESERVE)} working-capital reserve.</p>}
+      <button className="btn full primary" disabled={!preview.amount} onClick={pay}>Pay {money(preview.amount)}<span className="action-copy">Uses one part of day</span></button>
+    </div>}
+  </div></>;
+}
+
+function FinancialRisk({ state, openSafehouse }) {
+  const heat = C.selectors.heatBand(state.player.heat);
+  return <div className="scroll">
+    <div className="metric-row">
+      <div className="metric-tile"><span className="k">Financial Heat</span><span className="v">{state.player.financialHeat}</span></div>
+      <div className="metric-tile"><span className="k">Police Heat</span><span className="v">{state.player.heat}/15 · {heat.label}</span></div>
+      <div className="metric-tile dirty"><span className="k">Dirty Exposure</span><span className="v">{money(state.player.dirtyCash)}</span></div>
+    </div>
+    <div className="card"><div className="card-title">What builds it</div><p className="compact muted">Financial Heat rises when dirty cash pays for things that leave a record: property, upgrades, and large legitimate purchases. Laundering first, or paying with clean cash, keeps the paper trail quiet.</p></div>
+    <div className="card"><div className="card-title">Protected cash<small>{money(state.base.storedCash + state.home.storedCash)}</small></div><p className="compact muted">Cash held at the garage or the spare room stays out of reach during raids and stickups.</p><button className="btn full secondary" disabled={!state.base.controlled} onClick={openSafehouse}>Manage protected cash in Safehouse<span className="action-copy">{state.base.controlled ? "No time cost to open the garage list" : "Lease North Star Garage first"}</span></button></div>
+  </div>;
+}
+
+function Finances({ state, dispatch, onBack, openSafehouse, initialPage }) {
+  const [page, setPage] = useState(initialPage || "root");
+  if (page === "overview") return <FinanceOverview state={state} onBack={() => setPage("root")} />;
+  if (page === "debt") return <DebtPage state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
+  if (page === "laundering") return <><PageHead title="Laundering" sub="Turning dirty cash into money you can spend anywhere" onBack={() => setPage("root")} /><div className="scroll"><LaunderingPanel state={state} dispatch={dispatch} /></div></>;
+  if (page === "risk") return <><PageHead title="Financial Risk" sub="Financial Heat, exposure, and what is protected" onBack={() => setPage("root")} /><FinancialRisk state={state} openSafehouse={openSafehouse} /></>;
+  const daysLeft = state.lender.dueDay - state.run.day;
+  const debtStatus = !state.lender.balance ? "Paid in full" : daysLeft < 0 ? "Overdue" : daysLeft === 0 ? "Due tonight" : daysLeft === 1 ? "Due tomorrow" : `Due Day ${state.lender.dueDay}`;
+  // Financial Risk stays hidden until the run has generated any, and
+  // Laundering until Kip is actually running finance.
+  const showRisk = state.player.financialHeat > 0 || state.people.crew.kip.recruited;
+  return <><PageHead title="Finances" sub="Cash, debt, and financial risk across the operation" onBack={onBack} /><div className="scroll">
+    <div className="stat-row">
+      <StatTile label="Cash" value={money(state.player.cash)} tone="good" />
+      <StatTile label="Net Worth" value={money(C.selectors.netWorth(state))} tone={C.selectors.netWorth(state) < 0 ? "bad" : ""} />
+    </div>
+    <MenuRow title="Overview" status={`${money(state.player.dirtyCash)} dirty`} description="Dirty, clean, protected, net worth, and Financial Heat." onClick={() => setPage("overview")} />
+    <MenuRow title="Debt & Obligations" status={debtStatus} description={state.lender.balance ? `${money(state.lender.balance)} remaining. Payment controls and lender detail.` : "The note is clear. History and lender detail."} tone={daysLeft <= 0 && state.lender.balance > 0 ? "bad" : ""} onClick={() => setPage("debt")} />
+    {state.people.crew.kip.recruited && <MenuRow title="Laundering" status={`${Math.round(C.KIP_LAUNDER_FEE * 100)}% fee`} description="Convert dirty cash to clean cash through Kip's network." onClick={() => setPage("laundering")} />}
+    {showRisk && <MenuRow title="Financial Risk" status={`Financial Heat ${state.player.financialHeat}`} description="Suspicious spending, exposure, and protected cash." onClick={() => setPage("risk")} />}
   </div></>;
 }
 
@@ -392,10 +719,13 @@ function StreetRead({ state, dispatch, onBack }) {
   return <><PageHead title="Street Read" sub="Run-scoped experience from meaningful first accomplishments" onBack={onBack} /><div className="scroll"><div className="card"><div className="card-title">{labels[read.level]}<small>LEVEL {read.level}</small></div><p>{next ? `${read.xp} progress · next level at ${next}` : `${read.xp} progress · all levels reached`}</p><p className="muted">Street Read resets each run and never changes Street Identity or Operation Score.</p></div>{unlocks.map((label, index) => <div className={`card compact${read.level >= index + 1 ? " cleared-card" : " locked"}`} key={label}><b>Level {index + 1}</b> · {label}</div>)}{read.level >= 2 && <button className="btn full secondary" disabled={read.lastAskDay === state.run.day} onClick={() => dispatch({ type: "ASK_AROUND" })}>Ask around<span className="action-copy">{read.lastAskDay === state.run.day ? "Already used today" : "One reliable rumor · free action"}</span></button>}</div></>;
 }
 
-function More({ state, dispatch, features }) {
-  const [page, setPage] = useState("root");
-  if (page === "operations") return <Operations state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
-  if (page === "finances") return <Finances state={state} dispatch={dispatch} onBack={() => setPage("root")} openSafehouse={() => setPage("safehouse")} />;
+// `page` and `sub` are owned by the shell so Home can deep-link straight to a
+// nested screen (Home → Finances → Debt) in one tap. `subToken` changes on
+// every deep link so an identical repeat target still remounts the child on
+// its requested page.
+function More({ state, dispatch, features, page, setPage, sub, subToken }) {
+  if (page === "operations") return <Operations key={`ops:${sub || "root"}:${subToken}`} state={state} dispatch={dispatch} onBack={() => setPage("root")} initialPage={sub} />;
+  if (page === "finances") return <Finances key={`fin:${sub || "root"}:${subToken}`} state={state} dispatch={dispatch} onBack={() => setPage("root")} openSafehouse={() => setPage("safehouse")} initialPage={sub} />;
   if (page === "safehouse") return <Safehouse state={state} dispatch={dispatch} onBack={() => setPage("finances")} />;
   if (page === "recovery") return <Recovery state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   if (page === "character") return <Character state={state} onBack={() => setPage("root")} />;
@@ -403,8 +733,16 @@ function More({ state, dispatch, features }) {
   if (page === "help") return <Help onBack={() => setPage("root")} />;
   const identity = (C.STREET_IDENTITIES[state.player.streetIdentity] || C.STREET_IDENTITIES.unproven).label;
   const opsSummary = features.operations.available ? `${C.selectors.controlledBlockCount(state)} blocks · ${C.selectors.activeSoldierCount(state)} soldiers` : "Locked";
-  const financeSummary = `${money(state.player.dirtyCash)} dirty · Debt due Day ${state.lender.dueDay}`;
-  return <><PageHead title="More" sub="Character, progress, finances, and help stay available; property unlocks operations" /><div className="scroll"><CategoryCard title="Character" status={`${identity} · Respect ${state.rival.respect}`} description="Street Identity, six attributes, derived ratings, and recent reputation." onClick={() => setPage("character")} /><CategoryCard title="Street Read" status={`Level ${state.stats.streetRead.level}`} description="Run-scoped progress and convenience unlocks, separate from identity and score." onClick={() => setPage("street-read")} /><CategoryCard title="Operations" status={opsSummary} description={features.operations.available ? "Command center: Quick Score, District Control, Soldiers, Gear, and Safehouse." : features.operations.hint} disabled={!features.operations.available} onClick={() => setPage("operations")} /><CategoryCard title="Finances" status={financeSummary} description={`${money(state.lender.balance)} remains on the debt. Review cash, debt, and financial risk.`} onClick={() => setPage("finances")} /><CategoryCard title="Recovery" status={features.recovery.available ? `Health ${state.player.health}` : "Locked"} description={features.recovery.available ? "Treat injuries or Lay Low to reduce Heat." : features.recovery.hint} disabled={!features.recovery.available} onClick={() => setPage("recovery")} /><CategoryCard title="Help" status="Available" description="Review time, trading, major actions, and the seven-day objective." onClick={() => setPage("help")} /></div></>;
+  const daysLeft = state.lender.dueDay - state.run.day;
+  const financeSummary = !state.lender.balance ? "Debt clear" : daysLeft <= 0 ? "Debt due" : `Debt Day ${state.lender.dueDay}`;
+  return <><PageHead title="More" sub="Character, progress, finances, and help stay available; property unlocks operations" /><div className="scroll">
+    <MenuRow title="Finances" status={financeSummary} description="Cash, debt, laundering, and financial risk." onClick={() => setPage("finances")} />
+    <MenuRow title="Operations" status={opsSummary} description={features.operations.available ? "Safehouse, territory, soldiers, gear, and a quick score." : features.operations.hint} disabled={!features.operations.available} onClick={() => setPage("operations")} />
+    {features.recovery.available && <MenuRow title="Recovery" status={`Health ${state.player.health}`} description="Treat injuries or lay low to reduce Heat." onClick={() => setPage("recovery")} />}
+    <MenuRow title="Character" status={`${identity} · Respect ${state.rival.respect}`} description="Street Identity, attributes, derived ratings, and reputation." onClick={() => setPage("character")} />
+    <MenuRow title="Street Read" status={`Level ${state.stats.streetRead.level}`} description="Run-scoped progress and convenience unlocks." onClick={() => setPage("street-read")} />
+    <MenuRow title="Help" status="Available" description="Time, trading, major actions, and the seven-day objective." onClick={() => setPage("help")} />
+  </div></>;
 }
 
 // --- Shared two-layer disclosure components ---------------------------------
@@ -577,21 +915,100 @@ function MenuModal({ state, dispatch, onClose, onTitle }) {
     <button className="btn full secondary choice" onClick={restart}>Restart Run<span>Creates a new seed and returns to Street Name entry.</span></button>
   </Modal>;
 }
-function Feed({ entries }) { return <div className="feed" aria-label="Street feed">{entries.slice(0, 8).map((entry, index) => <div key={index} className={`feed-line ${entry.tone || ""}`}><time>{entry.stamp}</time>{entry.text}</div>)}</div>; }
+// One line by default. The full log is still one tap away, but it no longer
+// costs 88px of vertical space on every screen in the game.
+function Feed({ entries }) {
+  const [open, setOpen] = useState(false);
+  const latest = entries[0];
+  if (!latest) return null;
+  return <div className="feed" aria-label="Street feed">
+    <button className="feed-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <span className={`feed-line ${latest.tone || ""}`}><time>{latest.stamp}</time>{latest.text}</span>
+      <span className="feed-more" aria-hidden="true">{open ? "Hide" : "Log"}</span>
+    </button>
+    {open && <div className="feed-list">{entries.slice(1, 8).map((entry, index) => <div key={index} className={`feed-line ${entry.tone || ""}`}><time>{entry.stamp}</time>{entry.text}</div>)}</div>}
+  </div>;
+}
+
+// The action-result overlay. This is a system receipt, not a story scene:
+// what happened, what it moved, and — loudest of all — the time it cost.
+// It auto-dismisses, and a tap anywhere closes it early, so ordinary actions
+// never cost an extra deliberate tap.
+function ActionResultOverlay({ result, onDismiss }) {
+  const dismissRef = React.useRef(onDismiss);
+  dismissRef.current = onDismiss;
+  useEffect(() => { const timer = setTimeout(() => dismissRef.current(), 4200); return () => clearTimeout(timer); }, [result]);
+  return <div className="result-backdrop" role="status" aria-live="polite" onClick={onDismiss}>
+    <div className="result-card" onClick={(event) => event.stopPropagation()}>
+      <div className="result-title">{result.title}</div>
+      {result.lines.length > 0 && <div className="result-lines">{result.lines.map((line) => <div className={`result-line ${line.tone}`} key={line.label}><span>{line.label}</span><b>{line.value}</b></div>)}</div>}
+      {result.detail && <p className="result-detail">{result.detail}</p>}
+      <div className="result-time">{result.time.label}</div>
+      <button className="btn full primary" onClick={onDismiss}>Continue</button>
+    </div>
+  </div>;
+}
 
 function nextPartLabel(state) {
   if (state.run.day >= C.RUN_DAYS && state.run.slot >= C.SLOTS.length - 1) return "the end of the week";
   if (state.run.slot >= C.SLOTS.length - 1) return `Day ${state.run.day + 1}, ${C.SLOTS[0]}`;
   return C.SLOTS[state.run.slot + 1];
 }
+
 function GameShell({ state, dispatch, onTitle }) {
-  const [tab, setTab] = useState(state.run.premise === "fresh_arrival" ? "travel" : "market"); const [trade, setTrade] = useState(null); const [menu, setMenu] = useState(false); const features = C.selectors.featureAvailability(state);
+  // Home is the landing screen for a new or loaded run, and the anchor the
+  // player can always get back to in one tap.
+  const [nav, setNav] = useState({ tab: "home", more: "root", sub: null, token: 0 });
+  const [travelPage, setTravelPage] = useState("root");
+  const [trade, setTrade] = useState(null); const [menu, setMenu] = useState(false); const [result, setResult] = useState(null);
+  const pending = React.useRef(null);
+  const features = C.selectors.featureAvailability(state);
+  const tab = nav.tab;
+
+  function navigate(nextTab, more = "root", sub = null) { setNav((prev) => ({ tab: nextTab, more, sub, token: prev.token + 1 })); setTravelPage("root"); }
+  const setTab = (nextTab) => navigate(nextTab);
+  const setMorePage = (page) => setNav((prev) => ({ ...prev, more: page, sub: null }));
+
+  // Every dispatch is routed through `act` so the shell can diff the committed
+  // state before and after. The reducer is untouched — this is a pure read,
+  // and `actionResult` returns null for anything that cost no part of the day.
+  function act(action) { pending.current = { type: action.type, before: state }; dispatch(action); }
+  useEffect(() => {
+    const record = pending.current;
+    pending.current = null;
+    if (!record || record.before === state) return;
+    setResult(C.selectors.actionResult(record.before, state, record.type));
+  }, [state]);
+
   useEffect(() => { if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult || state.run.status === "ended") setTrade(null); }, [state.run.pendingEvent, state.run.pendingEncounter, state.run.pendingOperationResult, state.run.status]);
   useEffect(() => { if (tab === "people" && !features.people.available) setTab("market"); }, [tab, features.people.available]);
   if (state.run.status === "creating_character") return <CharacterCreation dispatch={dispatch} />;
-  const navigateMore = () => setTab("more");
-  const screens = { market: <Market state={state} onTrade={setTrade} />, travel: <Travel state={state} dispatch={dispatch} setTab={setTab} />, people: <People state={state} dispatch={dispatch} navigateMore={navigateMore} />, more: <More state={state} dispatch={dispatch} features={features} /> };
-  return <div className="app"><Header state={state} onMenu={() => setMenu(true)} /><Navigation tab={tab} setTab={setTab} features={features} /><main className="main">{screens[tab]}</main><div><Feed entries={state.log} /><div className="action-bar two"><button className="btn secondary" onClick={() => setTab("travel")}>Travel<small>Work, explore, transit, and listings</small></button><button className="btn primary" onClick={() => dispatch({ type: "END_MARKET" })}>Finish Trading<small>Close this market visit · advance to {nextPartLabel(state)}</small></button></div></div>{trade && <TradeModal state={state} productId={trade} dispatch={dispatch} onClose={() => setTrade(null)} />}{menu && <MenuModal state={state} dispatch={dispatch} onClose={() => setMenu(false)} onTitle={onTitle} />}{state.run.openingPending && <OpeningModal dispatch={dispatch} />}{state.run.daySummary && state.run.status === "playing" && <DayModal summary={state.run.daySummary} dispatch={dispatch} />}{!state.run.daySummary && state.run.pendingOperationResult && <OperationResultModal result={state.run.pendingOperationResult} dispatch={dispatch} />}{!state.run.daySummary && !state.run.pendingOperationResult && state.run.pendingEvent && <EventModal event={state.run.pendingEvent} dispatch={dispatch} />}{!state.run.daySummary && !state.run.pendingOperationResult && state.run.pendingEncounter && <EncounterModal state={state} dispatch={dispatch} />}{state.run.status === "ended" && <EndModal state={state} onTitle={onTitle} />}</div>;
+  const navigateMore = () => navigate("more", "finances", "debt");
+  const screens = {
+    home: <Home state={state} navigate={navigate} />,
+    market: <Market state={state} onTrade={setTrade} />,
+    travel: <Travel state={state} dispatch={act} setTab={setTab} page={travelPage} setPage={setTravelPage} />,
+    people: <People state={state} dispatch={act} navigateMore={navigateMore} />,
+    more: <More state={state} dispatch={act} features={features} page={nav.more} setPage={setMorePage} sub={nav.sub} subToken={nav.token} />,
+  };
+  return <div className="app">
+    <Header state={state} onMenu={() => setMenu(true)} />
+    <main className="main">{screens[tab]}</main>
+    <div>
+      <Feed entries={state.log} />
+      {tab === "market" && <div className="action-bar one"><button className="btn primary" onClick={() => act({ type: "END_MARKET" })}>Finish Trading<small>Close this market visit · advance to {nextPartLabel(state)}</small></button></div>}
+      <Navigation tab={tab} setTab={setTab} features={features} />
+    </div>
+    {trade && <TradeModal state={state} productId={trade} dispatch={act} onClose={() => setTrade(null)} />}
+    {menu && <MenuModal state={state} dispatch={dispatch} onClose={() => setMenu(false)} onTitle={onTitle} />}
+    {state.run.openingPending && <OpeningModal dispatch={act} />}
+    {state.run.daySummary && state.run.status === "playing" && <DayModal summary={state.run.daySummary} dispatch={act} />}
+    {!state.run.daySummary && state.run.pendingOperationResult && <OperationResultModal result={state.run.pendingOperationResult} dispatch={act} />}
+    {!state.run.daySummary && !state.run.pendingOperationResult && state.run.pendingEvent && <EventModal event={state.run.pendingEvent} dispatch={act} />}
+    {!state.run.daySummary && !state.run.pendingOperationResult && state.run.pendingEncounter && <EncounterModal state={state} dispatch={act} />}
+    {state.run.status === "ended" && <EndModal state={state} onTitle={onTitle} />}
+    {result && <ActionResultOverlay result={result} onDismiss={() => setResult(null)} />}
+  </div>;
 }
 
 function App() {

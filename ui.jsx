@@ -846,8 +846,8 @@ function PopupBody({ text, flavor }) {
     expandedContent={flavor ? <p className="popup-flavor"><EntityText text={flavor} /></p> : null} />;
 }
 
-function Modal({ title, children, onClose }) {
-  return <div className="modal-backdrop"><div className="modal">
+function Modal({ title, children, onClose, className = "" }) {
+  return <div className={`modal-backdrop ${className ? `${className}-backdrop` : ""}`}><div className={`modal ${className}`}>
     <div className="modal-head"><h2>{title}</h2>{onClose && <button type="button" className="modal-close" aria-label="Close" onClick={onClose}>×</button>}</div>
     {children}
   </div></div>;
@@ -895,10 +895,15 @@ function EventModal({ event, dispatch }) {
 }
 function EncounterModal({ state, dispatch }) {
   const encounter = state.run.pendingEncounter;
-  return <Modal title={encounter.title}>
+  const loot = encounter.loot;
+  return <Modal title={encounter.title} className="encounter-modal">
     <PopupBody text={encounter.feedback || encounter.description} flavor={encounter.flavor} />
-    <div className="outcome-grid"><Outcome label="Your Health" value={state.player.health} /><Outcome label="Their resolve" value={encounter.enemyHealth} /></div>
-    {C.selectors.encounterChoices(state).map((choice) => <button className="btn full choice primary" key={choice.id} onClick={() => dispatch({ type: "RESOLVE_ENCOUNTER", choiceId: choice.id })}>{choice.label}<span>{choice.description}</span></button>)}
+    {encounter.resolved ? <>
+      {loot && <div className="encounter-loot"><span>Recovered</span><b>{loot.label}</b></div>}
+      <button className="btn full primary" onClick={() => dispatch({ type: "ACKNOWLEDGE_ENCOUNTER" })}>Continue the run<span className="action-copy">No additional time passes</span></button>
+    </> : <div className="encounter-choices">
+      {C.selectors.encounterChoices(state).map((choice) => <button className="btn full choice primary" key={choice.id} onClick={() => dispatch({ type: "RESOLVE_ENCOUNTER", choiceId: choice.id })}>{choice.label}<span>{choice.description}</span></button>)}
+    </div>}
   </Modal>;
 }
 function OperationResultModal({ result, dispatch }) {
@@ -1013,10 +1018,10 @@ function GameShell({ state, dispatch, onTitle }) {
     {trade && <TradeModal state={state} productId={trade} dispatch={act} onClose={() => setTrade(null)} />}
     {menu && <MenuModal state={state} dispatch={dispatch} onClose={() => setMenu(false)} onTitle={onTitle} />}
     {state.run.openingPending && <OpeningModal dispatch={act} />}
-    {state.run.daySummary && state.run.status === "playing" && <DayModal summary={state.run.daySummary} dispatch={act} marketVisible={state.market.visible} />}
-    {!state.run.daySummary && state.run.pendingOperationResult && <OperationResultModal result={state.run.pendingOperationResult} dispatch={act} />}
-    {!state.run.daySummary && !state.run.pendingOperationResult && state.run.pendingEvent && <EventModal event={state.run.pendingEvent} dispatch={act} />}
-    {!state.run.daySummary && !state.run.pendingOperationResult && state.run.pendingEncounter && <EncounterModal state={state} dispatch={act} />}
+    {state.run.pendingEncounter && <EncounterModal state={state} dispatch={act} />}
+    {!state.run.pendingEncounter && state.run.daySummary && state.run.status === "playing" && <DayModal summary={state.run.daySummary} dispatch={act} marketVisible={state.market.visible} />}
+    {!state.run.pendingEncounter && !state.run.daySummary && state.run.pendingOperationResult && <OperationResultModal result={state.run.pendingOperationResult} dispatch={act} />}
+    {!state.run.pendingEncounter && !state.run.daySummary && !state.run.pendingOperationResult && state.run.pendingEvent && <EventModal event={state.run.pendingEvent} dispatch={act} />}
     {state.run.status === "ended" && <EndModal state={state} onTitle={onTitle} />}
     {result && <ActionResultOverlay result={result} onDismiss={() => setResult(null)} />}
   </div>;

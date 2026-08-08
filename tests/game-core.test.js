@@ -230,6 +230,10 @@ test("Quick Score is available once per day and returns on a later day", () => {
   if (state.run.status === "playing") {
     state = C.reduceGame(state, { type: "ACKNOWLEDGE_OPERATION_RESULT" });
     assert.equal(C.selectors.robberyAvailability(state).available, false);
+    while (state.run.pendingEncounter && state.run.status === "playing") {
+      const choiceId = C.selectors.encounterChoices(state)[0].id;
+      state = C.reduceGame(state, { type: "RESOLVE_ENCOUNTER", choiceId });
+    }
     state.run.day = 2; state.run.slot = 0; state.player.cash = 50; state.base.storedCash = 0;
     assert.equal(C.selectors.robberyAvailability(state).available, true);
   }

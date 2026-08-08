@@ -308,3 +308,59 @@ test("every grid track is clamped so nowrap content cannot force horizontal scro
     assert.match(decls[decls.length - 1][1], /minmax\(0,/, `${selector} last declaration must clamp its tracks`);
   }
 });
+
+// --- v1.2 two-layer popup disclosure ----------------------------------------
+
+test("ExpandableMoreSection is a reusable, accessible, animated disclosure", () => {
+  assert.match(ui, /function ExpandableMoreSection\(\{ collapsedContent, expandedContent, moreLabel = "More", lessLabel = "Less"/);
+  assert.match(ui, /aria-expanded=\{open\} aria-controls=\{panelId\}/);
+  // A <button> gives Enter/Space activation without a keydown handler.
+  assert.match(ui, /<button type="button" className="more-toggle"/);
+  // Collapsing to nothing when there is no second layer keeps a bare "More"
+  // link off popups that have no lore to show.
+  assert.match(ui, /if \(!expandedContent\) return/);
+  assert.match(css, /\.more-toggle\{[^}]*min-height:44px/);
+  assert.match(css, /\.more-panel\{[^}]*transition:grid-template-rows 2\d\dms ease-out\}/);
+  assert.match(css, /\.more-panel\.open \.more-panel-inner\{[^}]*max-height:34dvh;overflow-y:auto/);
+  assert.match(css, /\.popup-flavor\{[^}]*font-style:italic/);
+});
+
+test("EntityTooltip opens per-entity recall from the name itself", () => {
+  assert.match(ui, /function EntityTooltip\(\{ entityId, displayText, tooltipContent, title \}\)/);
+  assert.match(ui, /aria-describedby=\{open \? cardId : undefined\}/);
+  assert.match(ui, /event\.key === "Escape"/);
+  assert.match(ui, /document\.addEventListener\("pointerdown", close\)/);
+  assert.match(ui, /role="dialog"/);
+  assert.match(css, /\.entity-chip\{/);
+  assert.match(css, /\.entity-card-close\{[^}]*min-height:44px/);
+  // The inline name keeps a 44px tap target through a transparent overlay.
+  assert.match(css, /\.entity-chip::after\{[^}]*width:max\(100%,44px\);height:44px\}/);
+});
+
+test("registered entity names become tappable once per text block", () => {
+  assert.match(ui, /C\.ENTITY_MATCH_ORDER/);
+  assert.match(ui, /C\.ENTITY_REGISTRY/);
+  assert.match(ui, /if \(entity && !seen\[id\]\)/);
+});
+
+test("popup bodies render the collapsed layer plus one optional More layer", () => {
+  assert.match(ui, /function PopupBody\(\{ text, flavor \}\)/);
+  for (const token of ["<PopupBody", "EntityText text={event.description}", "EntityText text={event.flavor}"]) assert.ok(ui.includes(token), token);
+  // The opening beat leads with the numbers and hides the arrival backstory.
+  assert.match(ui, /You owe \$1,200 by Day 7\. No negotiation\./);
+  assert.doesNotMatch(ui, /You came to Alaska to start over, stay briefly/);
+});
+
+test("run menu offers two actions plus a close control", () => {
+  const menu = ui.slice(ui.indexOf("function MenuModal"), ui.indexOf("function Feed"));
+  assert.equal((menu.match(/className="btn full/g) || []).length, 2);
+  assert.match(menu, /<Modal title="Run menu" onClose=\{onClose\}>/);
+  assert.match(ui, /className="modal-close"/);
+  assert.match(css, /\.modal-close\{[^}]*min-height:44px/);
+});
+
+test("player-facing modal copy carries no em dashes or vague intensifiers", () => {
+  const modalLayer = ui.slice(ui.indexOf("function Modal("), ui.indexOf("function Feed("));
+  assert.doesNotMatch(modalLayer, /[—–]/);
+  assert.doesNotMatch(modalLayer, /\b(really|very|truly|actually|basically|literally)\b/i);
+});

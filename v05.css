@@ -272,3 +272,44 @@
    values do not — "Presence" was ellipsizing to "Presen…" in a 90px tile. */
 .stat-tile.text .v{white-space:normal;overflow:visible;font-size:.8rem;line-height:1.15}
 @media(max-width:360px){.stat-tile.text .v{font-size:.68rem}}
+
+/* --- Two-layer popup disclosure -------------------------------------------
+   Popups render a short critical layer by default. `.more-panel` holds the
+   narrative that was cut from it, and `.entity-chip` opens per-character or
+   per-location recall inline. Both toggles keep a 44px tap target. */
+.popup-lead{margin:0 0 2px;color:#cfcfcf;line-height:1.45}
+.popup-flavor{margin:0;color:#9a9a9a;font-style:italic;line-height:1.45;border-left:3px solid var(--line);padding-left:10px}
+.expandable{display:block}
+.more-toggle{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 2px;background:none;border:0;color:var(--muted);font-family:var(--body,inherit);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;cursor:pointer}
+.more-toggle:hover,.more-toggle:focus-visible{color:var(--amber)}
+.more-toggle:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.more-chevron{width:0;height:0;border-left:5px solid currentColor;border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform 240ms ease-out}
+.more-chevron.open{transform:rotate(90deg)}
+.more-panel{display:grid;grid-template-rows:0fr;transition:grid-template-rows 240ms ease-out}
+.more-panel.open{grid-template-rows:1fr}
+.more-panel-inner{overflow:hidden;min-height:0}
+.more-panel:not(.open) .more-panel-inner{visibility:hidden}
+.more-panel.open .more-panel-inner{visibility:visible;max-height:34dvh;overflow-y:auto;padding-bottom:6px}
+@media(prefers-reduced-motion:reduce){.more-panel,.more-chevron{transition:none}}
+
+/* Entity recall: the name itself is the control. */
+.entity-wrap{position:relative;display:inline}
+.entity-chip{position:relative;display:inline;padding:0;background:none;border:0;color:inherit;font:inherit;font-weight:700;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px;text-decoration-color:var(--amber);cursor:pointer}
+/* An inline name cannot be 44px tall without breaking the paragraph, so the
+   tap target is a transparent overlay centred on the word. It spans the word
+   width or 44px, whichever is wider, and never changes layout. */
+.entity-chip::after{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:max(100%,44px);height:44px}
+.entity-chip:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.entity-chip.open{color:var(--amber)}
+.entity-card{position:absolute;z-index:60;top:calc(100% + 6px);left:0;width:min(272px,74vw);display:block;border:1px solid var(--line);border-left:3px solid var(--amber);background:#151515;box-shadow:0 10px 26px rgba(0,0,0,.75);padding:10px 11px}
+.entity-card.flip{left:auto;right:0}
+.entity-card-title{display:block;color:var(--amber);font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}
+.entity-card-body{display:block;margin-top:4px;color:#bbb;font-size:.78rem;font-style:normal;line-height:1.4}
+.entity-card-close{display:block;min-height:44px;width:100%;margin-top:4px;background:none;border:0;border-top:1px solid var(--line);color:var(--muted);font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;cursor:pointer}
+.entity-card-close:focus-visible{outline:2px solid var(--amber);outline-offset:-2px}
+
+.modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.modal-head h2{flex:1}
+.modal-close{flex:0 0 auto;min-width:44px;min-height:44px;margin:-8px -6px 0 0;background:none;border:0;color:var(--muted);font-size:1.5rem;line-height:1;cursor:pointer}
+.modal-close:hover,.modal-close:focus-visible{color:var(--amber)}
+.round-log{display:grid;gap:5px;margin:6px 0}

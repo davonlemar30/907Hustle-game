@@ -1,4 +1,4 @@
-const { useEffect, useReducer, useState } = React;
+const { useEffect, useMemo, useReducer, useRef, useState } = React;
 const C = window.GameCore;
 const money = (value) => `$${Math.round(value || 0)}`;
 const signedMoney = (value) => `${value >= 0 ? "+" : "−"}$${Math.abs(Math.round(value || 0))}`;
@@ -6,7 +6,7 @@ const areaOf = (state) => C.NEIGHBORHOODS.find((area) => area.id === state.world
 // Passive organization activity is already summarized into one compact log
 // line per crossed day (game-core's resolveSoldierOperations). Surface that
 // same line as a small report surface instead of building a second event
-// system — this keeps a single source of truth for "what happened".
+// system; this keeps a single source of truth for "what happened".
 const findEliReport = (state) => state.log.slice(0, 6).find((entry) => entry.text.startsWith("Eli's report:")) || null;
 function EliReportCard({ state }) {
   const report = findEliReport(state);
@@ -35,7 +35,12 @@ function TitleScreen({ saveInfo, onLoad, onNew }) {
         <button className="btn full primary title-button" disabled={!saveInfo.valid} onClick={onLoad}>Load Game<span className="action-copy">{saveInfo.valid ? "Resume the exact autosaved run" : "No valid v3 autosave found"}</span></button>
         <button className="btn full secondary title-button" onClick={onNew}>New Game<span className="action-copy">Start a fresh seven-day run</span></button>
         <button className="btn full ghost" aria-expanded={help} onClick={() => setHelp(!help)}>How to Play</button>
-        {help && <div className="how-to"><b>One week, four parts per day.</b><p>Buy and sell without advancing time while a market visit is open. Travel, closing the market, recovery, meetings, and major operations advance to the next part of day. Pay Dre, protect your Health, and decide what the operation is worth by the seventh night.</p></div>}
+        {help && <div className="how-to">
+          <b>One week, four parts per day.</b>
+          <ExpandableMoreSection
+            collapsedContent={<p>Trading inside an open market visit costs no time. Pay Dre $1,200 by Day 7, protect your Health, and decide what the operation is worth by the seventh night.</p>}
+            expandedContent={<p className="popup-flavor">Travel, closing the market, recovery, meetings, and major operations each advance you to the next part of day. The four parts are Morning, Afternoon, Evening, and Night.</p>} />
+        </div>}
       </div>
     </div>
   </div>;
@@ -212,7 +217,7 @@ function Destinations({ state, dispatch, setTab, onBack }) {
       const current = area.id === here;
       const known = knownOf[area.id] || current;
       const walking = area.id === "north_star_lot" && !covered && state.player.cash < 5;
-      const access = area.id === "airport_industrial" ? available.industrial : area.id === "downtown" ? available.busDowntown : { available: true, reason: covered ? "Your pass covers this ride." : walking ? "No fare left — you walk and lose 3 Health." : "$5 single ride." };
+      const access = area.id === "airport_industrial" ? available.industrial : area.id === "downtown" ? available.busDowntown : { available: true, reason: covered ? "Your pass covers this ride." : walking ? "No fare left. You walk and lose 3 Health." : "$5 single ride." };
       const fare = area.id === "north_star_lot" ? (covered ? "Pass covers it" : walking ? "$0 · −3 Health" : "$5") : area.id === "downtown" ? (covered ? "Pass covers it" : "$5") : "Route required";
       return <div className={`card destination-card${current ? " cleared-card" : ""}${!current && !access.available ? " locked" : ""}`} key={area.id}>
         <div className="card-title">{area.name}<small>{current ? "YOU ARE HERE" : known ? area.role.toUpperCase() : "UNVISITED"}</small></div>
@@ -346,14 +351,14 @@ function Soldiers({ state, dispatch, onBack }) {
   const controlledBlocks = C.SPENARD_BLOCKS.filter((block) => state.world.territoryBlocks[block.id].owner === "player");
   const policy = state.people.crew.eli.operationPolicy || "manual";
   const automated = policy !== "manual";
-  return <><PageHead title="Soldiers" sub="Anonymous manpower — capacity and assignment, not individual records" onBack={onBack} /><div className="scroll">
+  return <><PageHead title="Soldiers" sub="Anonymous manpower. Capacity and assignment only, with no individual records" onBack={onBack} /><div className="scroll">
     <div className="metric-row">
       <div className="metric-tile"><span className="k">Active</span><span className="v">{active.length}/{capacity}</span></div>
       <div className="metric-tile"><span className="k">Assigned</span><span className="v">{active.length - unassigned.length}</span></div>
       <div className="metric-tile"><span className="k">Available</span><span className="v">{unassigned.length}</span></div>
     </div>
     <button className="btn full primary" disabled={!recruit.available} onClick={() => dispatch({ type: "RECRUIT_SOLDIER" })}>Recruit a soldier · {money(C.SOLDIER_RECRUIT_COST)}<span className="action-copy">{recruit.available ? "Uses one part of day" : recruit.reason}</span></button>
-    {unassigned.length > 0 && automated && <p className="muted compact">Eli is running the {C.ELI_OPERATION_POLICIES[policy]?.label || "Balanced"} order — available soldiers are placed automatically overnight, no action needed.</p>}
+    {unassigned.length > 0 && automated && <p className="muted compact">Eli is running the {C.ELI_OPERATION_POLICIES[policy]?.label || "Balanced"} order. Available soldiers are placed automatically overnight, no action needed.</p>}
     {unassigned.length > 0 && !automated && <div className="section-label">Assign to a block · Manual policy</div>}
     {unassigned.length > 0 && !automated && unassigned.map((soldier) => <div className="card" key={soldier.id}><div className="card-title">Unassigned soldier<small>Hired Day {soldier.hiredDay}</small></div>{controlledBlocks.length ? <div className="btn-row">{controlledBlocks.map((block) => { const avail = C.selectors.soldierAssignAvailability(state, soldier.id, block.id); return <button className="btn secondary" key={block.id} disabled={!avail.available} onClick={() => dispatch({ type: "ASSIGN_SOLDIER", soldierId: soldier.id, blockId: block.id })}>{block.name}<span className="action-copy">{avail.available ? "Free · no time cost" : avail.reason}</span></button>; })}</div> : <p className="muted compact">Claim a block in Territory before you can post anyone.</p>}</div>)}
   </div></>;
@@ -401,7 +406,7 @@ function DealerDetail({ state, dispatch, dealer, onBack }) {
 function People({ state, dispatch, navigateMore }) {
   const [page, setPage] = useState("root");
   if (page.startsWith("dealer:")) { const dealer = C.DEALERS.find((item) => item.id === page.split(":")[1]); return <DealerDetail state={state} dispatch={dispatch} dealer={dealer} onBack={() => setPage("dealers")} />; }
-  if (page === "dealers") return <><PageHead title="Street Contacts" sub="Corners you can buy from, ask, or take" onBack={() => setPage("root")} /><div className="scroll">{C.DEALERS.map((dealer) => { const record = C.selectors.dealerRecord(state, dealer.id); return <CategoryCard key={dealer.id} title={dealer.name} status={C.selectors.dealerStandingLabel(record)} description={record.known ? `Works ${dealer.where}. Fair business, a straight answer, or a stickup — he remembers which one you chose.` : "Somebody on this block is holding, but you have not met them yet."} disabled={!record.known} onClick={() => setPage(`dealer:${dealer.id}`)} />; })}</div></>;
+  if (page === "dealers") return <><PageHead title="Street Contacts" sub="Corners you can buy from, ask, or take" onBack={() => setPage("root")} /><div className="scroll">{C.DEALERS.map((dealer) => { const record = C.selectors.dealerRecord(state, dealer.id); return <CategoryCard key={dealer.id} title={dealer.name} status={C.selectors.dealerStandingLabel(record)} description={record.known ? `Works ${dealer.where}. Fair business, a straight answer, or a stickup. He remembers which one you chose.` : "Somebody on this block is holding, but you have not met them yet."} disabled={!record.known} onClick={() => setPage(`dealer:${dealer.id}`)} />; })}</div></>;
   if (page.startsWith("crew:")) { const person = C.CREW.find((item) => item.id === page.split(":")[1]); return <CrewDetail state={state} dispatch={dispatch} person={person} onBack={() => setPage("crew")} />; }
   if (page.startsWith("person:")) {
     const id = page.split(":")[1];
@@ -526,7 +531,7 @@ function DistrictControlPage({ state, dispatch, onBack }) {
     <div className="district-summary">
       <div className="card-title">District Control<small>Spenard</small></div>
       <div className="tier">{district.label}</div>
-      <p className="compact muted">{district.blocks}/{C.SPENARD_BLOCKS.length} blocks held{district.capstone ? " · capstone requirement met" : ""}. Strategic dominance, not another income source — blocks already pay for themselves.</p>
+      <p className="compact muted">{district.blocks}/{C.SPENARD_BLOCKS.length} blocks held{district.capstone ? " · capstone requirement met" : ""}. Strategic dominance on top of income; the blocks already pay for themselves.</p>
       <div className="district-meter"><span style={{ width: `${Math.min(100, Math.round((district.blocks / C.SPENARD_BLOCKS.length) * 100))}%` }} /></div>
     </div>
     <div className="section-label">Other Districts</div>
@@ -624,7 +629,7 @@ function DebtPage({ state, dispatch, onBack }) {
   function pay() { if (preview.breaksReserve && !window.confirm(`This leaves less than ${money(C.WORKING_CAPITAL_RESERVE)} in working cash. Pay it anyway?`)) return; dispatch({ type: "PAY_DEBT", amount: preview.amount }); setAmount(0); }
   const fixedTotal = state.run.premise === "fresh_arrival" ? 1200 : state.lender.principal + state.lender.interest;
   const daysLeft = state.lender.dueDay - state.run.day;
-  const debtUrgency = !state.lender.balance ? null : daysLeft > 1 ? `Due Day ${state.lender.dueDay}` : daysLeft === 1 ? "1 day left" : daysLeft === 0 ? "Due tonight" : "Overdue — enforcement active";
+  const debtUrgency = !state.lender.balance ? null : daysLeft > 1 ? `Due Day ${state.lender.dueDay}` : daysLeft === 1 ? "1 day left" : daysLeft === 0 ? "Due tonight" : "Overdue. Enforcement active";
   return <><PageHead title="Debt & Obligations" sub="What you owe and what you can do about it" onBack={onBack} /><div className="scroll">
     <div className={`card debt-card${daysLeft <= 0 && state.lender.balance > 0 ? " warning-card" : ""}`}>
       <div className="debt-kicker">Debt{debtUrgency ? ` · ${debtUrgency}` : ""}</div>
@@ -633,7 +638,7 @@ function DebtPage({ state, dispatch, onBack }) {
     <div className="card">
       <div className="debt-meta"><span>Lender: {state.lender.name}</span><span>{state.lender.relationship}</span></div>
       <div className="debt-meta"><span>Principal {money(state.lender.principal)} · fixed total {money(fixedTotal)}</span></div>
-      {state.lender.collectorTier > 0 && <p className="warn compact">Collector enforcement active — Tier {state.lender.collectorTier}. Interest is running {Math.round((state.lender.interestMultiplier - 1) * 100)}% higher.</p>}
+      {state.lender.collectorTier > 0 && <p className="warn compact">Collector enforcement active. Tier {state.lender.collectorTier}. Interest is running {Math.round((state.lender.interestMultiplier - 1) * 100)}% higher.</p>}
     </div>
     {state.lender.balance > 0 && <div className="card">
       <div className="payment-buttons"><button className="btn secondary" onClick={() => add(25)}>+$25</button><button className="btn secondary" onClick={() => add(50)}>+$50</button><button className="btn secondary" onClick={() => add(100)}>+$100</button><button className="btn secondary" onClick={() => setAmount(safe)}>Safe Maximum</button><button className="btn secondary" onClick={() => setAmount(preview.maximum)}>Pay Full</button>{state.stats.streetRead.level >= 3 && <button className="btn secondary" onClick={() => setAmount(Math.min(state.lender.balance, Math.max(25, Math.floor(safe / Math.max(1, 8 - state.run.day)))))}>Recommended</button>}</div>
@@ -653,7 +658,7 @@ function FinancialRisk({ state, openSafehouse }) {
       <div className="metric-tile"><span className="k">Police Heat</span><span className="v">{state.player.heat}/15 · {heat.label}</span></div>
       <div className="metric-tile dirty"><span className="k">Dirty Exposure</span><span className="v">{money(state.player.dirtyCash)}</span></div>
     </div>
-    <div className="card"><div className="card-title">What builds it</div><p className="compact muted">Financial Heat rises when dirty cash pays for things that leave a record — property, upgrades, and large legitimate purchases. Laundering first, or paying with clean cash, keeps the paper trail quiet.</p></div>
+    <div className="card"><div className="card-title">What builds it</div><p className="compact muted">Financial Heat rises when dirty cash pays for things that leave a record: property, upgrades, and large legitimate purchases. Laundering first, or paying with clean cash, keeps the paper trail quiet.</p></div>
     <div className="card"><div className="card-title">Protected cash<small>{money(state.base.storedCash + state.home.storedCash)}</small></div><p className="compact muted">Cash held at the garage or the spare room stays out of reach during raids and stickups.</p><button className="btn full secondary" disabled={!state.base.controlled} onClick={openSafehouse}>Manage protected cash in Safehouse<span className="action-copy">{state.base.controlled ? "No time cost to open the garage list" : "Lease North Star Garage first"}</span></button></div>
   </div>;
 }
@@ -740,8 +745,113 @@ function More({ state, dispatch, features, page, setPage, sub, subToken }) {
   </div></>;
 }
 
-function Modal({ title, children }) { return <div className="modal-backdrop"><div className="modal"><h2>{title}</h2>{children}</div></div>; }
-function OpeningModal({ dispatch }) { return <Modal title="A Spare Room and Seven Days"><p>You came to Alaska to start over, stay briefly with your sister Yalonda, and find work worth building on. She and John can give you a spare room, basic food, and one free week—not money. John, a former Anchorage officer, introduced you to Dre after warning that his help comes with sharp edges. Dre handed you $1,000. The fixed note says $1,200 by Day 7. No negotiation, no product, no local name. You begin this Morning at their home with several honest and dishonest ways forward. The city does not know you yet.</p><button className="btn full primary" onClick={() => dispatch({ type: "DISMISS_OPENING" })}>Choose how the first Morning goes<span className="action-copy">No time passes</span></button></Modal>; }
+// --- Shared two-layer disclosure components ---------------------------------
+// Popups render one layer by default: the mechanical text a player needs right
+// now, under 40 words. Everything cut from that layer stays reachable through
+// one of two opt-in surfaces, and both are usable anywhere, not only in modals.
+//
+//   ExpandableMoreSection: situational backstory and atmosphere that belongs
+//     to the scene rather than to any one character or place.
+//   EntityTooltip / EntityText: recall for a named person or location,
+//     attached to the name where it appears in the collapsed text.
+let disclosureSeq = 0;
+function useDomId(prefix) { const [id] = useState(() => `${prefix}-${++disclosureSeq}`); return id; }
+
+function ExpandableMoreSection({ collapsedContent, expandedContent, moreLabel = "More", lessLabel = "Less", className }) {
+  const [open, setOpen] = useState(false);
+  const panelId = useDomId("more-panel");
+  if (!expandedContent) return <div className={className}>{collapsedContent}</div>;
+  return <div className={`expandable${className ? ` ${className}` : ""}`}>
+    {collapsedContent}
+    <button type="button" className="more-toggle" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(!open)}>
+      <span className={`more-chevron${open ? " open" : ""}`} aria-hidden="true" />{open ? lessLabel : moreLabel}
+    </button>
+    <div className={`more-panel${open ? " open" : ""}`} id={panelId} role="region" aria-label={open ? lessLabel : moreLabel}>
+      <div className="more-panel-inner">{expandedContent}</div>
+    </div>
+  </div>;
+}
+
+// Tap target for the name itself, plus the card it opens. The card flips its
+// horizontal anchor when opening left-aligned would push it off screen, so it
+// stays inside the modal on a phone.
+function EntityTooltip({ entityId, displayText, tooltipContent, title }) {
+  const [open, setOpen] = useState(false);
+  const [flip, setFlip] = useState(false);
+  const cardId = useDomId(`entity-${entityId}`);
+  const rootRef = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (event) => { if (!rootRef.current || !rootRef.current.contains(event.target)) setOpen(false); };
+    const onKey = (event) => { if (event.key === "Escape") setOpen(false); };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", onKey);
+    const card = rootRef.current && rootRef.current.querySelector(".entity-card");
+    if (card) setFlip(card.getBoundingClientRect().right > window.innerWidth - 8);
+    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+  return <span className="entity-wrap" ref={rootRef}>
+    <button type="button" className={`entity-chip${open ? " open" : ""}`} aria-expanded={open} aria-controls={cardId}
+      aria-describedby={open ? cardId : undefined} onClick={() => setOpen(!open)}>{displayText}</button>
+    {open && <span className={`entity-card${flip ? " flip" : ""}`} id={cardId} role="dialog" aria-label={title}>
+      <b className="entity-card-title">{title}</b>
+      <span className="entity-card-body">{tooltipContent}</span>
+      <button type="button" className="entity-card-close" onClick={() => setOpen(false)}>Close</button>
+    </span>}
+  </span>;
+}
+
+// Wraps the first mention of each registered entity in a tappable EntityTooltip
+// and leaves the rest of the string alone. Aliases are matched longest-first so
+// "Rook Mercer" wins over "Rook".
+const ENTITY_PATTERN = new RegExp(`\\b(${C.ENTITY_MATCH_ORDER.map((entry) => entry.alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`, "g");
+const ENTITY_BY_ALIAS = C.ENTITY_MATCH_ORDER.reduce((map, entry) => { map[entry.alias] = entry.id; return map; }, {});
+function EntityText({ text }) {
+  return useMemo(() => {
+    if (!text) return null;
+    const seen = {};
+    const nodes = [];
+    let last = 0;
+    ENTITY_PATTERN.lastIndex = 0;
+    let match = ENTITY_PATTERN.exec(text);
+    while (match) {
+      const id = ENTITY_BY_ALIAS[match[1]];
+      const entity = C.ENTITY_REGISTRY[id];
+      if (entity && !seen[id]) {
+        seen[id] = true;
+        if (match.index > last) nodes.push(text.slice(last, match.index));
+        nodes.push(<EntityTooltip key={`${id}-${match.index}`} entityId={id} displayText={match[1]} title={entity.title} tooltipContent={entity.text} />);
+        last = match.index + match[1].length;
+      }
+      match = ENTITY_PATTERN.exec(text);
+    }
+    if (last < text.length) nodes.push(text.slice(last));
+    return nodes;
+  }, [text]);
+}
+
+// Standard popup body: collapsed critical text with entity names made tappable,
+// and the cut narrative behind one "More" toggle.
+function PopupBody({ text, flavor }) {
+  return <ExpandableMoreSection
+    collapsedContent={<p className="popup-lead"><EntityText text={text} /></p>}
+    expandedContent={flavor ? <p className="popup-flavor"><EntityText text={flavor} /></p> : null} />;
+}
+
+function Modal({ title, children, onClose }) {
+  return <div className="modal-backdrop"><div className="modal">
+    <div className="modal-head"><h2>{title}</h2>{onClose && <button type="button" className="modal-close" aria-label="Close" onClick={onClose}>×</button>}</div>
+    {children}
+  </div></div>;
+}
+function OpeningModal({ dispatch }) {
+  return <Modal title="A Spare Room and Seven Days">
+    <PopupBody
+      text="Yalonda gave you one week and a spare room. Dre gave you $1,000. You owe $1,200 by Day 7. No negotiation. The city does not know you yet. Make it count."
+      flavor="You came to Alaska to start over. Your sister and her husband John, a former Anchorage officer, connected you with Dre and warned you first that his help comes with sharp edges. The room and the food are free; the money is not. You have honest and dishonest paths forward from their home this Morning." />
+    <button className="btn full primary" onClick={() => dispatch({ type: "DISMISS_OPENING" })}>Choose how the first Morning goes<span className="action-copy">No time passes</span></button>
+  </Modal>;
+}
 function TradeModal({ state, productId, dispatch, onClose }) {
   const [mode, setMode] = useState("buy"); const [qty, setQty] = useState(1); const product = C.PRODUCTS.find((item) => item.id === productId); const market = state.world.markets[state.world.currentNeighborhoodId]; const item = state.player.inventory[productId]; const prices = C.selectors.tradeUnitPrices(state, productId); const maxBuy = Math.min(market.availability[productId], C.selectors.cargoCapacity(state) - C.selectors.cargoUsed(state), Math.floor(state.player.cash / prices.buy)); const max = mode === "buy" ? maxBuy : item.qty; const selected = Math.max(0, Math.min(qty, max)); const projection = C.selectors.tradeProjection(state, productId, selected, mode); const resultIsProfit = projection.profitLoss >= 0;
   return <Modal title={`${product.name} trade`}><p>Prices stay locked until you end this market visit.</p><div className="btn-row"><button className={`btn ${mode === "buy" ? "good-btn" : "secondary"}`} onClick={() => { setMode("buy"); setQty(1); }}>Buy</button><button className={`btn ${mode === "sell" ? "primary" : "secondary"}`} onClick={() => { setMode("sell"); setQty(1); }}>Sell</button></div><div className="trade-stats"><div className="trade-stat"><small>Unit price</small><b>{money(projection.unitPrice)}</b></div><div className="trade-stat"><small>Maximum</small><b>{max}</b></div></div><div className="trade-projection" aria-live="polite">{mode === "buy" ? <><Outcome label="Total cost" value={money(projection.purchaseCost)} /><Outcome label="Cash after" value={money(projection.cashAfter)} /><Outcome label="Cargo after" value={`${projection.cargoAfter}/${projection.cargoCapacity}`} />{projection.localContext.available && <div className="trade-context"><span>Recent local context</span><b>{projection.localContext.label}</b></div>}</> : <><Outcome label="Revenue" value={money(projection.revenue)} /><Outcome label="Cost basis" value={money(projection.costBasis)} /><div className={`trade-result ${resultIsProfit ? "profit" : "loss"}`}><span>{resultIsProfit ? "Profit" : "Loss"}</span><b>{signedMoney(projection.profitLoss)}</b></div><Outcome label="Cash after" value={money(projection.cashAfter)} /></>}</div><div className="qty"><button className="btn secondary qty-wide" onClick={() => setQty(Math.max(1, selected - 5))}>−5</button><button className="btn secondary" onClick={() => setQty(Math.max(1, selected - 1))}>−</button><input aria-label="Trade quantity" type="number" min="1" max={max} value={selected} onChange={(event) => setQty(Number(event.target.value))} /><button className="btn secondary" onClick={() => setQty(Math.min(max, selected + 1))}>+</button><button className="btn secondary" onClick={() => setQty(Math.min(max, selected + 5))}>+5</button><button className="btn secondary" onClick={() => setQty(max)}>MAX</button></div><div className="btn-row trade-confirm"><button className="btn secondary" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!selected} onClick={() => { dispatch({ type: mode === "buy" ? "BUY" : "SELL", productId, qty: selected }); onClose(); }}>{mode} {selected}</button></div></Modal>;
@@ -761,12 +871,50 @@ function CharacterCreation({ dispatch }) {
     <button className="edge-card" onClick={() => dispatch({ type: "START_RUN", streetName })}><b>Start from the Bottom</b><span>Six equal attributes. No edge. No title. Every activity remains open.</span><small>Strength · Endurance · Reflexes · Presence · Insight · Discipline</small></button>
   </div></div>;
 }
-function EventModal({ event, dispatch }) { return <Modal title={event.title}><div className="outcome-grid"><Outcome label="Who" value={event.who} /><Outcome label="Where" value={event.where} /></div><p>{event.description}</p><p className="warn"><b>Stakes:</b> {event.stakes}</p>{event.choices.map((choice, index) => <button className="btn full choice secondary" key={choice.label} onClick={() => dispatch({ type: "RESOLVE_EVENT", choiceIndex: index })}>{choice.label}<span>{choice.preview}</span></button>)}</Modal>; }
-function EncounterModal({ state, dispatch }) { const encounter = state.run.pendingEncounter; return <Modal title={encounter.title}><p>{encounter.feedback || encounter.description}</p><div className="outcome-grid"><Outcome label="Your Health" value={state.player.health} /><Outcome label="Their resolve" value={encounter.enemyHealth} /></div>{C.selectors.encounterChoices(state).map((choice) => <button className="btn full choice primary" key={choice.id} onClick={() => dispatch({ type: "RESOLVE_ENCOUNTER", choiceId: choice.id })}>{choice.label}<span>{choice.description}</span></button>)}</Modal>; }
-function OperationResultModal({ result, dispatch }) { return <Modal title={result.title}><p>{result.summary}</p>{result.rounds?.map((round) => <div className="card compact" key={round.round}>Round {round.round}: Crew {round.attackTotal} vs Rook {round.defenseTotal} — <b>{round.winner === "player" ? "crew wins" : "Rook wins"}</b></div>)}<div className="recap">{result.effects.join(" · ")}</div><button className="btn full primary" onClick={() => dispatch({ type: "ACKNOWLEDGE_OPERATION_RESULT" })}>Continue the run</button></Modal>; }
+// Collapsed layer is the description alone. Who, Where, Stakes, and the cut
+// backstory all sit behind "More" so the default view stays under 40 words and
+// the choice buttons stay above the fold on a phone.
+function EventModal({ event, dispatch }) {
+  const detail = <>
+    <div className="outcome-grid"><Outcome label="Who" value={event.who} /><Outcome label="Where" value={event.where} /></div>
+    <p className="warn"><b>Stakes:</b> {event.stakes}</p>
+    {event.flavor && <p className="popup-flavor"><EntityText text={event.flavor} /></p>}
+  </>;
+  return <Modal title={event.title}>
+    <ExpandableMoreSection collapsedContent={<p className="popup-lead"><EntityText text={event.description} /></p>} expandedContent={detail} />
+    {event.choices.map((choice, index) => <button className="btn full choice secondary" key={choice.label} onClick={() => dispatch({ type: "RESOLVE_EVENT", choiceIndex: index })}>{choice.label}<span>{choice.preview}</span></button>)}
+  </Modal>;
+}
+function EncounterModal({ state, dispatch }) {
+  const encounter = state.run.pendingEncounter;
+  return <Modal title={encounter.title}>
+    <PopupBody text={encounter.feedback || encounter.description} flavor={encounter.flavor} />
+    <div className="outcome-grid"><Outcome label="Your Health" value={state.player.health} /><Outcome label="Their resolve" value={encounter.enemyHealth} /></div>
+    {C.selectors.encounterChoices(state).map((choice) => <button className="btn full choice primary" key={choice.id} onClick={() => dispatch({ type: "RESOLVE_ENCOUNTER", choiceId: choice.id })}>{choice.label}<span>{choice.description}</span></button>)}
+  </Modal>;
+}
+function OperationResultModal({ result, dispatch }) {
+  const rounds = result.rounds?.length ? <div className="round-log">{result.rounds.map((round) => <div className="card compact" key={round.round}>Round {round.round}: Crew {round.attackTotal} vs Rook {round.defenseTotal} · <b>{round.winner === "player" ? "crew wins" : "Rook wins"}</b></div>)}</div> : null;
+  return <Modal title={result.title}>
+    <ExpandableMoreSection collapsedContent={<p className="popup-lead"><EntityText text={result.summary} /></p>} expandedContent={rounds} moreLabel="Round detail" lessLabel="Hide rounds" />
+    <div className="recap">{result.effects.join(" · ")}</div>
+    <button className="btn full primary" onClick={() => dispatch({ type: "ACKNOWLEDGE_OPERATION_RESULT" })}>Continue the run</button>
+  </Modal>;
+}
 function DayModal({ summary, dispatch }) { return <Modal title={`End of Day ${summary.day}`}><p>The market closes. Wages, territory income, debt, and rival pressure have all moved.</p><div className="outcome-grid"><Outcome label="Operation Score" value={summary.operationScore} /><Outcome label="Net worth" value={money(summary.netWorth)} /><Outcome label="Debt" value={money(summary.debt)} /><Outcome label="Heat / Health" value={`${summary.heat} / ${summary.health}`} /></div><button className="btn full primary" onClick={() => dispatch({ type: "DISMISS_DAY_SUMMARY" })}>Start Day {summary.day + 1}</button></Modal>; }
-function EndModal({ state, onTitle }) { const summary = C.selectRunSummary(state); return <Modal title={summary.endingLabel}><p>Seven days as {summary.streetName}, known now as {summary.streetIdentityLabel}. This is the operation—and the damage—that survived.</p><div className="outcome-grid"><Outcome label="Operation Score" value={summary.operationScore} /><Outcome label="Net worth" value={money(summary.netWorth)} /><Outcome label="Territories" value={`${summary.territories.filter((item) => item.owner === "player").length}/3`} /><Outcome label="Takeovers" value={`${summary.takeovers.wins}W / ${summary.takeovers.losses}L`} /><Outcome label="Debt" value={money(summary.debt)} /><Outcome label="Crew" value={summary.crew.length} /></div><div className="recap">Dre: {summary.lenderRelationship}. Rook: {summary.rivalRelationship}. {summary.majorDecisions.slice(-3).join(" ")}</div><button className="btn full primary" onClick={onTitle}>Return to title</button></Modal>; }
-function MenuModal({ state, dispatch, onClose, onTitle }) { function restart() { if (!window.confirm("Restart this run? The current autosave will be replaced after you confirm.")) return; dispatch({ type: "NEW_RUN", seed: Date.now() }); onClose(); } return <Modal title="Run menu"><p>907Hustle v1.1 autosaves active play to <b>{C.SAVE_KEY}</b>.</p><button className="btn full primary" onClick={onTitle}>Return to Title</button><button className="btn full secondary choice" onClick={restart}>Restart Run<span>Creates a new seed and returns to Street Name entry.</span></button><button className="btn full secondary choice" onClick={onClose}>Close Menu</button><p className="muted">Autosave active · Seed {state.run.seed} · Core v{state.version} · {C.SAVE_KEY}</p></Modal>; }
+function EndModal({ state, onTitle }) { const summary = C.selectRunSummary(state); return <Modal title={summary.endingLabel}><p className="popup-lead">Seven days as {summary.streetName}, known now as {summary.streetIdentityLabel}. This is the operation that survived, and the damage that came with it.</p><div className="outcome-grid"><Outcome label="Operation Score" value={summary.operationScore} /><Outcome label="Net worth" value={money(summary.netWorth)} /><Outcome label="Territories" value={`${summary.territories.filter((item) => item.owner === "player").length}/3`} /><Outcome label="Takeovers" value={`${summary.takeovers.wins}W / ${summary.takeovers.losses}L`} /><Outcome label="Debt" value={money(summary.debt)} /><Outcome label="Crew" value={summary.crew.length} /></div><div className="recap">Dre: {summary.lenderRelationship}. Rook: {summary.rivalRelationship}. {summary.majorDecisions.slice(-3).join(" ")}</div><button className="btn full primary" onClick={onTitle}>Return to title</button></Modal>; }
+// Two actions plus a close control. Save-slot internals sit behind "More".
+function MenuModal({ state, dispatch, onClose, onTitle }) {
+  function restart() { if (!window.confirm("Restart this run? The current autosave will be replaced after you confirm.")) return; dispatch({ type: "NEW_RUN", seed: Date.now() }); onClose(); }
+  return <Modal title="Run menu" onClose={onClose}>
+    <ExpandableMoreSection
+      collapsedContent={<p className="popup-lead">Autosave is on. This run saves to your browser after every action.</p>}
+      expandedContent={<p className="popup-flavor">907Hustle v1.1 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
+      moreLabel="Save detail" lessLabel="Hide detail" />
+    <button className="btn full primary" onClick={onTitle}>Return to Title</button>
+    <button className="btn full secondary choice" onClick={restart}>Restart Run<span>Creates a new seed and returns to Street Name entry.</span></button>
+  </Modal>;
+}
 // One line by default. The full log is still one tap away, but it no longer
 // costs 88px of vertical space on every screen in the game.
 function Feed({ entries }) {

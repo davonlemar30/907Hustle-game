@@ -48,7 +48,7 @@ test("pre-market v1.1 copy does not teach or advertise the hidden drug market", 
   assert.doesNotMatch(ui, /market trading remains the stronger long-term plan/);
   assert.doesNotMatch(ui, /Trading inside an open market visit costs no time/);
   assert.match(ui, /legal work remains the safer long-term plan/);
-  assert.match(ui, /purpose=\{state\.market\.visible \?/);
+  assert.match(ui, /Jobs, wandering, and people you meet through work/);
   assert.match(ui, /\{marketVisible && <div className="card"><h2>Market visits<\/h2>/);
 });
 

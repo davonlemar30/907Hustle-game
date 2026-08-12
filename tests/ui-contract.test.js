@@ -25,7 +25,14 @@ test("progressive primary navigation leads with Home and keeps Boost after Marke
   assert.match(css, /grid-template-columns:repeat\(5,1fr\)/);
 });
 test("Travel exposes the fresh-arrival activity and access model", () => {
-  for (const token of ["Yalonda and John's Home", "Ship Creek Freight", "Explore Spenard", "Spenard Community Gym", "Informal Game", "People Mover", "North Star Garage Listing", "Auto Lot", "Gun Counter"]) assert.ok(ui.includes(token), token);
+  for (const token of ["Yalonda and John's Home", "Explore Spenard", "Spenard Jobs", "Spenard Community Gym", "Informal Game", "People Mover", "North Star Garage Listing", "Auto Lot", "Gun Counter"]) assert.ok(ui.includes(token), token);
+});
+
+test("Spenard exploration is a discoverable Jobs, Wander, and Contacts submenu", () => {
+  for (const token of ["No work found yet", "Wander to look around", 'type: "WANDER_SPENARD"', "Work you found by learning the neighborhood", "Choose a shift approach", "People you met through work"]) assert.ok(ui.includes(token), token);
+  assert.match(ui, /contacts\.length > 0 && <MenuRow title="Contacts"/);
+  assert.doesNotMatch(ui, /onClick=\{\(\) => dispatch\(\{ type: "EXPLORE_SPENARD" \}\)\}/);
+  assert.doesNotMatch(ui, /PlaceAction title="Ship Creek Freight"/);
 });
 test("HUD shows three primary values and a one-tap status drawer", () => {
   for (const token of ['label="Day / Time"', 'label="Cash"', 'label="Heat"', "status-toggle", 'Chip label="Debt"', "Crew Power"]) assert.ok(ui.includes(token), token);

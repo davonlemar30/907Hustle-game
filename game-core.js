@@ -233,6 +233,41 @@
   ];
   const BOOST_TARGET_BY_ID = Object.fromEntries(BOOST_TARGETS.map((target) => [target.id, target]));
 
+  const JOB_RANK_THRESHOLDS = [4, 8, 14];
+  const JOB_APPROACHES = {
+    work_hard: { id: "work_hard", label: "Work Hard", xp: 2, relationship: 0.5, payMultiplier: 1.10, health: -2, description: "+10% pay · 2 XP · −2 Health" },
+    socialize: { id: "socialize", label: "Socialize", xp: 1, relationship: 1, payMultiplier: 1, health: 0, description: "+1 relationship · 1 XP" },
+    take_it_easy: { id: "take_it_easy", label: "Take It Easy", xp: 0, relationship: 0.5, payMultiplier: 1, health: 1, description: "+1 Health · no XP" },
+    learn_job: { id: "learn_job", label: "Learn the Job", xp: 1.5, relationship: 0.5, payMultiplier: 1, health: 0, description: "1.5 XP · learn one workplace detail" },
+  };
+  const SPENARD_JOBS = [
+    {
+      id: "wash_go", name: "Wash & Go Attendant", pay: [40, 60], slots: [0, 1, 2, 3], scheduled: true, risk: "None",
+      contact: { id: "lena", name: "Lena Aguchak", introduction: "Lena Aguchak, a late-forties Yup'ik manager, shows you the towel shelves. She is saving to open her own cleaning business." },
+      discovery: "You notice a 'Help Wanted' sign taped to the Wash & Go window.",
+      details: ["Lena says the quiet hour starts after the school buses clear Spenard.", "The change machine jams when the temperature drops below zero."],
+    },
+    {
+      id: "night_owl", name: "Night Owl counter shift", pay: [55, 75], slots: [2], scheduled: true, risk: "None",
+      contact: { id: "mara", name: "Mara Velez", introduction: "Mara points out the closing list, the regulars, and which register sticks. Then she hands you an apron." },
+      discovery: "The Night Owl has a cardboard sign by the register: 'Counter help needed, evenings.'",
+      details: ["Mara says the coffee rush ends ten minutes after the last airport shift bus.", "The owner counts cigarettes before cash and checks the back door twice."],
+    },
+    {
+      id: "delivery", name: "Delivery run", pay: [60, 120], slots: [0, 1, 2, 3], scheduled: false, risk: "None",
+      contact: { id: "minh", name: "Minh Tran", introduction: "Minh Tran, a mid-thirties Vietnamese Alaskan dispatcher, keeps the courier route moving with two phones and a paper map." },
+      discovery: "Guy loading a van on Spenard Road asks if you drive. Says he needs runners.",
+      details: ["Minh marks apartment entrances that stay clear when the snow berms narrow the road.", "The airport hotels accept deliveries fastest between housekeeping rounds."],
+    },
+    {
+      id: "ship_creek", name: "Ship Creek Freight", pay: [110, 140], slots: [0], scheduled: true, risk: "None",
+      contact: { id: "marcus", name: "Marcus Bell", introduction: "Marcus Bell, an early-forties Black Alaskan loading foreman, checks your gloves, points at the freight line, and says payday is at the door." },
+      discovery: "Flyer stapled to a phone pole: 'FREIGHT HELP NEEDED. Same day pay. AM only.'",
+      details: ["Marcus says the first truck after sunrise is the one that decides whether the dock falls behind.", "The yard office keeps a short list of workers who show up before the gate opens."],
+    },
+  ];
+  const SPENARD_JOB_BY_ID = Object.fromEntries(SPENARD_JOBS.map((job) => [job.id, job]));
+
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
   // Dirty/clean cash is a bookkeeping layer on top of the single pervasive
   // player.cash pool every existing reducer already reads/writes directly.
@@ -514,8 +549,8 @@
     BUY: "trade", SELL: "trade", END_MARKET: "trade",
     VISIT_NIGHT_OWL: "social", RECRUIT_CREW: "social", ASSIGN_CREW: "social", PROMOTE_LIEUTENANT: "social", PAY_DEBT: "social", RECRUIT_SOLDIER: "social",
     HEAL: "heal", HEAL_AT_BASE: "heal", LAY_LOW: "rest", SLEEP_HOME: "rest",
-    WORK_SHIFT: "work", SHOPLIFT: "work", BOOST: "work", ASK_BOOST_WINDOW: "social",
-    EXPLORE_SPENARD: "explore", VISIT_BASE: "explore", LEASE_GARAGE: "explore", TRAIN_ATTRIBUTE: "explore", BUY_GEAR: "explore", UPGRADE_BASE: "explore", LAUNDER_CASH: "explore",
+    WORK_SHIFT: "work", WORK_JOB: "work", SHOPLIFT: "work", BOOST: "work", ASK_BOOST_WINDOW: "social",
+    EXPLORE_SPENARD: "explore", WANDER_SPENARD: "explore", VISIT_BASE: "explore", LEASE_GARAGE: "explore", TRAIN_ATTRIBUTE: "explore", BUY_GEAR: "explore", UPGRADE_BASE: "explore", LAUNDER_CASH: "explore",
     GAMBLE: "gamble",
     TRAVEL: "travel", BUS_TRAVEL: "travel", WALK_HOME: "travel",
     QUICK_SCORE: "risk", ROB_DEALER: "risk", TAKEOVER: "risk", ELI_TEST_ROUTE: "risk", CLAIM_BLOCK: "risk",
@@ -756,6 +791,19 @@
     }]));
   }
 
+  function createJobsState(inventory) {
+    return {
+      discovered: [], discoveryChance: 0.30, lastScheduledShiftDay: null, lastDeliveryDay: null,
+      records: Object.fromEntries(SPENARD_JOBS.map((job) => [job.id, {
+        xp: 0, rank: 0, shifts: 0, lastWorkedDay: null, relationship: 0, contactMet: false, learnedDetails: [],
+      }])),
+      nightOwlStash: {
+        mode: null, dirtyCash: 0, cleanCash: 0,
+        inventory: Object.fromEntries(Object.keys(inventory).map((id) => [id, { qty: 0, avgCost: 0 }])),
+      },
+    };
+  }
+
   function createRun(options) {
     const seed = normalizeSeed(options && options.seed);
     const random = makeRandom(seed);
@@ -829,6 +877,7 @@
       },
       plugs: createPlugState(),
       market: { visible: false },
+      jobs: createJobsState(inventory),
       boost: {
         visible: false, tier: 0, technique: 0, storeBans: [], fenceStanding: 0,
         dailyHits: {}, crewAssigned: null, merchandise: 0, discoveredWindows: [],
@@ -904,6 +953,22 @@
     // mergeDefaults cannot carry a Set through, and pre-Street-Read saves have
     // no field here at all. Both cases land on a valid, empty-but-usable object.
     state.streetRead = deserializeStreetRead(value.streetRead);
+    state.jobs.discovered = Array.isArray(state.jobs.discovered) ? [...new Set(state.jobs.discovered.filter((id) => SPENARD_JOB_BY_ID[id]))] : [];
+    state.jobs.discoveryChance = clamp(Number(state.jobs.discoveryChance) || 0.30, 0.30, 0.70);
+    for (const job of SPENARD_JOBS) {
+      const record = state.jobs.records[job.id];
+      record.xp = Math.max(0, Number(record.xp) || 0);
+      record.rank = jobRankForXp(record.xp);
+      record.shifts = Math.max(0, Math.floor(Number(record.shifts) || 0));
+      record.relationship = Math.max(0, Number(record.relationship) || 0);
+      record.contactMet = !!record.contactMet;
+      record.learnedDetails = Array.isArray(record.learnedDetails) ? [...new Set(record.learnedDetails.filter((index) => Number.isInteger(index) && job.details[index]))] : [];
+    }
+    const stash = state.jobs.nightOwlStash;
+    stash.mode = ["cash", "product"].includes(stash.mode) ? stash.mode : null;
+    stash.dirtyCash = Math.max(0, Math.floor(Number(stash.dirtyCash) || 0));
+    stash.cleanCash = Math.max(0, Math.floor(Number(stash.cleanCash) || 0));
+    if (!stash.dirtyCash && !stash.cleanCash && !Object.values(stash.inventory).some((item) => item.qty > 0)) stash.mode = null;
     state.flags.featureNotices = state.flags.featureNotices && typeof state.flags.featureNotices === "object" ? state.flags.featureNotices : {};
     state.people.mara.available = state.people.mara.available !== false && state.people.mara.status !== "gone";
     // Preserve established v3 runs that already met Kip while fresh runs keep
@@ -1080,7 +1145,8 @@
       const carried = state.player.inventory[product.id]?.qty || 0;
       const stored = state.base.storedInventory[product.id]?.qty || 0;
       const hidden = state.home?.storedInventory?.[product.id]?.qty || 0;
-      return sum + (carried + stored + hidden) * (market.prices[product.id] || 0);
+      const workplace = state.jobs?.nightOwlStash?.inventory?.[product.id]?.qty || 0;
+      return sum + (carried + stored + hidden + workplace) * (market.prices[product.id] || 0);
     }, 0);
   }
   function gearValue(state) { return state.player.gear.owned.reduce((sum, id) => sum + (GEAR_BY_ID[id]?.cost || 0), 0); }
@@ -1088,8 +1154,9 @@
     if (!state.base.controlled) return 0;
     return BASE_UPGRADES.filter((item) => state.base.tracks[item.track] >= item.level).reduce((sum, item) => sum + item.cost, 0);
   }
-  function netWorth(state) { return state.player.cash + state.base.storedCash + (state.home?.storedCash || 0) + inventoryValue(state) - state.lender.balance; }
-  function workingCapital(state) { return state.player.cash + state.base.storedCash + (state.home?.storedCash || 0) + inventoryValue(state); }
+  function workplaceStoredCash(state) { return (state.jobs?.nightOwlStash?.dirtyCash || 0) + (state.jobs?.nightOwlStash?.cleanCash || 0); }
+  function netWorth(state) { return state.player.cash + state.base.storedCash + (state.home?.storedCash || 0) + workplaceStoredCash(state) + inventoryValue(state) - state.lender.balance; }
+  function workingCapital(state) { return state.player.cash + state.base.storedCash + (state.home?.storedCash || 0) + workplaceStoredCash(state) + inventoryValue(state); }
   function safeDebtPayment(state) { return Math.min(state.lender.balance, Math.max(0, state.player.cash - WORKING_CAPITAL_RESERVE)); }
   function debtPaymentPreview(state, requestedAmount) {
     const maximum = Math.min(state.player.cash, state.lender.balance);
@@ -1136,6 +1203,99 @@
         : store.lastAttemptDay === state.run.day ? { available: false, reason: "Northern Value is watching for you today." }
           : { available: true, reason: "One attempt per day. Reflexes lead; Insight, Heat, and suspicion matter." },
     };
+  }
+
+  function johnWorkIntelKnown(state) {
+    return !!state.john?.questionsAsked?.some((key) => typeof key === "string" && key.startsWith("work:"));
+  }
+  function jobRankForXp(xp) {
+    let rank = 0;
+    for (const threshold of JOB_RANK_THRESHOLDS) if (xp >= threshold) rank += 1;
+    return rank;
+  }
+  function jobPayRange(state, jobId) {
+    const job = SPENARD_JOB_BY_ID[jobId];
+    if (!job) return null;
+    const rank = state.jobs?.records?.[jobId]?.rank || 0;
+    const multiplier = 1 + rank * 0.10;
+    return { min: Math.round(job.pay[0] * multiplier), max: Math.round(job.pay[1] * multiplier), multiplier };
+  }
+  function discoveredJobs(state) {
+    const discovered = new Set(state.jobs?.discovered || []);
+    return SPENARD_JOBS.filter((job) => discovered.has(job.id));
+  }
+  function jobAvailability(state, jobId) {
+    const job = SPENARD_JOB_BY_ID[jobId];
+    const record = state.jobs?.records?.[jobId];
+    if (!job || !record || !state.jobs.discovered.includes(jobId)) return { available: false, reason: "You have not found this work yet." };
+    if (state.run.status !== "playing") return { available: false, reason: "The run is not active." };
+    if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
+    if (state.world.currentNeighborhoodId !== "north_star_lot") return { available: false, reason: "Return to Spenard first." };
+    if (jobId === "night_owl" && !state.people.mara.met) return { available: false, reason: "Meet the Night Owl clerk first." };
+    if (jobId === "night_owl" && !state.people.mara.available) return { available: false, reason: "Mara is not available." };
+    if (jobId === "delivery" && !state.world.transport.industrialRouteKnown) return { available: false, reason: "Needs a reliable ride." };
+    const allowedSlots = jobId === "night_owl" && record.rank >= 1 ? [2, 3] : job.slots;
+    if (!allowedSlots.includes(state.run.slot)) {
+      const label = allowedSlots.map((slot) => SLOTS[slot]).join(" or ");
+      return { available: false, reason: `${job.name} runs ${label} only.` };
+    }
+    if (job.scheduled && state.jobs.lastScheduledShiftDay === state.run.day) return { available: false, reason: "You already worked a scheduled shift today." };
+    if (!job.scheduled && state.jobs.lastDeliveryDay === state.run.day) return { available: false, reason: "You already ran a delivery today." };
+    return { available: true, reason: "Choose a shift approach. Uses one part of day." };
+  }
+  function relationshipLabel(value) {
+    if (value >= 8) return "Trusted";
+    if (value >= 4) return "Familiar";
+    if (value > 0) return "Known";
+    return "New";
+  }
+  function knownWorkplaceContacts(state) {
+    return discoveredJobs(state).filter((job) => state.jobs.records[job.id].contactMet).map((job) => ({
+      id: job.contact.id, name: job.contact.name, jobId: job.id, jobName: job.name,
+      rank: state.jobs.records[job.id].rank, relationship: state.jobs.records[job.id].relationship,
+      relationshipLabel: relationshipLabel(state.jobs.records[job.id].relationship),
+    }));
+  }
+  function nightOwlStashUsed(state) {
+    const stash = state.jobs.nightOwlStash;
+    return {
+      cash: stash.dirtyCash + stash.cleanCash,
+      product: Object.values(stash.inventory).reduce((sum, item) => sum + (item.qty || 0), 0),
+    };
+  }
+  function nightOwlStashAvailability(state) {
+    const rank = state.jobs?.records?.night_owl?.rank || 0;
+    if (rank < 2) return { available: false, reason: "Reach Night Owl Rank 2 first." };
+    if (!state.people.mara.met || !state.people.mara.available) return { available: false, reason: "Mara is not available." };
+    if (state.world.currentNeighborhoodId !== "north_star_lot") return { available: false, reason: "Return to Spenard first." };
+    return { available: true, reason: "Free transfer while the Night Owl is open.", ...nightOwlStashUsed(state) };
+  }
+  function eligibleHiddenJobs(state, nextWanderCount) {
+    const hidden = (id) => !state.jobs.discovered.includes(id);
+    return SPENARD_JOBS.filter((job) => {
+      if (!hidden(job.id) || job.id === "wash_go") return false;
+      if (job.id === "night_owl") return state.people.mara.met || nextWanderCount >= 2;
+      if (job.id === "delivery") return nextWanderCount >= 3;
+      if (job.id === "ship_creek") return nextWanderCount >= 3 || johnWorkIntelKnown(state);
+      return false;
+    });
+  }
+  function discoverJob(state, job) {
+    if (!job || state.jobs.discovered.includes(job.id)) return false;
+    state.jobs.discovered.push(job.id);
+    state.jobs.discoveryChance = 0.30;
+    logEntry(state, job.discovery, "good");
+    return true;
+  }
+  function rollJobDiscovery(state, random, previousWanderCount) {
+    if (previousWanderCount === 0) return discoverJob(state, SPENARD_JOB_BY_ID.wash_go);
+    const candidates = eligibleHiddenJobs(state, previousWanderCount + 1);
+    if (!candidates.length) return false;
+    const candidate = random.pick(candidates);
+    if (random.next() < state.jobs.discoveryChance) return discoverJob(state, candidate);
+    state.jobs.discoveryChance = clamp(state.jobs.discoveryChance + 0.10, 0.30, 0.70);
+    logEntry(state, "You catch part of a hiring conversation, but not enough to know who is taking names.", "");
+    return false;
   }
 
   function improveAttribute(state, attribute, progress) {
@@ -1941,6 +2101,12 @@
       text: "Former security worker who lost his last job to Rook's people. He protects the garage and changes how confrontations resolve." },
     deshawn: { id: "deshawn", name: "Deshawn", kind: "person", title: "Deshawn", aliases: ["Deshawn"],
       text: "He put your name in front of Kip when you were nobody on this block. What your word is worth here runs through him." },
+    lena: { id: "lena", name: "Lena", kind: "person", title: "Lena Aguchak", aliases: ["Lena Aguchak", "Lena"],
+      text: "Late-forties Yup'ik manager at the Wash & Go. She is saving to turn years of cleaning work into a business of her own." },
+    minh: { id: "minh", name: "Minh", kind: "person", title: "Minh Tran", aliases: ["Minh Tran", "Minh"],
+      text: "Mid-thirties Vietnamese Alaskan dispatcher. He keeps a local courier route staffed with two phones, paper maps, and exact delivery windows." },
+    marcus: { id: "marcus", name: "Marcus", kind: "person", title: "Marcus Bell", aliases: ["Marcus Bell", "Marcus"],
+      text: "Early-forties Black Alaskan foreman at Ship Creek Freight. He remembers who arrives before the gate opens and pays at the loading-office door." },
     spenard: { id: "spenard", name: "Spenard", kind: "place", title: "Spenard", aliases: ["Spenard Road", "Spenard"],
       text: "Your home district. The Night Owl, North Star Garage, and the Wash & Go all sit on this stretch, and Rook watches all three." },
     north_star: { id: "north_star", name: "North Star Garage", kind: "place", title: "North Star Garage", aliases: ["North Star Garage", "North Star"],
@@ -3411,6 +3577,67 @@
     };
   }
 
+  function resolveJobShift(inputState, action) {
+    const job = SPENARD_JOB_BY_ID[action.jobId];
+    const approach = JOB_APPROACHES[action.approach];
+    if (!job || !approach || !jobAvailability(inputState, job.id).available) return inputState;
+    const state = copyState(inputState);
+    reconcileCash(state);
+    const random = makeRandom(state.run.rngState);
+    const record = state.jobs.records[job.id];
+    const pay = jobPayRange(state, job.id);
+    const payout = Math.round(random.int(pay.min, pay.max) * approach.payMultiplier);
+    const oldRank = record.rank;
+
+    addCleanCash(state, payout);
+    state.player.health = clamp(state.player.health + approach.health, 1, 100);
+    record.xp += approach.xp;
+    record.relationship += approach.relationship;
+    record.shifts += 1;
+    record.lastWorkedDay = state.run.day;
+    record.rank = jobRankForXp(record.xp);
+    if (job.scheduled) state.jobs.lastScheduledShiftDay = state.run.day;
+    else state.jobs.lastDeliveryDay = state.run.day;
+
+    if (!record.contactMet) {
+      record.contactMet = true;
+      logEntry(state, job.contact.introduction, "good");
+    }
+    if (approach.id === "learn_job") {
+      const detailIndex = job.details.findIndex((_, index) => !record.learnedDetails.includes(index));
+      if (detailIndex >= 0) {
+        record.learnedDetails.push(detailIndex);
+        logEntry(state, job.details[detailIndex], "");
+      } else {
+        logEntry(state, `${job.contact.name.split(" ")[0]} says you already know the routine well enough to spot what changes.`, "");
+      }
+    }
+    if (job.id === "ship_creek") {
+      const employer = state.world.locations.employer;
+      employer.lastShiftDay = state.run.day;
+      employer.standing = clamp(employer.standing + 1, 0, 5);
+      employer.keptCommitments += 1;
+      if (employer.standing >= 3) state.flags.legalCover = true;
+    }
+    if (record.rank > oldRank) {
+      if (job.id === "night_owl" && record.rank >= 3) {
+        state.flags.spenardVouched = true;
+        logEntry(state, "Mara introduces Deshawn. He puts his name behind yours on Spenard Road.", "good");
+      } else if (job.id === "night_owl" && record.rank === 2) {
+        logEntry(state, "Night Owl Rank 2. Mara clears a small back-room stash for you.", "good");
+      } else if (job.id === "night_owl" && record.rank === 1) {
+        logEntry(state, "Night Owl Rank 1. Mara adds Night shifts to your schedule.", "good");
+      } else {
+        logEntry(state, `${job.name}: Rank ${record.rank}. The better rate starts with your next shift.`, "good");
+      }
+    }
+    recordBehavior(state, "earner", record.rank >= 2 ? 2 : 1, `job:${job.id}:${state.run.day}`, "legal_work");
+    addStreetReadEntry(state, "income", `job:${job.id}`);
+    state.run.rngState = random.state;
+    logEntry(state, `${job.name} shift done. +$${payout}.`, "good");
+    return advanceRun(state, { reason: "WORK_JOB", suppressStory: false });
+  }
+
   function reduceGame(inputState, action) {
     if (!inputState || !action || !action.type) return inputState;
     if (action.type === "HYDRATE_RUN") return hydrateRun(action.state) || inputState;
@@ -3785,18 +4012,20 @@
       base.run.rngState = random.state;
       return advanceRun(base, { reason: action.type });
     }
-    if (action.type === "EXPLORE_SPENARD") {
+    if (action.type === "WANDER_SPENARD" || action.type === "EXPLORE_SPENARD") {
+      if (state.world.currentNeighborhoodId !== "north_star_lot") return inputState;
       const random = makeRandom(base.run.rngState);
       const count = base.world.locations.explorationCount;
       base.world.locations.explorationCount += 1;
       addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:explore`);
+      const jobDiscovered = rollJobDiscovery(base, random, count);
       const meetsKip = base.run.day >= 2 && !base.flags.kipEncounterSeen;
       const meetsBoost = !meetsKip && !base.flags.boostOpportunitySeen && !base.boost.visible && (count === 0 || base.world.locations.gamblingKnown);
       if (!meetsBoost && !meetsKip && !base.world.locations.gamblingKnown && count > 0) {
         base.world.locations.gamblingKnown = true;
         base.world.locations.discoveries.push("informal_game");
         logEntry(base, "A back-room dice game announces itself through the people leaving. No sign, no door number. Evening and Night games are now visible.", "good");
-      } else if (!meetsBoost && !meetsKip) {
+      } else if (!meetsBoost && !meetsKip && !jobDiscovered) {
         const discoveries = [
           "John's bus advice matches the posted Downtown timetable.",
           "A freight worker confirms Ship Creek hires before breakfast.",
@@ -3806,7 +4035,7 @@
         logEntry(base, random.pick(discoveries), "");
       }
       base.run.rngState = random.state;
-      const advanced = advanceRun(base, { reason: "EXPLORE_SPENARD", suppressStory: meetsBoost || meetsKip });
+      const advanced = advanceRun(base, { reason: "WANDER_SPENARD", suppressStory: meetsBoost || meetsKip });
       if (meetsBoost && advanced.run.status === "playing") {
         advanced.run.pendingEvent = firstBoostOpportunityEvent();
       } else if (meetsKip && advanced.run.status === "playing") {
@@ -3815,23 +4044,52 @@
       }
       return advanced;
     }
-    if (action.type === "WORK_SHIFT") {
-      const available = activityAvailability(state).work;
-      if (!available.available) return inputState;
-      const random = makeRandom(base.run.rngState);
-      const employer = base.world.locations.employer;
-      const bonus = random.next() < 0.35 + base.player.attributes.discipline * 0.05 ? random.int(15, 30) : 0;
-      const payout = 110 + bonus;
-      addCleanCash(base, payout);
-      employer.lastShiftDay = base.run.day;
-      employer.standing = clamp(employer.standing + 1, 0, 5);
-      employer.keptCommitments += 1;
-      recordBehavior(base, "earner", employer.standing >= 3 ? 2 : 1, `work:${base.run.day}`, "legal_work");
-      if (employer.standing >= 3) base.flags.legalCover = true;
-      addStreetReadEntry(base, "income", `job:${base.world.currentNeighborhoodId}`);
-      base.run.rngState = random.state;
-      logEntry(base, `Ship Creek Freight pays $${payout}${bonus ? `, including a $${bonus} extra-load bonus` : ""}. Your employer standing is ${employer.standing}.`, "good");
-      return advanceRun(base, { reason: "WORK_SHIFT" });
+    if (action.type === "WORK_JOB") return resolveJobShift(inputState, action);
+    if (action.type === "WORK_SHIFT") return resolveJobShift(inputState, { ...action, type: "WORK_JOB", jobId: "ship_creek", approach: action.approach || "work_hard" });
+    if (action.type === "NIGHT_OWL_STASH_CASH") {
+      if (!nightOwlStashAvailability(state).available) return inputState;
+      const amount = Math.max(0, Math.floor(Number(action.amount) || 0));
+      const stash = base.jobs.nightOwlStash;
+      if (!amount) return inputState;
+      if (action.direction === "store") {
+        const used = stash.dirtyCash + stash.cleanCash;
+        if ((stash.mode && stash.mode !== "cash") || amount > base.player.cash || used + amount > 300) return inputState;
+        const dirty = Math.min(base.player.dirtyCash, amount);
+        base.player.cash -= amount; base.player.dirtyCash -= dirty; base.player.cleanCash -= amount - dirty;
+        stash.dirtyCash += dirty; stash.cleanCash += amount - dirty; stash.mode = "cash";
+      } else if (action.direction === "retrieve") {
+        const available = stash.dirtyCash + stash.cleanCash;
+        if (amount > available) return inputState;
+        const dirty = Math.min(stash.dirtyCash, amount);
+        stash.dirtyCash -= dirty; stash.cleanCash -= amount - dirty;
+        base.player.cash += amount; base.player.dirtyCash += dirty; base.player.cleanCash += amount - dirty;
+        if (!stash.dirtyCash && !stash.cleanCash) stash.mode = null;
+      } else return inputState;
+      logEntry(base, `${action.direction === "store" ? "Stashed" : "Retrieved"} $${amount} at the Night Owl.`, "good");
+      return base;
+    }
+    if (action.type === "NIGHT_OWL_STASH_PRODUCT") {
+      if (!nightOwlStashAvailability(state).available) return inputState;
+      const qty = Math.max(0, Math.floor(Number(action.qty) || 0));
+      const carried = base.player.inventory[action.productId];
+      const stash = base.jobs.nightOwlStash;
+      const stored = stash.inventory[action.productId];
+      if (!qty || !carried || !stored) return inputState;
+      const used = Object.values(stash.inventory).reduce((sum, item) => sum + item.qty, 0);
+      if (action.direction === "store") {
+        if ((stash.mode && stash.mode !== "product") || carried.qty < qty || used + qty > 3) return inputState;
+        const total = stored.qty + qty;
+        stored.avgCost = total ? ((stored.avgCost * stored.qty) + carried.avgCost * qty) / total : 0;
+        stored.qty = total; carried.qty -= qty; if (!carried.qty) carried.avgCost = 0; stash.mode = "product";
+      } else if (action.direction === "retrieve") {
+        if (stored.qty < qty || cargoUsed(base) + qty > cargoCapacity(base)) return inputState;
+        const total = carried.qty + qty;
+        carried.avgCost = total ? ((carried.avgCost * carried.qty) + stored.avgCost * qty) / total : 0;
+        carried.qty = total; stored.qty -= qty; if (!stored.qty) stored.avgCost = 0;
+        if (!Object.values(stash.inventory).some((item) => item.qty > 0)) stash.mode = null;
+      } else return inputState;
+      logEntry(base, `${action.direction === "store" ? "Stashed" : "Retrieved"} ${qty} ${PRODUCT_BY_ID[action.productId].name} at the Night Owl.`, "good");
+      return base;
     }
     if (action.type === "BUY_BUS_PASS") {
       const kind = action.passType;
@@ -4283,7 +4541,7 @@
   // Titles for the compact action-result overlay. Keyed by dispatched action
   // type; travel overrides this with the district it arrived in.
   const ACTION_RESULT_TITLES = {
-    WORK_SHIFT: "Shift Complete", TRAIN_ATTRIBUTE: "Training Complete", EXPLORE_SPENARD: "Walk Complete",
+    WORK_SHIFT: "Shift Complete", WORK_JOB: "Shift Complete", TRAIN_ATTRIBUTE: "Training Complete", EXPLORE_SPENARD: "Walk Complete", WANDER_SPENARD: "Walk Complete",
     SHOPLIFT: "Attempt Resolved", BOOST: "Boost Resolved", ASK_BOOST_WINDOW: "Window Learned", GAMBLE: "Game Resolved", END_MARKET: "Market Visit Closed",
     SLEEP_HOME: "Night Passed", LAY_LOW: "Laid Low", HEAL: "Treatment Complete",
     PAY_DEBT: "Payment Made", LAUNDER_CASH: "Cash Laundered", CLAIM_BLOCK: "Block Claimed",
@@ -4363,7 +4621,7 @@
   return {
     VERSION, RUN_DAYS, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
     STREET_NAME_MAX, DEFAULT_STREET_NAMES, ATTRIBUTE_DEFAULTS, LEGACY_ATTRIBUTES, STREET_IDENTITIES, sanitizeStreetName,
-    CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS, ENTITY_REGISTRY, ENTITY_MATCH_ORDER, PLUGS, BOOST_TARGETS,
+    CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS, ENTITY_REGISTRY, ENTITY_MATCH_ORDER, PLUGS, BOOST_TARGETS, SPENARD_JOBS, JOB_APPROACHES, JOB_RANK_THRESHOLDS,
     SPENARD_BLOCKS, KIP_BUSINESSES, SOLDIER_RECRUIT_COST, SOLDIER_BASE_CAPACITY, SOLDIER_CAPACITY_PER_BLOCK, SOLDIERS_PER_BLOCK_CAP,
     KIP_LAUNDER_FEE, DRE_COLLECTOR_TIERS, ELI_LIEUTENANT_UNLOCK, KIP_LIEUTENANT_INCOME_THRESHOLD, KIP_LIEUTENANT_STANDING_MIN, RESPECT_STAGE_THRESHOLDS,
     DISTRICT_CONTROL_TIERS, DISTRICT_CONTROL_CAPSTONE_BLOCKS, DISTRICT_CONTROL_LABEL, ELI_OPERATION_POLICIES,
@@ -4396,6 +4654,8 @@
       weeklyIncomeEstimate, kipLieutenantAvailability, launderCapacity, launderAvailability,
       districtControlTier, districtHasBlockLayer, unassignedSoldiers,
       homeSituation, homeUnlocks, homePriorities, homeSummary, actionResult,
+      johnWorkIntelKnown, jobRankForXp, jobPayRange, discoveredJobs, jobAvailability, knownWorkplaceContacts,
+      nightOwlStashUsed, nightOwlStashAvailability, relationshipLabel,
     },
   };
 });

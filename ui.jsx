@@ -270,15 +270,56 @@ function Transit({ state, dispatch, onBack }) {
   </div></>;
 }
 
+function NightOwlStash({ state, dispatch }) {
+  const [cashAmount, setCashAmount] = useState(50);
+  const available = C.selectors.nightOwlStashAvailability(state);
+  if (!available.available) return null;
+  const stash = state.jobs.nightOwlStash;
+  return <div className="card"><div className="card-title">Night Owl stash<small>{stash.mode ? stash.mode.toUpperCase() : "EMPTY"}</small></div>
+    <p className="compact">Holds either $300 cash or three product units. Empty it before switching storage type.</p>
+    <div className="outcome-grid"><Outcome label="Cash" value={`${money(available.cash)} / $300`} /><Outcome label="Product" value={`${available.product}/3`} /></div>
+    {(stash.mode === null || stash.mode === "cash") && <div className="field-row"><input aria-label="Night Owl stash cash amount" type="number" min="1" value={cashAmount} onChange={(event) => setCashAmount(Math.max(1, Number(event.target.value) || 1))} /><button className="btn secondary" disabled={cashAmount > state.player.cash || available.cash + cashAmount > 300} onClick={() => dispatch({ type: "NIGHT_OWL_STASH_CASH", direction: "store", amount: cashAmount })}>Store cash</button><button className="btn secondary" disabled={cashAmount > available.cash} onClick={() => dispatch({ type: "NIGHT_OWL_STASH_CASH", direction: "retrieve", amount: cashAmount })}>Retrieve</button></div>}
+    {(stash.mode === null || stash.mode === "product") && <div className="btn-row">{C.PRODUCTS.map((product) => <React.Fragment key={product.id}>{state.player.inventory[product.id].qty > 0 && available.product < 3 && <button className="btn secondary" onClick={() => dispatch({ type: "NIGHT_OWL_STASH_PRODUCT", direction: "store", productId: product.id, qty: 1 })}>Store 1 {product.name}</button>}{stash.inventory[product.id].qty > 0 && <button className="btn secondary" onClick={() => dispatch({ type: "NIGHT_OWL_STASH_PRODUCT", direction: "retrieve", productId: product.id, qty: 1 })}>Take 1 {product.name}</button>}</React.Fragment>)}</div>}
+  </div>;
+}
+
+function JobDetail({ state, dispatch, job, onBack }) {
+  const record = state.jobs.records[job.id];
+  const availability = C.selectors.jobAvailability(state, job.id);
+  const pay = C.selectors.jobPayRange(state, job.id);
+  const slots = job.id === "night_owl" && record.rank >= 1 ? [2, 3] : job.slots;
+  return <><PageHead title={job.name} sub={`${money(pay.min)}–${money(pay.max)} · ${slots.map((slot) => C.SLOTS[slot]).join(" / ")} · Risk: ${job.risk}`} onBack={onBack} /><div className="scroll">
+    <div className={`card${availability.available ? "" : " locked"}`}><div className="card-title">Rank {record.rank}<small>{record.xp}/14 XP</small></div><p className="compact">{job.scheduled ? "One scheduled job shift per day across Spenard." : "Occasional gig · separate from the scheduled-job limit."}</p><p className="muted compact">{availability.reason}</p></div>
+    <div className="section-label">Choose a shift approach</div>
+    {Object.values(C.JOB_APPROACHES).map((approach) => <button className="btn full secondary" key={approach.id} disabled={!availability.available} onClick={() => dispatch({ type: "WORK_JOB", jobId: job.id, approach: approach.id })}>{approach.label}<span className="action-copy">{approach.description} · one part of day</span></button>)}
+    {record.contactMet && <div className="card"><div className="card-title">{job.contact.name}<small>{C.selectors.relationshipLabel(record.relationship).toUpperCase()}</small></div><p className="compact">Workplace relationship {record.relationship} · {record.shifts} shift{record.shifts === 1 ? "" : "s"} completed.</p>{job.id === "night_owl" && record.rank >= 3 && <p className="good compact">Deshawn's Spenard vouch is active.</p>}</div>}
+    {job.id === "night_owl" && <NightOwlStash state={state} dispatch={dispatch} />}
+  </div></>;
+}
+
+function ExploreSpenard({ state, dispatch, page, setPage, onBack }) {
+  const jobs = C.selectors.discoveredJobs(state);
+  const contacts = C.selectors.knownWorkplaceContacts(state);
+  if (page.startsWith("job:")) { const job = C.SPENARD_JOBS.find((item) => item.id === page.split(":")[1]); return <JobDetail state={state} dispatch={dispatch} job={job} onBack={() => setPage("jobs")} />; }
+  if (page === "jobs") return <><PageHead title="Spenard Jobs" sub="Work you found by learning the neighborhood" onBack={() => setPage("root")} /><div className="scroll">{jobs.map((job) => { const record = state.jobs.records[job.id]; const pay = C.selectors.jobPayRange(state, job.id); const availability = C.selectors.jobAvailability(state, job.id); const slots = job.id === "night_owl" && record.rank >= 1 ? [2, 3] : job.slots; return <MenuRow key={job.id} title={job.name} status={`${money(pay.min)}–${money(pay.max)}`} description={`${slots.map((slot) => C.SLOTS[slot]).join(" / ")} · Risk: ${job.risk} · Rank ${record.rank} · ${availability.available ? "Available" : availability.reason}`} tone={availability.available ? "" : "muted"} onClick={() => setPage(`job:${job.id}`)} />; })}</div></>;
+  if (page === "contacts") return <><PageHead title="Spenard Contacts" sub="People you met through work" onBack={() => setPage("root")} /><div className="scroll">{contacts.map((contact) => <MenuRow key={contact.id} title={contact.name} status={contact.relationshipLabel} description={`${contact.jobName} · Rank ${contact.rank}${contact.id === "mara" && state.flags.spenardVouched ? " · Deshawn vouches for you" : ""}`} onClick={() => setPage(`job:${contact.jobId}`)} />)}</div></>;
+  return <><PageHead title="Explore Spenard" sub="Learn what the neighborhood has to offer" onBack={onBack} /><div className="scroll">
+    <MenuRow title="Jobs" status={jobs.length ? `${jobs.length} found` : "No work found yet"} description={jobs.length ? "Work you have found in the area." : "Wander to look around."} disabled={!jobs.length} onClick={() => setPage("jobs")} />
+    <MenuRow title="Wander" status={`${state.world.locations.explorationCount} walks`} description="Walk around, discover work, and see what happens." onClick={() => dispatch({ type: "WANDER_SPENARD" })} />
+    {contacts.length > 0 && <MenuRow title="Contacts" status={`${contacts.length} met`} description="People you met through work in Spenard." onClick={() => setPage("contacts")} />}
+  </div></>;
+}
+
 // What can I do without leaving? Work, walking the neighborhood, training,
 // the store, and the game — the daily-life layer, kept off the travel page.
 function AroundHere({ state, dispatch, onBack }) {
   const [gambleApproach, setGambleApproach] = useState("read");
+  const [page, setPage] = useState("root");
   const available = C.selectors.activityAvailability(state);
   const area = areaOf(state);
+  if (page !== "root") return <ExploreSpenard state={state} dispatch={dispatch} page={page} setPage={setPage} onBack={() => setPage("root")} />;
   return <><PageHead title={`Around ${area.name}`} sub="What you can do without leaving the neighborhood" onBack={onBack} /><div className="scroll">
-    <PlaceAction title="Ship Creek Freight" status={state.world.locations.employer.standing >= 3 ? "LEGAL COVER" : "DAY LABOR"} purpose="One legitimate freight shift per day. Reliability builds employer standing, and the pay lands as clean cash." cost="$0" time="Morning · one part of day" disabled={!available.work.available} reason={available.work.reason} onClick={() => dispatch({ type: "WORK_SHIFT" })} />
-    <PlaceAction title="Explore Spenard" status={state.world.locations.explorationCount ? `${state.world.locations.explorationCount} walks` : "NEW ARRIVAL"} purpose={state.market.visible ? "Learn the neighborhood and discover contacts, games, routes, and useful local details." : "Learn the neighborhood and discover games, routes, work, and useful local details."} cost="$0" time="One part of day" disabled={false} reason={available.explore.reason} onClick={() => dispatch({ type: "EXPLORE_SPENARD" })} />
+    {area.id === "north_star_lot" && <MenuRow title="Explore Spenard" status={state.world.locations.explorationCount ? `${state.world.locations.explorationCount} walks` : "New arrival"} description="Jobs, wandering, and people you meet through work." onClick={() => setPage("explore")} />}
     <PlaceAction title="Night Owl" status={state.people.mara.met ? "MARA KNOWN" : "OPEN"} purpose="A warm counter, a drink, and a possible first meeting with Mara." cost="Browse free" time="Conversation may use time" disabled={false} reason="Mara's introduction is a first meeting, never a prior routine." onClick={() => dispatch({ type: "VISIT_NIGHT_OWL" })} />
     <div className="card"><div className="card-title">Spenard Community Gym<small>{money(available.gym.cost)} · +{available.gym.progress} progress</small></div><p className="compact">Train one physical attribute. Every session uses one part of day; repeated same-day sessions cost more and give less progress.</p><div className="btn-row">{[["strength", "Strength"], ["endurance", "Endurance"], ["reflexes", "Reflexes"]].map(([id, label]) => <button className="btn secondary" key={id} disabled={!available.gym.available || state.player.attributes[id] >= 5} onClick={() => dispatch({ type: "TRAIN_ATTRIBUTE", attribute: id })}>{label} {state.player.attributes[id]}</button>)}</div><p className="muted compact">Session {available.gym.sessionsToday + 1} today · cost {money(available.gym.cost)} · one part of day</p></div>
     {state.world.locations.gamblingKnown && <div className={`card${available.gambling.available ? "" : " locked"}`}><div className="card-title">Informal Game<small>EVENING / NIGHT</small></div><p className="compact">Choose an approach, then risk $20, $50, or $100. Attributes inform the seeded result but never guarantee profit. No debt is offered.</p><select aria-label="Gambling approach" value={gambleApproach} onChange={(event) => setGambleApproach(event.target.value)}><option value="read">Read the room · Insight</option><option value="steady">Play disciplined · Discipline</option><option value="press">Work the table · Presence</option></select><div className="btn-row">{[20, 50, 100].map((stake) => <button className="btn secondary" key={stake} disabled={!available.gambling.available || state.player.cash < stake} onClick={() => dispatch({ type: "GAMBLE", stake, approach: gambleApproach })}>Risk ${stake}</button>)}</div><p className="muted compact">{available.gambling.reason}</p></div>}
@@ -340,13 +381,13 @@ function Travel({ state, dispatch, setTab, page, setPage }) {
   if (page === "listings") return <Listings state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   const covered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
   const area = areaOf(state);
-  const available = C.selectors.activityAvailability(state);
+  const foundJobs = C.selectors.discoveredJobs(state).length;
   // Local Intel stays hidden until the run has produced intel worth reading,
   // and Listings disappears once the only acquirable property is yours.
   const hasIntel = state.world.locations.explorationCount > 0 || state.world.transport.downtownKnown || state.world.transport.industrialRouteKnown || (state.world.locations.discoveries || []).length > 0;
   return <><PageHead title="Travel" sub="Where to go, how to get there, and what is around you" /><div className="scroll">
     <MenuRow title="Destinations" status={`In ${area.name}`} description="Spenard, Downtown, and the service roads." onClick={() => setPage("destinations")} />
-    <MenuRow title={`Around ${area.name}`} status={available.work.available ? "Shift open" : "Open"} description="Work, walk the neighborhood, train, the store, and the game." onClick={() => setPage("around")} />
+    <MenuRow title={`Around ${area.name}`} status={foundJobs ? `${foundJobs} jobs found` : "Open"} description="Work, walk the neighborhood, train, the store, and the game." onClick={() => setPage("around")} />
     {!state.people.household.evicted && <MenuRow title="Home" status={`${state.people.household.warnings}/3 warnings`} description="The spare room: storage, John's question, and sleep." onClick={() => setPage("household")} />}
     <MenuRow title="Transit" status={state.world.transport.weekPass ? "7-day pass" : covered ? "Day pass" : "$5 a ride"} description="People Mover fares and passes." onClick={() => setPage("transit")} />
     {hasIntel && <MenuRow title="Local Intel" status={`${state.world.locations.explorationCount} walks`} description="Known routes, discoveries, and rumors." onClick={() => setPage("intel")} />}

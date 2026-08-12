@@ -11,6 +11,10 @@ function run(seed = 907) {
 function fresh(seed = 907) {
   return C.reduceGame(C.createRun({ seed }), { type: "START_RUN" });
 }
+function discoverJob(state, jobId) {
+  if (!state.jobs.discovered.includes(jobId)) state.jobs.discovered.push(jobId);
+  return state;
+}
 function quietAdvance(state, reason = "END_MARKET") {
   state.run.pendingEvent = null; state.run.pendingEncounter = null; state.run.pendingOperationResult = null;
   return C.advanceRun(state, { reason, suppressStory: true });
@@ -686,9 +690,10 @@ test("household storage is limited and three warnings end as Nowhere to Go", () 
 
 test("work is Morning-only, once daily, seeded, and builds legal standing", () => {
   let a = fresh(9003), b = fresh(9003);
-  a = C.reduceGame(a, { type: "WORK_SHIFT" }); b = C.reduceGame(b, { type: "WORK_SHIFT" });
+  discoverJob(a, "ship_creek"); discoverJob(b, "ship_creek");
+  a = C.reduceGame(a, { type: "WORK_JOB", jobId: "ship_creek", approach: "socialize" }); b = C.reduceGame(b, { type: "WORK_JOB", jobId: "ship_creek", approach: "socialize" });
   assert.equal(a.player.cash, b.player.cash); assert.ok(a.player.cash >= 1110 && a.player.cash <= 1140); assert.equal(a.run.slot, 1);
-  assert.equal(a.world.locations.employer.standing, 1); assert.equal(C.selectors.activityAvailability(a).work.available, false);
+  assert.equal(a.world.locations.employer.standing, 1); assert.equal(C.selectors.jobAvailability(a, "ship_creek").available, false);
 });
 
 test("gym costs escalate, progress diminishes, and attributes cap at five", () => {
@@ -977,7 +982,8 @@ test("laundering resolves in the same slot as every other financial action, not 
 
 test("Ship Creek pays clean cash while trading and robbery stay dirty, and cash always equals dirty plus clean", () => {
   let state = fresh(60001);
-  state = C.reduceGame(state, { type: "WORK_SHIFT" });
+  discoverJob(state, "ship_creek");
+  state = C.reduceGame(state, { type: "WORK_JOB", jobId: "ship_creek", approach: "socialize" });
   assert.ok(state.player.cleanCash > 0, "Ship Creek income is classified clean");
   assert.equal(state.player.cash, state.player.dirtyCash + state.player.cleanCash);
   const dirtyBefore = state.player.dirtyCash;
@@ -1098,7 +1104,8 @@ test("cash equals dirty plus clean after purchases, debt payments, recruitment, 
   }
   let state = fresh(100001);
   checkInvariant(state, "fresh run");
-  state = C.reduceGame(state, { type: "WORK_SHIFT" }); checkInvariant(state, "after legal work");
+  discoverJob(state, "ship_creek");
+  state = C.reduceGame(state, { type: "WORK_JOB", jobId: "ship_creek", approach: "socialize" }); checkInvariant(state, "after legal work");
   state = C.reduceGame(state, { type: "LEASE_GARAGE" }); checkInvariant(state, "after property spending");
   state.people.crew.eli.introduced = true; state.people.crew.eli.contactStage = "recruitable"; state.base.visiting = true;
   state = C.reduceGame(state, { type: "RECRUIT_CREW", crewId: "eli" }); clearModals(state); checkInvariant(state, "after crew recruitment");
@@ -1392,8 +1399,9 @@ test("home priorities are severity-ordered, capped at two, and never a checklist
 
 test("actionResult reports time movement and the money that moved for a time-consuming action", () => {
   const before = fresh(60008);
-  const after = C.reduceGame(before, { type: "WORK_SHIFT" });
-  const result = C.selectors.actionResult(before, after, "WORK_SHIFT");
+  discoverJob(before, "ship_creek");
+  const after = C.reduceGame(before, { type: "WORK_JOB", jobId: "ship_creek", approach: "socialize" });
+  const result = C.selectors.actionResult(before, after, "WORK_JOB");
   assert.ok(result, "a shift that consumes part of the day produces a result");
   assert.equal(result.title, "Shift Complete");
   assert.equal(result.time.from, "Morning");

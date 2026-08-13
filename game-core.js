@@ -777,6 +777,146 @@
   // Tier 1 pays out as one extra observed detail about a contact you have
   // actually dealt with. Flavor only - it never encodes a number the player
   // could act on directly.
+  // Ambient flavor. Purely decorative: the world keeps moving between actions
+  // so a menu reads as a corner rather than a form. Keyed by neighborhood and
+  // part of day. Nothing here is state, nothing here is a hint, and nothing
+  // here writes anything back.
+  const AMBIENT_FLAVOR = {
+    north_star_lot: {
+      0: [
+        "A bus rattles past on Spenard Road.",
+        "Somebody scrapes frost off a windshield with a debit card.",
+        "The laundromat sign flickers on, an hour late.",
+        "Two crows work over a dropped bag of fries.",
+        "A man in a Carhartt jacket counts change on the curb.",
+        "Steam off a grate. The smell of somebody else's breakfast.",
+        "A truck idles outside the pawn shop with nobody in it.",
+        "The light at Thirty-Sixth stays red a long time.",
+      ],
+      1: [
+        "Kids cut through the lot behind the strip mall.",
+        "A woman argues into her phone by the ice machine.",
+        "Sun comes off the wet asphalt hard enough to squint.",
+        "Somebody's car alarm goes off down the block. Nobody flinches.",
+        "The barber props his door open with a paint can.",
+        "A flatbed rolls by carrying a snowmachine in July.",
+        "Two guys shake hands too long outside the check cashing place.",
+        "A shopping cart sits upright in the middle of the lot.",
+      ],
+      2: [
+        "Neon comes on above the bar before the sun is done.",
+        "A dog barks itself hoarse behind a chain link fence.",
+        "Somebody is grilling in a parking space.",
+        "The bus shelter glass has a new crack in it.",
+        "Music from a passing car, one bar of it, then gone.",
+        "A woman waits by the payphone that has not worked in years.",
+        "Somebody sweeps the same square of sidewalk twice.",
+        "The liquor store door chimes and keeps chiming.",
+      ],
+      3: [
+        "The Night Owl sign hums over an empty lot.",
+        "A cab idles at the corner with its light off.",
+        "Somebody laughs two blocks over. It carries.",
+        "Frost on the hoods already, and it is not even late.",
+        "A window upstairs goes dark, then comes back on.",
+        "Tires on wet road, going too fast for the corner.",
+        "The dumpster lid drops and echoes off the buildings.",
+        "Somebody is asleep in a parked car with the engine running.",
+      ],
+    },
+    downtown: {
+      0: [
+        "Delivery trucks stack up on Fourth Ave.",
+        "A tour bus unloads people in brand new rain jackets.",
+        "Somebody hoses off the sidewalk in front of a hotel.",
+        "Office windows catch the light all the way up.",
+        "A street sweeper takes the whole lane and nobody passes it.",
+        "Coffee cups in every hand at the crosswalk.",
+        "The gift shop rolls its shutter up on carved bears.",
+        "Gulls work the trash cans by the transit center.",
+      ],
+      1: [
+        "Construction noise on Fourth. Nothing else pulls.",
+        "Suits eat lunch on a low concrete wall.",
+        "A guy with a cardboard sign works the light patiently.",
+        "Somebody films the mountains with their phone held sideways.",
+        "The parking garage gate sticks halfway and somebody swears.",
+        "A courier chains a bike to a sign that says no bikes.",
+        "Shadows come off the towers and cut the street in half.",
+        "Two cops stand talking outside a coffee place, unhurried.",
+      ],
+      2: [
+        "Bar doors open and the noise comes out in a slab.",
+        "Somebody in a wedding dress crosses against the light.",
+        "The hotel valet stand fills up with idling SUVs.",
+        "A busker packs a guitar into a case lined with dollars.",
+        "Windows go orange floor by floor as the sun drops.",
+        "Somebody hands out flyers nobody takes.",
+        "The smell of fryer oil from a place with no sign.",
+        "A pedicab driver waits, one foot up on the curb.",
+      ],
+      3: [
+        "Downtown at this hour belongs to the bar crowd.",
+        "A squad car rolls slow past the same block twice.",
+        "Somebody sits on the curb holding their own shoes.",
+        "The transit center is locked and lit and empty.",
+        "Glass in the gutter catches the streetlight.",
+        "Two guys square up outside a club and then do not.",
+        "A cleaner runs a vacuum past a dark lobby window.",
+        "The last bus pulls out with three people on it.",
+      ],
+    },
+    airport_industrial: {
+      0: [
+        "A cargo plane comes in low enough to feel.",
+        "Forklifts working somewhere behind a fence.",
+        "Frost on the gravel where the trucks have not been yet.",
+        "A gate rolls open on a yard full of containers.",
+        "Somebody in a vest waves a semi backward.",
+        "Diesel and cold air. The road out here has no curb.",
+        "A pallet jack squeals across a loading dock.",
+        "Two men drink coffee on the bumper of a box truck.",
+      ],
+      1: [
+        "Belly of a jet passes over the service road.",
+        "A yard dog barks at every truck and means none of it.",
+        "Somebody eats lunch sitting in an open trailer.",
+        "Heat shimmer off a hundred yards of parked semis.",
+        "The scale house window slides open and shut.",
+        "A radio plays country from inside a warehouse.",
+        "Tarps snap on a flatbed in the crosswind.",
+        "Nothing out here has a sidewalk or needs one.",
+      ],
+      2: [
+        "Sodium lights come on over the freight yards.",
+        "A shift lets out and the lot empties in ten minutes.",
+        "Somebody chains a gate and tests it twice.",
+        "Landing lights stack up in a line toward the runway.",
+        "The last truck of the day pulls out heavy.",
+        "A security pickup idles with its parking lights on.",
+        "Wind comes off the inlet with nothing to stop it.",
+        "Cigarette smoke by a door marked no entry.",
+      ],
+      3: [
+        "Between the lights out here, the dark is total.",
+        "A conveyor runs somewhere with nobody watching it.",
+        "Headlights sweep a fence and keep going.",
+        "The cold gets into the gravel and comes back up.",
+        "A hangar door stands open on nothing.",
+        "Something metal moves in the wind, over and over.",
+        "One window lit in a building the size of a block.",
+        "The road out is the road in. Nobody is on it.",
+      ],
+    },
+  };
+
+  // The pool for where the player is standing and what part of day it is.
+  // Falls back to Spenard so a new neighborhood never renders an empty bar.
+  function ambientFlavor(state) {
+    const byArea = AMBIENT_FLAVOR[state.world?.currentNeighborhoodId] || AMBIENT_FLAVOR.north_star_lot;
+    return byArea[state.run?.slot] || byArea[0] || [];
+  }
+
   const STREET_READ_FLAVOR = {
     mara: ["She mentioned something about a sedan last time.", "Her shift schedule changed. Might mean something.", "She's been parking around the back lately."],
     eli: ["He's been eyeing the freight routes lately.", "Said something about owing money on that car.", "He counts the exits before he sits down."],
@@ -988,7 +1128,7 @@
   function createJobsState(inventory, seed) {
     return {
       discoveryOrder: seededShuffle(STARTER_JOB_IDS, seed, 0x15a907),
-      discovered: [], discoveryChance: 0.30, lastScheduledShiftDay: null, lastDeliveryDay: null,
+      discovered: [], discoveryChance: 0.30, lastScheduledShiftDay: null, lastDeliveryDay: null, lastWorked: null,
       records: Object.fromEntries(SPENARD_JOBS.map((job) => [job.id, {
         xp: 0, rank: 0, shifts: 0, lastWorkedDay: null, relationship: 0, contactMet: false,
         coworkersMet: [], currentCoworkerId: null, learnedDetails: [],
@@ -1180,6 +1320,10 @@
     const expectedStarterOrder = seededShuffle(STARTER_JOB_IDS, state.run.seed, 0x15a907);
     state.jobs.discoveryOrder = Array.isArray(state.jobs.discoveryOrder) && state.jobs.discoveryOrder.length === STARTER_JOB_IDS.length && STARTER_JOB_IDS.every((id) => state.jobs.discoveryOrder.includes(id)) ? state.jobs.discoveryOrder : expectedStarterOrder;
     state.jobs.discoveryChance = clamp(Number(state.jobs.discoveryChance) || 0.30, 0.30, 0.70);
+    // Pre-v1.6 saves carry no lastWorked. A stale or unknown id would offer a
+    // shortcut into work the player has not discovered, so it has to be both a
+    // real job and one they have found.
+    state.jobs.lastWorked = SPENARD_JOB_BY_ID[state.jobs.lastWorked] && state.jobs.discovered.includes(state.jobs.lastWorked) ? state.jobs.lastWorked : null;
     for (const job of SPENARD_JOBS) {
       const record = state.jobs.records[job.id];
       record.xp = Math.max(0, Number(record.xp) || 0);
@@ -1689,6 +1833,17 @@
     const discovered = new Set(state.jobs?.discovered || []);
     return SPENARD_JOBS.filter((job) => discovered.has(job.id));
   }
+  // The shift the player worked most recently, offered as a shortcut so the
+  // repeated daily action does not cost four routing taps. Returns null until
+  // they have worked once, so a first run still discovers work the long way.
+  function quickShift(state) {
+    const jobId = state.jobs?.lastWorked;
+    const job = SPENARD_JOB_BY_ID[jobId];
+    if (!job || !state.jobs.discovered.includes(jobId)) return null;
+    const availability = jobAvailability(state, jobId);
+    return { jobId, name: job.name, available: availability.available, reason: availability.reason, pay: jobPayRange(state, jobId) };
+  }
+
   function jobAvailability(state, jobId) {
     const job = SPENARD_JOB_BY_ID[jobId];
     const record = state.jobs?.records?.[jobId];
@@ -4194,6 +4349,7 @@
     record.rank = jobRankForXp(record.xp);
     if (job.scheduled) state.jobs.lastScheduledShiftDay = state.run.day;
     else state.jobs.lastDeliveryDay = state.run.day;
+    state.jobs.lastWorked = job.id;
     state.onboarding.shiftsWorked += 1;
     recordVisitedLocation(state, `job:${job.id}`);
 
@@ -5439,7 +5595,7 @@
       weeklyIncomeEstimate, kipLieutenantAvailability, launderCapacity, launderAvailability,
       districtControlTier, districtHasBlockLayer, unassignedSoldiers,
       homeSituation, homeUnlocks, homePriorities, homeSummary, actionResult,
-      johnWorkIntelKnown, jobRankForXp, jobPayRange, discoveredJobs, jobAvailability, knownWorkplaceContacts, knownSocialContacts, contactAvailability,
+      johnWorkIntelKnown, jobRankForXp, jobPayRange, discoveredJobs, jobAvailability, quickShift, ambientFlavor, knownWorkplaceContacts, knownSocialContacts, contactAvailability,
       districtActionAvailability, aroundActions, travelAvailability,
       nightOwlStashUsed, nightOwlStashAvailability, relationshipLabel,
       checkpointDay, weekZeroProgress, listingSlate, nightOwlBoardItems, nightOwlRegularFor, nightOwlAvailability, listingInventoryValue,

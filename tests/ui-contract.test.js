@@ -165,29 +165,66 @@ test("the lender's identity is nested inside the debt detail page, not the persi
 
 // --- v1.1 simplification, Home, menus, and action feedback -------------------
 
-test("Home exists, is the landing screen, and answers the situation questions", () => {
-  assert.match(ui, /function Home\(\{ state, navigate \}\)/);
+test("Home is the residence plus whatever is pressing, and restates nothing", () => {
+  assert.match(ui, /function Home\(\{ state, dispatch, navigate \}\)/);
   assert.match(ui, /useState\(\{ tab: "home", more: "root", sub: null, token: 0 \}\)/);
-  assert.match(ui, /home: <Home state=\{state\} navigate=\{navigate\} \/>/);
-  for (const token of ["home-hero", "home-when", "home-where", "home-summary", "home-identity", "Street Identity", "Needs Attention"]) assert.ok(ui.includes(token), token);
+  assert.match(ui, /home: <Home state=\{state\} dispatch=\{act\} navigate=\{navigate\} \/>/);
+  for (const token of ["home-hero", "home-summary", "home-identity", "Street Identity", "Needs Attention", "Yalonda and John's"]) assert.ok(ui.includes(token), token);
   assert.match(ui, /C\.selectors\.homeSituation\(state\)/);
   // Home never renders the old dense action bar or a second copy of the log.
   assert.doesNotMatch(ui, /<Feed entries=\{state\.log\} \/>[\s\S]{0,40}home/);
+  // The room itself: stash, John, sleep, and the laptop when it is owned.
+  const home = ui.slice(ui.indexOf("function Home({ state, dispatch, navigate })"), ui.indexOf("const MARKET_TABLE_MIN"));
+  assert.match(home, /MenuRow title="Stash"/);
+  assert.match(home, /type: "ASK_JOHN"/);
+  assert.match(home, /type: "SLEEP_HOME"/);
+  assert.match(home, /MenuRow title="907List Laptop"/);
+  assert.match(home, /navigate\("travel", "root", null, "household"\)/);
 });
 
-test("Home reveals systems only once the run has unlocked them", () => {
-  assert.match(ui, /view\.unlocks\.operations && </);
-  assert.match(ui, /view\.unlocks\.laundering && <MenuRow title="Laundering"/);
-  assert.match(ui, /view\.unlocks\.recovery && <MenuRow title="Recovery"/);
-  assert.match(ui, /view\.unlocks\.territory && <StatTile label="Blocks"/);
-  assert.match(ui, /view\.unlocks\.soldiers && <StatTile label="Soldiers"/);
+test("Home prints no value the always-visible header is already showing", () => {
+  const home = ui.slice(ui.indexOf("function Home({ state, dispatch, navigate })"), ui.indexOf("const MARKET_TABLE_MIN"));
+  // Day, time, location and cash are header-only now.
+  assert.doesNotMatch(home, /home-when|home-where/);
+  assert.doesNotMatch(home, /view\.districtName/);
+  assert.doesNotMatch(home, /view\.partLabel/);
+  assert.doesNotMatch(home, /StatTile label="Cash"/);
+  // Heat and Debt tiles appear only when the header chip row is not carrying
+  // them, so the two surfaces can never show the same number at once.
+  assert.match(home, /const shown = headerShows\(state\)/);
+  assert.match(home, /const showHeatTile = !shown\.heat/);
+  assert.match(home, /const showDebtTile = hasDreDebt && !shown\.debt/);
+  // Health is only ever in the collapsed drawer, so it keeps its tile.
+  assert.match(home, /StatTile label="Health"/);
+});
+
+test("systems stay gated, and live in More rather than being restated on Home", () => {
+  // v1.6 moved the system shortcuts off Home. Nothing is stranded: More still
+  // carries every one of them, and still gates them on the same unlocks.
+  const more = ui.slice(ui.indexOf("function More({ state, dispatch, features"), ui.indexOf("function useDomId"));
+  assert.match(more, /MenuRow title="Operations"/);
+  assert.match(more, /MenuRow title="Recovery"/);
+  assert.match(more, /MenuRow title="Finances"/);
+  assert.match(more, /MenuRow title="907List"/);
+  assert.match(more, /features\.operations\.available/);
+  assert.match(more, /features\.recovery\.available/);
+  // Laundering is reached through Finances, which owns the panel.
+  assert.match(ui, /<LaunderingPanel/);
+  const home = ui.slice(ui.indexOf("function Home({ state, dispatch, navigate })"), ui.indexOf("const MARKET_TABLE_MIN"));
+  for (const gone of ['MenuRow title="Operations"', 'MenuRow title="Laundering"', 'MenuRow title="Recovery"', 'MenuRow title="Finances"']) {
+    assert.ok(!home.includes(gone), `Home should no longer restate ${gone}`);
+  }
 });
 
 test("the persistent HUD is progressive: pressure chips appear only under pressure", () => {
   assert.match(ui, /const showHeat = state\.player\.heat >= 3/);
   assert.match(ui, /const showDebt = hasDreDebt && state\.lender\.balance > 0 && state\.lender\.dueDay - state\.run\.day <= 2/);
   assert.match(ui, /const showRespect = state\.rival\.respect > 0/);
-  assert.match(ui, /hasDreDebt && \(showHeat \|\| showDebt \|\| showRespect\) && <div className="hud chip-row">/);
+  // The chip-row condition moved into headerShows so Home can read the same
+  // answer and avoid printing a value the header is already carrying.
+  assert.match(ui, /function headerShows\(state\)/);
+  assert.match(ui, /const chipRow = hasDreDebt && \(heat \|\| debt \|\| respect\)/);
+  assert.match(ui, /\{shown\.chipRow && <div className="hud chip-row">/);
 });
 
 test("primary navigation is a progressive bottom bar with icons and 44px targets", () => {
@@ -386,4 +423,113 @@ test("encounters are narrative-first, acknowledge results, and fit the 320px mob
   assert.match(css, /\.encounter-modal\{[^}]*overflow-x:hidden/);
   assert.match(css, /@media\(max-width:340px\)/);
   assert.match(css, /\.encounter-modal-backdrop\{[^}]*z-index:58/);
+});
+
+// --- v1.6 UX audit fixes -------------------------------------------------
+
+test("no top-level ui.jsx function delegates to a window property of its own name", () => {
+  // ui.jsx loads as type="text/babel", so Babel compiles it as a classic
+  // script and every top-level declaration becomes a window property. A hook
+  // named after its own function therefore resolves to itself and recurses
+  // until the stack blows. This shipped as `playSound` and unmounted the whole
+  // tree on the first tab unlock, which also bricked the autosave.
+  const declarations = [...ui.matchAll(/^function ([A-Za-z_$][\w$]*)\s*\(/gm)].map((match) => match[1]);
+  assert.ok(declarations.length > 20, "expected to find the top-level function declarations");
+  for (const name of declarations) {
+    assert.doesNotMatch(ui, new RegExp(`window\\.${name}\\s*\\(`), `${name} calls window.${name}, which is itself`);
+    assert.doesNotMatch(ui, new RegExp(`typeof window\\.${name}\\s*===`), `${name} probes window.${name}, which is itself`);
+  }
+  assert.match(ui, /typeof window\.__907sfx === "function"/);
+});
+
+test("page header lays the back button beside the title block instead of floating it", () => {
+  // float:left with no clearfix dropped the second line of a wrapped subtitle
+  // under the button and outside the header band.
+  assert.match(ui, /<div className="page-head-text"><h1>\{title\}<\/h1><p>\{sub\}<\/p><\/div>/);
+  assert.match(css, /\.page-head\{display:flex/);
+  assert.match(css, /\.back-btn\{float:none/);
+  assert.match(css, /\.page-head-text\{flex:1;min-width:0\}/);
+});
+
+test("the HUD carries four time-slot pips with a reduced-motion fallback", () => {
+  assert.match(ui, /function SlotPips\(\{ slot \}\)/);
+  assert.match(ui, /<SlotPips slot=\{state\.run\.slot\} \/>/);
+  assert.match(ui, /className="slot-pips" aria-hidden="true"/);
+  assert.match(css, /\.slot-pip\{[^}]*border-radius:50%/);
+  assert.match(css, /@media\(prefers-reduced-motion:no-preference\)\{\.slot-pip\.now\{animation:pip-breathe/);
+});
+
+test("a sparse market renders cards and a dense one keeps the table", () => {
+  const market = ui.slice(ui.indexOf("const MARKET_TABLE_MIN"), ui.indexOf("function Boost("));
+  assert.match(market, /const MARKET_TABLE_MIN = 3/);
+  assert.match(market, /const compact = products\.length < MARKET_TABLE_MIN/);
+  assert.match(market, /\{!compact && <div className="market-grid market-head">/);
+  assert.match(css, /\.product-card\{/);
+});
+
+test("the travel root offers a quick shift once the player has worked one", () => {
+  const travel = ui.slice(ui.indexOf("function Travel("), ui.indexOf("function SpenardBlockCard"));
+  assert.match(travel, /C\.selectors\.quickShift\(state\)/);
+  assert.match(travel, /setPage\(`around:job:\$\{shift\.jobId\}`\)/);
+  assert.match(ui, /initialPage = "root"/);
+  assert.match(css, /\.quick-shift\{/);
+});
+
+test("HUD value changes flash only after an in-session change", () => {
+  assert.match(ui, /function useValueFlash\(value\)/);
+  // The first render seeds the previous value without reporting, so loading a
+  // save never flashes a full run's worth of numbers at the player.
+  assert.match(ui, /if \(!seeded\.current\) \{ seeded\.current = true; previous\.current = value; return; \}/);
+  assert.match(ui, /const cashFlash = cashMove === "up" \? "good" : cashMove === "down" \? "bad" : null/);
+  assert.match(ui, /const heatFlash = heatMove === "up" \? "warn" : null/);
+  assert.match(ui, /const healthFlash = healthMove === "down" \? "bad" : null/);
+  assert.match(css, /\.hud-item\[data-flash="good"\]\{animation:flash-good/);
+  assert.match(css, /@media\(prefers-reduced-motion:reduce\)\{\n\s*\.hud-item\[data-flash\],\.status-chip\[data-flash\]\{animation:none\}/);
+});
+
+test("tab navigation goes through one view-transition funnel and degrades", () => {
+  assert.match(ui, /typeof document\.startViewTransition !== "function"\) \{ apply\(\); return; \}/);
+  assert.match(ui, /document\.startViewTransition\(\(\) => ReactDOM\.flushSync\(apply\)\)/);
+  assert.match(css, /::view-transition-old\(root\)/);
+  assert.match(css, /::view-transition-new\(root\)/);
+  assert.match(css, /@media\(prefers-reduced-motion:reduce\)\{\n\s*::view-transition-old\(root\),::view-transition-new\(root\)\{animation:none\}/);
+});
+
+test("the ambient ticker is decorative, location-aware, and never overlaps the nav", () => {
+  assert.match(ui, /function AmbientTicker\(\{ state \}\)/);
+  assert.match(ui, /C\.selectors\.ambientFlavor\(state\)/);
+  assert.match(ui, /className="ambient" aria-hidden="true"/);
+  // Rendered inside the bottom block, above the feed, so it shares the shell
+  // row that already holds the action bar and nav instead of floating over it.
+  assert.match(ui, /<AmbientTicker state=\{state\} \/>\n\s*<Feed entries=\{state\.log\} \/>/);
+  assert.doesNotMatch(ui, /AmbientTicker[\s\S]{0,400}dispatch/);
+  const ambientRule = css.match(/\.ambient\{[^}]*\}/)[0];
+  assert.doesNotMatch(ambientRule, /position:fixed|position:absolute/, "the ticker stays in flow so it cannot cover the action bar");
+  assert.match(ambientRule, /overflow:hidden/);
+  assert.match(ambientRule, /white-space:nowrap/);
+});
+
+test("ambient flavor copy follows the house writing rules", () => {
+  const core = fs.readFileSync(path.join(root, "game-core.js"), "utf8");
+  const registry = core.slice(core.indexOf("const AMBIENT_FLAVOR = {"), core.indexOf("function ambientFlavor(state)"));
+  const lines = [...registry.matchAll(/^\s*"([^"]+)",$/gm)].map((match) => match[1]);
+  assert.ok(lines.length >= 90, `expected a full registry, found ${lines.length} lines`);
+  for (const line of lines) {
+    assert.doesNotMatch(line, /[—–]/, `em dash: ${line}`);
+    assert.doesNotMatch(line, /\b(real|really|very|truly|actually|basically|literally)\b/i, `vague intensifier: ${line}`);
+    assert.doesNotMatch(line, /\bnot\b[^.]*\bbut\b/i, `negation pivot: ${line}`);
+    assert.ok(line.split(/\s+/).length < 40, `over 40 words: ${line}`);
+  }
+});
+
+test("every neighborhood has an ambient pool for all four parts of day", () => {
+  const C = require("../game-core.js");
+  for (const area of C.NEIGHBORHOODS) {
+    for (let slot = 0; slot < C.SLOTS.length; slot += 1) {
+      const state = { world: { currentNeighborhoodId: area.id }, run: { slot } };
+      const pool = C.selectors.ambientFlavor(state);
+      assert.ok(pool.length >= 8, `${area.id} slot ${slot} has ${pool.length} lines`);
+      assert.equal(new Set(pool).size, pool.length, `${area.id} slot ${slot} repeats a line`);
+    }
+  }
 });

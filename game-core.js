@@ -50,21 +50,22 @@
     { id: "meth", name: "Meth", role: "Extreme Risk", base: 185, min: 70, max: 560, volatility: 0.38, heat: 2, access: "industrial" },
   ];
 
+  const HOME_DISTRICT_ID = "north_star_lot";
   const NEIGHBORHOODS = [
     {
-      id: "north_star_lot", name: "Spenard", role: "Home", risk: 1, police: 1, rival: 0,
+      id: "north_star_lot", name: "Spenard", role: "Home", travelAction: "TRAVEL", risk: 1, police: 1, rival: 0,
       accent: "#d7d7d7", blurb: "North Star Garage, the Night Owl Mini-Mart, and familiar blocks that offer the week's safest footing.",
       bias: { weed: 0.78, shrooms: 0.88, cocaine: 1.02, meth: 0.95 },
       availability: { weed: 1, shrooms: 0.88, pills: 0.82, lean: 0.7, coke: 0.62, molly: 0.68, cocaine: 0.55, meth: 0.48 },
     },
     {
-      id: "downtown", name: "Downtown", role: "Commercial", risk: 2, police: 3, rival: 1,
+      id: "downtown", name: "Downtown", role: "Commercial", travelAction: "BUS_TRAVEL", risk: 2, police: 3, rival: 1,
       accent: "#e14332", blurb: "Nightlife money moves fast under cameras and through Rook's buyers.",
       bias: { weed: 1.08, shrooms: 1.32, cocaine: 1.46, meth: 1.08 },
       availability: { weed: 0.9, shrooms: 0.9, pills: 0.82, lean: 0.78, coke: 0.8, molly: 0.86, cocaine: 0.78, meth: 0.58 },
     },
     {
-      id: "airport_industrial", name: "Industrial Service Roads", role: "Outer", risk: 4, police: 2, rival: 3,
+      id: "airport_industrial", name: "Industrial Service Roads", role: "Outer", travelAction: "TRAVEL", risk: 4, police: 2, rival: 3,
       accent: "#9a1d18", blurb: "Loading yards, warehouses, service roads, rare supply, and expensive mistakes.",
       bias: { weed: 1.12, shrooms: 1.18, cocaine: 1.32, meth: 1.62 },
       availability: { weed: 0.72, shrooms: 0.7, pills: 0.7, lean: 0.74, coke: 0.78, molly: 0.72, cocaine: 0.7, meth: 0.86 },
@@ -244,7 +245,7 @@
   };
   const SPENARD_JOBS = [
     {
-      id: "wash_go", name: "Wash & Go Attendant", pay: [40, 60], slots: [0, 1, 2, 3], scheduled: true, risk: "None",
+      id: "wash_go", name: "Wash & Go Attendant", areaId: HOME_DISTRICT_ID, pay: [40, 60], slots: [0, 1, 2, 3], scheduled: true, risk: "None",
       starter: true,
       coworkers: [
         { id: "lena", name: "Lena Aguchak", introduction: "Lena Aguchak shows you the towel shelves, then points out which machines shake during the spin cycle." },
@@ -255,7 +256,7 @@
       shiftDialogue: ["The dryers thump through another load while the counter stays steady.", "A line forms at the change machine. You keep it moving.", "Salt dries white across the floor. The last basket leaves clean."],
     },
     {
-      id: "spenard_chevron", name: "Spenard Chevron Clerk", pay: [48, 60], slots: [0, 1, 2, 3], scheduled: true, risk: "None", starter: true,
+      id: "spenard_chevron", name: "Spenard Chevron Clerk", areaId: HOME_DISTRICT_ID, pay: [48, 60], slots: [0, 1, 2, 3], scheduled: true, risk: "None", starter: true,
       coworkers: [
         { id: "tiana", name: "Tiana Cole", introduction: "Tiana Cole shows you the cigarette count and the camera angles behind the counter." },
         { id: "owen", name: "Owen Park", introduction: "Owen Park hands you a register code and points toward the rush that follows every airport shift." },
@@ -265,7 +266,7 @@
       shiftDialogue: ["Pump numbers blink while you count change under the counter light.", "A cab line fills the lot. Coffee and fuel move together.", "The doors hiss open all shift. You keep the register square."],
     },
     {
-      id: "rebel_convenience", name: "Rebel Convenience Clerk", pay: [48, 60], slots: [0, 1, 2, 3], scheduled: true, risk: "None", starter: true,
+      id: "rebel_convenience", name: "Rebel Convenience Clerk", areaId: HOME_DISTRICT_ID, pay: [48, 60], slots: [0, 1, 2, 3], scheduled: true, risk: "None", starter: true,
       coworkers: [
         { id: "rochelle", name: "Rochelle King", introduction: "Rochelle King walks you through the cooler count and the stack of delivery slips." },
         { id: "jae", name: "Jae Park", introduction: "Jae Park gives you the register drawer and shows you which regulars pay in exact change." },
@@ -275,7 +276,7 @@
       shiftDialogue: ["The cooler doors knock shut while the register keeps ringing.", "A delivery blocks one aisle. You clear boxes between customers.", "Lottery slips curl beside the till. Your drawer stays even."],
     },
     {
-      id: "northern_value", name: "Northern Value Floor Staff", pay: [48, 60], slots: [0, 1, 2], scheduled: true, risk: "None", starter: true,
+      id: "northern_value", name: "Northern Value Floor Staff", areaId: HOME_DISTRICT_ID, pay: [48, 60], slots: [0, 1, 2], scheduled: true, risk: "None", starter: true,
       coworkers: [
         { id: "isaiah", name: "Isaiah Green", introduction: "Isaiah Green hands you a rolling rack and shows you how the floor gets reset before lunch." },
         { id: "ana", name: "Ana Sosa", introduction: "Ana Sosa marks the sorting bins and points out the donations worth moving first." },
@@ -285,21 +286,21 @@
       shiftDialogue: ["Coats move from the rack before you finish tagging the next row.", "Donation carts crowd the back door. You sort a path through them.", "The floor clears by closing. One last rack rolls into place."],
     },
     {
-      id: "night_owl", name: "Night Owl counter shift", pay: [55, 75], slots: [2], scheduled: true, risk: "None",
+      id: "night_owl", name: "Night Owl counter shift", areaId: HOME_DISTRICT_ID, pay: [55, 75], slots: [2], scheduled: true, risk: "None",
       coworkers: [{ id: "mara", name: "Mara Velez", introduction: "Mara points out the closing list, the regulars, and which register sticks. Then she hands you an apron." }],
       discovery: "The Night Owl has a cardboard sign by the register: 'Counter help needed, evenings.'",
       details: ["Mara says the coffee rush ends ten minutes after the last airport shift bus.", "The owner counts cigarettes before cash and checks the back door twice."],
       shiftDialogue: ["The counter light catches every face that comes through after dusk.", "Coffee burns low while Mara counts the last cigarettes.", "The door keeps opening until the city finally settles."],
     },
     {
-      id: "delivery", name: "Delivery run", pay: [60, 120], slots: [0, 1, 2, 3], scheduled: false, risk: "None",
+      id: "delivery", name: "Delivery run", areaId: HOME_DISTRICT_ID, pay: [60, 120], slots: [0, 1, 2, 3], scheduled: false, risk: "None",
       coworkers: [{ id: "minh", name: "Minh Tran", introduction: "Minh Tran keeps the courier route moving with two phones and a paper map." }],
       discovery: "Guy loading a van on Spenard Road asks if you drive. Says he needs runners.",
       details: ["Minh marks apartment entrances that stay clear when the snow berms narrow the road.", "The airport hotels accept deliveries fastest between housekeeping rounds."],
       shiftDialogue: ["The route folds across Spenard and back before the next call lands.", "Hotel doors open, packages change hands, and the van keeps moving.", "Snow narrows the curb. You finish every stop without losing the route."],
     },
     {
-      id: "ship_creek", name: "Ship Creek Freight", pay: [110, 140], slots: [0], scheduled: true, risk: "None",
+      id: "ship_creek", name: "Ship Creek Freight", areaId: HOME_DISTRICT_ID, pay: [110, 140], slots: [0], scheduled: true, risk: "None",
       coworkers: [{ id: "marcus", name: "Marcus Bell", introduction: "Marcus Bell checks your gloves, points at the freight line, and says payday is at the door." }],
       discovery: "Flyer stapled to a phone pole: 'FREIGHT HELP NEEDED. Same day pay. AM only.'",
       details: ["Marcus says the first truck after sunrise is the one that decides whether the dock falls behind.", "The yard office keeps a short list of workers who show up before the gate opens."],
@@ -338,6 +339,79 @@
     "Construction on 4th Ave. A few bars gear up for the evening. Nothing pulls at you yet.",
     "Downtown foot traffic. People in work clothes head somewhere with purpose. You are just passing through.",
   ];
+
+  const ALL_DAY_SLOTS = [0, 1, 2, 3];
+  const DISTRICT_ACTIONS = {
+    explore_spenard: {
+      id: "explore_spenard", areaId: HOME_DISTRICT_ID, slots: ALL_DAY_SLOTS, cashCost: 0, timeCost: 1, healthCost: 0,
+      action: { type: "WANDER_SPENARD" }, around: true, order: 10,
+    },
+    local_intel: {
+      id: "local_intel", areaId: HOME_DISTRICT_ID, slots: ALL_DAY_SLOTS, cashCost: 0, timeCost: 0, healthCost: 0,
+      action: null, around: true, order: 20,
+    },
+    night_owl: {
+      id: "night_owl", areaId: HOME_DISTRICT_ID, slots: [2, 3], cashCost: 0, timeCost: 0, healthCost: 0,
+      action: null, around: true, order: 30, closedReason: "Opens at dusk.",
+    },
+    spenard_gym: {
+      id: "spenard_gym", areaId: HOME_DISTRICT_ID, slots: ALL_DAY_SLOTS,
+      cashCost: (state) => gymSessionDetails(state).cost, timeCost: 1, healthCost: 0,
+      action: { type: "TRAIN_ATTRIBUTE" }, around: true, order: 40,
+    },
+    spenard_gambling: {
+      id: "spenard_gambling", areaId: HOME_DISTRICT_ID, slots: [2, 3],
+      cashCost: (_state, params) => Math.max(0, Math.floor(params.stake || 0)), timeCost: 1, healthCost: 0,
+      action: { type: "GAMBLE" }, around: true, order: 50,
+      visibleWhen: (state) => !!state.world.locations.gamblingKnown,
+      closedReason: "The game runs in the Evening and at Night.",
+    },
+    northern_value_shoplift: {
+      id: "northern_value_shoplift", areaId: HOME_DISTRICT_ID, slots: ALL_DAY_SLOTS, cashCost: 0, timeCost: 1, healthCost: 0,
+      action: { type: "SHOPLIFT" }, around: false,
+    },
+    night_owl_board: {
+      id: "night_owl_board", areaId: HOME_DISTRICT_ID, slots: [2, 3], cashCost: 0, timeCost: 0, healthCost: 0,
+      action: { type: "VIEW_NIGHT_OWL_BOARD" }, around: false, closedReason: "Opens at dusk.",
+    },
+    night_owl_coffee: {
+      id: "night_owl_coffee", areaId: HOME_DISTRICT_ID, slots: [2, 3], cashCost: 4, timeCost: 1, healthCost: 0,
+      action: { type: "BUY_COFFEE" }, around: false, closedReason: "Opens at dusk.",
+    },
+    night_owl_regular: {
+      id: "night_owl_regular", areaId: HOME_DISTRICT_ID, slots: [2, 3], cashCost: 0, timeCost: 1, healthCost: 0,
+      action: { type: "TALK_NIGHT_OWL_REGULAR" }, around: false, closedReason: "Opens at dusk.",
+    },
+    night_owl_visit: {
+      id: "night_owl_visit", areaId: HOME_DISTRICT_ID, slots: [2, 3], cashCost: 0, timeCost: 1, healthCost: 0,
+      action: { type: "VISIT_NIGHT_OWL" }, around: false, closedReason: "Opens at dusk.",
+    },
+    night_owl_stash: {
+      id: "night_owl_stash", areaId: HOME_DISTRICT_ID, slots: [2, 3], cashCost: 0, timeCost: 0, healthCost: 0,
+      action: null, around: false, closedReason: "Opens at dusk.",
+    },
+    return_spenard: {
+      id: "return_spenard", areaId: "*", slots: ALL_DAY_SLOTS,
+      cashCost: (state) => transitCovered(state) ? 0 : 5, timeCost: 1, healthCost: 0,
+      action: { type: "TRAVEL", neighborhoodId: HOME_DISTRICT_ID }, around: true, order: 0,
+    },
+    walk_spenard: {
+      id: "walk_spenard", areaId: "*", slots: ALL_DAY_SLOTS, cashCost: 0, timeCost: 2, healthCost: 3,
+      action: { type: "WALK_HOME" }, around: true, order: 1,
+      visibleWhen: (state) => state.world.currentNeighborhoodId !== HOME_DISTRICT_ID && !travelAvailability(state, HOME_DISTRICT_ID).available,
+    },
+    ...Object.fromEntries(SPENARD_JOBS.map((job) => [`job:${job.id}`, {
+      id: `job:${job.id}`, areaId: job.areaId, slots: job.slots, cashCost: 0, timeCost: 1, healthCost: 0,
+      action: { type: "WORK_JOB", jobId: job.id }, around: false,
+    }])),
+  };
+
+  const DISTRICT_ACTION_BY_TYPE = {
+    WANDER_SPENARD: "explore_spenard", EXPLORE_SPENARD: "explore_spenard", TRAIN_ATTRIBUTE: "spenard_gym",
+    GAMBLE: "spenard_gambling", SHOPLIFT: "northern_value_shoplift", VIEW_NIGHT_OWL_BOARD: "night_owl_board",
+    BUY_COFFEE: "night_owl_coffee", TALK_NIGHT_OWL_REGULAR: "night_owl_regular", VISIT_NIGHT_OWL: "night_owl_visit",
+    NIGHT_OWL_STASH_CASH: "night_owl_stash", NIGHT_OWL_STASH_PRODUCT: "night_owl_stash", WALK_HOME: "walk_spenard",
+  };
 
   const SOCIAL_CONTACTS = Object.fromEntries([
     ...SPENARD_JOBS.flatMap((job) => job.coworkers.map((person) => ({ ...person, jobId: job.id, location: job.id === "night_owl" ? "night_owl" : `job:${job.id}` }))),
@@ -1377,6 +1451,7 @@
   ]);
   function actionEnergyCost(state, actionType) {
     if (!TIME_ACTIONS.has(actionType)) return 0;
+    if (actionType === "WALK_HOME") return 0;
     if (actionType === "BUY_COFFEE") return state.run.overtimeArmed ? 2 : 0;
     return state.run.overtimeArmed ? 2 : 1;
   }
@@ -1417,6 +1492,106 @@
     state.run.checkpointDay = state.run.day + PRESSURE_DAYS;
     state.onboarding.dreEligible = false;
   }
+  function transitCovered(state) {
+    return !!(state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day);
+  }
+  function gymSessionDetails(state) {
+    const gym = state.world.locations.gym;
+    const sessionsToday = gym.sessionDay === state.run.day ? gym.sessionsToday : 0;
+    const index = Math.min(3, sessionsToday);
+    return { cost: [25, 45, 75, 120][index], progress: [3, 2, 1, 1][index], sessionsToday };
+  }
+  function resolveDistrictCost(definition, field, state, params) {
+    const value = typeof definition[field] === "function" ? definition[field](state, params || {}) : definition[field];
+    return Math.max(0, Math.floor(Number(value) || 0));
+  }
+  function travelAvailability(state, destinationId) {
+    const destination = AREA_BY_ID[destinationId];
+    const covered = transitCovered(state);
+    const cashCost = covered ? 0 : 5;
+    const base = { visible: !!destination, available: false, reason: "That route is unavailable.", cashCost, timeCost: 1, healthCost: 0 };
+    if (!destination) return base;
+    if (destinationId === state.world.currentNeighborhoodId) return { ...base, visible: false, reason: `You are already in ${destination.name}.`, cashCost: 0 };
+    if (destinationId === "airport_industrial" && state.run.premise !== "legacy_established" && !state.world.transport.industrialRouteKnown) {
+      return { ...base, reason: "Industrial needs a trusted route." };
+    }
+    if (state.player.cash < cashCost) return { ...base, reason: "Need $5 fare." };
+    return { ...base, available: true, reason: covered ? "Your pass covers this ride." : "$5 single ride." };
+  }
+  function districtActionAvailability(state, actionId, params = {}) {
+    const definition = DISTRICT_ACTIONS[actionId];
+    const unavailable = { visible: false, available: false, reason: "Action unavailable.", cashCost: 0, timeCost: 0, healthCost: 0 };
+    if (!definition || !state?.world) return unavailable;
+    if (actionId === "return_spenard") {
+      if (state.world.currentNeighborhoodId === HOME_DISTRICT_ID) return unavailable;
+      return travelAvailability(state, HOME_DISTRICT_ID);
+    }
+    const cashCost = resolveDistrictCost(definition, "cashCost", state, params);
+    const timeCost = resolveDistrictCost(definition, "timeCost", state, params);
+    const healthCost = resolveDistrictCost(definition, "healthCost", state, params);
+    const result = { visible: false, available: false, reason: "Unavailable here.", cashCost, timeCost, healthCost };
+    const inDistrict = definition.areaId === "*"
+      ? state.world.currentNeighborhoodId !== HOME_DISTRICT_ID
+      : state.world.currentNeighborhoodId === definition.areaId;
+    if (!inDistrict || (definition.visibleWhen && !definition.visibleWhen(state, params))) return result;
+    result.visible = true;
+    const slots = params.slots || definition.slots || ALL_DAY_SLOTS;
+    if (!params.ignoreSlots && !slots.includes(state.run.slot)) {
+      result.reason = definition.closedReason || `Available during ${slots.map((slot) => SLOTS[slot]).join(" or ")}.`;
+      return result;
+    }
+    if (state.player.cash < cashCost) {
+      result.reason = actionId === "return_spenard" ? "Need $5 fare." : `Need $${cashCost}.`;
+      return result;
+    }
+    if (actionId === "walk_spenard") {
+      result.available = true;
+      result.reason = "Two parts of day and 3 Health.";
+      return result;
+    }
+    if (actionId === "spenard_gym") {
+      const gym = gymSessionDetails(state);
+      result.available = true;
+      result.reason = gym.sessionsToday ? "Same-day training costs more and gives less progress." : "The first session gives the best progress.";
+      return result;
+    }
+    if (actionId === "spenard_gambling") {
+      if (params.stake != null && ![20, 50, 100].includes(Math.floor(params.stake))) {
+        result.reason = "Choose a listed stake.";
+        return result;
+      }
+      result.available = true;
+      result.reason = "Seeded risk. Reading the room helps without guaranteeing profit.";
+      return result;
+    }
+    result.available = true;
+    if (actionId === "explore_spenard") result.reason = state.world.locations.explorationCount ? "Later walks draw from a diminishing discovery pool." : "Your first useful discovery is guaranteed.";
+    else if (actionId === "night_owl" || actionId.startsWith("night_owl_")) result.reason = "Open now.";
+    else if (actionId === "local_intel") result.reason = "Free local information.";
+    else result.reason = timeCost ? `Uses ${timeCost === 1 ? "one part" : `${timeCost} parts`} of day.` : "Available now.";
+    return result;
+  }
+  function aroundActions(state) {
+    return Object.values(DISTRICT_ACTIONS)
+      .filter((definition) => definition.around)
+      .map((definition) => ({ id: definition.id, action: definition.action, order: definition.order || 0, ...districtActionAvailability(state, definition.id) }))
+      .filter((entry) => entry.visible)
+      .sort((a, b) => a.order - b.order);
+  }
+  function districtActionIdFor(action) {
+    if (action.type === "WORK_JOB") return `job:${action.jobId}`;
+    if (action.type === "WORK_SHIFT") return "job:ship_creek";
+    if (action.type === "TRAVEL" && action.neighborhoodId === HOME_DISTRICT_ID) return "return_spenard";
+    return DISTRICT_ACTION_BY_TYPE[action.type] || null;
+  }
+  function districtActionPreflight(state, action) {
+    const actionId = districtActionIdFor(action);
+    if (!actionId) return true;
+    const params = action.type === "GAMBLE" ? { stake: action.stake }
+      : action.type === "WORK_JOB" && action.jobId === "night_owl" && state.jobs?.records?.night_owl?.rank >= 1 ? { slots: [2, 3] }
+        : {};
+    return districtActionAvailability(state, actionId, params).available;
+  }
   function listingSlate(state, surface) {
     const atHome = surface === "home" && state.world.currentNeighborhoodId === "north_star_lot" && state.inventory.laptop;
     const count = atHome ? 5 : 3;
@@ -1435,8 +1610,7 @@
     return NIGHT_OWL_REGULARS[Math.abs((state.run.seed || 1) + state.run.day + state.run.slot) % NIGHT_OWL_REGULARS.length];
   }
   function nightOwlAvailability(state) {
-    const open = state.world.currentNeighborhoodId === "north_star_lot" && [2, 3].includes(state.run.slot);
-    return { available: open, reason: open ? "Open now." : state.world.currentNeighborhoodId !== "north_star_lot" ? "Return to Spenard first." : "Opens at dusk." };
+    return districtActionAvailability(state, "night_owl");
   }
   function actionSummaryLabel(reason) {
     const labels = {
@@ -1470,27 +1644,27 @@
   }
   function activityAvailability(state) {
     const employer = state.world.locations.employer;
-    const busCovered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
-    const gym = state.world.locations.gym;
-    const gymSessions = gym.sessionDay === state.run.day ? gym.sessionsToday : 0;
-    const gymCosts = [25, 45, 75, 120];
-    const gymProgress = [3, 2, 1, 1];
-    const gymIndex = Math.min(3, gymSessions);
+    const gym = gymSessionDetails(state);
     const store = state.world.locations.discountStore;
+    const explore = districtActionAvailability(state, "explore_spenard");
+    const gymAccess = districtActionAvailability(state, "spenard_gym");
+    const gamblingAccess = districtActionAvailability(state, "spenard_gambling");
+    const downtown = travelAvailability(state, "downtown");
+    const industrial = travelAvailability(state, "airport_industrial");
     return {
-      work: state.run.slot !== 0 ? { available: false, reason: "Ship Creek hires in the Morning only.", cost: 0 }
+      work: state.world.currentNeighborhoodId !== HOME_DISTRICT_ID ? { available: false, reason: "Return to Spenard first.", cost: 0 }
+        : state.run.slot !== 0 ? { available: false, reason: "Ship Creek hires in the Morning only.", cost: 0 }
         : employer.lastShiftDay === state.run.day ? { available: false, reason: "You already worked today's shift.", cost: 0 }
           : { available: true, reason: "One freight shift builds legitimate standing.", cost: 0 },
-      explore: { available: true, reason: state.world.locations.explorationCount ? "Later walks draw from a diminishing discovery pool." : "Your first useful discovery is guaranteed.", cost: 0 },
-      busDowntown: state.world.currentNeighborhoodId === "downtown" ? { available: false, reason: "You are already Downtown.", cost: 0 }
-        : { available: state.player.cash >= (busCovered ? 0 : 5), reason: busCovered ? "Your pass covers this ride." : "$5 single ride; passes are also available.", cost: busCovered ? 0 : 5 },
-      industrial: { available: state.run.premise === "legacy_established" || state.world.transport.industrialRouteKnown, reason: state.world.transport.industrialRouteKnown ? "A trusted route is available." : "Industrial needs Eli, a trusted ride, a future vehicle, or a specific route.", cost: 0 },
-      gym: state.world.currentNeighborhoodId !== "north_star_lot" ? { available: false, reason: "Return to Spenard to use the gym.", cost: gymCosts[gymIndex], progress: gymProgress[gymIndex], sessionsToday: gymSessions } : { available: state.player.cash >= gymCosts[gymIndex], reason: `${gymSessions ? "Same-day training is more expensive and less effective." : "The first session gives the best progress."}`, cost: gymCosts[gymIndex], progress: gymProgress[gymIndex], sessionsToday: gymSessions },
-      gambling: state.world.currentNeighborhoodId !== "north_star_lot" ? { available: false, reason: "Return to Spenard for the game." }
+      explore: { available: explore.available, reason: explore.visible ? explore.reason : "Return to Spenard first.", cost: 0 },
+      busDowntown: { available: downtown.available, reason: downtown.reason, cost: downtown.cashCost },
+      industrial: { available: industrial.available, reason: industrial.reason, cost: industrial.cashCost },
+      gym: { available: gymAccess.available, reason: gymAccess.visible ? gymAccess.reason : "Return to Spenard to use the gym.", cost: gym.cost, progress: gym.progress, sessionsToday: gym.sessionsToday },
+      gambling: state.world.currentNeighborhoodId !== HOME_DISTRICT_ID ? { available: false, reason: "Return to Spenard for the game." }
         : !state.world.locations.gamblingKnown ? { available: false, reason: "Nobody has trusted you with the game's address yet." }
-        : ![2, 3].includes(state.run.slot) ? { available: false, reason: "The game runs in the Evening and at Night." }
-          : { available: true, reason: "Seeded risk; reading the room improves a chance, never guarantees it." },
-      shoplifting: state.boost?.visible ? { available: false, reason: "Use the Boost tab for known targets." }
+          : { available: gamblingAccess.available, reason: gamblingAccess.reason },
+      shoplifting: state.world.currentNeighborhoodId !== HOME_DISTRICT_ID ? { available: false, reason: "Return to Spenard first." }
+        : state.boost?.visible ? { available: false, reason: "Use the Boost tab for known targets." }
         : store.lastAttemptDay === state.run.day ? { available: false, reason: "Northern Value is watching for you today." }
           : { available: true, reason: "One attempt per day. Reflexes lead; Insight, Heat, and suspicion matter." },
     };
@@ -1521,12 +1695,14 @@
     if (!job || !record || !state.jobs.discovered.includes(jobId)) return { available: false, reason: "You have not found this work yet." };
     if (state.run.status !== "playing") return { available: false, reason: "The run is not active." };
     if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
-    if (state.world.currentNeighborhoodId !== "north_star_lot") return { available: false, reason: "Return to Spenard first." };
+    const allowedSlots = jobId === "night_owl" && record.rank >= 1 ? [2, 3] : job.slots;
+    const districtAccess = districtActionAvailability(state, `job:${jobId}`, { slots: allowedSlots, ignoreSlots: true });
+    if (!districtAccess.visible) return { available: false, reason: "Return to Spenard first." };
     if (jobId === "night_owl" && !state.people.mara.met) return { available: false, reason: "Meet the Night Owl clerk first." };
     if (jobId === "night_owl" && !state.people.mara.available) return { available: false, reason: "Mara is not available." };
     if (jobId === "delivery" && !state.world.transport.industrialRouteKnown) return { available: false, reason: "Needs a reliable ride." };
-    const allowedSlots = jobId === "night_owl" && record.rank >= 1 ? [2, 3] : job.slots;
-    if (!allowedSlots.includes(state.run.slot)) {
+    const timedAccess = districtActionAvailability(state, `job:${jobId}`, { slots: allowedSlots });
+    if (!timedAccess.available) {
       const label = allowedSlots.map((slot) => SLOTS[slot]).join(" or ");
       return { available: false, reason: `${job.name} runs ${label} only.` };
     }
@@ -3453,8 +3629,9 @@
     if (activity) addStreetReadEntry(state, "routine", `${SLOTS[oldSlot].toLowerCase()}:${activity}`);
     closeVisit(state, context.reason);
     recordDailyAction(state, context);
-    const nightAction = oldSlot === 3;
-    if (!nightAction) state.run.slot += 1;
+    const timeCost = clamp(Math.floor(Number(context.timeCost) || 1), 1, SLOTS.length);
+    const reachesDayEnd = oldSlot + timeCost >= SLOTS.length;
+    state.run.slot = reachesDayEnd ? SLOTS.length - 1 : oldSlot + timeCost;
     expireEffects(state);
     resolveCrewAssignments(state, random);
     resolveSoldierOperations(state, random, false);
@@ -3476,9 +3653,9 @@
       if (triggered) {
         triggered.choices = EncounterSystem.getEligibleChoices(triggered, state).map((item) => item.id);
         state.run.pendingEncounter = triggered;
-      } else if (!context.suppressStory && !nightAction) scheduleStory(state, context, random);
+      } else if (!context.suppressStory && !reachesDayEnd) scheduleStory(state, context, random);
     }
-    if (nightAction && state.run.status === "playing") state.run.dayEndPending = true;
+    if (reachesDayEnd && state.run.status === "playing") state.run.dayEndPending = true;
     state.run.rngState = random.state;
     return state;
   }
@@ -4150,6 +4327,7 @@
       logEntry(state, action.type === "START_RUN" ? `${state.player.streetName} wakes in Yalonda's spare room with $100 and a city that has not opened yet.` : `${state.player.streetName} continues an established week under Dre's note.`, "warn");
       return state;
     }
+    if (!districtActionPreflight(inputState, action)) return inputState;
     if (TIME_ACTIONS.has(action.type) && (inputState.run.dayEndPending || !canSpendEnergy(inputState, action.type))) return inputState;
     if (action.type === "RESOLVE_ENCOUNTER") return reduceEncounter(inputState, action);
     if (action.type === "ACKNOWLEDGE_ENCOUNTER") {
@@ -4600,7 +4778,7 @@
       return advanceRun(base, { reason: action.type });
     }
     if (action.type === "WANDER_SPENARD" || action.type === "EXPLORE_SPENARD") {
-      if (state.world.currentNeighborhoodId !== "north_star_lot") return inputState;
+      if (state.world.currentNeighborhoodId !== HOME_DISTRICT_ID) return inputState;
       const random = makeRandom(base.run.rngState);
       const count = base.world.locations.explorationCount;
       base.world.locations.explorationCount += 1;
@@ -4691,10 +4869,10 @@
     }
     if (action.type === "BUS_TRAVEL") {
       const destination = action.neighborhoodId;
-      if (!["north_star_lot", "downtown"].includes(destination) || destination === state.world.currentNeighborhoodId) return inputState;
-      const covered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
-      const cost = covered ? 0 : 5;
-      if (state.player.cash < cost) return inputState;
+      if (![HOME_DISTRICT_ID, "downtown"].includes(destination) || destination === state.world.currentNeighborhoodId) return inputState;
+      const access = travelAvailability(state, destination);
+      if (!access.available) return inputState;
+      const cost = access.cashCost;
       base.player.cash -= cost;
       base.world.currentNeighborhoodId = destination;
       recordVisitedLocation(base, destination);
@@ -4707,20 +4885,20 @@
       return advanced;
     }
     if (action.type === "WALK_HOME") {
-      if (state.world.currentNeighborhoodId !== "downtown") return inputState;
-      base.world.currentNeighborhoodId = "north_star_lot";
-      recordVisitedLocation(base, "north_star_lot");
-      base.player.health = clamp(base.player.health - 3, 1, 100);
-      logEntry(base, "With no bus fare to spare, you walk back to Spenard. It costs no cash, one part of day, and 3 Health.", "warn");
-      return advanceRun(base, { reason: "WALK_HOME" });
+      if (state.world.currentNeighborhoodId === HOME_DISTRICT_ID) return inputState;
+      base.world.currentNeighborhoodId = HOME_DISTRICT_ID;
+      recordVisitedLocation(base, HOME_DISTRICT_ID);
+      base.player.health = clamp(base.player.health - 3, 0, 100);
+      logEntry(base, "With no fare left, you walk back to Spenard. The trip costs two parts of day and 3 Health.", "warn");
+      return advanceRun(base, { reason: "WALK_HOME", timeCost: 2 });
     }
     if (action.type === "TRAVEL") {
       if (!AREA_BY_ID[action.neighborhoodId] || action.neighborhoodId === state.world.currentNeighborhoodId) return inputState;
       if (state.run.premise === "fresh_arrival" && action.neighborhoodId === "downtown") return inputState;
       if (state.run.premise === "fresh_arrival" && action.neighborhoodId === "airport_industrial" && !state.world.transport.industrialRouteKnown) return inputState;
-      const covered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
-      const fare = covered ? 0 : 5;
-      if (state.player.cash < fare) return inputState;
+      const access = travelAvailability(state, action.neighborhoodId);
+      if (!access.available) return inputState;
+      const fare = access.cashCost;
       spendCash(base, fare);
       base.world.currentNeighborhoodId = action.neighborhoodId;
       base.world.transport.busRides += 1;
@@ -5225,7 +5403,7 @@
   }
 
   return {
-    VERSION, RUN_DAYS, PRESSURE_DAYS, MAX_ENERGY, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
+    VERSION, RUN_DAYS, PRESSURE_DAYS, MAX_ENERGY, SLOTS, SAVE_KEY, HOME_DISTRICT_ID, DISTRICT_ACTIONS, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
     STREET_NAME_MAX, DEFAULT_STREET_NAMES, ATTRIBUTE_DEFAULTS, LEGACY_ATTRIBUTES, STREET_IDENTITIES, sanitizeStreetName,
     CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS, ENTITY_REGISTRY, ENTITY_MATCH_ORDER, PLUGS, BOOST_TARGETS, SPENARD_JOBS, STARTER_JOB_IDS, JOB_APPROACHES, JOB_RANK_THRESHOLDS,
     LISTING_ITEMS, LISTING_CAPACITY, NIGHT_OWL_REGULARS, NIGHT_OWL_BOARD, SOCIAL_CONTACTS, DOWNTOWN_CONTENT_STUBS, DOWNTOWN_AMBIENT,
@@ -5262,6 +5440,7 @@
       districtControlTier, districtHasBlockLayer, unassignedSoldiers,
       homeSituation, homeUnlocks, homePriorities, homeSummary, actionResult,
       johnWorkIntelKnown, jobRankForXp, jobPayRange, discoveredJobs, jobAvailability, knownWorkplaceContacts, knownSocialContacts, contactAvailability,
+      districtActionAvailability, aroundActions, travelAvailability,
       nightOwlStashUsed, nightOwlStashAvailability, relationshipLabel,
       checkpointDay, weekZeroProgress, listingSlate, nightOwlBoardItems, nightOwlRegularFor, nightOwlAvailability, listingInventoryValue,
     },

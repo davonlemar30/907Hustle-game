@@ -226,23 +226,19 @@ function PlaceAction({ title, status, purpose, cost, time, disabled, reason, onC
 // page never leaks risk or market numbers for somewhere the player has not
 // reached.
 function Destinations({ state, dispatch, setTab, onBack }) {
-  const available = C.selectors.activityAvailability(state);
-  const covered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
   const here = state.world.currentNeighborhoodId;
   const knownOf = { north_star_lot: true, downtown: state.world.transport.downtownKnown, airport_industrial: state.world.transport.industrialRouteKnown };
   function go(area) {
-    if (area.id === "north_star_lot") { dispatch({ type: covered || state.player.cash >= 5 ? "BUS_TRAVEL" : "WALK_HOME", neighborhoodId: area.id }); setTab("travel"); return; }
-    if (area.id === "downtown") { dispatch({ type: "BUS_TRAVEL", neighborhoodId: area.id }); setTab("travel"); return; }
-    dispatch({ type: "TRAVEL", neighborhoodId: area.id }); setTab(state.market.visible ? "market" : "travel");
+    dispatch({ type: area.travelAction || "TRAVEL", neighborhoodId: area.id });
+    setTab(area.id === "downtown" ? "travel" : state.market.visible ? "market" : "travel");
   }
   return <><PageHead title="Leave Spenard" sub="Known destinations and People Mover passes" onBack={onBack} /><div className="scroll">
     <Transit state={state} dispatch={dispatch} />
-    {C.NEIGHBORHOODS.filter((area) => area.id !== "north_star_lot").map((area) => {
+    {C.NEIGHBORHOODS.filter((area) => area.id !== C.HOME_DISTRICT_ID).map((area) => {
       const current = area.id === here;
       const known = knownOf[area.id] || current;
-      const walking = area.id === "north_star_lot" && !covered && state.player.cash < 5;
-      const access = area.id === "airport_industrial" ? available.industrial : area.id === "downtown" ? available.busDowntown : { available: true, reason: covered ? "Your pass covers this ride." : walking ? "No fare left. You walk and lose 3 Health." : "$5 single ride." };
-      const fare = covered ? "Pass covers it" : "$5";
+      const access = C.selectors.travelAvailability(state, area.id);
+      const fare = access.cashCost ? "$5" : "Pass covers it";
       return <div className={`card destination-card${current ? " cleared-card" : ""}${!current && !access.available ? " locked" : ""}`} key={area.id}>
         <div className="card-title">{area.name}<small>{current ? "YOU ARE HERE" : known ? area.role.toUpperCase() : "UNVISITED"}</small></div>
         <p className="compact">{known ? area.blurb : "You have not been out here yet. What sells, what it costs you, and who works the block are all unknown until you go."}</p>
@@ -338,34 +334,57 @@ function NightOwlHub({ state, dispatch, onBack }) {
   const regular = state.nightOwl.regulars[present.id];
   const viewed = state.nightOwl.boardViewedDays.includes(state.run.day);
   const nightJob = state.jobs.discovered.includes("night_owl");
+  const boardAccess = C.selectors.districtActionAvailability(state, "night_owl_board");
+  const coffeeAccess = C.selectors.districtActionAvailability(state, "night_owl_coffee");
+  const regularAccess = C.selectors.districtActionAvailability(state, "night_owl_regular");
+  const visitAccess = C.selectors.districtActionAvailability(state, "night_owl_visit");
   return <><PageHead title="Night Owl" sub="Coffee, a community board, and people who keep late hours" onBack={onBack} /><div className="scroll">
-    <div className="card"><div className="card-title">Coffee<small>$4</small></div><p className="compact">A hot cup uses one part of day and restores one point of the reserve that keeps you moving.</p><button className="btn full primary" disabled={state.player.cash < 4} onClick={() => dispatch({ type: "BUY_COFFEE" })}>Buy coffee · $4<span className="action-copy">One part of day · restores reserve</span></button></div>
-    <div className="card"><div className="card-title">Community board<small>{viewed ? "VIEWED TODAY" : "FREE DAILY"}</small></div>{viewed ? <div className="detail-list">{board.map((entry) => <span key={entry.id}><b>{entry.title}:</b> {entry.body}</span>)}</div> : <p className="compact">Three postings rotate each day. Reading them costs no time.</p>}<button className="btn full secondary" onClick={() => dispatch({ type: "VIEW_NIGHT_OWL_BOARD" })}>{viewed ? "Read today's postings" : "Check the board"}<span className="action-copy">Free · no time passes</span></button>{viewed && board.some((entry) => entry.id === "laptop") && !state.inventory.laptop && <button className="btn full primary" disabled={state.player.cash < 250} onClick={() => dispatch({ type: "BUY_LAPTOP" })}>Buy used laptop · $250<span className="action-copy">Adds five daily Home listings</span></button>}</div>
-    <div className="card"><div className="card-title">{present.name}<small>{present.role.toUpperCase()}</small></div><p className="compact">{present.hint}</p><p className="muted compact">Relationship {regular.relationship} · {regular.met ? "Met" : "New face"}</p><button className="btn full secondary" disabled={regular.lastTalkDay === state.run.day} onClick={() => dispatch({ type: "TALK_NIGHT_OWL_REGULAR", regularId: present.id })}>Talk with {present.name.split(" ")[0]}<span className="action-copy">{regular.lastTalkDay === state.run.day ? "Already talked today" : "One part of day"}</span></button></div>
-    <div className="card"><div className="card-title">Mara Velez<small>{state.people.mara.met ? state.people.mara.status.toUpperCase() : "AT THE REGISTER"}</small></div><p className="compact">{state.people.mara.met ? "Mara remembers the tone of your first conversation." : "The clerk watches the counter and lets new customers decide how to begin."}</p><button className="btn full secondary" onClick={() => dispatch({ type: "VISIT_NIGHT_OWL" })}>{state.people.mara.met ? "Talk with Mara" : "Introduce yourself"}<span className="action-copy">One part of day</span></button></div>
+    <div className="card"><div className="card-title">Coffee<small>$4</small></div><p className="compact">A hot cup uses one part of day and restores one point of the reserve that keeps you moving.</p><button className="btn full primary" disabled={!coffeeAccess.available} onClick={() => dispatch({ type: "BUY_COFFEE" })}>Buy coffee · $4<span className="action-copy">{coffeeAccess.available ? "One part of day · restores reserve" : coffeeAccess.reason}</span></button></div>
+    <div className="card"><div className="card-title">Community board<small>{viewed ? "VIEWED TODAY" : "FREE DAILY"}</small></div>{viewed ? <div className="detail-list">{board.map((entry) => <span key={entry.id}><b>{entry.title}:</b> {entry.body}</span>)}</div> : <p className="compact">Three postings rotate each day. Reading them costs no time.</p>}<button className="btn full secondary" disabled={!boardAccess.available} onClick={() => dispatch({ type: "VIEW_NIGHT_OWL_BOARD" })}>{viewed ? "Read today's postings" : "Check the board"}<span className="action-copy">{boardAccess.available ? "Free · no time passes" : boardAccess.reason}</span></button>{viewed && board.some((entry) => entry.id === "laptop") && !state.inventory.laptop && <button className="btn full primary" disabled={state.player.cash < 250} onClick={() => dispatch({ type: "BUY_LAPTOP" })}>Buy used laptop · $250<span className="action-copy">Adds five daily Home listings</span></button>}</div>
+    <div className="card"><div className="card-title">{present.name}<small>{present.role.toUpperCase()}</small></div><p className="compact">{present.hint}</p><p className="muted compact">Relationship {regular.relationship} · {regular.met ? "Met" : "New face"}</p><button className="btn full secondary" disabled={!regularAccess.available || regular.lastTalkDay === state.run.day} onClick={() => dispatch({ type: "TALK_NIGHT_OWL_REGULAR", regularId: present.id })}>Talk with {present.name.split(" ")[0]}<span className="action-copy">{!regularAccess.available ? regularAccess.reason : regular.lastTalkDay === state.run.day ? "Already talked today" : "One part of day"}</span></button></div>
+    <div className="card"><div className="card-title">Mara Velez<small>{state.people.mara.met ? state.people.mara.status.toUpperCase() : "AT THE REGISTER"}</small></div><p className="compact">{state.people.mara.met ? "Mara remembers the tone of your first conversation." : "The clerk watches the counter and lets new customers decide how to begin."}</p><button className="btn full secondary" disabled={!visitAccess.available} onClick={() => dispatch({ type: "VISIT_NIGHT_OWL" })}>{state.people.mara.met ? "Talk with Mara" : "Introduce yourself"}<span className="action-copy">{visitAccess.available ? "One part of day" : visitAccess.reason}</span></button></div>
     {nightJob && <div className="card"><div className="card-title">Night Owl job<small>RANK {state.jobs.records.night_owl.rank}</small></div><p className="compact">The counter shift, Rank 2 stash, and Rank 3 Deshawn vouch remain part of the job track.</p></div>}
     <NightOwlStash state={state} dispatch={dispatch} />
   </div></>;
 }
 
-// What can I do without leaving? Work, walking the neighborhood, training,
-// the store, and the game — the daily-life layer, kept off the travel page.
+function ReturnToSpenardActions({ state, dispatch }) {
+  if (state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID) return null;
+  const ride = C.selectors.districtActionAvailability(state, "return_spenard");
+  const walk = C.selectors.districtActionAvailability(state, "walk_spenard");
+  return <div className="return-actions">
+    <button className="btn full primary" disabled={!ride.available} onClick={() => dispatch(C.DISTRICT_ACTIONS.return_spenard.action)}>Return to Spenard<span className="action-copy">{ride.available ? `${ride.cashCost ? "$5 fare" : "Pass covers fare"} · one part of day` : ride.reason}</span></button>
+    {walk.visible && <button className="btn full secondary" onClick={() => dispatch(C.DISTRICT_ACTIONS.walk_spenard.action)}>Walk back<span className="action-copy">$0 · two parts of day · −3 Health</span></button>}
+  </div>;
+}
+
+// What can I do without leaving? The registry filters local actions before
+// this page renders them; reducer preflight enforces the same boundary.
 function AroundHere({ state, dispatch, onBack }) {
   const [gambleApproach, setGambleApproach] = useState("read");
   const [page, setPage] = useState("root");
   const available = C.selectors.activityAvailability(state);
-  const nightOwl = C.selectors.nightOwlAvailability(state);
   const area = areaOf(state);
-  if (area.id === "downtown") return <><PageHead title="Around Downtown" sub="A first look, with the route home kept close" onBack={onBack} /><div className="scroll"><button className="btn full primary" onClick={() => dispatch({ type: "BUS_TRAVEL", neighborhoodId: "north_star_lot" })}>Return to Spenard<span className="action-copy">One part of day · $5 unless a pass covers it</span></button><div className="card"><div className="card-title">Downtown<small>EARLY SCAFFOLD</small></div><p className="compact muted">No local jobs, people, or activities are available here yet.</p></div></div></>;
-  if (page === "nightowl") return <NightOwlHub state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
-  if (page === "intel") return <LocalIntel state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
-  if (page !== "root") return <ExploreSpenard state={state} dispatch={dispatch} page={page} setPage={setPage} onBack={() => setPage("root")} />;
+  const actions = C.selectors.aroundActions(state);
+  const actionOf = (id) => actions.find((entry) => entry.id === id);
+  const nightOwl = actionOf("night_owl");
+  const staleLocalPage = area.id !== C.HOME_DISTRICT_ID && page !== "root";
+  const closedNightOwlPage = page === "nightowl" && !nightOwl?.available;
+  const effectivePage = staleLocalPage || closedNightOwlPage ? "root" : page;
+  useEffect(() => { if (effectivePage !== page) setPage("root"); }, [effectivePage, page]);
+  if (effectivePage === "nightowl") return <NightOwlHub state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
+  if (effectivePage === "intel") return <LocalIntel state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
+  if (effectivePage !== "root") return <ExploreSpenard state={state} dispatch={dispatch} page={effectivePage} setPage={setPage} onBack={() => setPage("root")} />;
+  const localActions = actions.filter((entry) => !["return_spenard", "walk_spenard"].includes(entry.id));
   return <><PageHead title={`Around ${area.name}`} sub="What you can do without leaving the neighborhood" onBack={onBack} /><div className="scroll">
-    {area.id === "north_star_lot" && <MenuRow title="Explore Spenard" status={state.world.locations.explorationCount ? `${state.world.locations.explorationCount} walks` : "New arrival"} description="Jobs, wandering, and people you meet through work." onClick={() => setPage("explore")} />}
-    {area.id === "north_star_lot" && <MenuRow title="Local Intel" status={`${state.world.locations.explorationCount} walks`} description="Routes, discoveries, and word collected around Spenard." onClick={() => setPage("intel")} />}
-    {area.id === "north_star_lot" && <MenuRow title="Night Owl" status={nightOwl.available ? (state.people.mara.met ? "Mara known" : "Open") : "Opens at dusk"} description="Coffee, community board, Mara, regulars, and the Night Owl job." disabled={!nightOwl.available} onClick={() => setPage("nightowl")} />}
-    <div className="card"><div className="card-title">Spenard Community Gym<small>{money(available.gym.cost)} · +{available.gym.progress} progress</small></div><p className="compact">Train one physical attribute. Every session uses one part of day; repeated same-day sessions cost more and give less progress.</p><div className="btn-row">{[["strength", "Strength"], ["endurance", "Endurance"], ["reflexes", "Reflexes"]].map(([id, label]) => <button className="btn secondary" key={id} disabled={!available.gym.available || state.player.attributes[id] >= 5} onClick={() => dispatch({ type: "TRAIN_ATTRIBUTE", attribute: id })}>{label} {state.player.attributes[id]}</button>)}</div><p className="muted compact">Session {available.gym.sessionsToday + 1} today · cost {money(available.gym.cost)} · one part of day</p></div>
-    {state.world.locations.gamblingKnown && <div className={`card${available.gambling.available ? "" : " locked"}`}><div className="card-title">Informal Game<small>EVENING / NIGHT</small></div><p className="compact">Choose an approach, then risk $20, $50, or $100. Attributes inform the seeded result but never guarantee profit. No debt is offered.</p><select aria-label="Gambling approach" value={gambleApproach} onChange={(event) => setGambleApproach(event.target.value)}><option value="read">Read the room · Insight</option><option value="steady">Play disciplined · Discipline</option><option value="press">Work the table · Presence</option></select><div className="btn-row">{[20, 50, 100].map((stake) => <button className="btn secondary" key={stake} disabled={!available.gambling.available || state.player.cash < stake} onClick={() => dispatch({ type: "GAMBLE", stake, approach: gambleApproach })}>Risk ${stake}</button>)}</div><p className="muted compact">{available.gambling.reason}</p></div>}
+    <ReturnToSpenardActions state={state} dispatch={dispatch} />
+    {actionOf("explore_spenard") && <MenuRow title="Explore Spenard" status={state.world.locations.explorationCount ? `${state.world.locations.explorationCount} walks` : "New arrival"} description="Jobs, wandering, and people you meet through work." onClick={() => setPage("explore")} />}
+    {actionOf("local_intel") && <MenuRow title="Local Intel" status={`${state.world.locations.explorationCount} walks`} description="Routes, discoveries, and word collected around Spenard." onClick={() => setPage("intel")} />}
+    {nightOwl && <MenuRow title="Night Owl" status={nightOwl.available ? (state.people.mara.met ? "Mara known" : "Open") : nightOwl.reason} description="Coffee, community board, Mara, regulars, and the Night Owl job." disabled={!nightOwl.available} onClick={() => setPage("nightowl")} />}
+    {actionOf("spenard_gym") && <div className="card"><div className="card-title">Spenard Community Gym<small>{money(available.gym.cost)} · +{available.gym.progress} progress</small></div><p className="compact">Train one physical attribute. Every session uses one part of day; repeated same-day sessions cost more and give less progress.</p><div className="btn-row">{[["strength", "Strength"], ["endurance", "Endurance"], ["reflexes", "Reflexes"]].map(([id, label]) => <button className="btn secondary" key={id} disabled={!available.gym.available || state.player.attributes[id] >= 5} onClick={() => dispatch({ type: "TRAIN_ATTRIBUTE", attribute: id })}>{label} {state.player.attributes[id]}</button>)}</div><p className="muted compact">Session {available.gym.sessionsToday + 1} today · cost {money(available.gym.cost)} · one part of day</p></div>}
+    {actionOf("spenard_gambling") && <div className={`card${available.gambling.available ? "" : " locked"}`}><div className="card-title">Informal Game<small>EVENING / NIGHT</small></div><p className="compact">Choose an approach, then risk $20, $50, or $100. Attributes inform the seeded result but never guarantee profit. No debt is offered.</p><select aria-label="Gambling approach" value={gambleApproach} onChange={(event) => setGambleApproach(event.target.value)}><option value="read">Read the room · Insight</option><option value="steady">Play disciplined · Discipline</option><option value="press">Work the table · Presence</option></select><div className="btn-row">{[20, 50, 100].map((stake) => <button className="btn secondary" key={stake} disabled={!available.gambling.available || state.player.cash < stake} onClick={() => dispatch({ type: "GAMBLE", stake, approach: gambleApproach })}>Risk ${stake}</button>)}</div><p className="muted compact">{available.gambling.reason}</p></div>}
+    {area.id === "downtown" && <div className="card"><div className="card-title">Downtown<small>EARLY SCAFFOLD</small></div><p className="compact muted">No local jobs, people, or activities are available here yet.</p></div>}
+    {!localActions.length && area.id !== "downtown" && <div className="card locked"><div className="card-title">No local actions</div><p className="compact muted">Only the route back to Spenard is available here.</p></div>}
   </div></>;
 }
 
@@ -374,7 +393,7 @@ function Household({ state, dispatch, onBack }) {
   const [homeCash, setHomeCash] = useState(100);
   const storedProducts = C.PRODUCTS.reduce((total, product) => total + state.home.storedInventory[product.id].qty, 0);
   const carriedWeapon = C.GEAR.find((item) => item.slot === "weapon" && state.player.gear.owned.includes(item.id));
-  if (state.world.currentNeighborhoodId !== "north_star_lot") return <><PageHead title="Home" sub="Yalonda and John's spare room is back in Spenard" onBack={onBack} /><div className="scroll"><div className="card"><div className="card-title">Return home<small>{state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day ? "PASS" : "$5"}</small></div><p className="compact">Storage, John, and sleep are available once you get back.</p><button className="btn full primary" disabled={state.player.cash < 5 && !state.world.transport.weekPass && state.world.transport.dayPassDay !== state.run.day} onClick={() => dispatch({ type: state.world.currentNeighborhoodId === "downtown" ? "BUS_TRAVEL" : "TRAVEL", neighborhoodId: "north_star_lot" })}>Return to Spenard<span className="action-copy">One part of day</span></button></div></div></>;
+  if (state.world.currentNeighborhoodId !== C.HOME_DISTRICT_ID) return <><PageHead title="Home" sub="Yalonda and John's spare room is back in Spenard" onBack={onBack} /><div className="scroll"><div className="card"><div className="card-title">Return home<small>SPENARD</small></div><p className="compact">Storage, John, and sleep are available once you get back.</p><ReturnToSpenardActions state={state} dispatch={dispatch} /></div></div></>;
   return <><PageHead title="Yalonda and John's Home" sub="Temporary shelter with house rules" onBack={onBack} /><div className="scroll">
     <div className={`card${state.people.household.evicted ? " locked" : ""}`}><div className="card-title">House standing<small>{state.people.household.evicted ? "EVICTED" : `${state.people.household.warnings}/3 WARNINGS`}</small></div><p className="compact">Cash is safe here; contraband is not. The room holds at most two product units and one concealable weapon.</p>
       <div className="outcome-grid"><Outcome label="Stored cash" value={money(state.home.storedCash)} /><Outcome label="Stored product" value={`${storedProducts}/2`} /><Outcome label="Hidden weapon" value={state.home.hiddenWeapon ? (C.GEAR.find((item) => item.id === state.home.hiddenWeapon)?.name || state.home.hiddenWeapon) : "None"} /><Outcome label="John's question" value={state.people.household.lastQuestionDay === state.run.day ? "Used today" : "Available"} /></div>
@@ -438,8 +457,8 @@ function Travel({ state, dispatch, setTab, page, setPage }) {
   const covered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
   const area = areaOf(state);
   return <><PageHead title="Travel" sub="Where to go, how to get there, and what is around you" /><div className="scroll">
-    <MenuRow title={area.id === "downtown" ? "Around Downtown" : "Spenard"} status={state.world.currentNeighborhoodId === "north_star_lot" ? "You are here" : "Return route ready"} description={area.id === "downtown" ? "A quiet arrival page and a direct return to Spenard." : "Jobs, Wander, Contacts, Night Owl, gym, gambling, and Local Intel."} onClick={() => setPage("around")} />
-    <MenuRow title="Home" status={state.world.currentNeighborhoodId === "north_star_lot" ? `${state.people.household.warnings}/3 warnings` : covered ? "Pass covers return" : "$5 return"} description="Storage, John, and sleep." disabled={state.people.household.evicted} onClick={() => setPage("household")} />
+    <MenuRow title={`Around ${area.name}`} status={state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? "You are here" : "Return route ready"} description={state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? "Jobs, Wander, Contacts, Night Owl, gym, gambling, and Local Intel." : "Local actions and the route back to Spenard."} onClick={() => setPage("around")} />
+    <MenuRow title="Home" status={state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? `${state.people.household.warnings}/3 warnings` : covered ? "Pass covers return" : "$5 return"} description="Storage, John, and sleep." disabled={state.people.household.evicted} onClick={() => setPage("household")} />
     <MenuRow title="Leave Spenard" status={state.world.transport.weekPass ? "7-day pass" : covered ? "Day pass" : "$5 a ride"} description="Known non-Spenard destinations and pass controls." onClick={() => setPage("destinations")} />
   </div></>;
 }

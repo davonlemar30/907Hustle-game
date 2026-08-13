@@ -205,13 +205,15 @@ test("Travel exposes exactly three root choices with focused subpages", () => {
   const root = ui.slice(ui.indexOf("function Travel("), ui.indexOf("function SpenardBlockCard("));
   assert.equal((root.match(/<MenuRow/g) || []).length, 3);
   for (const title of ["Home", "Leave Spenard"]) assert.match(root, new RegExp(`<MenuRow title="${title}"`));
-  assert.match(root, /Around Downtown/);
+  assert.match(root, /title=\{`Around \$\{area\.name\}`\}/);
 });
 
 test("Leave Spenard combines known destinations, automatic fares, and passes", () => {
   assert.match(ui, /sub="Known destinations and People Mover passes"/);
-  assert.match(ui, /C\.NEIGHBORHOODS\.filter\(\(area\) => area\.id !== "north_star_lot"\)/);
-  assert.match(ui, /const fare = covered \? "Pass covers it" : "\$5"/);
+  assert.match(ui, /C\.NEIGHBORHOODS\.filter\(\(area\) => area\.id !== C\.HOME_DISTRICT_ID\)/);
+  assert.match(ui, /const access = C\.selectors\.travelAvailability\(state, area\.id\)/);
+  assert.match(ui, /const fare = access\.cashCost \? "\$5" : "Pass covers it"/);
+  assert.match(ui, /dispatch\(\{ type: area\.travelAction \|\| "TRAVEL", neighborhoodId: area\.id \}\)/);
   assert.match(ui, /known \? `Risk \$\{area\.risk\}\/5` : "Risk unknown"/);
   assert.match(ui, /known \? `Rival presence \$\{area\.rival\}\/5` : "Rival presence unknown"/);
   assert.match(ui, /const knownOf = \{ north_star_lot: true, downtown: state\.world\.transport\.downtownKnown, airport_industrial: state\.world\.transport\.industrialRouteKnown \}/);
@@ -232,7 +234,8 @@ test("progressive disclosure hides categories that have nothing in them yet", ()
   assert.match(ui, /state\.rival\.relationship !== "unaware" && <MenuRow title="Rook Mercer"/);
   assert.match(ui, /state\.people\.crew\.kip\.recruited && <MenuRow title="Laundering"/);
   assert.match(ui, /showRisk && <MenuRow title="Financial Risk"/);
-  assert.match(ui, /state\.world\.locations\.gamblingKnown && <div className=\{`card\$\{available\.gambling\.available/);
+  assert.match(ui, /actionOf\("spenard_gambling"\) && <div className=\{`card\$\{available\.gambling\.available/);
+  assert.match(ui, /const actions = C\.selectors\.aroundActions\(state\)/);
 });
 
 test("every dispatch is routed so the shell can raise an action result", () => {

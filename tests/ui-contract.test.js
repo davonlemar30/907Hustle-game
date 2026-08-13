@@ -437,3 +437,62 @@ test("the travel root offers a quick shift once the player has worked one", () =
   assert.match(ui, /initialPage = "root"/);
   assert.match(css, /\.quick-shift\{/);
 });
+
+test("HUD value changes flash only after an in-session change", () => {
+  assert.match(ui, /function useValueFlash\(value\)/);
+  // The first render seeds the previous value without reporting, so loading a
+  // save never flashes a full run's worth of numbers at the player.
+  assert.match(ui, /if \(!seeded\.current\) \{ seeded\.current = true; previous\.current = value; return; \}/);
+  assert.match(ui, /const cashFlash = cashMove === "up" \? "good" : cashMove === "down" \? "bad" : null/);
+  assert.match(ui, /const heatFlash = heatMove === "up" \? "warn" : null/);
+  assert.match(ui, /const healthFlash = healthMove === "down" \? "bad" : null/);
+  assert.match(css, /\.hud-item\[data-flash="good"\]\{animation:flash-good/);
+  assert.match(css, /@media\(prefers-reduced-motion:reduce\)\{\n\s*\.hud-item\[data-flash\],\.status-chip\[data-flash\]\{animation:none\}/);
+});
+
+test("tab navigation goes through one view-transition funnel and degrades", () => {
+  assert.match(ui, /typeof document\.startViewTransition !== "function"\) \{ apply\(\); return; \}/);
+  assert.match(ui, /document\.startViewTransition\(\(\) => ReactDOM\.flushSync\(apply\)\)/);
+  assert.match(css, /::view-transition-old\(root\)/);
+  assert.match(css, /::view-transition-new\(root\)/);
+  assert.match(css, /@media\(prefers-reduced-motion:reduce\)\{\n\s*::view-transition-old\(root\),::view-transition-new\(root\)\{animation:none\}/);
+});
+
+test("the ambient ticker is decorative, location-aware, and never overlaps the nav", () => {
+  assert.match(ui, /function AmbientTicker\(\{ state \}\)/);
+  assert.match(ui, /C\.selectors\.ambientFlavor\(state\)/);
+  assert.match(ui, /className="ambient" aria-hidden="true"/);
+  // Rendered inside the bottom block, above the feed, so it shares the shell
+  // row that already holds the action bar and nav instead of floating over it.
+  assert.match(ui, /<AmbientTicker state=\{state\} \/>\n\s*<Feed entries=\{state\.log\} \/>/);
+  assert.doesNotMatch(ui, /AmbientTicker[\s\S]{0,400}dispatch/);
+  const ambientRule = css.match(/\.ambient\{[^}]*\}/)[0];
+  assert.doesNotMatch(ambientRule, /position:fixed|position:absolute/, "the ticker stays in flow so it cannot cover the action bar");
+  assert.match(ambientRule, /overflow:hidden/);
+  assert.match(ambientRule, /white-space:nowrap/);
+});
+
+test("ambient flavor copy follows the house writing rules", () => {
+  const core = fs.readFileSync(path.join(root, "game-core.js"), "utf8");
+  const registry = core.slice(core.indexOf("const AMBIENT_FLAVOR = {"), core.indexOf("function ambientFlavor(state)"));
+  const lines = [...registry.matchAll(/^\s*"([^"]+)",$/gm)].map((match) => match[1]);
+  assert.ok(lines.length >= 90, `expected a full registry, found ${lines.length} lines`);
+  for (const line of lines) {
+    assert.doesNotMatch(line, /[—–]/, `em dash: ${line}`);
+    assert.doesNotMatch(line, /\b(real|really|very|truly|actually|basically|literally)\b/i, `vague intensifier: ${line}`);
+    assert.doesNotMatch(line, /\bnot\b[^.]*\bbut\b/i, `negation pivot: ${line}`);
+    assert.ok(line.split(/\s+/).length < 40, `over 40 words: ${line}`);
+  }
+});
+
+test("every neighborhood has an ambient pool for all four parts of day", () => {
+  const C = require("../game-core.js");
+  for (const area of C.NEIGHBORHOODS) {
+    for (let slot = 0; slot < C.SLOTS.length; slot += 1) {
+      const state = { world: { currentNeighborhoodId: area.id }, run: { slot } };
+      const pool = C.selectors.ambientFlavor(state);
+      assert.ok(pool.length >= 8, `${area.id} slot ${slot} has ${pool.length} lines`);
+      assert.equal(new Set(pool).size, pool.length, `${area.id} slot ${slot} repeats a line`);
+    }
+  }
+});

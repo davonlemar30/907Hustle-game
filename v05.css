@@ -394,3 +394,36 @@
 .quick-shift-main b{display:block;font-size:.86rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
 .quick-shift-main small{display:block;margin-top:3px;color:#b0b0b0;font-size:.7rem;line-height:1.3}
 .quick-shift-go{flex:0 0 auto;color:var(--amber);font-size:1.1rem;line-height:1}
+
+/* Value-change flash. The cell tints for one beat and settles back to its own
+   background, so the number that moved is the thing that catches the eye. */
+.hud-item[data-flash="good"]{animation:flash-good 400ms ease-out}
+.hud-item[data-flash="bad"]{animation:flash-bad 400ms ease-out}
+.status-chip[data-flash="warn"]{animation:flash-warn 400ms ease-out}
+@keyframes flash-good{from{background:rgba(115,184,103,.34)}to{background:var(--panel)}}
+@keyframes flash-bad{from{background:rgba(255,74,61,.32)}to{background:var(--panel)}}
+@keyframes flash-warn{from{background:rgba(225,166,58,.30)}to{background:var(--panel)}}
+@media(prefers-reduced-motion:reduce){
+  .hud-item[data-flash],.status-chip[data-flash]{animation:none}
+}
+
+/* Tab cross-fade. Screens are contexts, not panels, so moving between them
+   gets a beat. Unsupported browsers never run these rules at all. */
+@media(prefers-reduced-motion:no-preference){
+  ::view-transition-old(root){animation:180ms ease-out both vt-fade-out}
+  ::view-transition-new(root){animation:180ms ease-in both vt-fade-in}
+}
+@keyframes vt-fade-out{from{opacity:1}to{opacity:0}}
+@keyframes vt-fade-in{from{opacity:0}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){
+  ::view-transition-old(root),::view-transition-new(root){animation:none}
+}
+
+/* Ambient line. Sits above the feed, inside the bottom block, so it can never
+   overlap the action bar or the nav. Deliberately the quietest text on screen:
+   it is weather, not information. */
+.ambient{margin:0;padding:5px 10px;border-top:1px solid var(--line-soft,#1c1c1c);background:#0a0a0a;color:#6f6f76;font-size:.66rem;font-style:italic;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ambient span{display:block}
+@media(prefers-reduced-motion:no-preference){.ambient span{animation:ambient-in 600ms ease-out}}
+@keyframes ambient-in{from{opacity:0}to{opacity:.85}}
+@media(max-height:600px){.ambient{display:none}}

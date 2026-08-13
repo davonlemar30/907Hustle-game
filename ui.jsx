@@ -46,14 +46,34 @@ function TitleScreen({ saveInfo, onLoad, onNew }) {
   </div>;
 }
 
-function Hud({ label, value, danger, good }) {
-  return <div className={`hud-item${danger ? " danger" : ""}${good ? " good" : ""}`}><span className="k">{label}</span><span className="v">{value}</span></div>;
+function Hud({ label, value, danger, good, flash }) {
+  return <div className={`hud-item${danger ? " danger" : ""}${good ? " good" : ""}`} data-flash={flash || undefined}><span className="k">{label}</span><span className="v">{value}</span></div>;
 }
 // Secondary-row pressure indicators (Heat/Dre/Respect). Same label={} JSX
 // shape as Hud so existing ui-contract token checks still find them, but
 // carries its own escalation-tone styling instead of a single danger flag.
-function Chip({ label, value, tone }) {
-  return <div className={`status-chip${tone ? ` ${tone}` : ""}`}><span className="k">{label}</span><span className="v">{value}</span></div>;
+function Chip({ label, value, tone, flash }) {
+  return <div className={`status-chip${tone ? ` ${tone}` : ""}`} data-flash={flash || undefined}><span className="k">{label}</span><span className="v">{value}</span></div>;
+}
+
+// Numbers changed silently, so the player had to remember the old value to
+// notice the new one. Returns "up" or "down" for one animation frame's worth
+// of time after a change, and null otherwise. The first render seeds the
+// previous value without reporting, so loading a save never flashes.
+function useValueFlash(value) {
+  const seeded = React.useRef(false);
+  const previous = React.useRef(value);
+  const [direction, setDirection] = useState(null);
+  useEffect(() => {
+    if (!seeded.current) { seeded.current = true; previous.current = value; return; }
+    const before = previous.current;
+    previous.current = value;
+    if (typeof value !== "number" || typeof before !== "number" || value === before) return;
+    setDirection(value > before ? "up" : "down");
+    const timer = setTimeout(() => setDirection(null), 420);
+    return () => clearTimeout(timer);
+  }, [value]);
+  return direction;
 }
 
 // Time is the resource the whole run spends, and its only representation was a
@@ -68,6 +88,13 @@ function SlotPips({ slot }) {
 
 function Header({ state, onMenu }) {
   const [open, setOpen] = useState(false);
+  // Cash reads either way; Heat only matters climbing, Health only falling.
+  const cashMove = useValueFlash(state.player.cash);
+  const heatMove = useValueFlash(state.player.heat);
+  const healthMove = useValueFlash(state.player.health);
+  const cashFlash = cashMove === "up" ? "good" : cashMove === "down" ? "bad" : null;
+  const heatFlash = heatMove === "up" ? "warn" : null;
+  const healthFlash = healthMove === "down" ? "bad" : null;
   const cargo = C.selectors.cargoUsed(state);
   const heat = C.selectors.heatBand(state.player.heat);
   const heatLabel = heat.id === "warm" ? "Building" : heat.label;
@@ -92,18 +119,18 @@ function Header({ state, onMenu }) {
     <h1 className="sr-only">907Hustle: One Good Run · v1.5</h1>
     <div className="hud primary-hud">
       <Hud label="Day / Time" value={<>{`${state.run.day}${state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""} · ${C.SLOTS[state.run.slot]} · ${area.name}`}<SlotPips slot={state.run.slot} /></>} good />
-      <Hud label="Cash" value={money(state.player.cash)} good />
+      <Hud label="Cash" value={money(state.player.cash)} good flash={cashFlash} />
       <button className="status-toggle" aria-expanded={open} aria-label="Show more status" onClick={() => setOpen(!open)}>Status <span>{open ? "Hide" : "View"}</span></button>
       <button className="menu-btn" onClick={onMenu}>Menu</button>
     </div>
     {hasDreDebt && (showHeat || showDebt || showRespect) && <div className="hud chip-row">
-      {showHeat && <Chip label="Heat" value={`${state.player.heat}/15 · ${heatLabel}`} tone={state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : ""} />}
+      {showHeat && <Chip label="Heat" value={`${state.player.heat}/15 · ${heatLabel}`} tone={state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : ""} flash={heatFlash} />}
       {showDebt && <Chip label="Debt" value={dreValue} tone={dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : ""} />}
       {showRespect && <Chip label="Respect" value={state.rival.respect} tone="" />}
     </div>}
     {open && <div className="hud status-drawer">
-      <Hud label="Health" value={`${state.player.health}/100`} danger={state.player.health < 40} />
-      <Hud label="Heat" value={`${state.player.heat}/15 · ${heatLabel}`} danger={state.player.heat >= 8} />
+      <Hud label="Health" value={`${state.player.health}/100`} danger={state.player.health < 40} flash={healthFlash} />
+      <Hud label="Heat" value={`${state.player.heat}/15 · ${heatLabel}`} danger={state.player.heat >= 8} flash={heatFlash} />
       {hasDreDebt && <Hud label="Debt" value={dreValue} danger={dreOverdue || dreDueTonight} />}
       <Hud label="Cargo" value={`${cargo}/${C.selectors.cargoCapacity(state)}`} danger={cargo >= C.selectors.cargoCapacity(state)} />
       <Hud label="Respect" value={state.rival.respect} />
@@ -1142,6 +1169,23 @@ function TabUnlockedOverlay({ unlock, onDismiss }) {
   </div>;
 }
 
+// Between actions the world was frozen. One line of weather for the block the
+// player is standing on, rotating on its own. It reads nothing the player can
+// act on and writes nothing back, so it can be ignored entirely.
+function AmbientTicker({ state }) {
+  const lines = C.selectors.ambientFlavor(state);
+  const [index, setIndex] = useState(0);
+  const where = `${state.world.currentNeighborhoodId}:${state.run.slot}`;
+  useEffect(() => { setIndex(0); }, [where]);
+  useEffect(() => {
+    if (lines.length < 2) return;
+    const timer = setInterval(() => setIndex((value) => (value + 1) % lines.length), 5000);
+    return () => clearInterval(timer);
+  }, [where, lines.length]);
+  if (!lines.length) return null;
+  return <p className="ambient" aria-hidden="true"><span key={`${where}:${index}`}>{lines[index % lines.length]}</span></p>;
+}
+
 function nextPartLabel(state) {
   if (state.run.checkpointDay && state.run.day >= state.run.checkpointDay && state.run.slot >= C.SLOTS.length - 1) return "the checkpoint";
   if (state.run.slot >= C.SLOTS.length - 1) return `Day ${state.run.day + 1}, ${C.SLOTS[0]}`;
@@ -1158,7 +1202,16 @@ function GameShell({ state, dispatch, onTitle }) {
   const features = C.selectors.featureAvailability(state);
   const tab = nav.tab;
 
-  function navigate(nextTab, more = "root", sub = null) { setNav((prev) => ({ tab: nextTab, more, sub, token: prev.token + 1 })); setTravelPage("root"); }
+  // Every tab change funnels through here, so wrapping this one function gives
+  // the whole shell a cross-fade. startViewTransition needs the DOM mutated
+  // inside its callback, and React 18 batches by default, so the update is
+  // flushed synchronously. Browsers without the API take the plain path and
+  // swap instantly, exactly as before.
+  function navigate(nextTab, more = "root", sub = null) {
+    const apply = () => { setNav((prev) => ({ tab: nextTab, more, sub, token: prev.token + 1 })); setTravelPage("root"); };
+    if (typeof document === "undefined" || typeof document.startViewTransition !== "function") { apply(); return; }
+    document.startViewTransition(() => ReactDOM.flushSync(apply));
+  }
   const setTab = (nextTab) => navigate(nextTab);
   const setMorePage = (page) => setNav((prev) => ({ ...prev, more: page, sub: null }));
 
@@ -1193,6 +1246,7 @@ function GameShell({ state, dispatch, onTitle }) {
     <Header state={state} onMenu={() => setMenu(true)} />
     <main className="main">{screens[tab]}</main>
     <div>
+      <AmbientTicker state={state} />
       <Feed entries={state.log} />
       {tab === "market" && <div className="action-bar one"><button className="btn primary" onClick={() => act({ type: "END_MARKET" })}>Finish Trading<small>Close this market visit · advance to {nextPartLabel(state)}</small></button></div>}
       {state.run.overtimeArmed && <div className="action-bar one"><button className="btn secondary" onClick={() => act({ type: "CONFIRM_END_DAY" })}>End Day Now<small>Cancel the armed extension and process tonight</small></button></div>}

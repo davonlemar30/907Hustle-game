@@ -988,7 +988,7 @@
   function createJobsState(inventory, seed) {
     return {
       discoveryOrder: seededShuffle(STARTER_JOB_IDS, seed, 0x15a907),
-      discovered: [], discoveryChance: 0.30, lastScheduledShiftDay: null, lastDeliveryDay: null,
+      discovered: [], discoveryChance: 0.30, lastScheduledShiftDay: null, lastDeliveryDay: null, lastWorked: null,
       records: Object.fromEntries(SPENARD_JOBS.map((job) => [job.id, {
         xp: 0, rank: 0, shifts: 0, lastWorkedDay: null, relationship: 0, contactMet: false,
         coworkersMet: [], currentCoworkerId: null, learnedDetails: [],
@@ -1180,6 +1180,10 @@
     const expectedStarterOrder = seededShuffle(STARTER_JOB_IDS, state.run.seed, 0x15a907);
     state.jobs.discoveryOrder = Array.isArray(state.jobs.discoveryOrder) && state.jobs.discoveryOrder.length === STARTER_JOB_IDS.length && STARTER_JOB_IDS.every((id) => state.jobs.discoveryOrder.includes(id)) ? state.jobs.discoveryOrder : expectedStarterOrder;
     state.jobs.discoveryChance = clamp(Number(state.jobs.discoveryChance) || 0.30, 0.30, 0.70);
+    // Pre-v1.6 saves carry no lastWorked. A stale or unknown id would offer a
+    // shortcut into work the player has not discovered, so it has to be both a
+    // real job and one they have found.
+    state.jobs.lastWorked = SPENARD_JOB_BY_ID[state.jobs.lastWorked] && state.jobs.discovered.includes(state.jobs.lastWorked) ? state.jobs.lastWorked : null;
     for (const job of SPENARD_JOBS) {
       const record = state.jobs.records[job.id];
       record.xp = Math.max(0, Number(record.xp) || 0);
@@ -1689,6 +1693,17 @@
     const discovered = new Set(state.jobs?.discovered || []);
     return SPENARD_JOBS.filter((job) => discovered.has(job.id));
   }
+  // The shift the player worked most recently, offered as a shortcut so the
+  // repeated daily action does not cost four routing taps. Returns null until
+  // they have worked once, so a first run still discovers work the long way.
+  function quickShift(state) {
+    const jobId = state.jobs?.lastWorked;
+    const job = SPENARD_JOB_BY_ID[jobId];
+    if (!job || !state.jobs.discovered.includes(jobId)) return null;
+    const availability = jobAvailability(state, jobId);
+    return { jobId, name: job.name, available: availability.available, reason: availability.reason, pay: jobPayRange(state, jobId) };
+  }
+
   function jobAvailability(state, jobId) {
     const job = SPENARD_JOB_BY_ID[jobId];
     const record = state.jobs?.records?.[jobId];
@@ -4194,6 +4209,7 @@
     record.rank = jobRankForXp(record.xp);
     if (job.scheduled) state.jobs.lastScheduledShiftDay = state.run.day;
     else state.jobs.lastDeliveryDay = state.run.day;
+    state.jobs.lastWorked = job.id;
     state.onboarding.shiftsWorked += 1;
     recordVisitedLocation(state, `job:${job.id}`);
 
@@ -5439,7 +5455,7 @@
       weeklyIncomeEstimate, kipLieutenantAvailability, launderCapacity, launderAvailability,
       districtControlTier, districtHasBlockLayer, unassignedSoldiers,
       homeSituation, homeUnlocks, homePriorities, homeSummary, actionResult,
-      johnWorkIntelKnown, jobRankForXp, jobPayRange, discoveredJobs, jobAvailability, knownWorkplaceContacts, knownSocialContacts, contactAvailability,
+      johnWorkIntelKnown, jobRankForXp, jobPayRange, discoveredJobs, jobAvailability, quickShift, knownWorkplaceContacts, knownSocialContacts, contactAvailability,
       districtActionAvailability, aroundActions, travelAvailability,
       nightOwlStashUsed, nightOwlStashAvailability, relationshipLabel,
       checkpointDay, weekZeroProgress, listingSlate, nightOwlBoardItems, nightOwlRegularFor, nightOwlAvailability, listingInventoryValue,

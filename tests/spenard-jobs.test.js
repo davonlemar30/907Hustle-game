@@ -165,3 +165,47 @@ test("all authored job discovery, introduction, detail, and live result copy sta
     "Wash & Go Attendant: Rank 3. The better rate starts with your next shift.",
   ]) assert.ok(line.trim().split(/\s+/).length < 40, line);
 });
+
+// --- v1.6 quick shift ----------------------------------------------------
+
+test("quickShift stays null until a shift is worked, then names the last job", () => {
+  let state = clearSurfaces(discover(fresh(2201), "wash_go"));
+  assert.equal(state.jobs.lastWorked, null);
+  assert.equal(C.selectors.quickShift(state), null, "a first run discovers work the long way");
+
+  state = clearSurfaces(C.reduceGame(state, { type: "WORK_JOB", jobId: "wash_go", approach: "work_hard" }));
+  assert.equal(state.jobs.lastWorked, "wash_go");
+  const shift = C.selectors.quickShift(state);
+  assert.equal(shift.jobId, "wash_go");
+  assert.equal(shift.name, C.SPENARD_JOBS.find((job) => job.id === "wash_go").name);
+  assert.ok(shift.pay.min > 0 && shift.pay.max >= shift.pay.min);
+  assert.equal(typeof shift.available, "boolean");
+});
+
+test("quickShift reports why an already-worked shift is unavailable rather than vanishing", () => {
+  let state = clearSurfaces(discover(fresh(2202), "wash_go"));
+  state = clearSurfaces(C.reduceGame(state, { type: "WORK_JOB", jobId: "wash_go", approach: "work_hard" }));
+  const shift = C.selectors.quickShift(state);
+  assert.equal(shift.available, false);
+  assert.match(shift.reason, /scheduled shift/i);
+});
+
+test("a pre-v1.6 save with no lastWorked hydrates to null, and a stale id is dropped", () => {
+  const base = clearSurfaces(discover(fresh(2203), "wash_go"));
+
+  const legacy = JSON.parse(JSON.stringify(base));
+  delete legacy.jobs.lastWorked;
+  assert.equal(C.hydrateRun(legacy).jobs.lastWorked, null);
+
+  const undiscovered = JSON.parse(JSON.stringify(base));
+  undiscovered.jobs.lastWorked = "night_owl"; // real job, never discovered
+  assert.equal(C.hydrateRun(undiscovered).jobs.lastWorked, null);
+
+  const bogus = JSON.parse(JSON.stringify(base));
+  bogus.jobs.lastWorked = "not_a_job";
+  assert.equal(C.hydrateRun(bogus).jobs.lastWorked, null);
+
+  const valid = JSON.parse(JSON.stringify(base));
+  valid.jobs.lastWorked = "wash_go";
+  assert.equal(C.hydrateRun(valid).jobs.lastWorked, "wash_go");
+});

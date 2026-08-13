@@ -387,3 +387,53 @@ test("encounters are narrative-first, acknowledge results, and fit the 320px mob
   assert.match(css, /@media\(max-width:340px\)/);
   assert.match(css, /\.encounter-modal-backdrop\{[^}]*z-index:58/);
 });
+
+// --- v1.6 UX audit fixes -------------------------------------------------
+
+test("no top-level ui.jsx function delegates to a window property of its own name", () => {
+  // ui.jsx loads as type="text/babel", so Babel compiles it as a classic
+  // script and every top-level declaration becomes a window property. A hook
+  // named after its own function therefore resolves to itself and recurses
+  // until the stack blows. This shipped as `playSound` and unmounted the whole
+  // tree on the first tab unlock, which also bricked the autosave.
+  const declarations = [...ui.matchAll(/^function ([A-Za-z_$][\w$]*)\s*\(/gm)].map((match) => match[1]);
+  assert.ok(declarations.length > 20, "expected to find the top-level function declarations");
+  for (const name of declarations) {
+    assert.doesNotMatch(ui, new RegExp(`window\\.${name}\\s*\\(`), `${name} calls window.${name}, which is itself`);
+    assert.doesNotMatch(ui, new RegExp(`typeof window\\.${name}\\s*===`), `${name} probes window.${name}, which is itself`);
+  }
+  assert.match(ui, /typeof window\.__907sfx === "function"/);
+});
+
+test("page header lays the back button beside the title block instead of floating it", () => {
+  // float:left with no clearfix dropped the second line of a wrapped subtitle
+  // under the button and outside the header band.
+  assert.match(ui, /<div className="page-head-text"><h1>\{title\}<\/h1><p>\{sub\}<\/p><\/div>/);
+  assert.match(css, /\.page-head\{display:flex/);
+  assert.match(css, /\.back-btn\{float:none/);
+  assert.match(css, /\.page-head-text\{flex:1;min-width:0\}/);
+});
+
+test("the HUD carries four time-slot pips with a reduced-motion fallback", () => {
+  assert.match(ui, /function SlotPips\(\{ slot \}\)/);
+  assert.match(ui, /<SlotPips slot=\{state\.run\.slot\} \/>/);
+  assert.match(ui, /className="slot-pips" aria-hidden="true"/);
+  assert.match(css, /\.slot-pip\{[^}]*border-radius:50%/);
+  assert.match(css, /@media\(prefers-reduced-motion:no-preference\)\{\.slot-pip\.now\{animation:pip-breathe/);
+});
+
+test("a sparse market renders cards and a dense one keeps the table", () => {
+  const market = ui.slice(ui.indexOf("const MARKET_TABLE_MIN"), ui.indexOf("function Boost("));
+  assert.match(market, /const MARKET_TABLE_MIN = 3/);
+  assert.match(market, /const compact = products\.length < MARKET_TABLE_MIN/);
+  assert.match(market, /\{!compact && <div className="market-grid market-head">/);
+  assert.match(css, /\.product-card\{/);
+});
+
+test("the travel root offers a quick shift once the player has worked one", () => {
+  const travel = ui.slice(ui.indexOf("function Travel("), ui.indexOf("function SpenardBlockCard"));
+  assert.match(travel, /C\.selectors\.quickShift\(state\)/);
+  assert.match(travel, /setPage\(`around:job:\$\{shift\.jobId\}`\)/);
+  assert.match(ui, /initialPage = "root"/);
+  assert.match(css, /\.quick-shift\{/);
+});

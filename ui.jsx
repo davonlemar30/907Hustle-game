@@ -56,6 +56,16 @@ function Chip({ label, value, tone }) {
   return <div className={`status-chip${tone ? ` ${tone}` : ""}`}><span className="k">{label}</span><span className="v">{value}</span></div>;
 }
 
+// Time is the resource the whole run spends, and its only representation was a
+// word. Four pips make the remaining budget countable without reading: spent
+// slots dim, the current one is lit, the rest stay open. The text label stays
+// alongside, and the pips are aria-hidden so nothing is announced twice.
+function SlotPips({ slot }) {
+  return <span className="slot-pips" aria-hidden="true">
+    {C.SLOTS.map((label, index) => <span key={label} className={`slot-pip${index < slot ? " spent" : index === slot ? " now" : ""}`} />)}
+  </span>;
+}
+
 function Header({ state, onMenu }) {
   const [open, setOpen] = useState(false);
   const cargo = C.selectors.cargoUsed(state);
@@ -81,7 +91,7 @@ function Header({ state, onMenu }) {
   return <header className="top">
     <h1 className="sr-only">907Hustle: One Good Run · v1.5</h1>
     <div className="hud primary-hud">
-      <Hud label="Day / Time" value={`${state.run.day}${state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""} · ${C.SLOTS[state.run.slot]} · ${area.name}`} good />
+      <Hud label="Day / Time" value={<>{`${state.run.day}${state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""} · ${C.SLOTS[state.run.slot]} · ${area.name}`}<SlotPips slot={state.run.slot} /></>} good />
       <Hud label="Cash" value={money(state.player.cash)} good />
       <button className="status-toggle" aria-expanded={open} aria-label="Show more status" onClick={() => setOpen(!open)}>Status <span>{open ? "Hide" : "View"}</span></button>
       <button className="menu-btn" onClick={onMenu}>Menu</button>
@@ -124,7 +134,10 @@ function Navigation({ tab, setTab, features, marketVisible, robVisible }) {
     return <button key={id} disabled={!enabled} className={tab === id ? "active" : ""} onClick={() => enabled && setTab(id)}><NavIcon id={id} />{label}{!enabled && <small>Locked</small>}</button>;
   })}</nav>;
 }
-function PageHead({ title, sub, onBack }) { return <div className="page-head">{onBack && <button className="back-btn" onClick={onBack}>← Back</button>}<h1>{title}</h1><p>{sub}</p></div>; }
+// Back button and the title block are flex siblings. The title and subtitle
+// share one column so a subtitle that wraps stays beside the button instead of
+// running under it and out of the header band.
+function PageHead({ title, sub, onBack }) { return <div className="page-head">{onBack && <button className="back-btn" onClick={onBack}>← Back</button>}<div className="page-head-text"><h1>{title}</h1><p>{sub}</p></div></div>; }
 function Outcome({ label, value }) { return <div className="outcome"><span className="muted">{label}</span><b>{value}</b></div>; }
 function CategoryCard({ title, status, description, onClick, disabled }) { return <button className={`card category-card${disabled ? " locked" : ""}`} disabled={disabled} onClick={onClick}><div className="card-title">{title}<small>{status}</small></div><p>{description}</p><span className="category-arrow">Open →</span></button>; }
 // Menu-hub row. Shorter than CategoryCard: hubs list destinations, and a wall
@@ -183,13 +196,26 @@ function Home({ state, navigate }) {
   </div>;
 }
 
+// A four-column table earns its column headings at three products or more. At
+// one or two it spends a header row and most of the screen on structure the
+// player does not need yet, so the same rows render as self-contained cards.
+const MARKET_TABLE_MIN = 3;
 function Market({ state, onTrade }) {
   const area = areaOf(state); const market = state.world.markets[area.id];
+  const products = C.selectors.visibleMarketProducts(state);
+  const compact = products.length < MARKET_TABLE_MIN;
+  const detail = (product) => ({ signal: C.selectors.priceSignal(state, area.id, product.id), prices: C.selectors.tradeUnitPrices(state, product.id), owned: state.player.inventory[product.id].qty });
   return <><PageHead title="Street Market" sub={`${area.name} · buy and sell freely; finishing the visit uses one part of day`} /><div className="scroll">
-    <div className="market-grid market-head"><span>Product</span><span>Buy</span><span>Signal</span><span>Own</span></div>
-    {C.selectors.visibleMarketProducts(state).map((product) => { const open = true; const signal = C.selectors.priceSignal(state, area.id, product.id); const prices = C.selectors.tradeUnitPrices(state, product.id); return <div key={product.id} className={`card product market-grid signal-${signal.id}${open ? "" : " locked"}`} role="button" tabIndex={open ? 0 : -1} onClick={() => open && onTrade(product.id)} onKeyDown={(event) => event.key === "Enter" && open && onTrade(product.id)}>
-      <div><div className="product-name">{product.name}</div><div className="role">{open ? `${product.role} · ${market.availability[product.id]} available` : `Locked · ${product.access} access`}</div></div><div className="price">{open ? money(prices.buy) : "—"}</div><div className="signal">{open ? `${signal.symbol} ${signal.label}` : "LOCK"}</div><div className="own">{state.player.inventory[product.id].qty}</div>
-    </div>; })}
+    {!compact && <div className="market-grid market-head"><span>Product</span><span>Buy</span><span>Signal</span><span>Own</span></div>}
+    {products.map((product) => { const { signal, prices, owned } = detail(product);
+      if (compact) return <div key={product.id} className={`card product-card signal-${signal.id}`} role="button" tabIndex={0} onClick={() => onTrade(product.id)} onKeyDown={(event) => event.key === "Enter" && onTrade(product.id)}>
+        <div className="product-card-head"><span className="product-name">{product.name}</span><span className="product-owned">{owned} held</span></div>
+        <div className="role">{product.role} · {market.availability[product.id]} available</div>
+        <div className="product-card-foot"><span className="price">{money(prices.buy)}</span><span className="signal">{signal.symbol} {signal.label}</span></div>
+      </div>;
+      return <div key={product.id} className={`card product market-grid signal-${signal.id}`} role="button" tabIndex={0} onClick={() => onTrade(product.id)} onKeyDown={(event) => event.key === "Enter" && onTrade(product.id)}>
+        <div><div className="product-name">{product.name}</div><div className="role">{product.role} · {market.availability[product.id]} available</div></div><div className="price">{money(prices.buy)}</div><div className="signal">{signal.symbol} {signal.label}</div><div className="own">{owned}</div>
+      </div>; })}
   </div></>;
 }
 
@@ -360,9 +386,9 @@ function ReturnToSpenardActions({ state, dispatch }) {
 
 // What can I do without leaving? The registry filters local actions before
 // this page renders them; reducer preflight enforces the same boundary.
-function AroundHere({ state, dispatch, onBack }) {
+function AroundHere({ state, dispatch, onBack, initialPage = "root" }) {
   const [gambleApproach, setGambleApproach] = useState("read");
-  const [page, setPage] = useState("root");
+  const [page, setPage] = useState(initialPage);
   const available = C.selectors.activityAvailability(state);
   const area = areaOf(state);
   const actions = C.selectors.aroundActions(state);
@@ -452,11 +478,16 @@ function NineOhSevenList({ state, dispatch, onBack, surface = "phone" }) {
 
 function Travel({ state, dispatch, setTab, page, setPage }) {
   if (page === "destinations") return <Destinations state={state} dispatch={dispatch} setTab={setTab} onBack={() => setPage("root")} />;
-  if (page === "around") return <AroundHere state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
+  if (page === "around" || page.startsWith("around:")) return <AroundHere state={state} dispatch={dispatch} onBack={() => setPage("root")} initialPage={page.startsWith("around:") ? page.slice("around:".length) : "root"} />;
   if (page === "household") return <Household state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   const covered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
   const area = areaOf(state);
+  const shift = C.selectors.quickShift(state);
   return <><PageHead title="Travel" sub="Where to go, how to get there, and what is around you" /><div className="scroll">
+    {shift && <button className={`quick-shift${shift.available ? "" : " locked"}`} disabled={!shift.available} onClick={() => setPage(`around:job:${shift.jobId}`)}>
+      <span className="quick-shift-main"><b>{shift.name} shift</b><small>{shift.available ? `${money(shift.pay.min)}–${money(shift.pay.max)} · one part of day` : shift.reason}</small></span>
+      <span className="quick-shift-go" aria-hidden="true">›</span>
+    </button>}
     <MenuRow title={`Around ${area.name}`} status={state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? "You are here" : "Return route ready"} description={state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? "Jobs, Wander, Contacts, Night Owl, gym, gambling, and Local Intel." : "Local actions and the route back to Spenard."} onClick={() => setPage("around")} />
     <MenuRow title="Home" status={state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? `${state.people.household.warnings}/3 warnings` : covered ? "Pass covers return" : "$5 return"} description="Storage, John, and sleep." disabled={state.people.household.evicted} onClick={() => setPage("household")} />
     <MenuRow title="Leave Spenard" status={state.world.transport.weekPass ? "7-day pass" : covered ? "Day pass" : "$5 a ride"} description="Known non-Spenard destinations and pass controls." onClick={() => setPage("destinations")} />
@@ -1088,8 +1119,14 @@ function ActionResultOverlay({ result, onDismiss }) {
   </div>;
 }
 
+// Optional host-provided sound hook. The name must differ from this function's
+// own: ui.jsx is loaded as type="text/babel", so Babel compiles it as a classic
+// script and every top-level declaration becomes a window property. A hook
+// named `window.playSound` therefore resolved to this function, and the guard
+// below turned into unbounded recursion that unmounted the whole tree on the
+// first tab unlock. Regression test: ui-contract.
 function playSound(name) {
-  if (typeof window !== "undefined" && typeof window.playSound === "function") window.playSound(name);
+  if (typeof window !== "undefined" && typeof window.__907sfx === "function") window.__907sfx(name);
 }
 function TabUnlockedOverlay({ unlock, onDismiss }) {
   const names = { market: "Market", boost: "Boost", rob: "Rob", gambling: "Gambling" };

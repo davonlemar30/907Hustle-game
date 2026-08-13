@@ -213,6 +213,7 @@
 .contact-toggle>span:last-child{color:var(--amber);font-family:var(--mono);font-size:.66rem;text-align:right}
 .contact-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:0 10px 10px;border-top:1px solid var(--line)}
 .contact-actions .btn{margin-top:9px;min-width:0}
+.return-actions{display:grid;gap:8px;margin-bottom:8px}
 .unlock-backdrop{position:fixed;inset:0;z-index:75;display:grid;place-items:center;padding:16px;background:radial-gradient(circle,rgba(95,25,20,.36),rgba(0,0,0,.9));cursor:pointer}
 .unlock-card{width:min(390px,100%);padding:26px 18px;border:1px solid #744039;border-top:5px solid var(--red2);background:linear-gradient(180deg,#21110f,#0d0d0d);box-shadow:0 20px 60px rgba(0,0,0,.7);text-align:center}
 .unlock-card>span,.unlock-card>small{display:block;color:var(--amber);font-size:.65rem;font-weight:700;letter-spacing:.2em;text-transform:uppercase}

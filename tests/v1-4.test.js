@@ -240,7 +240,7 @@ test("UI exposes the three Travel roots, Night Owl hub, 907List, and hidden debt
   const travel = ui.slice(ui.indexOf("function Travel("), ui.indexOf("function SpenardBlockCard"));
   assert.equal((travel.match(/<MenuRow title=/g) || []).length, 3);
   for (const label of ["Home", "Leave Spenard"]) assert.match(travel, new RegExp(`title=\\"${label}\\"`));
-  assert.match(travel, /Around Downtown/);
+  assert.match(travel, /title=\{`Around \$\{area\.name\}`\}/);
   assert.match(ui, /function NightOwlHub/);
   assert.match(ui, /nightOwlRegularFor/);
   assert.match(ui, /title="907List"/);

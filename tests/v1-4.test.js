@@ -22,6 +22,7 @@ function readyForDre(day = 4) {
   state.run.day = day;
   state.run.slot = 0;
   state.jobs.discovered = ["wash_go"];
+  state.jobs.hired = ["wash_go", "day_labor"];
   state.onboarding.shiftsWorked = 3;
   state.onboarding.visitedLocations = ["home", "spenard_streets", "night_owl", "spenard_gym"];
   state.onboarding.metNpcs = ["mara", "cal"];
@@ -160,7 +161,7 @@ test("legacy v3 saves hydrate directly into pressure with inferred lender state"
   assert.equal(loaded.run.checkpointDay, 7);
   assert.equal(loaded.lender.status, "active");
   assert.ok(loaded.onboarding);
-  assert.equal(C.SAVE_KEY, "907ogr_v3");
+  assert.equal(C.SAVE_KEY, "907ogr_v4");
 });
 
 test("Night Owl postings rotate deterministically and regulars keep separate relationships", () => {
@@ -189,6 +190,7 @@ test("Cal Level 2 and Lena's third shift both unlock gambling through a scene", 
 
   let lena = fresh(12);
   lena.jobs.discovered = ["wash_go"];
+  lena.jobs.hired = ["wash_go", "day_labor"];
   lena.jobs.records.wash_go.shifts = 2;
   lena.run.slot = 0;
   lena = C.reduceGame(lena, { type: "WORK_JOB", jobId: "wash_go", approach: "socialize" });
@@ -198,6 +200,7 @@ test("Cal Level 2 and Lena's third shift both unlock gambling through a scene", 
 test("907List has three deterministic listings, a three-item cap, and clean resale profit", () => {
   let state = fresh(13);
   state.nineZeroSevenList.known = true;
+  state.knowledge.knows907List = true;
   state.player.cash = 500;
   state.player.cleanCash = 500;
   state.player.dirtyCash = 0;

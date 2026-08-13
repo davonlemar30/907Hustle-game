@@ -13,6 +13,7 @@ function fresh(seed = 907) {
 }
 function discoverJob(state, jobId) {
   if (!state.jobs.discovered.includes(jobId)) state.jobs.discovered.push(jobId);
+  if (!state.jobs.hired.includes(jobId)) state.jobs.hired.push(jobId);
   return state;
 }
 function quietAdvance(state, reason = "END_MARKET") {
@@ -52,7 +53,7 @@ function driveTo(state, id, limit = 90) {
 }
 
 test("v3 run keeps legacy migration data without exposing a starting class", () => {
-  assert.equal(C.VERSION, 3); assert.equal(C.SAVE_KEY, "907ogr_v3");
+  assert.equal(C.VERSION, 4); assert.equal(C.SAVE_KEY, "907ogr_v4");
   assert.equal(C.BACKGROUNDS.length, 3);
   assert.deepEqual(C.BACKGROUNDS.map((item) => item.name), ["Steady-Hand Shooter", "Silver-Tongued Hustler", "Strategist"]);
   assert.deepEqual(C.STARTING_EDGES.map((item) => item.id), ["shooter", "hustler"]);
@@ -432,7 +433,7 @@ test("the street name is required before a fresh run can start", () => {
   assert.equal(blanked.player.streetNameChosen, false);
 });
 
-test("a pre-v0.7 save hydrates without a version bump and gains the new fields", () => {
+test("a pre-v0.7 save migrates to v4 and gains the new fields", () => {
   const state = C.reduceGame(C.createRun({ seed: 77 }), { type: "CHOOSE_BACKGROUND", backgroundId: "shooter" });
   const legacy = JSON.parse(JSON.stringify(state));
   delete legacy.player.streetName; delete legacy.player.streetNameChosen;
@@ -442,9 +443,9 @@ test("a pre-v0.7 save hydrates without a version bump and gains the new fields",
 
   const inspection = C.inspectSave(JSON.stringify(legacy));
   assert.equal(inspection.valid, true, inspection.error || "legacy save rejected");
-  assert.equal(C.VERSION, 3); assert.equal(C.SAVE_KEY, "907ogr_v3");
+  assert.equal(C.VERSION, 4); assert.equal(C.SAVE_KEY, "907ogr_v4");
   const hydrated = inspection.state;
-  assert.equal(hydrated.version, 3);
+  assert.equal(hydrated.version, 4);
   assert.deepEqual(hydrated.run.eventHistory, {});
   assert.equal(hydrated.run.chainStreak, 0);
   assert.equal(hydrated.people.mara.chainStage, 0);
@@ -670,7 +671,7 @@ test("a pre-v0.7.1 save hydrates and gains the dealer record", () => {
   delete legacy.people.dealers;
   const inspection = C.inspectSave(JSON.stringify(legacy));
   assert.equal(inspection.valid, true, inspection.error || "rejected");
-  assert.equal(inspection.state.version, 3);
+  assert.equal(inspection.state.version, 4);
   assert.equal(inspection.state.people.dealers.kip.known, false);
   assert.equal(inspection.state.people.dealers.kip.robbedCount, 0);
   assert.equal(C.selectors.dealerSupplyFactor(inspection.state, "north_star_lot", "weed"), 1);
@@ -684,7 +685,7 @@ test("fresh runs begin at the family home with $100 clean cash and no debt", () 
   assert.equal(state.player.cash, 100); assert.equal(state.player.cleanCash, 100); assert.equal(state.player.heat, 0); assert.equal(state.lender.principal, 0); assert.equal(state.lender.balance, 0); assert.equal(state.lender.dueDay, null);
   assert.equal(state.base.controlled, false); assert.equal(state.rival.pressure, 0); assert.equal(state.rival.relationship, "unaware");
   assert.ok(Object.values(state.player.inventory).every((item) => item.qty === 0));
-  assert.deepEqual([state.people.household.yalondaTrust, state.people.household.johnTrust, state.people.household.warnings], [2, 1, 0]);
+  assert.deepEqual([state.npc.yalonda.trust, state.npc.juan.trust, state.people.household.warnings], [2, 0, 0]);
   assert.equal(state.world.productAccess.weed, false); assert.equal(state.people.dealers.kip.known, false);
 });
 
@@ -707,10 +708,10 @@ test("work is Morning-only, once daily, seeded, and builds legal standing", () =
   assert.equal(a.world.locations.employer.standing, 1); assert.equal(C.selectors.jobAvailability(a, "ship_creek").available, false);
 });
 
-test("gym costs escalate, progress diminishes, and attributes cap at five", () => {
-  let state = fresh(9004); state.player.cash = 1000; state.player.cleanCash = 1000; const spent = [];
+test("gym membership is paid once, then session costs escalate and progress diminishes", () => {
+  let state = fresh(9004); state.discovered.spenardGym = true; state.player.cash = 1000; state.player.cleanCash = 1000; const spent = [];
   for (let i = 0; i < 4; i += 1) { state.run.pendingEvent = null; const before = state.player.cash; state = C.reduceGame(state, { type: "TRAIN_ATTRIBUTE", attribute: "strength" }); spent.push(before - state.player.cash); }
-  assert.deepEqual(spent, [25, 45, 75, 120]); assert.equal(state.player.attributes.strength, 2); assert.equal(state.player.attributeProgress.strength, 7);
+  assert.deepEqual(spent, [55, 45, 75, 120]); assert.equal(state.player.attributes.strength, 2); assert.equal(state.player.attributeProgress.strength, 7);
   state.run.pendingEvent = null; state.run.pendingEncounter = null; state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
   state.player.attributeProgress.strength = 9; state.world.locations.gym.sessionDay = null; state.run.pendingEvent = null; state.run.slot = 0;
   state = C.reduceGame(state, { type: "TRAIN_ATTRIBUTE", attribute: "strength" });
@@ -835,7 +836,12 @@ function assignedSoldierSetup(seed = 42010, blockId = "spenard_rec_lot") {
 }
 
 test("soldier income resolves during normal time advancement and consumes zero extra time slots", () => {
-  const { state } = assignedSoldierSetup(50000);
+  const { state, soldierId } = assignedSoldierSetup(50000);
+  state.world.soldiers[soldierId].status = "active";
+  state.world.soldiers[soldierId].blockId = "spenard_rec_lot";
+  state.world.territoryBlocks.spenard_rec_lot.owner = "player";
+  state.world.territoryBlocks.spenard_rec_lot.soldiersAssigned = [soldierId];
+  state.world.territoryBlocks.spenard_rec_lot.incomeCollected = 0;
   clearModals(state); state.run.pendingEvent = null; state.run.slot = 3; state.run.dayEndPending = false; state.player.energy = C.MAX_ENERGY;
   const beforeDay = state.run.day, beforeSlot = state.run.slot, beforeDirty = state.player.dirtyCash;
   const next = quietAdvance(state);
@@ -1461,9 +1467,9 @@ test("actionResult stays silent for free actions, run lifecycle, and richer resu
   const state = fresh(60010);
   assert.equal(C.selectors.actionResult(state, state, "WORK_SHIFT"), null, "an identical state is not a result");
 
-  const free = C.reduceGame(state, { type: "ASK_JOHN" });
+  const present = C.selectors.householdPresence(state); const free = present ? C.reduceGame(state, { type: "TALK_HOUSEHOLD", npcId: present }) : state;
   if (free !== state && free.run.slot === state.run.slot && free.run.day === state.run.day) {
-    assert.equal(C.selectors.actionResult(state, free, "ASK_JOHN"), null, "a free action consumes no part of the day and raises nothing");
+    assert.equal(C.selectors.actionResult(state, free, "TALK_HOUSEHOLD"), null, "a free action consumes no part of the day and raises nothing");
   }
 
   const restarted = C.reduceGame(state, { type: "NEW_RUN", seed: 4 });

@@ -7,14 +7,16 @@ const ui = fs.readFileSync(path.join(root, "ui.jsx"), "utf8");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "v05.css"), "utf8");
 
-test("active shell is v1.5 with a packaged title asset and no stale version copy", () => {
-  assert.match(ui, /One Good Run · v1\.5/); assert.match(html, /ui\.jsx/); assert.doesNotMatch(html, /legacy-v1-ui-reference|text\/plain/);
+test("active shell is v1.7 with a packaged title asset and no stale version copy", () => {
+  assert.match(ui, /One Good Run · v1\.7/); assert.match(html, /ui\.jsx/); assert.doesNotMatch(html, /legacy-v1-ui-reference|text\/plain/);
   assert.match(ui, /907hustle-title\.png/); assert.ok(fs.existsSync(path.join(root, "assets", "907hustle-title.png")));
   assert.doesNotMatch(ui, /Alpha v0\.9|v0\.9/);
 });
 test("title screen exposes safe load, new-game confirmation, preview, and help", () => {
-  for (const token of ["Load Game", "New Game", "Saved run", "How to Play", "inspectSave", "HYDRATE_RUN", "replace the current autosave"]) assert.ok(ui.includes(token), token);
+  for (const token of ["Load Game", "New Game", "Saved run", "How to Play", "inspectSave", "HYDRATE_RUN", "current autosave will be replaced"]) assert.ok(ui.includes(token), token);
   assert.match(ui, /screen !== "game"/);
+  assert.match(ui, /function ConfirmPrompt/);
+  assert.doesNotMatch(ui, /window\.confirm/);
 });
 test("new games are classless and expose one Start confirmation", () => {
   assert.match(ui, /<b>Start<\/b>/); assert.match(ui, /type: "START_RUN"/); assert.doesNotMatch(ui, /Choose your edge|C\.STARTING_EDGES\.map|C\.BACKGROUNDS\.map/);
@@ -25,12 +27,12 @@ test("progressive primary navigation leads with Home and keeps Boost after Marke
   assert.match(css, /grid-template-columns:repeat\(5,1fr\)/);
 });
 test("Travel exposes the fresh-arrival activity and access model", () => {
-  for (const token of ["Yalonda and John's Home", "Explore Spenard", "Spenard Jobs", "Spenard Community Gym", "Informal Game", "People Mover", "North Star Garage Listing", "Auto Lot", "Gun Counter"]) assert.ok(ui.includes(token), token);
+  for (const token of ["Yalonda's Home", "Explore Spenard", "Spenard Jobs", "Spenard Community Gym", "Phone Store", "Informal Game", "People Mover", "North Star Garage Listing", "Auto Lot", "Gun Counter"]) assert.ok(ui.includes(token), token);
 });
 
-test("Spenard exploration is a discoverable Jobs, Wander, and Contacts submenu", () => {
-  for (const token of ["No work found yet", "Wander to look around", 'type: "WANDER_SPENARD"', "Work you found by learning the neighborhood", "Choose a shift approach", "Call, text, or visit"]) assert.ok(ui.includes(token), token);
-  assert.match(ui, /contacts\.length > 0 && <MenuRow title="Contacts"/);
+test("Spenard exploration separates Places from Activities", () => {
+  for (const token of ["Places", "Activities", 'type: "WANDER_SPENARD"', "Found work still requires an application", "Choose a shift approach", "Personal and social contacts"]) assert.ok(ui.includes(token), token);
+  assert.match(ui, /<MenuRow title="Contacts"/);
   assert.doesNotMatch(ui, /onClick=\{\(\) => dispatch\(\{ type: "EXPLORE_SPENARD" \}\)\}/);
   assert.doesNotMatch(ui, /PlaceAction title="Ship Creek Freight"/);
 });
@@ -39,7 +41,7 @@ test("HUD shows three primary values and a one-tap status drawer", () => {
   assert.match(ui, /aria-expanded=\{open\}/);
 });
 test("People and Operations use nested full-screen navigation", () => {
-  for (const token of ["Personal", "Recent History", "Rob", "Territory", "Gear", "Safehouse", "← Back"]) assert.ok(ui.includes(token), token);
+  for (const token of ["Contacts", "Recent History", "Rob", "Territory", "Gear", "Safehouse", "← Back"]) assert.ok(ui.includes(token), token);
   assert.match(ui, /page\.startsWith\("crew:"\)/); assert.match(ui, /page === "safehouse"/);
 });
 test("Finance exposes increments, clamped preview, and reserve wording", () => {
@@ -169,14 +171,14 @@ test("Home is the residence plus whatever is pressing, and restates nothing", ()
   assert.match(ui, /function Home\(\{ state, dispatch, navigate \}\)/);
   assert.match(ui, /useState\(\{ tab: "home", more: "root", sub: null, token: 0 \}\)/);
   assert.match(ui, /home: <Home state=\{state\} dispatch=\{act\} navigate=\{navigate\} \/>/);
-  for (const token of ["home-hero", "home-summary", "home-identity", "Street Identity", "Needs Attention", "Yalonda and John's"]) assert.ok(ui.includes(token), token);
+  for (const token of ["home-hero", "home-summary", "home-identity", "Street Identity", "Needs Attention", "Yalonda's Home"]) assert.ok(ui.includes(token), token);
   assert.match(ui, /C\.selectors\.homeSituation\(state\)/);
   // Home never renders the old dense action bar or a second copy of the log.
   assert.doesNotMatch(ui, /<Feed entries=\{state\.log\} \/>[\s\S]{0,40}home/);
-  // The room itself: stash, John, sleep, and the laptop when it is owned.
+  // The room itself: stash, household conversation, sleep, and the laptop when it is owned.
   const home = ui.slice(ui.indexOf("function Home({ state, dispatch, navigate })"), ui.indexOf("const MARKET_TABLE_MIN"));
   assert.match(home, /MenuRow title="Stash"/);
-  assert.match(home, /type: "ASK_JOHN"/);
+  assert.match(home, /type: "TALK_HOUSEHOLD"/);
   assert.match(home, /type: "SLEEP_HOME"/);
   assert.match(home, /MenuRow title="907List Laptop"/);
   assert.match(home, /navigate\("travel", "root", null, "household"\)/);
@@ -267,8 +269,7 @@ test("Operations and Finances are hubs with focused subpages and Back on every o
 test("progressive disclosure hides categories that have nothing in them yet", () => {
   assert.match(ui, /knownDealers > 0 && <MenuRow title="Street Contacts"/);
   assert.match(ui, /introducedCrew > 0 && <MenuRow title="Crew"/);
-  assert.match(ui, /state\.people\.mara\.met && <MenuRow title="Mara Velez"/);
-  assert.match(ui, /state\.rival\.relationship !== "unaware" && <MenuRow title="Rook Mercer"/);
+  assert.match(ui, /personalContacts\(state\)/);
   assert.match(ui, /state\.people\.crew\.kip\.recruited && <MenuRow title="Laundering"/);
   assert.match(ui, /showRisk && <MenuRow title="Financial Risk"/);
   assert.match(ui, /actionOf\("spenard_gambling"\) && <div className=\{`card\$\{available\.gambling\.available/);
@@ -330,7 +331,7 @@ test("Safehouse is a hub instead of the longest page in the build", () => {
 
 test("the play-screen header is one status line, not a wordmark row", () => {
   assert.doesNotMatch(ui, /className="brand-row"/);
-  assert.match(ui, /<h1 className="sr-only">907Hustle: One Good Run · v1\.5<\/h1>/);
+  assert.match(ui, /<h1 className="sr-only">907Hustle: One Good Run · v1\.7<\/h1>/);
   assert.match(ui, /<button className="menu-btn" onClick=\{onMenu\}>Menu<\/button>/);
   assert.match(css, /\.primary-hud\{grid-template-columns:minmax\(0,1\.35fr\) minmax\(0,\.72fr\) auto auto/);
 });

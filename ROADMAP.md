@@ -4,6 +4,26 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
+## In progress — v1.4 Week Zero and Early Game Rework
+
+Branch: `codex/v1-4-week-zero-early-game`. This work is under review and is not
+shipped.
+
+- Required Street Name; $100 clean start; no opening debt or fixed ending date.
+- Week Zero onboarding through three shifts, four physical locations, and two
+  eligible workplace or Night Owl contacts.
+- Dre approach after the following shift, with an optional $1,000 dirty-cash
+  advance and a dynamic checkpoint seven calendar days later.
+- Hidden daily Energy, pre-rollover end-day confirmation, structured action
+  recaps, and one controlled overtime action.
+- Three-root Travel hierarchy, expanded Night Owl hub, relationship-driven
+  gambling discovery, and the deterministic 907List resale loop.
+- Additive `907ogr_v3` hydration into pressure-phase compatibility behavior.
+
+Post-merge work: update the Build Changelog and shipped build-order record. Keep
+Moving, Mara Date Night, broader transportation progression, social-media hustle,
+and the larger day/night foundation remain outside this branch.
+
 ## Shipped — Alpha v0.9 (Fresh Start and Daily Life)
 
 Fresh Anchorage arrival at the family home · fixed $1,200 Day 7 note · household trust, storage, discovery, warnings, and eviction · Day 1 work, exploration, training, gambling, shoplifting, transit, and listings · optional $650 garage · hidden attribute progress · run-scoped Street Read · fresh Mara/Kip/Rook continuity · additive legacy hydration.

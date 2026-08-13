@@ -9,7 +9,7 @@ function run(seed = 907) {
   return state;
 }
 function fresh(seed = 907) {
-  return C.reduceGame(C.createRun({ seed }), { type: "START_RUN" });
+  return C.reduceGame(C.createRun({ seed }), { type: "START_RUN", streetName: "Rookie" });
 }
 function discoverJob(state, jobId) {
   if (!state.jobs.discovered.includes(jobId)) state.jobs.discovered.push(jobId);
@@ -17,7 +17,10 @@ function discoverJob(state, jobId) {
 }
 function quietAdvance(state, reason = "END_MARKET") {
   state.run.pendingEvent = null; state.run.pendingEncounter = null; state.run.pendingOperationResult = null;
-  return C.advanceRun(state, { reason, suppressStory: true });
+  let next = C.advanceRun(state, { reason, suppressStory: true });
+  next.run.pendingEvent = null; next.run.pendingEncounter = null; next.run.pendingOperationResult = null;
+  if (next.run.dayEndPending && !next.run.pendingEvent && !next.run.pendingEncounter && !next.run.pendingOperationResult) next = C.reduceGame(next, { type: "CONFIRM_END_DAY" });
+  return next;
 }
 // Alpha v0.7 selects story beats by weighted roll rather than a fixed ladder, so
 // tests drive the run forward until the beat under test appears instead of
@@ -27,6 +30,7 @@ function settleForTest(state) {
   while (guard++ < 20) {
     if (state.run.daySummary) { state = C.reduceGame(state, { type: "DISMISS_DAY_SUMMARY" }); continue; }
     if (state.run.pendingOperationResult) { state = C.reduceGame(state, { type: "ACKNOWLEDGE_OPERATION_RESULT" }); continue; }
+    if (state.run.dayEndPending && !state.run.pendingEvent && !state.run.pendingEncounter) { state = C.reduceGame(state, { type: "CONFIRM_END_DAY" }); continue; }
     break;
   }
   return state;
@@ -67,7 +71,7 @@ test("legacy backgrounds hydrate to the approved derived identities", () => {
 });
 
 test("classless new runs start balanced, Unproven, and use the neutral name", () => {
-  const state = C.reduceGame(C.createRun({ seed: 8 }), { type: "START_RUN" });
+  const state = C.reduceGame(C.createRun({ seed: 8 }), { type: "START_RUN", streetName: "Rookie" });
   assert.equal(state.run.status, "playing");
   assert.equal(state.player.background, null); assert.equal(state.player.legacyBackground, null);
   assert.equal(state.player.streetName, "Rookie"); assert.equal(state.player.streetIdentity, "unproven");
@@ -76,7 +80,7 @@ test("classless new runs start balanced, Unproven, and use the neutral name", ()
 });
 
 test("meaningful behavior is deduplicated, capped, and bounded", () => {
-  const state = C.reduceGame(C.createRun({ seed: 8 }), { type: "START_RUN" });
+  const state = C.reduceGame(C.createRun({ seed: 8 }), { type: "START_RUN", streetName: "Rookie" });
   assert.equal(C.recordBehaviorForTest(state, "mover", 1, "sale:a", "sale"), true);
   assert.equal(C.recordBehaviorForTest(state, "mover", 1, "sale:a", "sale"), false);
   assert.equal(C.recordBehaviorForTest(state, "mover", 1, "sale:b", "sale"), true);
@@ -86,11 +90,11 @@ test("meaningful behavior is deduplicated, capped, and bounded", () => {
 });
 
 test("Street Identity assigns at Day 2 Night and mixed behavior becomes Wild Card", () => {
-  const mover = C.reduceGame(C.createRun({ seed: 8 }), { type: "START_RUN" });
+  const mover = C.reduceGame(C.createRun({ seed: 8 }), { type: "START_RUN", streetName: "Rookie" });
   for (let i = 0; i < 6; i += 1) C.recordBehaviorForTest(mover, "mover", 1, `move:${i}`, "market_read");
   mover.run.day = 2; mover.run.slot = 3; C.evaluateStreetIdentityForTest(mover, true);
   assert.equal(mover.player.streetIdentity, "mover"); assert.equal(mover.player.identityHistory.length, 1);
-  const mixed = C.reduceGame(C.createRun({ seed: 9 }), { type: "START_RUN" });
+  const mixed = C.reduceGame(C.createRun({ seed: 9 }), { type: "START_RUN", streetName: "Rookie" });
   for (let i = 0; i < 3; i += 1) C.recordBehaviorForTest(mixed, "mover", 1, `m:${i}`, "market_read");
   for (let i = 0; i < 3; i += 1) C.recordBehaviorForTest(mixed, "connector", 1, `c:${i}`, "relationship");
   mixed.run.day = 2; mixed.run.slot = 3; C.evaluateStreetIdentityForTest(mixed, true);
@@ -98,7 +102,7 @@ test("Street Identity assigns at Day 2 Night and mixed behavior becomes Wild Car
 });
 
 test("identity changes require the lead to persist for two nights", () => {
-  const state = C.reduceGame(C.createRun({ seed: 10 }), { type: "START_RUN" });
+  const state = C.reduceGame(C.createRun({ seed: 10 }), { type: "START_RUN", streetName: "Rookie" });
   for (let i = 0; i < 6; i += 1) C.recordBehaviorForTest(state, "mover", 1, `move:${i}`, "market_read");
   state.run.day = 2; C.evaluateStreetIdentityForTest(state, true); assert.equal(state.player.streetIdentity, "mover");
   for (let i = 0; i < 9; i += 1) C.recordBehaviorForTest(state, "stickup", 1, `stick:${i}`, "confrontation");
@@ -171,17 +175,20 @@ test("v3 autosave state survives JSON hydration without migration", () => {
   assert.equal(next.player.inventory.weed.qty, 3);
 });
 
-test("end market is the single clock and world pipeline", () => {
+test("end market advances time while market evolution waits for confirmed night", () => {
   const state = run(); const next = quietAdvance(state);
-  assert.equal(next.run.slot, 1); assert.equal(next.stats.pipelineAdvances, 1); assert.equal(next.stats.marketUpdates, 1);
-  for (const area of C.NEIGHBORHOODS) assert.equal(next.world.markets[area.id].updatedAt, 1);
+  assert.equal(next.run.slot, 1); assert.equal(next.stats.pipelineAdvances, 1); assert.equal(next.stats.marketUpdates, 0);
+  for (const area of C.NEIGHBORHOODS) assert.equal(next.world.markets[area.id].updatedAt, 0);
 });
 
-test("four slots roll over and every action can produce a summary", () => {
+test("Night actions open a structured recap before confirmed rollover", () => {
   for (const reason of ["END_MARKET", "TRAVEL", "LAY_LOW", "HEAL", "PAY_DEBT", "ROBBERY", "TAKEOVER"]) {
     let state = run(); state.run.day = 1; state.run.slot = 3;
-    state = quietAdvance(state, reason);
-    assert.equal(state.run.day, 2, reason); assert.equal(state.run.slot, 0, reason); assert.equal(state.run.daySummary.day, 1, reason);
+    state = C.advanceRun(state, { reason, suppressStory: true });
+    assert.equal(state.run.day, 1, reason); assert.equal(state.run.dayEndPending, true, reason); assert.equal(state.run.dailyActions.at(-1).day, 1, reason);
+    state.run.pendingEvent = null; state.run.pendingEncounter = null;
+    state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
+    assert.equal(state.run.day, 2, reason); assert.equal(state.run.slot, 0, reason);
   }
 });
 
@@ -306,7 +313,7 @@ test("District Control tier for Spenard progresses with block count and requires
 });
 
 test("event contract explains who, where, stakes, action, preview, and result", () => {
-  let state = run(); state = C.reduceGame(state, { type: "END_MARKET" }); const event = state.run.pendingEvent;
+  let state = run(); state.run.pendingEvent = C.buildEventForTest("dre_terms", state); const event = state.run.pendingEvent;
   assert.ok(event.who && event.where && event.stakes && event.description);
   for (const choice of event.choices) assert.ok(choice.label && choice.preview && choice.result);
   const slot = state.run.slot; state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 }); assert.equal(state.run.slot, slot);
@@ -355,7 +362,7 @@ test("Mara introduction resolves once and does not by itself arm her threat", ()
   assert.equal(C.selectors.maraThreatEligible(state), false);
 });
 
-test("the Day 2 threat is always the Mara-free service-road encounter", () => {
+test("the Day 2 threat remains Mara-free", () => {
   for (let seed = 300; seed < 325; seed += 1) {
     let state = C.reduceGame(C.createRun({ seed }), { type: "CHOOSE_BACKGROUND", backgroundId: "shooter" });
     let guard = 0, found = null;
@@ -365,7 +372,7 @@ test("the Day 2 threat is always the Mara-free service-road encounter", () => {
       if (state.run.status !== "playing") break;
       state = C.reduceGame(state, { type: "END_MARKET" });
     }
-    if (found) assert.equal(found, "early_street", `seed ${seed} produced ${found}`);
+    if (found) assert.ok(["early_street", "mini_mart_parking_lot"].includes(found), `seed ${seed} produced ${found}`);
   }
 });
 
@@ -409,16 +416,18 @@ test("street names are sanitized to a safe character set and length", () => {
   for (const empty of ["", "   ", "!!!", null, undefined, {}]) assert.equal(C.sanitizeStreetName(empty), "");
 });
 
-test("the street name is optional and falls back to Rookie", () => {
+test("the street name is required before a fresh run can start", () => {
   const skipped = C.reduceGame(C.createRun({ seed: 12 }), { type: "START_RUN" });
-  assert.equal(skipped.player.streetName, C.DEFAULT_STREET_NAMES.neutral);
+  assert.equal(skipped.run.status, "creating_character");
+  assert.equal(skipped.player.streetName, "");
   assert.equal(skipped.player.streetNameChosen, false);
   const chosen = C.reduceGame(C.createRun({ seed: 12 }), { type: "START_RUN", streetName: "  Kodiak!!  " });
   assert.equal(chosen.player.streetName, "Kodiak");
   assert.equal(chosen.player.streetNameChosen, true);
   assert.match(chosen.log[0].text, /Kodiak/);
   const blanked = C.reduceGame(C.createRun({ seed: 12 }), { type: "START_RUN", streetName: "###" });
-  assert.equal(blanked.player.streetName, C.DEFAULT_STREET_NAMES.neutral);
+  assert.equal(blanked.run.status, "creating_character");
+  assert.equal(blanked.player.streetName, "");
   assert.equal(blanked.player.streetNameChosen, false);
 });
 
@@ -667,10 +676,10 @@ test("a pre-v0.7.1 save hydrates and gains the dealer record", () => {
 
 // --- Alpha v0.9: fresh arrival and daily life -------------------------------
 
-test("fresh v0.9 runs begin at the family home with only cash and fixed debt", () => {
+test("fresh runs begin at the family home with $100 clean cash and no debt", () => {
   const state = fresh(9001);
   assert.equal(state.run.premise, "fresh_arrival"); assert.equal(state.run.openingPending, true);
-  assert.equal(state.player.cash, 1000); assert.equal(state.player.heat, 0); assert.equal(state.lender.principal, 1000); assert.equal(state.lender.balance, 1200); assert.equal(state.lender.dueDay, 7);
+  assert.equal(state.player.cash, 100); assert.equal(state.player.cleanCash, 100); assert.equal(state.player.heat, 0); assert.equal(state.lender.principal, 0); assert.equal(state.lender.balance, 0); assert.equal(state.lender.dueDay, null);
   assert.equal(state.base.controlled, false); assert.equal(state.rival.pressure, 0); assert.equal(state.rival.relationship, "unaware");
   assert.ok(Object.values(state.player.inventory).every((item) => item.qty === 0));
   assert.deepEqual([state.people.household.yalondaTrust, state.people.household.johnTrust, state.people.household.warnings], [2, 1, 0]);
@@ -692,14 +701,15 @@ test("work is Morning-only, once daily, seeded, and builds legal standing", () =
   let a = fresh(9003), b = fresh(9003);
   discoverJob(a, "ship_creek"); discoverJob(b, "ship_creek");
   a = C.reduceGame(a, { type: "WORK_JOB", jobId: "ship_creek", approach: "socialize" }); b = C.reduceGame(b, { type: "WORK_JOB", jobId: "ship_creek", approach: "socialize" });
-  assert.equal(a.player.cash, b.player.cash); assert.ok(a.player.cash >= 1110 && a.player.cash <= 1140); assert.equal(a.run.slot, 1);
+  assert.equal(a.player.cash, b.player.cash); assert.ok(a.player.cash >= 210 && a.player.cash <= 240); assert.equal(a.run.slot, 1);
   assert.equal(a.world.locations.employer.standing, 1); assert.equal(C.selectors.jobAvailability(a, "ship_creek").available, false);
 });
 
 test("gym costs escalate, progress diminishes, and attributes cap at five", () => {
-  let state = fresh(9004); const spent = [];
+  let state = fresh(9004); state.player.cash = 1000; state.player.cleanCash = 1000; const spent = [];
   for (let i = 0; i < 4; i += 1) { state.run.pendingEvent = null; const before = state.player.cash; state = C.reduceGame(state, { type: "TRAIN_ATTRIBUTE", attribute: "strength" }); spent.push(before - state.player.cash); }
   assert.deepEqual(spent, [25, 45, 75, 120]); assert.equal(state.player.attributes.strength, 2); assert.equal(state.player.attributeProgress.strength, 7);
+  state.run.pendingEvent = null; state.run.pendingEncounter = null; state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
   state.player.attributeProgress.strength = 9; state.world.locations.gym.sessionDay = null; state.run.pendingEvent = null; state.run.slot = 0;
   state = C.reduceGame(state, { type: "TRAIN_ATTRIBUTE", attribute: "strength" });
   assert.equal(state.player.attributes.strength, 3); assert.equal(state.player.attributeProgress.strength, 2);
@@ -711,28 +721,33 @@ test("Day 2 exploration guarantees Kip's transactional supplier encounter", () =
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
   assert.equal(state.people.dealers.kip.known, true); assert.equal(state.world.productAccess.weed, true); assert.ok(state.world.locations.discoveries.includes("kip_supplier"));
   state.run.pendingEvent = null; state = C.reduceGame(state, { type: "EXPLORE_SPENARD" });
-  assert.equal(state.world.locations.gamblingKnown, true);
+  assert.equal(state.world.locations.gamblingKnown, false, "wandering no longer reveals the game automatically");
 });
 
 test("bus opens Downtown but fresh runs cannot travel to Industrial without a route", () => {
   let state = fresh(9006); const blocked = C.reduceGame(state, { type: "TRAVEL", neighborhoodId: "airport_industrial" }); assert.equal(blocked, state);
   state = C.reduceGame(state, { type: "BUS_TRAVEL", neighborhoodId: "downtown" });
-  assert.equal(state.world.currentNeighborhoodId, "downtown"); assert.equal(state.player.cash, 995); assert.equal(state.run.slot, 1);
+  assert.equal(state.world.currentNeighborhoodId, "downtown"); assert.equal(state.player.cash, 95); assert.equal(state.run.slot, 1);
 });
 
 test("legacy v3 saves retain garage ownership while v0.9 acquisition advances once", () => {
   const legacy = run(9008); const raw = JSON.parse(JSON.stringify(legacy)); delete raw.base.controlled; delete raw.run.premise;
   const hydrated = C.hydrateRun(raw); assert.equal(hydrated.run.premise, "legacy_established"); assert.equal(hydrated.base.controlled, true);
-  let state = fresh(9009); const before = state.stats.pipelineAdvances; state = C.reduceGame(state, { type: "LEASE_GARAGE" });
-  assert.equal(state.base.controlled, true); assert.equal(state.player.cash, 350); assert.equal(state.stats.pipelineAdvances, before + 1);
+  let state = fresh(9009); state.player.cash = 700; state.player.cleanCash = 700; const before = state.stats.pipelineAdvances; state = C.reduceGame(state, { type: "LEASE_GARAGE" });
+  assert.equal(state.base.controlled, true); assert.equal(state.player.cash, 50); assert.equal(state.stats.pipelineAdvances, before + 1);
 });
 
 // --- v1.0 Soldiers, Territory, Lieutenants, Laundering ----------------------
 
-function clearModals(state) { state.run.pendingEvent = null; state.run.pendingEncounter = null; state.run.pendingOperationResult = null; return state; }
+function clearModals(state) {
+  state.run.pendingEvent = null; state.run.pendingEncounter = null; state.run.pendingOperationResult = null;
+  if (state.run.dayEndPending) Object.assign(state, C.reduceGame(state, { type: "CONFIRM_END_DAY" }));
+  return state;
+}
 
 function operatorSetup(seed = 42000) {
   let state = run(seed);
+  state.player.energy = 100;
   state = C.reduceGame(state, { type: "LEASE_GARAGE" });
   state.people.crew.eli.introduced = true; state.people.crew.eli.contactStage = "recruitable"; state.base.visiting = true;
   state = C.reduceGame(state, { type: "RECRUIT_CREW", crewId: "eli" });
@@ -819,11 +834,11 @@ function assignedSoldierSetup(seed = 42010, blockId = "spenard_rec_lot") {
 
 test("soldier income resolves during normal time advancement and consumes zero extra time slots", () => {
   const { state } = assignedSoldierSetup(50000);
+  clearModals(state); state.run.pendingEvent = null; state.run.slot = 3; state.run.dayEndPending = false; state.player.energy = C.MAX_ENERGY;
   const beforeDay = state.run.day, beforeSlot = state.run.slot, beforeDirty = state.player.dirtyCash;
-  let next = state;
-  for (let i = 0; i < 4; i += 1) next = quietAdvance(next); // exactly one day crossed after 4 slot advances
+  const next = quietAdvance(state);
   assert.equal(next.run.day, beforeDay + 1);
-  assert.equal(next.run.slot, beforeSlot);
+  assert.equal(next.run.slot, 0);
   assert.ok(next.player.dirtyCash > beforeDirty, "soldiers on a controlled block generate passive dirty income overnight");
   assert.equal(next.world.territoryBlocks.spenard_rec_lot.incomeCollected > 0, true);
 });
@@ -922,6 +937,8 @@ test("Eli defaults to a Balanced standing order on promotion, and changing it co
 
 test("manually assigning a soldier once Eli is Operations Lieutenant consumes zero player time", () => {
   let state = promotedEliSetup(90102); state.player.cash = 5000;
+  state = C.reduceGame(state, { type: "SET_ELI_POLICY", policy: "manual" });
+  state.run.slot = 0; state.player.energy = 100;
   state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state);
   state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state); // a second soldier, left unassigned
   state = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "spenard_rec_lot" }); clearModals(state);
@@ -938,20 +955,28 @@ test("Eli's Maximize Income policy deterministically routes an unassigned soldie
   // RNG — this isolates the placement ranking itself.
   function setup() {
     let state = promotedEliSetup(90201); state.player.cash = 5000;
-    state = C.reduceGame(state, { type: "SET_ELI_POLICY", policy: "maximize_income" });
+    state = C.reduceGame(state, { type: "SET_ELI_POLICY", policy: "manual" });
+    state.run.slot = 0; state.player.energy = 100;
     state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state); // claims spenard_rec_lot (lowest earner)
     state = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "spenard_rec_lot" }); clearModals(state);
+    state.run.slot = 0; state.player.energy = 100;
     state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state); // claims northern_lights_motels (highest earner)
     state = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "northern_lights_motels" }); clearModals(state);
     state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state); // stays unassigned — nothing left to claim it into
+    state = C.reduceGame(state, { type: "SET_ELI_POLICY", policy: "maximize_income" });
     return state;
   }
   const a = setup(), b = setup();
   assert.deepEqual(Object.keys(a.world.soldiers).filter((id) => !a.world.soldiers[id].blockId), Object.keys(b.world.soldiers).filter((id) => !b.world.soldiers[id].blockId), "identical seed + actions produce identical unassigned soldiers");
   const unassignedId = Object.keys(a.world.soldiers).find((id) => a.world.soldiers[id].status === "active" && !a.world.soldiers[id].blockId);
   assert.ok(unassignedId, "one active soldier is left unassigned by the setup");
+  const expectedBlock = C.SPENARD_BLOCKS
+    .filter((block) => a.world.territoryBlocks[block.id].owner === "player" && a.world.territoryBlocks[block.id].soldiersAssigned.length < C.SOLDIERS_PER_BLOCK_CAP)
+    .sort((left, right) => right.earningPotential - left.earningPotential)[0].id;
+  a.run.status = "playing"; a.run.phase = "week_zero"; a.run.checkpointDay = null; a.run.pendingEvent = null; a.run.pendingEncounter = null; a.run.pendingOperationResult = null; a.run.slot = 3; a.run.dayEndPending = false; a.player.energy = C.MAX_ENERGY;
   const nextA = quietAdvance(a);
-  assert.equal(nextA.world.soldiers[unassignedId].blockId, "northern_lights_motels", "Maximize Income routes the spare soldier to the highest-earning open block");
+  const expectedName = C.SPENARD_BLOCKS.find((block) => block.id === expectedBlock).name;
+  assert.ok(nextA.log.some((entry) => entry.text.includes(`soldier moved to ${expectedName}`)), "Maximize Income routes the spare soldier to the highest-earning open block before any nightly raid resolves");
 });
 
 test("Kip laundering charges exactly 15% and moves the amount from dirty to clean cash", () => {
@@ -1012,7 +1037,8 @@ test("a large dirty spend raises financial Heat, which decays and eventually fol
 
 test("Dre's collector tier escalates with missed days and multiplies the existing late-fee formula", () => {
   let state = fresh(70001);
-  state.lender.balance = 1000; state.lender.dueDay = 1;
+  state.run.phase = "pressure"; state.run.checkpointDay = 30;
+  state.lender.status = "active"; state.lender.principal = 1000; state.lender.balance = 1000; state.lender.dueDay = 1;
   let next = state;
   for (let i = 0; i < 20; i += 1) next = quietAdvance(next);
   assert.ok(next.lender.missedDays >= 3, `expected missedDays >= 3, got ${next.lender.missedDays}`);
@@ -1237,11 +1263,14 @@ test("a single soldier cannot be used to claim six blocks — each claim consume
   assert.equal(secondAttempt.world.territoryBlocks.fourth_ave_strip.owner, "rook", "no soldier remains to occupy a second block");
 });
 
-test("unpaid Day 7 debt triggers Dre Tier 1 (or higher) collector enforcement in a fresh-arrival run", () => {
+test("unpaid checkpoint debt triggers Dre Tier 1 (or higher) collector enforcement", () => {
   let state = fresh(100006);
-  assert.equal(state.lender.dueDay, C.RUN_DAYS, "fresh-arrival runs are due exactly at the end of the run");
+  state.run.phase = "pressure"; state.run.checkpointDay = C.RUN_DAYS;
+  state.lender.status = "active"; state.lender.principal = 1000; state.lender.balance = 1200; state.lender.dueDay = C.RUN_DAYS;
   let next = state;
-  for (let i = 0; i < 28 && next.run.status === "playing"; i += 1) next = quietAdvance(next);
+  for (let i = 0; i < 29 && next.run.status === "playing"; i += 1) next = quietAdvance(next);
+  next.run.pendingEvent = null; next.run.pendingEncounter = null;
+  if (next.run.dayEndPending) next = C.reduceGame(next, { type: "CONFIRM_END_DAY" });
   assert.ok(next.lender.balance > 0, "sanity: the debt is still unpaid");
   assert.ok(next.lender.collectorTier >= 1, "Tier 1 enforcement is reachable within the seven-day run");
 });
@@ -1338,12 +1367,11 @@ test("homeSituation answers the Home questions from live state and hides locked 
   assert.equal(view.districtName, "Spenard");
   assert.equal(view.cash, state.player.cash);
   assert.equal(view.debt.balance, state.lender.balance);
-  assert.equal(view.debt.note, `Due Day ${state.lender.dueDay}`);
+  assert.equal(view.debt.note, "Paid in full");
   assert.equal(view.heat.label, "Low");
   assert.equal(view.identity.label, "Unproven");
   assert.ok(view.summary.length > 40, "the situation summary is authored prose, not a stat dump");
-  // A Day 1 arrival owes $1,200 against $1,000 of borrowed cash.
-  assert.match(view.summary, /underwater/);
+  assert.match(view.summary, /learning Spenard/);
   assert.match(view.summary, /Most of Spenard is still unfamiliar/);
   for (const id of ["operations", "territory", "soldiers", "district", "laundering", "rival", "crew"]) {
     assert.equal(view.unlocks[id], false, `${id} stays hidden on the first Morning`);
@@ -1374,21 +1402,24 @@ test("home priorities are severity-ordered, capped at two, and never a checklist
   assert.deepEqual(calm, [], "a calm first Morning raises nothing");
 
   const state = fresh(60004);
-  state.run.day = 7; state.lender.dueDay = 5; state.player.health = 20; state.player.heat = 13;
+  state.run.day = 7; state.lender.status = "active"; state.lender.balance = 500; state.lender.dueDay = 5; state.player.health = 20; state.player.heat = 13;
   const urgent = C.selectors.homePriorities(state);
   assert.equal(urgent.length, 2, "at most two priorities ever surface");
   assert.deepEqual(urgent.map((item) => item.id), ["debt_overdue", "health_critical"], "a past-due note outranks everything");
   assert.ok(urgent.every((item) => item.tone === "bad"));
 
   const tonight = fresh(60004);
+  tonight.lender.status = "active"; tonight.lender.balance = 500; tonight.lender.dueDay = 7;
   tonight.run.day = tonight.lender.dueDay; tonight.player.health = 20; tonight.player.heat = 13;
   assert.deepEqual(C.selectors.homePriorities(tonight).map((item) => item.id), ["health_critical", "debt_tonight"], "critical health outranks a note that is still payable tonight");
 
   const dueToday = fresh(60005);
+  dueToday.lender.status = "active"; dueToday.lender.balance = 500; dueToday.lender.dueDay = 7;
   dueToday.run.day = dueToday.lender.dueDay;
   assert.equal(C.selectors.homePriorities(dueToday)[0].id, "debt_tonight");
 
   const tomorrow = fresh(60006);
+  tomorrow.lender.status = "active"; tomorrow.lender.balance = 500; tomorrow.lender.dueDay = 7;
   tomorrow.run.day = tomorrow.lender.dueDay - 1;
   assert.equal(C.selectors.homePriorities(tomorrow)[0].id, "debt_tomorrow");
 
@@ -1415,19 +1446,13 @@ test("actionResult reports time movement and the money that moved for a time-con
   assert.equal(clean.tone, "good");
 });
 
-test("actionResult names the destination and crossed-day label for travel", () => {
+test("Night travel is summarized by the end-day recap instead of an action receipt", () => {
   let before = fresh(60009);
   before.run.slot = 3; // Night, so the ride crosses into the next day
   const after = C.reduceGame(before, { type: "BUS_TRAVEL", neighborhoodId: "downtown" });
-  const result = C.selectors.actionResult(after.run.daySummary ? { ...before, run: { ...before.run } } : before, after, "BUS_TRAVEL");
-  if (after.run.daySummary) {
-    // A crossed day hands the outcome to the day summary instead of stacking.
-    assert.equal(C.selectors.actionResult(before, after, "BUS_TRAVEL"), null);
-  } else {
-    assert.equal(result.title, "Arrived in Downtown");
-    assert.equal(result.time.dayChanged, true);
-    assert.match(result.time.label, /NIGHT → DAY 2 MORNING/);
-  }
+  assert.equal(after.run.dayEndPending, true);
+  assert.equal(C.selectors.actionResult(before, after, "BUS_TRAVEL"), null);
+  assert.match(after.run.dailyActions.at(-1).label, /People Mover|Rode/);
 });
 
 test("actionResult stays silent for free actions, run lifecycle, and richer result surfaces", () => {

@@ -150,6 +150,7 @@ test("chain selection is deterministic for a given seed", () => {
       if (state.run.pendingEvent) { seen.push(state.run.pendingEvent.id); state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 }); continue; }
       if (state.run.pendingEncounter) { seen.push(`enc:${state.run.pendingEncounter.id}`); state = C.reduceGame(state, { type: "RESOLVE_ENCOUNTER", choiceId: C.selectors.encounterChoices(state)[0].id }); continue; }
       if (state.run.daySummary) { state = C.reduceGame(state, { type: "DISMISS_DAY_SUMMARY" }); continue; }
+      if (state.run.dayEndPending && !state.run.pendingEvent && !state.run.pendingEncounter) { state = C.reduceGame(state, { type: "CONFIRM_END_DAY" }); continue; }
       if (state.run.pendingOperationResult) { state = C.reduceGame(state, { type: "ACKNOWLEDGE_OPERATION_RESULT" }); continue; }
       state = C.reduceGame(state, { type: "END_MARKET" });
     }
@@ -172,6 +173,7 @@ test("story order varies across seeds instead of walking a fixed ladder", () => 
         state = C.reduceGame(state, { type: "RESOLVE_ENCOUNTER", choiceId: C.selectors.encounterChoices(state)[0].id }); continue;
       }
       if (state.run.daySummary) { state = C.reduceGame(state, { type: "DISMISS_DAY_SUMMARY" }); continue; }
+      if (state.run.dayEndPending && !state.run.pendingEvent && !state.run.pendingEncounter) { state = C.reduceGame(state, { type: "CONFIRM_END_DAY" }); continue; }
       if (state.run.pendingOperationResult) { state = C.reduceGame(state, { type: "ACKNOWLEDGE_OPERATION_RESULT" }); continue; }
       state = C.reduceGame(state, { type: "END_MARKET" });
     }
@@ -209,6 +211,7 @@ test("no chain fires three times running while another beat is eligible", () => 
         continue;
       }
       if (state.run.daySummary) { state = C.reduceGame(state, { type: "DISMISS_DAY_SUMMARY" }); continue; }
+      if (state.run.dayEndPending && !state.run.pendingEvent && !state.run.pendingEncounter) { state = C.reduceGame(state, { type: "CONFIRM_END_DAY" }); continue; }
       if (state.run.pendingOperationResult) { state = C.reduceGame(state, { type: "ACKNOWLEDGE_OPERATION_RESULT" }); continue; }
       state = C.reduceGame(state, { type: "END_MARKET" });
     }

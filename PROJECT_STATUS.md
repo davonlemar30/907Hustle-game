@@ -1,6 +1,28 @@
 # 907Hustle: One Good Run — Project Status
 
-Last updated: 2026-08-05 (America/Anchorage)
+Last updated: 2026-08-12 (America/Anchorage)
+
+## v1.4 Week Zero and Early Game Rework — branch in progress
+
+- Branch: `codex/v1-4-week-zero-early-game`, based on `origin/main` commit
+  `87bf395` containing merged PR #59.
+- Fresh runs require a Street Name and begin with $100 clean cash, no debt, no
+  Dre relationship, four hidden Energy, and no fixed checkpoint.
+- Week Zero tracks deduplicated shifts, physically visited locations, and
+  eligible workplace or Night Owl contacts. Pressure systems stay suppressed
+  until Dre approaches after the qualifying follow-up shift.
+- Dre acceptance creates $1,000 dirty cash and $1,200 due seven calendar days
+  later. Refusal is final, creates no debt, and still begins the pressure phase.
+- Nightly processing is deferred behind an explicit end-day confirmation with a
+  structured recap and one Energy-gated One More Thing action.
+- Travel now has three root entries. Night Owl is a full sub-hub, gambling is
+  discovery-gated, and 907List supplies a deterministic three-item resale loop.
+- Save schema/key remain version 3 / `907ogr_v3`; older saves hydrate into the
+  pressure phase with their existing balance and Day 7 checkpoint.
+- Verification: 280 tests passed; 2,640/2,640 seeded runs completed across 11
+  strategies with zero dead ends; ten required responsive viewports passed with
+  no horizontal overflow, sub-44px controls, or console errors. This build is
+  ready for draft review and is not shipped.
 
 ## Alpha v0.9 implemented baseline
 

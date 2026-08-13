@@ -5,7 +5,7 @@ const path = require("node:path");
 const C = require("../game-core.js");
 
 function fresh(seed = 907) {
-  return C.reduceGame(C.createRun({ seed }), { type: "START_RUN" });
+  return C.reduceGame(C.createRun({ seed }), { type: "START_RUN", streetName: "Rookie" });
 }
 
 function openTier(tier = 1) {

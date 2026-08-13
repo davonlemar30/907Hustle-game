@@ -6,7 +6,7 @@ const C = require("../game-core.js");
 const root = path.join(__dirname, "..");
 
 function fresh(seed = 907) {
-  return C.reduceGame(C.createRun({ seed }), { type: "START_RUN" });
+  return C.reduceGame(C.createRun({ seed }), { type: "START_RUN", streetName: "Rookie" });
 }
 
 function meetKip(seed = 907) {

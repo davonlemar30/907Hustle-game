@@ -10,6 +10,8 @@ The game uses a classless progression model. Access and identity emerge from beh
 
 v1.7 turns the apartment, phone, jobs, and 907List into connected social and logistical systems. Access now comes through people and places, while phone service and rent establish the first recurring upkeep layer.
 
+Implementation: [draft PR #64](https://github.com/davonlemar30/907Hustle-game/pull/64).
+
 ### v1.7 additions
 
 - Yalonda Hernandez is the player's landlord and Juan Hernandez is her 18-year-old son. Both have deterministic household schedules, persistent trust, free daily conversation, story events, and useful local knowledge.
@@ -382,6 +384,7 @@ Key repository references:
 - `EIGHTH_PLAYTEST_AUDIT.md` — v0.9 verification record
 - `COPY_REVIEW.md` — current narrative-copy review
 - `tests/v1-7.test.js` — v1.7 household, obligation, access, job-friction, and migration contract
+- PR #64 — v1.7 Character Rework, Obligation Layer, and Social Gating
 - PR #52 — v1.0 Soldiers, Territory, Lieutenants, Laundering, and stabilization work
 
 The ClickUp 907Hustle Master Doc remains the broader design and playtesting source of truth.

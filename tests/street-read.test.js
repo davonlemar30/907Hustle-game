@@ -7,7 +7,7 @@ const C = require("../game-core.js");
 const SR = C.streetRead;
 
 function fresh(seed = 907) {
-  return C.reduceGame(C.createRun({ seed }), { type: "START_RUN" });
+  return C.reduceGame(C.createRun({ seed }), { type: "START_RUN", streetName: "Rookie" });
 }
 // Minimum setup for a purchasable market. Trading is gated behind an accepted
 // plug, so a Street Read trading test has to get past that gate first.
@@ -20,7 +20,9 @@ function openMarket(state) {
 }
 function quietAdvance(state, reason = "END_MARKET") {
   state.run.pendingEvent = null; state.run.pendingEncounter = null; state.run.pendingOperationResult = null;
-  return C.advanceRun(state, { reason, suppressStory: true });
+  let next = C.advanceRun(state, { reason, suppressStory: true });
+  if (next.run.dayEndPending && !next.run.pendingEvent && !next.run.pendingEncounter && !next.run.pendingOperationResult) next = C.reduceGame(next, { type: "CONFIRM_END_DAY" });
+  return next;
 }
 // Builds a state whose Street Read is exactly the shape a test wants, without
 // having to play a run into that shape.
@@ -270,6 +272,10 @@ test("the third crew slot and the recovery discount are tier 3 payoffs", () => {
   state.streetRead.tier = 3;
   assert.equal(C.selectors.crewCapacityFor(state), 3);
   assert.equal(C.selectors.treatmentCost(state, 200), 180);
+  assert.equal(C.selectors.debtGuidanceAvailable(state), false, "Week Zero has no Dre debt guidance");
+  state.phase = "pressure";
+  state.lender.status = "active";
+  state.lender.balance = 1200;
   assert.equal(C.selectors.debtGuidanceAvailable(state), true);
 });
 
@@ -531,7 +537,7 @@ test("street read is recalculated after the identity pass, never before", () => 
   // either. The ordering is therefore pinned where it is actually expressed:
   // both calls sit in advanceRun's day-crossing block, in this order.
   const core = fs.readFileSync(path.join(__dirname, "..", "game-core.js"), "utf8");
-  const block = core.slice(core.indexOf("if (crossedDay || finalSlot) {"));
+  const block = core.slice(core.indexOf("function confirmDayEnd("));
   const identityAt = block.indexOf("evaluateStreetIdentity(state, true)");
   const readAt = block.indexOf("recalculateStreetRead(state)");
   assert.ok(identityAt >= 0, "identity is evaluated on the day-crossing tick");

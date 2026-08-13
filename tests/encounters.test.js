@@ -118,6 +118,8 @@ test("authored serious violence closes the intact Mara escape ending", () => {
     state.people.mara.trust = 4; state.people.mara.available = true; state.people.mara.usedWithoutConsent = false;
     state.flags.seriousViolence = serious;
     state = C.reduceGame(state, { type: "END_MARKET" });
+    state.run.pendingEvent = null; state.run.pendingEncounter = null;
+    state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
     return state.run.ending;
   }
   assert.equal(ending(false), "mara_escape");

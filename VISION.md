@@ -1,5 +1,24 @@
 # 907Hustle: One Good Run — Expanded Vision
 
+## v1.4 branch direction
+
+The `codex/v1-4-week-zero-early-game` branch reworks the opening without changing
+the v3 save key. Fresh characters enter a required Street Name, start with $100
+clean cash and no Dre relationship, and establish themselves through Week Zero.
+Three shifts, four physically visited locations, and two eligible neighborhood or
+workplace contacts make Dre's approach available after the next completed shift.
+
+That approach begins a seven-calendar-day pressure phase whether the player takes
+the money or refuses it. The run's checkpoint is therefore dynamic, not a fixed
+Day 7 gate. Taking the offer creates $1,200 due at that checkpoint; refusing is
+final and creates no debt. Keep Moving remains a separate future feature.
+
+Energy is an internal pacing reserve of four points per day. It is surfaced only
+where it explains an immediate choice, such as coffee, an unavailable action, or
+One More Thing. It is never a persistent HUD bar. Night actions open an explicit
+end-day confirmation before markets, obligations, identity evaluation, and the
+calendar roll forward.
+
 ## Implemented v0.9 vertical slice
 
 The current build begins with a genuine fresh arrival rather than inherited criminal infrastructure. The family home is temporary shelter with understandable boundaries; legal work, training, exploration, transit, relationships, petty theft, gambling, trading, and optional property compete for the same four daily time parts. North Star Garage is earned and optional. Street Read recognizes meaningful first accomplishments without replacing Street Identity or Operation Score. These are implemented systems, not future targets; exact scope is recorded in `ALPHA_V0.9.md`.
@@ -16,9 +35,9 @@ and `PROJECT_STATUS.md` says what actually exists today.
 
 ## 1. Core fantasy
 
-You start at the bottom: a street name, a debt to Dre, limited cash, no class, no
+You start at the bottom: a street name, $100 clean cash, no debt, no class, no
 vehicle, few contacts, weak access, and one neighborhood where people are just
-starting to notice you.
+starting to notice you. Dre enters only after you establish a daily life.
 
 You do not get stronger so much as you **change your daily life**. Progress shows
 up as more places you can enter, better transport, stronger suppliers, larger
@@ -34,29 +53,34 @@ the management game.
 
 ---
 
-## 2. The seven-day structure and the Day 7 fork
+## 2. Week Zero and the dynamic checkpoint
 
-The opening week stays the main pressure arc. You begin owing Dre; Day 7 records
-an Operation Score for what you built, paid, protected, controlled, and damaged.
+Week Zero teaches the neighborhood before lender pressure starts. The player
+works three shifts, physically visits four unique locations, and meets two
+eligible workplace or Night Owl contacts. Dre approaches after the next shift.
+The choice starts the pressure phase and sets a checkpoint seven calendar days
+later. Operation Score records what the player built, paid, protected, controlled,
+and damaged at that run-specific checkpoint.
 
-At Day 7 the player picks:
+At the future continuation checkpoint the player may eventually pick:
 
 **Finish the Run** — lock the final Operation Score, show the ending and summary,
 allow leaderboard submission later.
 
-**Keep Moving** — lock the Day 7 Operation Score as a checkpoint, then continue
+**Keep Moving** — lock the Operation Score as a checkpoint, then continue
 the *same save* into open-ended play. Money, relationships, access, vehicles,
 crew, territory, debts, injuries, Heat, and reputation all carry. Longer-term
 lenders, districts, cities, employment, and organization management open up.
 
-One continuous world. Day 7 stays meaningful without forcing the character's life
-to end.
+One continuous world. The checkpoint stays meaningful without forcing the
+character's life to end. Keep Moving is still a future feature and is not part of
+the v1.4 early-game rework.
 
 ---
 
 ## 3. Classless creation
 
-New characters begin with an optional Street Name, equal attributes, **no edge or
+New characters begin with a required Street Name, equal attributes, **no edge or
 class**, and no permanent activity restrictions. Nothing is locked off by an
 opening choice.
 

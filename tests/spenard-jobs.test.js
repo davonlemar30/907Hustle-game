@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const C = require("../game-core.js");
 
 function fresh(seed = 907) {
-  const state = C.reduceGame(C.createRun({ seed }), { type: "START_RUN" });
+  const state = C.reduceGame(C.createRun({ seed }), { type: "START_RUN", streetName: "Rookie" });
   state.run.openingPending = false;
   return state;
 }
@@ -12,6 +12,10 @@ function clearSurfaces(state) {
   state.run.pendingEncounter = null;
   state.run.pendingOperationResult = null;
   state.run.daySummary = null;
+  if (state.run.dayEndPending) {
+    const advanced = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
+    Object.assign(state, advanced);
+  }
   return state;
 }
 function discover(state, ...ids) {
@@ -103,13 +107,14 @@ test("approaches affect pay, health, XP, relationships, details, and seeded resu
   const ranked = fresh(); discover(ranked, "wash_go"); ranked.jobs.records.wash_go.xp = 14; ranked.jobs.records.wash_go.rank = 3;
   assert.deepEqual(C.selectors.jobPayRange(ranked, "wash_go"), { min: 52, max: 78, multiplier: 1.3 });
   const rankedResult = C.reduceGame(ranked, { type: "WORK_JOB", jobId: "wash_go", approach: "socialize" });
-  assert.ok(rankedResult.player.cleanCash >= 52 && rankedResult.player.cleanCash <= 78);
+  const rankedPay = rankedResult.player.cleanCash - ranked.player.cleanCash;
+  assert.ok(rankedPay >= 52 && rankedPay <= 78);
 });
 
 test("Night Owl ranks unlock Night scheduling, the exclusive stash, and Deshawn's vouch", () => {
   let state = fresh(4404); discover(state, "night_owl"); state.people.mara.met = true;
   for (let shift = 1; shift <= 7; shift += 1) {
-    clearSurfaces(state); state.run.day = shift; state.run.slot = 2;
+    clearSurfaces(state); state.run.day = shift; state.run.slot = 2; state.player.energy = C.MAX_ENERGY;
     state = C.reduceGame(state, { type: "WORK_JOB", jobId: "night_owl", approach: "work_hard" });
   }
   assert.equal(state.jobs.records.night_owl.xp, 14);

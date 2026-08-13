@@ -7,8 +7,8 @@ const ui = fs.readFileSync(path.join(root, "ui.jsx"), "utf8");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "v05.css"), "utf8");
 
-test("active shell is v1.1 with a packaged title asset and no stale version copy", () => {
-  assert.match(ui, /One Good Run · v1\.1/); assert.match(html, /ui\.jsx/); assert.doesNotMatch(html, /legacy-v1-ui-reference|text\/plain/);
+test("active shell is v1.4 with a packaged title asset and no stale version copy", () => {
+  assert.match(ui, /One Good Run · v1\.4/); assert.match(html, /ui\.jsx/); assert.doesNotMatch(html, /legacy-v1-ui-reference|text\/plain/);
   assert.match(ui, /907hustle-title\.png/); assert.ok(fs.existsSync(path.join(root, "assets", "907hustle-title.png")));
   assert.doesNotMatch(ui, /Alpha v0\.9|v0\.9/);
 });
@@ -70,10 +70,10 @@ test("the market close action names the player action and its destination", () =
   assert.match(ui, /nextPartLabel/);
   assert.match(ui, /Close this market visit/);
 });
-test("the optional Street Name is offered before classless confirmation and shown on the save", () => {
+test("the required Street Name is offered before classless confirmation and shown on the save", () => {
   assert.match(ui, /Street Name/); assert.match(ui, /maxLength=\{C\.STREET_NAME_MAX\}/);
-  assert.match(ui, /What do they call you\?/); assert.match(ui, /streetName \}\)/);
-  assert.match(ui, /\{preview\.name\}/); assert.match(ui, /Seven days as \{summary\.streetName\}/);
+  assert.match(ui, /What do they call you\?/); assert.match(ui, /disabled=\{!validName\}/);
+  assert.match(ui, /\{preview\.name\}/); assert.match(ui, /\{summary\.streetName\} reached the Day/);
 });
 test("Character is nested under More and hides identity internals", () => {
   for (const token of ["function Character", "Strength", "Endurance", "Reflexes", "Presence", "Insight", "Discipline", "Derived ratings", "Recent reputation", "legacyBackground"]) assert.ok(ui.includes(token), token);
@@ -185,9 +185,9 @@ test("Home reveals systems only once the run has unlocked them", () => {
 
 test("the persistent HUD is progressive: pressure chips appear only under pressure", () => {
   assert.match(ui, /const showHeat = state\.player\.heat >= 3/);
-  assert.match(ui, /const showDebt = state\.lender\.balance > 0 && state\.lender\.dueDay - state\.run\.day <= 2/);
+  assert.match(ui, /const showDebt = hasDreDebt && state\.lender\.balance > 0 && state\.lender\.dueDay - state\.run\.day <= 2/);
   assert.match(ui, /const showRespect = state\.rival\.respect > 0/);
-  assert.match(ui, /\(showHeat \|\| showDebt \|\| showRespect\) && <div className="hud chip-row">/);
+  assert.match(ui, /hasDreDebt && \(showHeat \|\| showDebt \|\| showRespect\) && <div className="hud chip-row">/);
 });
 
 test("primary navigation is a five-cell bottom bar with icons and stays above 44px", () => {
@@ -199,19 +199,18 @@ test("primary navigation is a five-cell bottom bar with icons and stays above 44
   assert.match(css, /\.app\{grid-template-rows:auto minmax\(0,1fr\) auto;/);
 });
 
-test("Travel is a hub of focused pages instead of one long scroll", () => {
-  for (const fn of ["function Destinations(", "function Transit(", "function AroundHere(", "function Household(", "function LocalIntel(", "function Listings("]) assert.ok(ui.includes(fn), fn);
+test("Travel exposes exactly three root choices with focused subpages", () => {
+  for (const fn of ["function Destinations(", "function Transit(", "function AroundHere(", "function Household(", "function LocalIntel("]) assert.ok(ui.includes(fn), fn);
   assert.match(ui, /if \(page === "destinations"\) return <Destinations/);
-  assert.match(ui, /<MenuRow title="Destinations"/);
-  assert.match(ui, /<MenuRow title="Transit"/);
-  // Progressive: intel only once the run produced some, listings only while
-  // there is still property to acquire.
-  assert.match(ui, /hasIntel && <MenuRow title="Local Intel"/);
-  assert.match(ui, /!state\.base\.controlled && <MenuRow title="Listings"/);
+  const root = ui.slice(ui.indexOf("function Travel("), ui.indexOf("function SpenardBlockCard("));
+  assert.equal((root.match(/<MenuRow/g) || []).length, 3);
+  for (const title of ["Spenard", "Home", "Leave Spenard"]) assert.match(root, new RegExp(`<MenuRow title="${title}"`));
 });
 
-test("Destinations answers one question and never leaks unvisited information", () => {
-  assert.match(ui, /sub="Where do you want to go\?"/);
+test("Leave Spenard combines known destinations, automatic fares, and passes", () => {
+  assert.match(ui, /sub="Known destinations and People Mover passes"/);
+  assert.match(ui, /C\.NEIGHBORHOODS\.filter\(\(area\) => area\.id !== "north_star_lot"\)/);
+  assert.match(ui, /const fare = covered \? "Pass covers it" : "\$5"/);
   assert.match(ui, /known \? `Risk \$\{area\.risk\}\/5` : "Risk unknown"/);
   assert.match(ui, /known \? `Rival presence \$\{area\.rival\}\/5` : "Rival presence unknown"/);
   assert.match(ui, /const knownOf = \{ north_star_lot: true, downtown: state\.world\.transport\.downtownKnown, airport_industrial: state\.world\.transport\.industrialRouteKnown \}/);
@@ -244,13 +243,15 @@ test("every dispatch is routed so the shell can raise an action result", () => {
   assert.match(ui, /act\(\{ type: "END_MARKET" \}\)/);
 });
 
-test("the action-result overlay is a short system receipt with visible time movement", () => {
+test("the action-result overlay stays separate while Night opens the structured recap gate", () => {
   assert.match(ui, /function ActionResultOverlay\(/);
   assert.match(ui, /className="result-title"/);
   assert.match(ui, /className="result-lines"/);
   assert.match(ui, /<div className="result-time">\{result\.time\.label\}<\/div>/);
   assert.match(ui, /setTimeout\(\(\) => dismissRef\.current\(\), 4200\)/);
-  assert.match(ui, /result && <ActionResultOverlay result=\{result\} onDismiss=\{\(\) => setResult\(null\)\} \/>/);
+  assert.match(ui, /function EndDayModal\(\{ state, dispatch \}\)/);
+  assert.match(ui, /state\.run\.dailyActions/);
+  assert.match(ui, /moreLabel="Full recap"/);
   // Sits above the story modals so dismissing it reveals the scene beneath.
   assert.match(css, /\.result-backdrop\{position:fixed;inset:0;z-index:60/);
   assert.match(css, /\.result-time\{[^}]*color:var\(--amber\)/);
@@ -288,7 +289,7 @@ test("Safehouse is a hub instead of the longest page in the build", () => {
 
 test("the play-screen header is one status line, not a wordmark row", () => {
   assert.doesNotMatch(ui, /className="brand-row"/);
-  assert.match(ui, /<h1 className="sr-only">907Hustle: One Good Run · v1\.1<\/h1>/);
+  assert.match(ui, /<h1 className="sr-only">907Hustle: One Good Run · v1\.4<\/h1>/);
   assert.match(ui, /<button className="menu-btn" onClick=\{onMenu\}>Menu<\/button>/);
   assert.match(css, /\.primary-hud\{grid-template-columns:minmax\(0,1\.35fr\) minmax\(0,\.72fr\) auto auto/);
 });
@@ -353,8 +354,8 @@ test("registered entity names become tappable once per text block", () => {
 test("popup bodies render the collapsed layer plus one optional More layer", () => {
   assert.match(ui, /function PopupBody\(\{ text, flavor \}\)/);
   for (const token of ["<PopupBody", "EntityText text={event.description}", "EntityText text={event.flavor}"]) assert.ok(ui.includes(token), token);
-  // The opening beat leads with the numbers and hides the arrival backstory.
-  assert.match(ui, /You owe \$1,200 by Day 7\. No negotiation\./);
+  // The opening beat leads with the Week Zero numbers and hides the arrival backstory.
+  assert.match(ui, /You have \$100, no debt, and no name in the neighborhood/);
   assert.doesNotMatch(ui, /You came to Alaska to start over, stay briefly/);
 });
 

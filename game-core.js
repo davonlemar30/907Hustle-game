@@ -8,6 +8,8 @@
 
   const VERSION = 3;
   const RUN_DAYS = 7;
+  const PRESSURE_DAYS = 7;
+  const MAX_ENERGY = 4;
   const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
   const SAVE_KEY = "907ogr_v3";
   const WORKING_CAPITAL_RESERVE = 150;
@@ -267,6 +269,27 @@
     },
   ];
   const SPENARD_JOB_BY_ID = Object.fromEntries(SPENARD_JOBS.map((job) => [job.id, job]));
+
+  const LISTING_CAPACITY = 3;
+  const LISTING_ITEMS = [
+    { id: "space_heater", name: "Space heater", buy: 25, resale: [45, 65] },
+    { id: "used_tv", name: "Used television", buy: 55, resale: [85, 120] },
+    { id: "dresser", name: "Solid dresser", buy: 40, resale: [65, 95] },
+    { id: "tool_set", name: "Mechanic tool set", buy: 70, resale: [100, 140] },
+    { id: "snow_tires", name: "Set of snow tires", buy: 80, resale: [120, 160] },
+  ];
+  const LISTING_ITEM_BY_ID = Object.fromEntries(LISTING_ITEMS.map((item) => [item.id, item]));
+  const NIGHT_OWL_REGULARS = [
+    { id: "cal", name: "Cal Brooks", role: "The loud regular", hint: "Cal talks like every room is already listening." },
+    { id: "nia", name: "Nia Park", role: "The quiet courier", hint: "Nia keeps route notes folded inside a paperback." },
+  ];
+  const NIGHT_OWL_BOARD = [
+    { id: "jobs", title: "Help wanted", body: "Two counters need reliable hands this week." },
+    { id: "list", title: "907List", body: "Buy it cheap. Clean it up. Find the next buyer." },
+    { id: "game", title: "Late table", body: "A handwritten card promises a game after the doors lock." },
+    { id: "garage", title: "North Star Garage", body: "$650 deposit. Heat works. Door sticks in winter." },
+    { id: "opportunity", title: "Cash work", body: "A number is torn off every tab except one." },
+  ];
 
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
   // Dirty/clean cash is a bookkeeping layer on top of the single pervasive
@@ -712,7 +735,7 @@
   function treatmentCost(state, baseCost) {
     return streetReadTier(state) >= 3 ? Math.round(baseCost * 0.9) : baseCost;
   }
-  function debtGuidanceAvailable(state) { return streetReadTier(state) >= 3; }
+  function debtGuidanceAvailable(state) { return (state.lender.status === "active" || state.lender.status === "cleared") && streetReadTier(state) >= 3; }
   function gearShopStock(state) {
     return GEAR.map((item) => {
       const price = gearPrice(state, item.id);
@@ -815,8 +838,9 @@
       version: VERSION,
       run: {
         status: "creating_character", day: 1, slot: 0, seed, rngState: random.state,
-        premise: "fresh_arrival", openingPending: false,
+        premise: "fresh_arrival", openingPending: false, phase: "week_zero", pressureStartedDay: null, checkpointDay: null,
         ending: null, pendingEvent: null, pendingEncounter: null, pendingOperationResult: null, daySummary: null,
+        dayEndPending: false, overtimeArmed: false, overtimeUsedDay: null, dailyActions: [],
         currentVisit: { trades: 0, grossBuy: 0, grossSell: 0, startedAt: 0 },
         recentEvents: [], encounterCount: 0, finalPlan: null, finalPlanPrepared: false,
         eventHistory: {}, lastChainFired: null, chainStreak: 0, lastChainSlot: null, lastBeatSlot: null, chainBeatsToday: 0, chainBeatsDay: 1,
@@ -828,6 +852,7 @@
         attributeProgress: { strength: 0, endurance: 0, reflexes: 0, presence: 0, insight: 0, discipline: 0 },
         behavior: { scores: { mover: 0, earner: 0, stickup: 0, connector: 0 }, meaningfulActions: 0, history: [], pendingIdentity: null, pendingIdentityNights: 0, lastEvaluatedDay: null, caps: {} },
         cash: 0, dirtyCash: 0, cleanCash: 0, financialHeat: 0, health: 100, heat: 0, cargoCapacity: 10,
+        energy: MAX_ENERGY,
         stats: { combat: 0, charisma: 0, intelligence: 0 }, inventory,
         gear: { owned: [], equipped: { weapon: null, armor: null, utility: null, tool: null }, consumables: { medical_kit: 0 } },
       },
@@ -862,8 +887,8 @@
         storedCash: 0, storedInventory, watched: false, damage: 0, assignedCrew: null,
       },
       lender: {
-        name: "Dre Holloway", principal: 1000, balance: 1200, dueDay: 7, trust: 0,
-        relationship: "businesslike", payments: 0, paymentCount: 0, feesAdded: 0,
+        name: "Dre Holloway", status: "unoffered", principal: 0, balance: 0, dueDay: null, trust: 0,
+        relationship: "unknown", payments: 0, paymentCount: 0, feesAdded: 0,
         paymentHistory: [], penaltyHistory: [], clearedAt: null, missedDays: 0, lastPenaltyDay: 0,
         afterPayoffOffer: "locked",
         collectorTier: 0, collectorsKilled: 0, interestMultiplier: 1.0,
@@ -878,6 +903,12 @@
       plugs: createPlugState(),
       market: { visible: false },
       jobs: createJobsState(inventory),
+      onboarding: { shiftsWorked: 0, visitedLocations: ["home"], metNpcs: [], dreEligible: false },
+      nightOwl: {
+        boardViewedDays: [], ambientSeen: [],
+        regulars: Object.fromEntries(NIGHT_OWL_REGULARS.map((person) => [person.id, { met: false, relationship: 0, lastTalkDay: null }])),
+      },
+      listings: { known: false, inventory: [], purchases: 0, sales: 0, profit: 0 },
       boost: {
         visible: false, tier: 0, technique: 0, storeBans: [], fenceStanding: 0,
         dailyHits: {}, crewAssigned: null, merchandise: 0, discoveredWindows: [],
@@ -921,7 +952,7 @@
     const successes = Math.min(attempts, Math.max(0, Math.floor(Number(old.successes ?? (legacySuccess ? 1 : 0)) || 0)));
     const failures = Math.max(0, Math.floor(Number(old.failures ?? Math.max(0, attempts - successes)) || 0));
     const totalPayout = Math.max(0, Math.floor(Number(old.totalPayout ?? old.payout ?? 0) || 0));
-    const lastAttemptedDay = old.lastAttemptedDay == null ? (legacyAttempted ? state.run.day : null) : clamp(Math.floor(Number(old.lastAttemptedDay) || 1), 1, RUN_DAYS);
+    const lastAttemptedDay = old.lastAttemptedDay == null ? (legacyAttempted ? state.run.day : null) : clamp(Math.floor(Number(old.lastAttemptedDay) || 1), 1, Math.max(RUN_DAYS, state.run.checkpointDay || RUN_DAYS));
     return { attempts, successes, failures, totalPayout, lastAttemptedDay, attempted: attempts > 0, success: successes > 0, payout: totalPayout };
   }
 
@@ -930,6 +961,21 @@
     const defaults = createRun({ seed: value.run.seed });
     const state = mergeDefaults(defaults, value);
     state.version = VERSION;
+    if (value.run.phase === undefined) {
+      state.run.phase = "pressure";
+      state.run.pressureStartedDay = 1;
+      state.run.checkpointDay = RUN_DAYS;
+    }
+    state.run.phase = state.run.phase === "week_zero" ? "week_zero" : "pressure";
+    state.run.checkpointDay = state.run.phase === "pressure" ? Math.max(state.run.day, Number(state.run.checkpointDay) || RUN_DAYS) : null;
+    state.run.dailyActions = Array.isArray(state.run.dailyActions) ? state.run.dailyActions.slice(-12) : [];
+    state.run.dayEndPending = !!state.run.dayEndPending;
+    state.run.overtimeArmed = !!state.run.overtimeArmed;
+    state.player.energy = clamp(Math.floor(Number(state.player.energy) || 0), 0, MAX_ENERGY);
+    if (value.player.energy === undefined) state.player.energy = clamp(MAX_ENERGY - state.run.slot, 0, MAX_ENERGY);
+    if (value.lender?.status === undefined) state.lender.status = state.lender.balance > 0 ? "active" : "cleared";
+    if (!["unoffered", "active", "declined", "cleared"].includes(state.lender.status)) state.lender.status = state.lender.balance > 0 ? "active" : "cleared";
+    if (state.lender.status !== "active") state.lender.balance = Math.max(0, Number(state.lender.balance) || 0);
     if (state.run.pendingEncounter && state.run.pendingEncounter.type === undefined) {
       Object.assign(state.run.pendingEncounter, {
         active: true, type: "authored", phase: Math.max(0, (state.run.pendingEncounter.step || 1) - 1),
@@ -969,6 +1015,22 @@
     stash.dirtyCash = Math.max(0, Math.floor(Number(stash.dirtyCash) || 0));
     stash.cleanCash = Math.max(0, Math.floor(Number(stash.cleanCash) || 0));
     if (!stash.dirtyCash && !stash.cleanCash && !Object.values(stash.inventory).some((item) => item.qty > 0)) stash.mode = null;
+    state.onboarding.shiftsWorked = Math.max(0, Math.floor(Number(state.onboarding.shiftsWorked) || 0));
+    state.onboarding.visitedLocations = [...new Set((Array.isArray(state.onboarding.visitedLocations) ? state.onboarding.visitedLocations : []).filter(Boolean))];
+    state.onboarding.metNpcs = [...new Set((Array.isArray(state.onboarding.metNpcs) ? state.onboarding.metNpcs : []).filter(Boolean))];
+    state.onboarding.dreEligible = !!state.onboarding.dreEligible;
+    state.nightOwl.boardViewedDays = [...new Set((Array.isArray(state.nightOwl.boardViewedDays) ? state.nightOwl.boardViewedDays : []).map(Number).filter((day) => day > 0))];
+    state.nightOwl.ambientSeen = [...new Set(Array.isArray(state.nightOwl.ambientSeen) ? state.nightOwl.ambientSeen : [])];
+    for (const regular of NIGHT_OWL_REGULARS) {
+      const record = state.nightOwl.regulars[regular.id];
+      record.met = !!record.met;
+      record.relationship = Math.max(0, Math.floor(Number(record.relationship) || 0));
+    }
+    state.listings.known = !!state.listings.known || state.run.day >= 3;
+    state.listings.inventory = (Array.isArray(state.listings.inventory) ? state.listings.inventory : []).filter((entry) => LISTING_ITEM_BY_ID[entry.itemId]).slice(0, LISTING_CAPACITY);
+    state.listings.purchases = Math.max(0, Math.floor(Number(state.listings.purchases) || 0));
+    state.listings.sales = Math.max(0, Math.floor(Number(state.listings.sales) || 0));
+    state.listings.profit = Math.floor(Number(state.listings.profit) || 0);
     state.flags.featureNotices = state.flags.featureNotices && typeof state.flags.featureNotices === "object" ? state.flags.featureNotices : {};
     state.people.mara.available = state.people.mara.available !== false && state.people.mara.status !== "gone";
     // Preserve established v3 runs that already met Kip while fresh runs keep
@@ -1155,13 +1217,86 @@
     return BASE_UPGRADES.filter((item) => state.base.tracks[item.track] >= item.level).reduce((sum, item) => sum + item.cost, 0);
   }
   function workplaceStoredCash(state) { return (state.jobs?.nightOwlStash?.dirtyCash || 0) + (state.jobs?.nightOwlStash?.cleanCash || 0); }
-  function netWorth(state) { return state.player.cash + state.base.storedCash + (state.home?.storedCash || 0) + workplaceStoredCash(state) + inventoryValue(state) - state.lender.balance; }
-  function workingCapital(state) { return state.player.cash + state.base.storedCash + (state.home?.storedCash || 0) + workplaceStoredCash(state) + inventoryValue(state); }
+  function netWorth(state) { return state.player.cash + state.base.storedCash + (state.home?.storedCash || 0) + workplaceStoredCash(state) + inventoryValue(state) + listingInventoryValue(state) - state.lender.balance; }
+  function workingCapital(state) { return state.player.cash + state.base.storedCash + (state.home?.storedCash || 0) + workplaceStoredCash(state) + inventoryValue(state) + listingInventoryValue(state); }
   function safeDebtPayment(state) { return Math.min(state.lender.balance, Math.max(0, state.player.cash - WORKING_CAPITAL_RESERVE)); }
   function debtPaymentPreview(state, requestedAmount) {
     const maximum = Math.min(state.player.cash, state.lender.balance);
     const amount = clamp(Math.floor(Number(requestedAmount) || 0), 0, maximum);
     return { amount, maximum, cashAfter: state.player.cash - amount, debtAfter: state.lender.balance - amount, breaksReserve: amount > safeDebtPayment(state) };
+  }
+  const TIME_ACTIONS = new Set([
+    "QUICK_SCORE", "ROBBERY", "ROB_DEALER", "ELI_TEST_ROUTE", "TAKEOVER", "WORK_JOB", "WORK_SHIFT",
+    "VISIT_NIGHT_OWL", "BUY_COFFEE", "TALK_NIGHT_OWL_REGULAR", "LEASE_GARAGE", "TRAIN_ATTRIBUTE", "GAMBLE",
+    "ASK_BOOST_WINDOW", "SHOPLIFT", "BOOST", "WANDER_SPENARD", "EXPLORE_SPENARD", "BUS_TRAVEL", "WALK_HOME",
+    "TRAVEL", "END_MARKET", "SLEEP_HOME", "LAY_LOW", "VISIT_BASE", "HEAL", "HEAL_AT_BASE", "PAY_DEBT",
+    "UPGRADE_BASE", "BUY_GEAR", "RECRUIT_CREW", "ASSIGN_CREW", "PROMOTE_LIEUTENANT", "RECRUIT_SOLDIER",
+    "CLAIM_BLOCK", "LAUNDER_CASH", "VISIT_MARA", "BUY_FROM_DEALER", "ASK_DEALER", "INVEST_NEIGHBORHOOD",
+    "PREPARE_FINAL_PLAN", "BUY_907LIST", "SELL_907LIST",
+  ]);
+  function actionEnergyCost(state, actionType) {
+    if (!TIME_ACTIONS.has(actionType)) return 0;
+    if (actionType === "BUY_COFFEE") return state.run.overtimeArmed ? 2 : 0;
+    return state.run.overtimeArmed ? 2 : 1;
+  }
+  function canSpendEnergy(state, actionType) { return state.player.energy >= actionEnergyCost(state, actionType); }
+  function checkpointDay(state) { return state.run.checkpointDay || Infinity; }
+  function recordVisitedLocation(state, id) {
+    if (!id || state.onboarding.visitedLocations.includes(id)) return false;
+    state.onboarding.visitedLocations.push(id);
+    updateWeekZeroEligibility(state);
+    return true;
+  }
+  function recordMetNpc(state, id) {
+    if (!id || state.onboarding.metNpcs.includes(id)) return false;
+    state.onboarding.metNpcs.push(id);
+    updateWeekZeroEligibility(state);
+    return true;
+  }
+  function weekZeroProgress(state) {
+    const shifts = state.onboarding.shiftsWorked;
+    const locations = state.onboarding.visitedLocations.length;
+    const npcs = state.onboarding.metNpcs.length;
+    return { shifts, locations, npcs, ready: shifts >= 3 && locations >= 4 && npcs >= 2 };
+  }
+  function updateWeekZeroEligibility(state) {
+    state.onboarding.dreEligible = state.run.phase === "week_zero" && weekZeroProgress(state).ready;
+    return state.onboarding.dreEligible;
+  }
+  function startPressurePhase(state) {
+    if (state.run.phase === "pressure") return;
+    state.run.phase = "pressure";
+    state.run.pressureStartedDay = state.run.day;
+    state.run.checkpointDay = state.run.day + PRESSURE_DAYS;
+    state.onboarding.dreEligible = false;
+  }
+  function listingSlate(state) {
+    const offset = Math.abs((state.run.seed || 1) + state.run.day * 3) % LISTING_ITEMS.length;
+    return [0, 1, 2].map((index) => LISTING_ITEMS[(offset + index * 2) % LISTING_ITEMS.length]);
+  }
+  function listingInventoryValue(state) {
+    return state.listings.inventory.reduce((sum, entry) => sum + (entry.cost || 0), 0);
+  }
+  function nightOwlBoardItems(state) {
+    const offset = Math.abs((state.run.seed || 1) + state.run.day) % NIGHT_OWL_BOARD.length;
+    return [0, 1, 2].map((index) => NIGHT_OWL_BOARD[(offset + index) % NIGHT_OWL_BOARD.length]);
+  }
+  function nightOwlRegularFor(state) {
+    return NIGHT_OWL_REGULARS[Math.abs((state.run.seed || 1) + state.run.day + state.run.slot) % NIGHT_OWL_REGULARS.length];
+  }
+  function actionSummaryLabel(reason) {
+    const labels = {
+      WORK_JOB: "Worked a shift", WANDER_SPENARD: "Walked Spenard", VISIT_NIGHT_OWL: "Talked with Mara",
+      BUY_COFFEE: "Had coffee at Night Owl", TALK_NIGHT_OWL_REGULAR: "Talked with a Night Owl regular",
+      BUY_907LIST: "Bought from 907List", SELL_907LIST: "Sold through 907List", BUS_TRAVEL: "Rode the People Mover",
+      WALK_HOME: "Walked home", TRAVEL: "Traveled", TRAIN_ATTRIBUTE: "Trained", GAMBLE: "Played the backroom game",
+      SLEEP_HOME: "Rested at home", LAY_LOW: "Laid low", PAY_DEBT: "Paid Dre", END_MARKET: "Finished trading",
+    };
+    return labels[reason] || reason.toLowerCase().replace(/_/g, " ").replace(/^./, (letter) => letter.toUpperCase());
+  }
+  function recordDailyAction(state, context) {
+    state.run.dailyActions.push({ day: state.run.day, label: context.summary || actionSummaryLabel(context.reason) });
+    state.run.dailyActions = state.run.dailyActions.filter((entry) => entry.day === state.run.day).slice(-12);
   }
   function featureAvailability(state) {
     const progressed = state.run.day > 1 || state.run.slot > 0 || state.stats.pipelineAdvances > 0;
@@ -1195,8 +1330,9 @@
       busDowntown: state.world.currentNeighborhoodId === "downtown" ? { available: false, reason: "You are already Downtown.", cost: 0 }
         : { available: state.player.cash >= (busCovered ? 0 : 5), reason: busCovered ? "Your pass covers this ride." : "$5 single ride; passes are also available.", cost: busCovered ? 0 : 5 },
       industrial: { available: state.run.premise === "legacy_established" || state.world.transport.industrialRouteKnown, reason: state.world.transport.industrialRouteKnown ? "A trusted route is available." : "Industrial needs Eli, a trusted ride, a future vehicle, or a specific route.", cost: 0 },
-      gym: { available: state.player.cash >= gymCosts[gymIndex], reason: `${gymSessions ? "Same-day training is more expensive and less effective." : "The first session gives the best progress."}`, cost: gymCosts[gymIndex], progress: gymProgress[gymIndex], sessionsToday: gymSessions },
-      gambling: !state.world.locations.gamblingKnown ? { available: false, reason: "Explore Spenard to find the informal game." }
+      gym: state.world.currentNeighborhoodId !== "north_star_lot" ? { available: false, reason: "Return to Spenard to use the gym.", cost: gymCosts[gymIndex], progress: gymProgress[gymIndex], sessionsToday: gymSessions } : { available: state.player.cash >= gymCosts[gymIndex], reason: `${gymSessions ? "Same-day training is more expensive and less effective." : "The first session gives the best progress."}`, cost: gymCosts[gymIndex], progress: gymProgress[gymIndex], sessionsToday: gymSessions },
+      gambling: state.world.currentNeighborhoodId !== "north_star_lot" ? { available: false, reason: "Return to Spenard for the game." }
+        : !state.world.locations.gamblingKnown ? { available: false, reason: "Nobody has trusted you with the game's address yet." }
         : ![2, 3].includes(state.run.slot) ? { available: false, reason: "The game runs in the Evening and at Night." }
           : { available: true, reason: "Seeded risk; reading the room improves a chance, never guarantees it." },
       shoplifting: state.boost?.visible ? { available: false, reason: "Use the Boost tab for known targets." }
@@ -1334,7 +1470,7 @@
     if (eli.contactStage === "recruitable") return { available: false, reason: "The test is complete. Visit the garage to recruit Eli." };
     if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
     if (state.player.cash < 35) return { available: false, reason: "The test route needs $35 for fuel and a vehicle." };
-    if (state.run.day === RUN_DAYS && state.run.slot === 3) return { available: false, reason: "There is no part of the week left for the test route." };
+    if (state.run.day === checkpointDay(state) && state.run.slot === 3) return { available: false, reason: "There is no part of the run left for the test route." };
     return { available: true, reason: "Uses one part of day.", cost: 35 };
   }
   function maraThreatEligible(state) {
@@ -1609,7 +1745,7 @@
     if (state.run.status !== "playing") return { available: false, reason: "The run is not active." };
     const robbery = normalizeRobberyStats(state.stats.robbery, state);
     if (robbery.lastAttemptedDay === state.run.day) return { available: false, reason: "You already attempted a Quick Score today." };
-    if (state.run.day === RUN_DAYS && state.run.slot === 3) return { available: false, reason: "There is no part of the week left to resolve a score." };
+    if (state.run.day === checkpointDay(state) && state.run.slot === 3) return { available: false, reason: "There is no part of the run left to resolve a score." };
     if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
     const capital = workingCapital(state);
     if (capital >= WORKING_CAPITAL_RESERVE) return { available: false, reason: `Quick Score is a comeback option when working capital falls below $${WORKING_CAPITAL_RESERVE}.` };
@@ -1651,7 +1787,7 @@
     if (record.gone) return blocked(`${definition.name.split(" ")[0]} does not work this block any more.`);
     if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return blocked("Resolve the current situation first.");
     if (state.world.currentNeighborhoodId !== definition.areaId) return blocked(`${definition.name.split(" ")[0]} works out of ${AREA_BY_ID[definition.areaId].name}.`);
-    if (state.run.day === RUN_DAYS && state.run.slot === 3) return blocked("There is no part of the week left for this.");
+    if (state.run.day === checkpointDay(state) && state.run.slot === 3) return blocked("There is no part of the run left for this.");
 
     const plug = PLUG_BY_ID[id];
     const discount = record.standing >= 4 ? 0.06 : record.standing >= 2 ? 0.03 : 0;
@@ -1754,6 +1890,8 @@
   }
 
   function relationshipForLender(lender, day) {
+    if (lender.status === "unoffered") return "unknown";
+    if (lender.status === "declined") return "offer declined";
     if (lender.balance <= 0) return lender.trust >= 2 ? "helpful" : "businesslike";
     if (day > lender.dueDay + 1) return lender.trust < 0 ? "threatening" : "demanding";
     if (day > lender.dueDay) return "demanding";
@@ -1974,16 +2112,17 @@
 
   function applyPressure(state, context, crossedDay) {
     const area = AREA_BY_ID[state.world.currentNeighborhoodId];
+    const pressureActive = state.run.phase === "pressure";
     if (context.reason === "TRAVEL") {
       const riskReduction = territoryBenefits(state, area.id)?.riskReduction || 0;
       state.player.heat = clamp(state.player.heat + Math.max(0, area.risk - 1 - riskReduction), 0, 15);
-      state.rival.pressure = clamp(state.rival.pressure + Math.max(0, area.rival - Math.floor(state.world.influence[area.id] / 2)), 0, 15);
+      if (pressureActive) state.rival.pressure = clamp(state.rival.pressure + Math.max(0, area.rival - Math.floor(state.world.influence[area.id] / 2)), 0, 15);
     } else if (context.reason === "LAY_LOW") {
       const baseBonus = state.world.currentNeighborhoodId === "north_star_lot" ? state.base.tracks.security : 0;
       const danger = state.base.watched && state.world.currentNeighborhoodId === "north_star_lot" ? 1 : 0;
       state.player.heat = clamp(state.player.heat - Math.max(1, 2 + baseBonus - danger), 0, 15);
       state.rival.pressure = clamp(state.rival.pressure - 1, 0, 15);
-    } else if (area.role === "Outer") {
+    } else if (pressureActive && area.role === "Outer") {
       state.rival.pressure = clamp(state.rival.pressure + 1, 0, 15);
     }
 
@@ -2022,7 +2161,7 @@
       }
     }
 
-    if (crossedDay && state.lender.balance > 0 && state.run.day > state.lender.dueDay) {
+    if (pressureActive && crossedDay && state.lender.status === "active" && state.lender.balance > 0 && state.run.day > state.lender.dueDay) {
       state.lender.missedDays += 1;
       // Collector tier is layered on top of the existing late-fee formula as a
       // multiplier: tier 0 with no collectors killed is byte-identical to the
@@ -2046,7 +2185,7 @@
     // stay 0 forever — the Day 7 deadline itself never produces a consequence.
     // Reaching that boundary with debt still owed is the first enforcement
     // trigger for this run length; severity scales with how much is unpaid.
-    if (crossedDay && state.lender.balance > 0 && state.run.day >= RUN_DAYS && state.lender.collectorTier < 1) {
+    if (pressureActive && crossedDay && state.lender.status === "active" && state.lender.balance > 0 && state.run.day >= checkpointDay(state) && state.lender.collectorTier < 1) {
       const owedRatio = state.lender.principal > 0 ? state.lender.balance / state.lender.principal : 1;
       state.lender.collectorTier = owedRatio >= 0.9 ? 2 : 1;
       logEntry(state, "Dre's patience runs out with the note still open. Somebody is coming to collect in person.", "bad");
@@ -2082,7 +2221,7 @@
   // wins over "Rook" and a name inside another word never matches.
   const ENTITY_REGISTRY = {
     dre: { id: "dre", name: "Dre", kind: "person", title: "Dre Holloway", aliases: ["Dre Holloway", "Dre"],
-      text: "Connected through John, who warned you first. Lends money on fixed terms: $1,200 due Day 7, no negotiation, no product, no local name." },
+      text: "A lender who approaches after you establish yourself. If you accept, $1,200 is due at the run's checkpoint. He names the terms once." },
     yalonda: { id: "yalonda", name: "Yalonda", kind: "person", title: "Yalonda (sister)", aliases: ["Yalonda"],
       text: "Your older sister. She and her husband John gave you a spare room and basic food for one week. Their help has a deadline and no cash attached." },
     john: { id: "john", name: "John", kind: "person", title: "John (Yalonda's husband)", aliases: ["John"],
@@ -2184,14 +2323,14 @@
     mara_after: { who: "Mara, at the end of your week and the start of hers", where: "Night Owl Mini-Mart, Spenard", stakes: "What the week cost her, and what is left to say about it." },
     eli_missed_turn: { who: "Eli Ward, back an hour later than the route allows", where: "North Star Garage, Spenard", stakes: "Whether you want a driver who thinks, or one who does what the clock says." },
     eli_service_map: { who: "Eli and a map he drew himself", where: "Passenger seat outside North Star Garage", stakes: "Route knowledge nobody else on this block has, and what he wants for it." },
-    eli_last_run: { who: "Eli, asking a question he has clearly rehearsed", where: "North Star Garage, Spenard", stakes: "Whether the operation has a place for him after the seventh night." },
+    eli_last_run: { who: "Eli, asking a rehearsed question", where: "North Star Garage, Spenard", stakes: "Whether the operation has a place for him after the checkpoint." },
     dre_terms: { who: "Dre Holloway and one folded sheet of paper", where: "Behind the Night Owl Mini-Mart", stakes: "The amount, the date, and what he expects between now and then." },
     dre_first_payment: { who: "Dre, counting the first money you have brought him", where: "Behind the Night Owl Mini-Mart", stakes: "The shape of the rest of the week's arrangement." },
     dre_due_day: { who: "Dre on the day the note comes due", where: "Behind the Night Owl Mini-Mart", stakes: "What happens to the balance, and to his patience." },
     dre_day7: { who: "Dre, closing the week's account", where: "Behind the Night Owl Mini-Mart", stakes: "What your name is worth to him after seven days." },
     rook_mark: { who: "Rook's people, working through somebody else", where: "Your usual corner", stakes: "Confirmation that you are being watched, and by whom." },
     rook_tax: { who: "Rook Mercer, in person, which is the message", where: "The Downtown exit lane", stakes: "A cut, a favor, or a public no." },
-    rook_day7: { who: "Rook, deciding what you were", where: "Wherever he finds you on the seventh day", stakes: "Whether the week ends as a partnership, a truce, or a problem." },
+    rook_day7: { who: "Rook, deciding what you were", where: "Wherever he finds you at the checkpoint", stakes: "Whether the pressure phase ends as a partnership, a truce, or a problem." },
     kip_corner_intro: { who: "Kip Sallis, running a corner out of a gym bag", where: "The Wash & Go lot, Spenard Road", stakes: "Whether the block's nearest supply becomes a contact, a mark, or neither." },
     kip_recognized: { who: "Deshawn, who vouched for you before you robbed Kip", where: "Outside the Wash & Go, Spenard", stakes: "What your word is worth on the block after you spent it." },
     wet_bricks: { who: "A driver unstrapping someone else's mistake", where: "Loading Bay Seven, Industrial Service Roads", stakes: "Cheap weight of unverified condition, and a seller who will not be here tomorrow." },
@@ -2228,7 +2367,7 @@
     if (effect.rivalPressure) parts.push(`${effect.rivalPressure > 0 ? "+" : "−"}${Math.abs(effect.rivalPressure)} Rook pressure`);
     if (effect.rivalRespect) parts.push(`${effect.rivalRespect > 0 ? "+" : "−"}${Math.abs(effect.rivalRespect)} Rook respect`);
     if (effect.loseRandomInventory) parts.push(`risk ${effect.loseRandomInventory} cargo`);
-    if (effect.secondLoan) parts.push("take $500 cash and owe $600 by Day 7");
+    if (effect.secondLoan) parts.push("take $500 cash and owe $600 at the checkpoint");
     if (effect.access) parts.push(`unlock ${effect.access} access`);
     if (effect.introduceCrew) parts.push("opens a future recruitment option");
     return parts.length ? parts.join(" · ") : "Relationship and story consequences carry forward.";
@@ -2243,7 +2382,7 @@
   function setPendingEvent(state, item) { state.run.pendingEvent = item; }
   function activeEvent(id, state) {
     const events = {
-      mara_intro: () => event("mara_intro", "First Coffee in Spenard", "The Night Owl clerk slides a paper cup toward you. \"Black or cream?\" Her name tag says Mara. She knows nothing about you, Dre, or the note. Set the tone of this first conversation.", [
+      mara_intro: () => event("mara_intro", "First Coffee in Spenard", "The Night Owl clerk slides a paper cup toward you. \"Black or cream?\" Her name tag says Mara. Set the tone of this first conversation.", [
         { label: "Friendly honesty", effect: { maraTrust: 1, setFlags: { maraFriendlyIntro: true, maraIntroChoice: "friendly" } }, preview: "Tell her you just arrived and keep the first exchange warm.", result: "You tell her Alaska is the restart, not the victory lap. Mara listens without trying to turn it into advice. She marks the coffee down as a refill and points out which bus still runs after closing. When the next customer enters, she gives you a small nod that says the conversation can continue another night." },
         { label: "Light flirtation", effect: { maraTrust: 1, setFlags: { maraFlirted: true, maraIntroChoice: "flirt" } }, preview: "Let the mutual interest show while respecting the counter between you.", result: "You ask whether every new customer gets this much attention. Mara looks at the cup, then back at you. \"Only the ones reading the machine like a legal document.\" The smile stays brief and professional, but it is real. She tells you her name even though the tag already did." },
         { label: "Brief and guarded", effect: { setFlags: { maraDistantIntro: true, maraIntroChoice: "distant" } }, preview: "Keep your history private and the exchange surface-level.", result: "You choose black, pay, and offer only your street name. Mara does not press. She gives you the correct change and a neutral goodnight, then returns to the register book. You leave as a stranger she noticed, not a story she already knows." },
@@ -2266,7 +2405,7 @@
         { label: "Say the garage is handled", effect: { introduceCrew: "tone", crewLoyalty: { id: "tone", delta: -1 } }, preview: "Tone stays available later, with less patience for the offer.", result: "He looks at the lock, then at you, and does not say the obvious thing about either. \"All right.\" He walks back toward the street past the sedan without changing his pace, and the sedan is still in the same spot in the morning." },
       ]),
       mara_shift_change: () => event("mara_shift_change", "Twenty Minutes Past Close", "Mara counts the till and hands you a lead: Ship Creek freight is hiring dispatch. Then she asks what people call you, and waits like the answer matters. Give her a name or keep it.", [
-        { label: "Tell her what the week looks like", effect: { maraTrust: 1, setFlags: { maraKnowsScope: true } }, preview: "Mara learns how your week is funded and holds you to it later.", result: `You give her the version with the debt in it, and the seventh night, and Dre's name. Mara does not flinch. "All right, ${state.player.streetName || "friend"}," she says, and writes the yard's address on the back of a receipt. "Thursday mornings. Don't be here when he is."` },
+        { label: "Tell her what the week looks like", effect: { maraTrust: 1, setFlags: { maraKnowsScope: true } }, preview: "Mara learns how your week is funded and holds you to it later.", result: `You give her the version with the debt in it, the checkpoint, and Dre's name. Mara listens. "All right, ${state.player.streetName || "friend"}," she says, and writes the yard's address on the back of a receipt. "Thursday mornings. Don't be here when he is."` },
         { label: "Keep the answer small", effect: { setFlags: { maraDeflected: true } }, preview: "Nothing changes tonight. Mara notices the size of the answer.", result: "You give her the short version. Mara nods, folds the receipt she was about to write on, and puts it in her apron. The heater ticks. She counts the last of the twenties without looking up." },
         { label: "Put $60 toward her yard fees", requires: "cash60", effect: { cash: -60, maraTrust: 2, setFlags: { maraTookMoney: true } }, preview: "Costs $60. Mara accepts the help and sets the terms you did not ask for.", result: "She takes the sixty and writes you a receipt on Night Owl paper, dated and signed, because she does not want it to be a favor. \"This is a loan,\" she says. \"I pay it back in March.\" She means it." },
       ]),
@@ -2294,7 +2433,7 @@
             { label: "Tell her to keep it for herself", effect: { maraTrust: 1, setFlags: { refusedMaraContact: true } }, preview: "You give up the lead. Mara keeps a favor she can still spend on Monday.", result: "She looks at the receipt for a second, then puts it back in her apron without arguing. \"That's the first useful thing you've done all week.\" She says it flatly, and she means it as a compliment." },
           ], "The coffee comes with it, already poured. Outside, the first real snow of the week is holding on the pavement instead of melting. The favor is hers, and spending it on you empties it.");
         }
-        return event("mara_after", "Restocking the Cold Case", "Mara keeps working through the conversation. Her Ship Creek dispatch interview is Monday, after your week ends. She never asks what happens to you on the seventh night. Close the week with her.", [
+        return event("mara_after", "Restocking the Cold Case", "Mara keeps working through the conversation. Her Ship Creek dispatch interview follows your checkpoint. She waits for you to decide how this week closes.", [
           { label: "Wish her luck on Monday", effect: { maraTrust: 1 }, preview: "A small, honest exchange at the end of a week that did not include her.", result: "\"I don't need luck, I need him to read the second page.\" She sets the last row of bottles straight. \"But thank you.\" The cooler door swings shut and holds the fog for a while." },
           { label: "Ask if she'll still be here after", effect: {}, preview: "You get a straight answer, which may not be the one you want.", result: "\"Here, or Ship Creek, or Palmer.\" She does not stop working. \"Somewhere with a schedule.\" It is not an invitation and it is not a door closing, and she leaves it exactly that way." },
         ], "She is restocking the cold case when you come in. The cooler door fogs and clears between you. The question she leaves unasked is its own kind of answer.");
@@ -2305,7 +2444,7 @@
         { label: "Leave before the headlights arrive", effect: {}, preview: "Nothing gained. Whatever is in the case ends up somewhere else.", result: "You are back in the vehicle before the headlights reach the bay. Two nights later the same locked case turns up open in Rook's hand at the Downtown exit lane, and nobody has to explain to you how it got there." },
       ]),
       dre_after_payoff: () => event("dre_after_payoff", "Dre Opens Another Door", "Dre tears the note in half and keeps one piece. Then he stays, which he has not done before. He has three ways for you to use the name you just earned. Pick one.", [
-        { label: "Take a larger note", effect: { secondLoan: true }, preview: "Take $500 now and owe $600 by the seventh night.", result: "He transfers five hundred before you have finished agreeing to it. The new paper says six hundred by the seventh night, in the same handwriting as the last one. \"Same date. Different number.\" He is already walking back to the car while he says it." },
+        { label: "Take a larger note", effect: { secondLoan: true }, preview: `Take $500 now and owe $600 by Day ${state.run.checkpointDay}.`, result: `He transfers five hundred before you finish agreeing. The paper says six hundred by Day ${state.run.checkpointDay}, in the same handwriting as the last note. "Same date. Different number." He walks back to the car.` },
         { label: "Ask for the supplier", effect: { access: "cocaine", lenderTrust: 1 }, preview: "Unlocks supplier access and leaves Dre satisfied with the arrangement.", result: "He writes one Downtown address on the back of your paid note, hands it over, and burns the rest of the paperwork in the ashtray with the window cracked an inch. \"Use my name once. After that it's yours or it isn't.\"" },
         { label: "Stay independent", effect: { influence: { areaId: "north_star_lot", delta: 1 }, lenderTrust: 1, setFlags: { refusedSecondNote: true } }, preview: "No new debt. Spenard notices that you walked away clean.", result: "He puts the offer back in his jacket without any visible reaction, which from Dre is a form of respect. \"Then make your own door.\" He gets in the car. He does not say it unkindly, and he does not offer it twice." },
       ]),
@@ -2349,15 +2488,15 @@
         { label: "Tell him to keep it", effect: {}, preview: "The routes stay his. Nothing changes tonight, and he does not push.", result: "He folds it up without any visible disappointment and puts it back inside his jacket. \"It's there if you want it.\" He mentions the page exactly once more, in passing, weeks of driving later, and never pushes it again." },
       ]),
       eli_last_run: () => event("eli_last_run", "After the Seventh Night", "Eli asks what happens to him when the week is over. He wants no money. He has worked out that whatever you are building either has a driver's seat in it or it does not. Answer him.", [
-        { label: "Tell him there's a seat", effect: { crewLoyalty: { id: "eli", delta: 2 }, setFlags: { eliPromisedFuture: true } }, preview: "A promise he will hold you to after the seventh night.", result: "He nods once and goes straight back to the fuel prices, which is how you know it landed. Before he leaves he mentions that his cousin has a van with a working heater and no questions attached, and that he had not brought it up before because there had not been a reason to." },
+        { label: "Tell him there's a seat", effect: { crewLoyalty: { id: "eli", delta: 2 }, setFlags: { eliPromisedFuture: true } }, preview: "A promise he will hold you to after the checkpoint.", result: "He nods once and goes straight back to the fuel prices, which is how you know it landed. Before he leaves he mentions that his cousin has a van with a working heater and no questions attached, and that he had not brought it up before because there had not been a reason to." },
         { label: "Tell him you don't know yet", effect: { setFlags: { eliToldHonestly: true } }, preview: "Honest and unsatisfying. He can work with honest.", result: "\"That's fair.\" He means it, mostly. He keeps driving the routes exactly as well as before, and he stops mentioning the week after next, and you notice the second thing more than you expected to." },
-        { label: "Tell him this is a one-week job", effect: { crewLoyalty: { id: "eli", delta: -1 }, setFlags: { eliToldNoFuture: true } }, preview: "He finishes the week. He starts looking on his own time.", result: "He takes it without complaint because he asked and you answered. The routes stay clean through the seventh night. But he starts taking calls outside the bay, briefly, and he stops leaving his jacket in the vehicle." },
+        { label: "Tell him this ends here", effect: { crewLoyalty: { id: "eli", delta: -1 }, setFlags: { eliToldNoFuture: true } }, preview: "He finishes the pressure phase and starts looking on his own time.", result: "He takes it without complaint because he asked and you answered. The routes stay clean through the checkpoint. He starts taking calls outside the bay, briefly, and stops leaving his jacket in the vehicle." },
       ]),
-      dre_terms: () => event("dre_terms", "One Folded Sheet of Paper", "$1,000 received. $1,200 due on Day 7. Partial payments accepted, no first-week compounding. No signature line and no negotiation. \"That's the whole arrangement,\" Dre says. Read it and answer.", [
-        { label: "Say the date back to him", effect: { lenderTrust: 1, setFlags: { dreTermsAcknowledged: true } }, preview: "Dre starts the week believing you understood him.", result: "He repeats it once after you, flat, the way he says all numbers, and puts the car in gear. \"Good.\" That is the entire ceremony. The paper stays in your pocket for the rest of the week and gets softer at the folds every time you check it." },
-        { label: "Ask what happens if it's late", effect: { setFlags: { dreAskedConsequences: true } }, preview: "You get a straight answer. It is not a threat.", result: "\"It gets bigger, and I stop being somebody you can call.\" He says it in the same tone as the date. There is no menace anywhere in it, which somehow makes it land harder than a threat would have. \"Most people only hear the first half.\"" },
-        { label: "Fold the paper away", effect: { setFlags: { dreTermsAcceptedQuietly: true } }, preview: "No new promise and no attempt to change fixed terms.", result: "You fold the page along the crease Dre already made and put it away. He nods once. The amount and date do not move, and neither of you performs a negotiation that was never available." },
-      ]),
+      dre_terms: () => event("dre_terms", "The Envelope After Work", `$1,000 now. $1,200 due Day ${state.run.checkpointDay}. Partial payments accepted. Dre names the terms once and keeps the envelope in his hand while the sedan idles.`, [
+        { label: "Take it measured", effect: { acceptDreLoan: true, lenderTrust: 1, setFlags: { dreTermsAcknowledged: true } }, preview: `$1,000 dirty cash now. $1,200 is due Day ${state.run.checkpointDay}.`, result: "You take the envelope and hold his eyes. Dre releases it one finger at a time. He says the date once. You repeat it once." },
+        { label: "Take it nervous", effect: { acceptDreLoan: true, setFlags: { dreAskedConsequences: true } }, preview: `$1,000 dirty cash now. $1,200 is due Day ${state.run.checkpointDay}.`, result: "You ask for the date again. Dre gives it to you. His thumb stays under the envelope until your grip settles." },
+        { label: "Leave it with him", effect: { declineDreLoan: true, setFlags: { dreOfferDeclined: true } }, preview: "Keep grinding with your own money and no Dre debt.", result: "You leave the envelope between his hands. Dre tucks it inside his coat. The car door shuts. Your shift money stays yours." },
+      ], "Dre leans against a dark sedan outside your job. Snow gathers along one shoulder. His bare hand holds a thick envelope against the roof. The engine keeps running."),
       dre_first_payment: () => {
         const name = state.player.streetName || "friend";
         return event("dre_first_payment", "The First Money You Bring Him", `Dre counts your money on the hood in stacks of five and says nothing about the amount. Then he looks at you a second longer than the transaction needs, working out whether this is a pattern.`, [
@@ -2390,8 +2529,8 @@
       dre_day7: () => {
         const cleared = state.lender.balance <= 0;
         return event("dre_day7", cleared ? "The Account Closes Clean" : "What Is Left on the Paper", cleared
-          ? "Dre finds you on the seventh day without being told where you would be. The note is settled and there is nothing to collect. He is here to say what he thinks he has been dealing with all week."
-          : `Dre finds you on the seventh day and leaves the paper unmentioned, which is worse. The balance stands at $${state.lender.balance}. He has already decided what happens next. He is here to tell you.`, [
+          ? `Dre finds you on Day ${state.run.checkpointDay} without being told where you would be. The note is settled. He is here to say what he thinks he has been dealing with all week.`
+          : `Dre finds you on Day ${state.run.checkpointDay} and leaves the paper unmentioned. The balance stands at $${state.lender.balance}. He has decided what happens next. He is here to tell you.`, [
           { label: "Hear him out", effect: { lenderTrust: cleared ? 1 : 0 }, preview: cleared ? "He tells you where you stand with him." : "He tells you what the unpaid balance becomes.", result: cleared ? "\"Most people I front pay me late and act like I owe them the patience.\" He looks out at the lot rather than at you. \"You paid me. That's it. That's the whole compliment, don't wait for a better one.\"" : "\"It doesn't stop being money because the week ended.\" He says the new number, which is larger, and the new date, which is close. Then he waits to see whether you are going to argue, and does not seem to mind either way." },
           { label: "Ask what comes next", effect: { lenderTrust: cleared ? 1 : -1, setFlags: { dreAskedForFuture: true } }, preview: cleared ? "You ask about the next arrangement before he offers." : "You ask for a future while the current one is unpaid.", result: cleared ? "He takes a second with it. \"Come find me in a week and I'll have a number for you.\" It is not a yes, but he has never once said a thing like that to somebody he was finished with." : "\"Next.\" He repeats the word back like it is unfamiliar. \"You're asking me about next.\" He does not raise his voice at any point, and the conversation is over about four seconds later." },
         ], cleared
@@ -2413,7 +2552,7 @@
         const respectful = state.rival.respect >= 2 && state.rival.pressure <= 6;
         return event("rook_day7", respectful ? "An Offer at the End of the Week" : "The Account He Has Been Keeping", respectful
           ? "Rook's car is outside North Star Garage and the window comes down. He has watched you handle a debt, a corner, and two of his own people all week. He has a number for what you are worth to him."
-          : "Rook sends three people on the seventh day instead of coming. They stand in the lot doing nothing at all. One holds a phone with an open line. He is listening to this live.", [
+          : `Rook sends three people on Day ${state.run.checkpointDay} instead of coming. They stand in the lot. One holds a phone with an open line. He is listening live.`, [
           { label: respectful ? "Hear the offer" : "Walk out and face them", effect: { rivalRespect: 1 }, preview: respectful ? "You find out what a working arrangement costs." : "You take the meeting on your feet, in your own lot.", result: respectful ? "The arrangement he describes is genuinely good and would leave you working for him in every way that matters except the word. He does not oversell it. \"Think about it past tonight,\" he says, and the window goes back up before you have answered." : "You go out to them and nobody touches anybody. The one with the phone holds it up slightly, and a voice on it says your name once, and then they leave. The whole thing takes ninety seconds and costs you nothing you can count." },
           { label: respectful ? "Tell him you're staying independent" : "Stay inside and let them stand there", effect: { rivalPressure: 2, setFlags: { refusedRookFinal: true } }, preview: "+2 pressure. He learns where the line is.", result: respectful ? "\"That's a no, then.\" He is not offended, which is somehow worse than if he had been. \"You'll hear from me in a month and it won't be an offer.\" The car pulls out slowly enough that it is clearly on purpose." : "They stand in the lot for forty minutes and then go. Nothing is broken and nobody is hurt and every single person on this block watched them do it, which was always the point of sending them instead of coming." },
         ], respectful
@@ -2667,12 +2806,12 @@
 
     // --- Dre's Note ----------------------------------------------------------
     { id: "dre_terms", chain: "dre_note", stage: 1, classification: "main_chapter", trigger: "chain",
-      requires: () => true, area: null, earliest: { day: 1, slot: 1 }, latest: { day: 3 }, once: true, cooldown: 0, weight: 9, exit: null },
+      requires: () => false, area: null, earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
     { id: "dre_first_payment", chain: "dre_note", stage: 2, classification: "callback", trigger: "reactive",
-      requires: (s) => s.lender.paymentCount >= 1 && s.lender.balance > 0, area: null,
+      requires: (s) => s.lender.status === "active" && s.lender.paymentCount >= 1 && s.lender.balance > 0, area: null,
       earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
     { id: "dre_due_day", chain: "dre_note", stage: 3, classification: "main_chapter", trigger: "chain",
-      requires: (s) => !!s.flags.dreTermsResolved && s.run.day >= s.lender.dueDay, area: null,
+      requires: (s) => s.lender.status === "active" && !!s.flags.dreTermsResolved && s.run.day >= s.lender.dueDay, area: null,
       earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
     { id: "dre_warning", chain: "dre_note", stage: 3, classification: "threat", trigger: "chain",
       requires: (s) => s.lender.balance > 0 && s.run.day > s.lender.dueDay && !!s.flags.dreDueDayResolved, area: null,
@@ -2684,8 +2823,8 @@
       requires: (s) => s.lender.collectorTier >= 1, area: null,
       earliest: { day: 5, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: (s) => s.lender.balance <= 0 },
     { id: "dre_day7", chain: "dre_note", stage: 5, classification: "ending_setup", trigger: "chain",
-      requires: (s) => !!s.flags.dreTermsResolved, area: null,
-      earliest: { day: 7, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
+      requires: (s) => s.lender.status === "active" && !!s.flags.dreTermsResolved && s.run.day >= checkpointDay(s), area: null,
+      earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
 
     // --- Rook's Attention ----------------------------------------------------
     { id: "rook_mark", chain: "rook_pressure", stage: 1, classification: "threat", trigger: "chain",
@@ -2707,8 +2846,8 @@
       requires: (s) => !!s.flags.rookTaxResolved, area: null,
       earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
     { id: "rook_day7", chain: "rook_pressure", stage: 6, classification: "ending_setup", trigger: "chain",
-      requires: (s) => !!s.flags.earlyThreatResolved, area: null,
-      earliest: { day: 7, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
+      requires: (s) => !!s.flags.earlyThreatResolved && s.run.day >= checkpointDay(s), area: null,
+      earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
 
     // --- The Wash & Go -------------------------------------------------------
     { id: "kip_corner_intro", chain: "kip_corner", stage: 1, classification: "character_intro", trigger: "chain",
@@ -2779,6 +2918,7 @@
     const absolute = slotNumber(state.run.day, state.run.slot);
     const areaId = state.world.currentNeighborhoodId;
     return STORY_REGISTRY.filter((item) => {
+      if (state.run.phase === "week_zero" && (item.chain === "dre_note" || item.chain === "rook_pressure" || item.classification === "threat" || item.classification === "ending_setup")) return false;
       if (item.once && eventResolved(state, item.id)) return false;
       if (item.area && item.area !== areaId) return false;
       if (absolute < slotNumber(item.earliest.day, item.earliest.slot || 0)) return false;
@@ -2885,6 +3025,23 @@
     state.rival.respect += effect.rivalRespect || 0;
     state.lender.trust += effect.lenderTrust || 0;
     state.people.mara.trust += effect.maraTrust || 0;
+    if (effect.acceptDreLoan && state.lender.status === "unoffered") {
+      state.lender.status = "active";
+      state.lender.principal = 1000;
+      state.lender.balance = 1200;
+      state.lender.dueDay = state.run.checkpointDay;
+      addDirtyCash(state, 1000);
+    }
+    if (effect.declineDreLoan && state.lender.status === "unoffered") {
+      state.lender.status = "declined";
+      state.lender.principal = 0;
+      state.lender.balance = 0;
+      state.lender.dueDay = null;
+    }
+    if (effect.discoverGambling) {
+      state.world.locations.gamblingKnown = true;
+      if (!state.world.locations.discoveries.includes("informal_game")) state.world.locations.discoveries.push("informal_game");
+    }
     if (effect.payLenderNow) {
       const amount = Math.min(state.lender.balance, state.player.cash);
       if (amount > 0) {
@@ -2957,7 +3114,8 @@
       state.player.cash += 500;
       state.lender.principal = 600;
       state.lender.balance = 600;
-      state.lender.dueDay = 7;
+      state.lender.dueDay = state.run.checkpointDay;
+      state.lender.status = "active";
       state.lender.afterPayoffOffer = "accepted";
       state.flags.acceptedSecondNote = true;
     }
@@ -3060,59 +3218,83 @@
   function advanceRun(inputState, context) {
     const beforeFeatures = featureAvailability(inputState);
     const state = copyState(inputState);
-    if (state.run.status !== "playing" || state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return state;
+    if (state.run.status !== "playing" || state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult || state.run.dayEndPending) return state;
     reconcileCash(state);
     const random = makeRandom(state.run.rngState);
     const oldDay = state.run.day, oldSlot = state.run.slot;
     const completedVisit = { ...(state.run.currentVisit || {}) };
+    const energyCost = actionEnergyCost(state, context.reason);
+    if (state.player.energy < energyCost) return inputState;
+    state.player.energy -= energyCost;
+    if (state.run.overtimeArmed) {
+      state.run.overtimeArmed = false;
+      state.run.overtimeUsedDay = oldDay;
+    }
     // Every slot-consuming action funnels through here, which makes this the one
     // honest place to record which part of the day gets spent on what. Logged
     // before the clock moves so the entry is stamped with the day it happened.
     const activity = STREET_READ_ACTIVITY[context.reason];
     if (activity) addStreetReadEntry(state, "routine", `${SLOTS[oldSlot].toLowerCase()}:${activity}`);
     closeVisit(state, context.reason);
-    const finalSlot = oldDay === RUN_DAYS && oldSlot === 3;
-    if (!finalSlot) {
-      if (oldSlot === 3) { state.run.day += 1; state.run.slot = 0; }
-      else state.run.slot += 1;
-    }
-    const crossedDay = !finalSlot && oldSlot === 3;
+    recordDailyAction(state, context);
+    const nightAction = oldSlot === 3;
+    if (!nightAction) state.run.slot += 1;
     expireEffects(state);
-    evolveMarkets(state, random);
     resolveCrewAssignments(state, random);
-    resolveSoldierOperations(state, random, crossedDay);
-    applyPressure(state, context, crossedDay);
-    resolveKipLaundering(state, random, crossedDay);
-    if (crossedDay || finalSlot) {
-      const nextDay = state.run.day, nextSlot = state.run.slot;
-      state.run.day = oldDay; state.run.slot = 3;
-      evaluateStreetIdentity(state, true);
-      // Strictly after the identity pass. The two systems share this tick and
-      // nothing else - neither reads the other's data - but the ordering is
-      // fixed so a run's tier can never be scored against a half-updated day.
-      recalculateStreetRead(state);
-      checkHomeContraband(state, random);
-      state.run.day = nextDay; state.run.slot = nextSlot;
-    }
+    resolveSoldierOperations(state, random, false);
+    applyPressure(state, context, false);
+    resolveKipLaundering(state, random, false);
     maybeStreetReadIntel(state, random);
     state.stats.pipelineAdvances += 1;
     state.stats.decisions += 1;
     announceFeatureUnlocks(state, beforeFeatures);
-    if (crossedDay) state.run.daySummary = { day: oldDay, netWorth: netWorth(state), operationScore: operationScore(state), heat: state.player.heat, debt: state.lender.balance, health: state.player.health, baseValue: baseValue(state), crew: recruitedCrew(state).length };
     if (state.run.status !== "playing") {
       state.run.rngState = random.state;
       return state;
     }
     if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
-    else if (finalSlot) endRun(state);
     else {
       const encounterContext = encounterActivityContext(state, context, oldSlot, completedVisit);
-      const triggered = EncounterSystem?.checkEncounterTrigger(state, oldDay, oldSlot, { ...encounterContext, rng: random });
+      const chosenRisk = ["QUICK_SCORE", "ROB_DEALER", "TAKEOVER", "GAMBLE", "SHOPLIFT", "BOOST"].includes(context.reason);
+      const triggered = (state.run.phase === "pressure" || chosenRisk) ? EncounterSystem?.checkEncounterTrigger(state, oldDay, oldSlot, { ...encounterContext, rng: random }) : null;
       if (triggered) {
         triggered.choices = EncounterSystem.getEligibleChoices(triggered, state).map((item) => item.id);
         state.run.pendingEncounter = triggered;
-      } else if (!context.suppressStory) scheduleStory(state, context, random);
+      } else if (!context.suppressStory && !nightAction) scheduleStory(state, context, random);
     }
+    if (nightAction && state.run.status === "playing") state.run.dayEndPending = true;
+    state.run.rngState = random.state;
+    return state;
+  }
+
+  function confirmDayEnd(inputState) {
+    if (!inputState.run.dayEndPending || inputState.run.status !== "playing" || inputState.run.pendingEvent || inputState.run.pendingEncounter || inputState.run.pendingOperationResult) return inputState;
+    const state = copyState(inputState);
+    const random = makeRandom(state.run.rngState);
+    const oldDay = state.run.day;
+    state.run.dayEndPending = false;
+    state.run.overtimeArmed = false;
+    state.run.slot = 3;
+    evaluateStreetIdentity(state, true);
+    recalculateStreetRead(state);
+    checkHomeContraband(state, random);
+    resolveSoldierOperations(state, random, true);
+    applyPressure(state, { reason: "END_DAY" }, true);
+    resolveKipLaundering(state, random, true);
+    evolveMarkets(state, random);
+    if (state.run.phase === "pressure" && oldDay >= checkpointDay(state)) {
+      state.run.dailyActions = [];
+      endRun(state);
+      state.run.rngState = random.state;
+      return state;
+    }
+    state.run.day = oldDay + 1;
+    state.run.slot = 0;
+    state.player.energy = MAX_ENERGY;
+    state.listings.known = state.listings.known || state.run.day >= 3;
+    state.run.dailyActions = [];
+    if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
+    else scheduleStory(state, { reason: "END_DAY" }, random);
     state.run.rngState = random.state;
     return state;
   }
@@ -3577,11 +3759,23 @@
     };
   }
 
+  function gamblingDiscoveryEvent(source) {
+    const fromLena = source === "lena";
+    return event("gambling_discovery", "A Door After Closing", fromLena
+      ? "Lena locks the change machine and gives you a laundromat address. The game starts after the last dryer stops."
+      : "Cal lowers his voice and gives you a side-door address. The table opens after the storefront closes.", [
+      { label: "Keep the address", effect: { discoverGambling: true }, preview: "Unlock the backroom game in Spenard.", result: "You fold the address into your pocket. The door will open when the tables are running." },
+    ], fromLena
+      ? "She checks the front windows before she speaks. One dryer turns behind her with three work shirts inside."
+      : "Cal scratches the address onto a coffee sleeve. His chair stays angled toward the front door while he writes.");
+  }
+
   function resolveJobShift(inputState, action) {
     const job = SPENARD_JOB_BY_ID[action.jobId];
     const approach = JOB_APPROACHES[action.approach];
     if (!job || !approach || !jobAvailability(inputState, job.id).available) return inputState;
     const state = copyState(inputState);
+    const dreWasEligible = state.onboarding.dreEligible;
     reconcileCash(state);
     const random = makeRandom(state.run.rngState);
     const record = state.jobs.records[job.id];
@@ -3598,10 +3792,17 @@
     record.rank = jobRankForXp(record.xp);
     if (job.scheduled) state.jobs.lastScheduledShiftDay = state.run.day;
     else state.jobs.lastDeliveryDay = state.run.day;
+    state.onboarding.shiftsWorked += 1;
+    recordVisitedLocation(state, `job:${job.id}`);
 
     if (!record.contactMet) {
       record.contactMet = true;
+      recordMetNpc(state, job.contact.id);
       logEntry(state, job.contact.introduction, "good");
+    }
+    if (state.run.phase === "week_zero" && job.id === "wash_go" && record.shifts >= 2 && !state.nightOwl.ambientSeen.includes("lena_money")) {
+      state.nightOwl.ambientSeen.push("lena_money");
+      logEntry(state, "Lena says she used to make bigger money, then starts folding towels before the sentence finishes.", "");
     }
     if (approach.id === "learn_job") {
       const detailIndex = job.details.findIndex((_, index) => !record.learnedDetails.includes(index));
@@ -3633,37 +3834,70 @@
     }
     recordBehavior(state, "earner", record.rank >= 2 ? 2 : 1, `job:${job.id}:${state.run.day}`, "legal_work");
     addStreetReadEntry(state, "income", `job:${job.id}`);
+    updateWeekZeroEligibility(state);
     state.run.rngState = random.state;
     logEntry(state, `${job.name} shift done. +$${payout}.`, "good");
-    return advanceRun(state, { reason: "WORK_JOB", suppressStory: false });
+    const advanced = advanceRun(state, { reason: "WORK_JOB", suppressStory: dreWasEligible, summary: `${job.name} shift (+$${payout})` });
+    if (advanced.run.status !== "playing" || advanced.run.pendingEncounter) return advanced;
+    if (job.id === "wash_go" && record.shifts >= 3 && !advanced.world.locations.gamblingKnown && !advanced.flags.gamblingDiscoverySeen) {
+      advanced.flags.gamblingDiscoverySeen = true;
+      advanced.run.pendingEvent = gamblingDiscoveryEvent("lena");
+      return advanced;
+    }
+    if (advanced.run.phase === "week_zero" && dreWasEligible && advanced.lender.status === "unoffered" && !advanced.run.pendingEvent) {
+      startPressurePhase(advanced);
+      advanced.run.pendingEvent = activeEvent("dre_terms", advanced);
+    }
+    return advanced;
   }
 
   function reduceGame(inputState, action) {
     if (!inputState || !action || !action.type) return inputState;
     if (action.type === "HYDRATE_RUN") return hydrateRun(action.state) || inputState;
     if (action.type === "NEW_RUN") return createRun({ seed: action.seed });
+    if (action.type === "CONFIRM_END_DAY") {
+      if (inputState.run.overtimeArmed && !inputState.run.dayEndPending) {
+        const stopped = copyState(inputState);
+        stopped.run.overtimeArmed = false;
+        stopped.run.dayEndPending = true;
+        return confirmDayEnd(stopped);
+      }
+      return confirmDayEnd(inputState);
+    }
+    if (action.type === "ONE_MORE_THING") {
+      if (!inputState.run.dayEndPending || inputState.run.pendingEvent || inputState.run.pendingEncounter || inputState.player.energy < 2 || inputState.run.overtimeUsedDay === inputState.run.day) return inputState;
+      const overtime = copyState(inputState);
+      overtime.run.dayEndPending = false;
+      overtime.run.overtimeArmed = true;
+      return overtime;
+    }
     if (action.type === "START_RUN" || action.type === "CHOOSE_BACKGROUND") {
       if (inputState.run.status !== "creating_character") return inputState;
       const background = BACKGROUNDS.find((item) => item.id === action.backgroundId);
       if (action.type === "CHOOSE_BACKGROUND" && !background) return inputState;
       const state = copyState(inputState);
       const chosenName = sanitizeStreetName(action.streetName);
+      if (action.type === "START_RUN" && !chosenName) return inputState;
       state.player.background = null;
       state.player.legacyBackground = action.type === "CHOOSE_BACKGROUND" ? background.id : null;
       state.player.attributes = action.type === "CHOOSE_BACKGROUND" ? { ...LEGACY_ATTRIBUTES[background.id] } : { ...ATTRIBUTE_DEFAULTS };
-      state.player.streetName = chosenName || (action.type === "CHOOSE_BACKGROUND" ? DEFAULT_STREET_NAMES[background.id] : DEFAULT_STREET_NAMES.neutral);
+      state.player.streetName = chosenName || DEFAULT_STREET_NAMES[background.id];
       state.player.streetNameChosen = !!chosenName;
-      state.player.cash = action.type === "CHOOSE_BACKGROUND" ? 375 : 1000;
-      state.player.dirtyCash = state.player.cash;
-      state.player.cleanCash = 0;
+      state.player.cash = action.type === "CHOOSE_BACKGROUND" ? 375 : 100;
+      state.player.dirtyCash = action.type === "CHOOSE_BACKGROUND" ? state.player.cash : 0;
+      state.player.cleanCash = action.type === "CHOOSE_BACKGROUND" ? 0 : state.player.cash;
       state.player.heat = action.type === "CHOOSE_BACKGROUND" ? 1 : 0;
       if (action.type === "CHOOSE_BACKGROUND") {
         state.run.premise = "legacy_established";
+        state.run.phase = "pressure";
+        state.run.pressureStartedDay = 1;
+        state.run.checkpointDay = RUN_DAYS;
         state.base.controlled = true;
         state.base.acquiredDay = 1;
         state.lender.principal = 620;
         state.lender.balance = 620;
         state.lender.dueDay = 4;
+        state.lender.status = "active";
         state.rival.pressure = 1;
         state.rival.relationship = "dismissive";
         state.world.productAccess.weed = true;
@@ -3676,9 +3910,10 @@
       state.run.openingPending = action.type === "START_RUN";
       state.stats.startingNetWorth = state.player.cash - state.lender.balance;
       state.log = [];
-      logEntry(state, action.type === "START_RUN" ? `${state.player.streetName} arrives in Anchorage with one suitcase, Yalonda's spare room, and Dre's fixed $1,200 note due on Day 7.` : `${state.player.streetName} continues an established week under Dre's note.`, "warn");
+      logEntry(state, action.type === "START_RUN" ? `${state.player.streetName} wakes in Yalonda's spare room with $100 and a city that has not opened yet.` : `${state.player.streetName} continues an established week under Dre's note.`, "warn");
       return state;
     }
+    if (TIME_ACTIONS.has(action.type) && (inputState.run.dayEndPending || !canSpendEnergy(inputState, action.type))) return inputState;
     if (action.type === "RESOLVE_ENCOUNTER") return reduceEncounter(inputState, action);
     if (action.type === "ACKNOWLEDGE_ENCOUNTER") {
       if (!inputState.run.pendingEncounter?.resolved) return inputState;
@@ -3722,6 +3957,8 @@
       state.flags[`${current.id.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())}Resolved`] = true;
       if (current.id === "mara_intro") {
         state.people.mara.met = true;
+        recordMetNpc(state, "mara");
+        updateWeekZeroEligibility(state);
         state.people.mara.introChoice = state.flags.maraIntroChoice || (state.flags.maraFlirted ? "flirt" : state.flags.maraFriendlyIntro ? "friendly" : "distant");
         state.people.mara.flirtHistory = !!state.flags.maraFlirted;
         state.flags.maraIntroResolved = true;
@@ -3921,12 +4158,91 @@
     }
 
     let base = state;
+    if (action.type === "VIEW_NIGHT_OWL_BOARD") {
+      if (state.world.currentNeighborhoodId !== "north_star_lot") return inputState;
+      base.flags.nightOwlVisited = true;
+      recordVisitedLocation(base, "night_owl");
+      if (!base.nightOwl.boardViewedDays.includes(base.run.day)) base.nightOwl.boardViewedDays.push(base.run.day);
+      const board = nightOwlBoardItems(base);
+      if (board.some((entry) => entry.id === "list")) base.listings.known = true;
+      if (base.run.phase === "week_zero" && !base.nightOwl.ambientSeen.includes("board_opportunity")) {
+        base.nightOwl.ambientSeen.push("board_opportunity");
+        logEntry(base, "One board tab promises opportunity without naming the work. Someone has taken every phone number but one.", "");
+      } else {
+        logEntry(base, "The Night Owl board has three fresh postings and yesterday's staple holes.", "");
+      }
+      return base;
+    }
+    if (action.type === "BUY_COFFEE") {
+      if (state.world.currentNeighborhoodId !== "north_star_lot" || state.player.cash < 4) return inputState;
+      spendCash(base, 4);
+      base.player.energy = Math.min(MAX_ENERGY, base.player.energy + 1);
+      base.flags.nightOwlVisited = true;
+      recordVisitedLocation(base, "night_owl");
+      if (base.run.phase === "week_zero" && !base.nightOwl.ambientSeen.includes("put_on")) {
+        base.nightOwl.ambientSeen.push("put_on");
+        logEntry(base, "A customer asks Mara who put you on. She glances at you and lets the question hang over the coffee machine.", "");
+      } else {
+        logEntry(base, "Four dollars buys a hot coffee and enough room at the counter to reset.", "good");
+      }
+      return advanceRun(base, { reason: "BUY_COFFEE", suppressStory: true, summary: "Coffee at Night Owl (-$4)" });
+    }
+    if (action.type === "TALK_NIGHT_OWL_REGULAR") {
+      if (state.world.currentNeighborhoodId !== "north_star_lot") return inputState;
+      const regular = NIGHT_OWL_REGULARS.find((item) => item.id === action.regularId);
+      const present = nightOwlRegularFor(state);
+      const relationship = regular && base.nightOwl.regulars[regular.id];
+      if (!regular || present.id !== regular.id || relationship.lastTalkDay === base.run.day) return inputState;
+      relationship.met = true;
+      relationship.relationship += 1;
+      relationship.lastTalkDay = base.run.day;
+      recordVisitedLocation(base, "night_owl");
+      recordMetNpc(base, regular.id);
+      updateWeekZeroEligibility(base);
+      if (regular.id === "nia" && relationship.relationship >= 2 && !base.flags.niaCourierHint) {
+        base.flags.niaCourierHint = true;
+        logEntry(base, "Nia says a courier who can keep a route quiet never stays short of work. She leaves the next part for later.", "good");
+      } else {
+        logEntry(base, regular.id === "cal" ? "Cal turns a loud story into a conversation and remembers that you stayed for the ending." : "Nia closes her paperback and trades one careful detail about the roads.", "good");
+      }
+      const advanced = advanceRun(base, { reason: "TALK_NIGHT_OWL_REGULAR", suppressStory: true, summary: `Talked with ${regular.name}` });
+      if (regular.id === "cal" && relationship.relationship >= 2 && !advanced.world.locations.gamblingKnown && !advanced.run.pendingEvent) {
+        advanced.flags.gamblingDiscoverySeen = true;
+        advanced.run.pendingEvent = gamblingDiscoveryEvent("cal");
+      }
+      return advanced;
+    }
+    if (action.type === "BUY_907LIST") {
+      const item = LISTING_ITEM_BY_ID[action.itemId];
+      if (!base.listings.known || !item || !listingSlate(base).some((entry) => entry.id === item.id) || base.listings.inventory.length >= LISTING_CAPACITY || base.player.cash < item.buy) return inputState;
+      spendCash(base, item.buy);
+      base.listings.inventory.push({ id: `${base.run.day}:${base.run.slot}:${base.listings.purchases}`, itemId: item.id, cost: item.buy, boughtDay: base.run.day });
+      base.listings.purchases += 1;
+      logEntry(base, `You buy the ${item.name.toLowerCase()} for $${item.buy} and make room to hold it.`, "good");
+      return advanceRun(base, { reason: "BUY_907LIST", summary: `Bought ${item.name} (-$${item.buy})` });
+    }
+    if (action.type === "SELL_907LIST") {
+      const index = base.listings.inventory.findIndex((entry) => entry.id === action.inventoryId);
+      const held = base.listings.inventory[index];
+      const item = held && LISTING_ITEM_BY_ID[held.itemId];
+      if (index < 0 || !item) return inputState;
+      const random = makeRandom(base.run.rngState);
+      const payout = random.int(item.resale[0], item.resale[1]);
+      base.run.rngState = random.state;
+      base.listings.inventory.splice(index, 1);
+      base.listings.sales += 1;
+      base.listings.profit += payout - held.cost;
+      addCleanCash(base, payout);
+      logEntry(base, `A 907List buyer takes the ${item.name.toLowerCase()} for $${payout}. The money is clean.`, "good");
+      return advanceRun(base, { reason: "SELL_907LIST", summary: `Sold ${item.name} (+$${payout})` });
+    }
     if (action.type === "VISIT_NIGHT_OWL") {
       if (state.world.currentNeighborhoodId !== "north_star_lot") return inputState;
       base.flags.nightOwlVisited = true;
+      recordVisitedLocation(base, "night_owl");
       addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:night_owl`);
       if (base.people.mara.met) addStreetReadEntry(base, "social", "mara:visit");
-      logEntry(base, state.people.mara.met ? "You stop at the Night Owl without treating Mara's shift like an obligation." : "You step into the Night Owl for the first time and study a coffee machine you have never used.", "");
+      logEntry(base, state.people.mara.met ? "Mara sets a clean cup beside the register and waits for you to choose the conversation." : "Mara looks up from the register and gives you enough time to introduce yourself.", "");
       const next = advanceRun(base, { reason: "VISIT_NIGHT_OWL", suppressStory: true });
       if (next.run.status === "playing" && !next.people.mara.met && !next.run.pendingEvent) fireStory(next, STORY_BY_ID.mara_intro);
       return next;
@@ -3936,6 +4252,7 @@
       base.player.cash -= GARAGE_DEPOSIT;
       base.base.controlled = true;
       base.base.acquiredDay = base.run.day;
+      recordVisitedLocation(base, "north_star_garage");
       base.stats.moneySpent.base += GARAGE_DEPOSIT;
       recordBehavior(base, "mover", 3, "property:north_star", "property");
       addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:garage`);
@@ -3947,6 +4264,7 @@
       const available = activityAvailability(state).gym;
       if (!available.available || !["strength", "endurance", "reflexes"].includes(attribute) || state.player.attributes[attribute] >= 5) return inputState;
       const gym = base.world.locations.gym;
+      recordVisitedLocation(base, "spenard_gym");
       if (gym.sessionDay !== base.run.day) { gym.sessionDay = base.run.day; gym.sessionsToday = 0; }
       base.player.cash -= available.cost;
       gym.sessionsToday += 1;
@@ -4017,15 +4335,12 @@
       const random = makeRandom(base.run.rngState);
       const count = base.world.locations.explorationCount;
       base.world.locations.explorationCount += 1;
+      recordVisitedLocation(base, "spenard_streets");
       addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:explore`);
       const jobDiscovered = rollJobDiscovery(base, random, count);
       const meetsKip = base.run.day >= 2 && !base.flags.kipEncounterSeen;
       const meetsBoost = !meetsKip && !base.flags.boostOpportunitySeen && !base.boost.visible && (count === 0 || base.world.locations.gamblingKnown);
-      if (!meetsBoost && !meetsKip && !base.world.locations.gamblingKnown && count > 0) {
-        base.world.locations.gamblingKnown = true;
-        base.world.locations.discoveries.push("informal_game");
-        logEntry(base, "A back-room dice game announces itself through the people leaving. No sign, no door number. Evening and Night games are now visible.", "good");
-      } else if (!meetsBoost && !meetsKip && !jobDiscovered) {
+      if (!meetsBoost && !meetsKip && !jobDiscovered) {
         const discoveries = [
           "John's bus advice matches the posted Downtown timetable.",
           "A freight worker confirms Ship Creek hires before breakfast.",
@@ -4033,6 +4348,10 @@
           "You learn which Northern Value aisle has the longest camera gap.",
         ];
         logEntry(base, random.pick(discoveries), "");
+      }
+      if (base.run.phase === "week_zero" && count >= 1 && !base.nightOwl.ambientSeen.includes("flash_car")) {
+        base.nightOwl.ambientSeen.push("flash_car");
+        logEntry(base, "A polished coupe stops beside a locked service gate. The driver disappears inside. The gate stays closed to you.", "");
       }
       base.run.rngState = random.state;
       const advanced = advanceRun(base, { reason: "WANDER_SPENARD", suppressStory: meetsBoost || meetsKip });
@@ -4109,6 +4428,7 @@
       if (state.player.cash < cost) return inputState;
       base.player.cash -= cost;
       base.world.currentNeighborhoodId = destination;
+      recordVisitedLocation(base, destination);
       base.world.transport.busRides += 1;
       if (destination === "downtown") base.world.transport.downtownKnown = true;
       logEntry(base, `The People Mover carries you to ${AREA_BY_ID[destination].name}${cost ? " for $5" : " on your pass"}.`, "");
@@ -4117,6 +4437,7 @@
     if (action.type === "WALK_HOME") {
       if (state.world.currentNeighborhoodId !== "downtown") return inputState;
       base.world.currentNeighborhoodId = "north_star_lot";
+      recordVisitedLocation(base, "north_star_lot");
       base.player.health = clamp(base.player.health - 3, 1, 100);
       logEntry(base, "With no bus fare to spare, you walk back to Spenard. It costs no cash, one part of day, and 3 Health.", "warn");
       return advanceRun(base, { reason: "WALK_HOME" });
@@ -4125,8 +4446,14 @@
       if (!AREA_BY_ID[action.neighborhoodId] || action.neighborhoodId === state.world.currentNeighborhoodId) return inputState;
       if (state.run.premise === "fresh_arrival" && action.neighborhoodId === "downtown") return inputState;
       if (state.run.premise === "fresh_arrival" && action.neighborhoodId === "airport_industrial" && !state.world.transport.industrialRouteKnown) return inputState;
+      const covered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
+      const fare = covered ? 0 : 5;
+      if (state.player.cash < fare) return inputState;
+      spendCash(base, fare);
       base.world.currentNeighborhoodId = action.neighborhoodId;
-      logEntry(base, `You reach ${AREA_BY_ID[action.neighborhoodId].name} before the same headlights can settle behind you.`, "");
+      base.world.transport.busRides += 1;
+      recordVisitedLocation(base, action.neighborhoodId);
+      logEntry(base, `You reach ${AREA_BY_ID[action.neighborhoodId].name}${fare ? " for $5" : " on your pass"} before the same headlights can settle behind you.`, "");
       return advanceRun(base, { reason: "TRAVEL" });
     }
     if (action.type === "END_MARKET") { logEntry(base, "The last buyer leaves and the neighborhood starts pricing tomorrow's rumors.", ""); return advanceRun(base, { reason: "END_MARKET" }); }
@@ -4163,12 +4490,14 @@
       return advanceRun(base, { reason: "HEAL_AT_BASE" });
     }
     if (action.type === "PAY_DEBT") {
+      if (state.lender.status !== "active") return inputState;
       const amount = Math.min(state.lender.balance, Math.max(0, Math.floor(action.amount || 0)));
       if (!amount || state.player.cash < amount) return inputState;
       base.player.cash -= amount; base.lender.balance -= amount; base.lender.payments += amount; base.lender.paymentCount += 1;
       base.lender.paymentHistory.push({ day: base.run.day, slot: base.run.slot, amount });
       base.lender.trust += amount >= 150 ? 1 : 0; base.stats.moneySpent.debt += amount;
       if (!base.lender.balance) {
+        base.lender.status = "cleared";
         base.lender.trust += 2; base.lender.clearedAt = { day: base.run.day, slot: base.run.slot }; base.lender.afterPayoffOffer = "available";
         base.flags.drePaidEarly = base.run.day <= base.lender.dueDay;
       }
@@ -4386,7 +4715,7 @@
     }
     if (action.type === "PREPARE_FINAL_PLAN") {
       const allowed = ["escape", "defend", "partner", "challenge", "last_score"];
-      if (state.run.day < 6 || !allowed.includes(action.planId) || state.run.finalPlanPrepared) return inputState;
+      if (state.run.day < checkpointDay(state) - 1 || !allowed.includes(action.planId) || state.run.finalPlanPrepared) return inputState;
       base.run.finalPlan = action.planId; base.run.finalPlanPrepared = true;
       base.stats.majorDecisions.push(`Prepared final plan: ${action.planId}`);
       recordBehavior(base, "earner", 2, `final_plan:${action.planId}`, "day7_plan");
@@ -4394,7 +4723,7 @@
       return advanceRun(base, { reason: "PREPARE_FINAL_PLAN" });
     }
     if (action.type === "EXECUTE_FINAL_PLAN") {
-      if (state.run.day !== 7 || !state.run.finalPlan || state.run.pendingEncounter) return inputState;
+      if (state.run.day !== checkpointDay(state) || !state.run.finalPlan || state.run.pendingEncounter) return inputState;
       startEncounter(base, "late", true);
       base.run.pendingEncounter.feedback = `${base.run.pendingEncounter.description} Your ${base.run.finalPlan.replace("_", " ")} plan decides what is at stake.`;
       return base;
@@ -4491,9 +4820,10 @@
     // somebody else's money against a $1,200 note, and "money is moving" would
     // be a lie on the first Morning.
     const net = netWorth(state);
+    const hasDreDebt = state.lender.status === "active" || state.lender.status === "cleared";
     const clauses = [
       cash < 150 ? "Cash is thin." : net < 0 ? "You are still underwater on what you owe." : net < 400 ? "You are barely ahead." : net < 2000 ? "Money is moving." : "There is real money running through the operation now.",
-      !balance ? "The note is clear." : daysLeft < 0 ? "The note is past due." : daysLeft === 0 ? "The note comes due tonight." : daysLeft === 1 ? "The note comes due tomorrow." : `The note comes due in ${daysLeft} days.`,
+      hasDreDebt ? (!balance ? "The note is clear." : daysLeft < 0 ? "The note is past due." : daysLeft === 0 ? "The note comes due tonight." : daysLeft === 1 ? "The note comes due tomorrow." : `The note comes due in ${daysLeft} days.`) : state.run.phase === "week_zero" ? "You are still learning Spenard." : "The pressure clock is moving without a lender balance.",
     ];
     if (blocks > 0) clauses.push(`${plural(blocks, "block")} producing with ${plural(activeSoldierCount(state), "soldier")} posted.`);
     else if (eliLieutenantActive(state)) clauses.push("Eli can place people, but you hold no blocks yet.");
@@ -4511,7 +4841,7 @@
     const balance = state.lender.balance;
     const daysLeft = state.lender.dueDay - state.run.day;
     return {
-      day: state.run.day, runDays: RUN_DAYS, slot: state.run.slot, partLabel: SLOTS[state.run.slot],
+      day: state.run.day, runDays: state.run.checkpointDay || "open", slot: state.run.slot, partLabel: SLOTS[state.run.slot],
       districtName: area.name,
       cash: state.player.cash, health: state.player.health,
       heat: {
@@ -4619,9 +4949,10 @@
   }
 
   return {
-    VERSION, RUN_DAYS, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
+    VERSION, RUN_DAYS, PRESSURE_DAYS, MAX_ENERGY, SLOTS, SAVE_KEY, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
     STREET_NAME_MAX, DEFAULT_STREET_NAMES, ATTRIBUTE_DEFAULTS, LEGACY_ATTRIBUTES, STREET_IDENTITIES, sanitizeStreetName,
     CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS, ENTITY_REGISTRY, ENTITY_MATCH_ORDER, PLUGS, BOOST_TARGETS, SPENARD_JOBS, JOB_APPROACHES, JOB_RANK_THRESHOLDS,
+    LISTING_ITEMS, LISTING_CAPACITY, NIGHT_OWL_REGULARS, NIGHT_OWL_BOARD,
     SPENARD_BLOCKS, KIP_BUSINESSES, SOLDIER_RECRUIT_COST, SOLDIER_BASE_CAPACITY, SOLDIER_CAPACITY_PER_BLOCK, SOLDIERS_PER_BLOCK_CAP,
     KIP_LAUNDER_FEE, DRE_COLLECTOR_TIERS, ELI_LIEUTENANT_UNLOCK, KIP_LIEUTENANT_INCOME_THRESHOLD, KIP_LIEUTENANT_STANDING_MIN, RESPECT_STAGE_THRESHOLDS,
     DISTRICT_CONTROL_TIERS, DISTRICT_CONTROL_CAPSTONE_BLOCKS, DISTRICT_CONTROL_LABEL, ELI_OPERATION_POLICIES,
@@ -4656,6 +4987,7 @@
       homeSituation, homeUnlocks, homePriorities, homeSummary, actionResult,
       johnWorkIntelKnown, jobRankForXp, jobPayRange, discoveredJobs, jobAvailability, knownWorkplaceContacts,
       nightOwlStashUsed, nightOwlStashAvailability, relationshipLabel,
+      checkpointDay, weekZeroProgress, listingSlate, nightOwlBoardItems, nightOwlRegularFor, listingInventoryValue,
     },
   };
 });

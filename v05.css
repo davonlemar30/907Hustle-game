@@ -260,8 +260,8 @@
    The wordmark row it replaces cost ~50px above every screen in the game. */
 .top{padding:8px 10px 7px}
 .primary-hud{grid-template-columns:minmax(0,1.35fr) minmax(0,.72fr) auto auto;margin-top:0}
-.primary-hud .menu-btn{margin-left:0;min-width:0;padding:6px 9px;font-size:.66rem}
-.primary-hud .status-toggle{padding:6px 8px;font-size:.66rem}
+.primary-hud .menu-btn{margin-left:0;min-width:44px;padding:6px 9px;font-size:.66rem}
+.primary-hud .status-toggle{min-width:44px;padding:6px 8px;font-size:.66rem}
 @media(max-width:400px){
   .primary-hud .status-toggle span{display:none}
   .primary-hud .status-toggle,.primary-hud .menu-btn{padding:6px 6px;font-size:.58rem;letter-spacing:.02em}

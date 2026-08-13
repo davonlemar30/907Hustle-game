@@ -165,29 +165,66 @@ test("the lender's identity is nested inside the debt detail page, not the persi
 
 // --- v1.1 simplification, Home, menus, and action feedback -------------------
 
-test("Home exists, is the landing screen, and answers the situation questions", () => {
-  assert.match(ui, /function Home\(\{ state, navigate \}\)/);
+test("Home is the residence plus whatever is pressing, and restates nothing", () => {
+  assert.match(ui, /function Home\(\{ state, dispatch, navigate \}\)/);
   assert.match(ui, /useState\(\{ tab: "home", more: "root", sub: null, token: 0 \}\)/);
-  assert.match(ui, /home: <Home state=\{state\} navigate=\{navigate\} \/>/);
-  for (const token of ["home-hero", "home-when", "home-where", "home-summary", "home-identity", "Street Identity", "Needs Attention"]) assert.ok(ui.includes(token), token);
+  assert.match(ui, /home: <Home state=\{state\} dispatch=\{act\} navigate=\{navigate\} \/>/);
+  for (const token of ["home-hero", "home-summary", "home-identity", "Street Identity", "Needs Attention", "Yalonda and John's"]) assert.ok(ui.includes(token), token);
   assert.match(ui, /C\.selectors\.homeSituation\(state\)/);
   // Home never renders the old dense action bar or a second copy of the log.
   assert.doesNotMatch(ui, /<Feed entries=\{state\.log\} \/>[\s\S]{0,40}home/);
+  // The room itself: stash, John, sleep, and the laptop when it is owned.
+  const home = ui.slice(ui.indexOf("function Home({ state, dispatch, navigate })"), ui.indexOf("const MARKET_TABLE_MIN"));
+  assert.match(home, /MenuRow title="Stash"/);
+  assert.match(home, /type: "ASK_JOHN"/);
+  assert.match(home, /type: "SLEEP_HOME"/);
+  assert.match(home, /MenuRow title="907List Laptop"/);
+  assert.match(home, /navigate\("travel", "root", null, "household"\)/);
 });
 
-test("Home reveals systems only once the run has unlocked them", () => {
-  assert.match(ui, /view\.unlocks\.operations && </);
-  assert.match(ui, /view\.unlocks\.laundering && <MenuRow title="Laundering"/);
-  assert.match(ui, /view\.unlocks\.recovery && <MenuRow title="Recovery"/);
-  assert.match(ui, /view\.unlocks\.territory && <StatTile label="Blocks"/);
-  assert.match(ui, /view\.unlocks\.soldiers && <StatTile label="Soldiers"/);
+test("Home prints no value the always-visible header is already showing", () => {
+  const home = ui.slice(ui.indexOf("function Home({ state, dispatch, navigate })"), ui.indexOf("const MARKET_TABLE_MIN"));
+  // Day, time, location and cash are header-only now.
+  assert.doesNotMatch(home, /home-when|home-where/);
+  assert.doesNotMatch(home, /view\.districtName/);
+  assert.doesNotMatch(home, /view\.partLabel/);
+  assert.doesNotMatch(home, /StatTile label="Cash"/);
+  // Heat and Debt tiles appear only when the header chip row is not carrying
+  // them, so the two surfaces can never show the same number at once.
+  assert.match(home, /const shown = headerShows\(state\)/);
+  assert.match(home, /const showHeatTile = !shown\.heat/);
+  assert.match(home, /const showDebtTile = hasDreDebt && !shown\.debt/);
+  // Health is only ever in the collapsed drawer, so it keeps its tile.
+  assert.match(home, /StatTile label="Health"/);
+});
+
+test("systems stay gated, and live in More rather than being restated on Home", () => {
+  // v1.6 moved the system shortcuts off Home. Nothing is stranded: More still
+  // carries every one of them, and still gates them on the same unlocks.
+  const more = ui.slice(ui.indexOf("function More({ state, dispatch, features"), ui.indexOf("function useDomId"));
+  assert.match(more, /MenuRow title="Operations"/);
+  assert.match(more, /MenuRow title="Recovery"/);
+  assert.match(more, /MenuRow title="Finances"/);
+  assert.match(more, /MenuRow title="907List"/);
+  assert.match(more, /features\.operations\.available/);
+  assert.match(more, /features\.recovery\.available/);
+  // Laundering is reached through Finances, which owns the panel.
+  assert.match(ui, /<LaunderingPanel/);
+  const home = ui.slice(ui.indexOf("function Home({ state, dispatch, navigate })"), ui.indexOf("const MARKET_TABLE_MIN"));
+  for (const gone of ['MenuRow title="Operations"', 'MenuRow title="Laundering"', 'MenuRow title="Recovery"', 'MenuRow title="Finances"']) {
+    assert.ok(!home.includes(gone), `Home should no longer restate ${gone}`);
+  }
 });
 
 test("the persistent HUD is progressive: pressure chips appear only under pressure", () => {
   assert.match(ui, /const showHeat = state\.player\.heat >= 3/);
   assert.match(ui, /const showDebt = hasDreDebt && state\.lender\.balance > 0 && state\.lender\.dueDay - state\.run\.day <= 2/);
   assert.match(ui, /const showRespect = state\.rival\.respect > 0/);
-  assert.match(ui, /hasDreDebt && \(showHeat \|\| showDebt \|\| showRespect\) && <div className="hud chip-row">/);
+  // The chip-row condition moved into headerShows so Home can read the same
+  // answer and avoid printing a value the header is already carrying.
+  assert.match(ui, /function headerShows\(state\)/);
+  assert.match(ui, /const chipRow = hasDreDebt && \(heat \|\| debt \|\| respect\)/);
+  assert.match(ui, /\{shown\.chipRow && <div className="hud chip-row">/);
 });
 
 test("primary navigation is a progressive bottom bar with icons and 44px targets", () => {

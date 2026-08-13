@@ -86,6 +86,19 @@ function SlotPips({ slot }) {
   </span>;
 }
 
+// Which values the always-visible header is currently carrying. Home reads the
+// same function so the two surfaces can never print the same number twice.
+// The status drawer is deliberately excluded: it is collapsed by default, so
+// what it holds is not on screen.
+function headerShows(state) {
+  const hasDreDebt = state.lender.status === "active" || state.lender.status === "cleared";
+  const heat = state.player.heat >= 3;
+  const debt = hasDreDebt && state.lender.balance > 0 && state.lender.dueDay - state.run.day <= 2;
+  const respect = state.rival.respect > 0;
+  const chipRow = hasDreDebt && (heat || debt || respect);
+  return { chipRow, heat: chipRow && heat, debt: chipRow && debt, respect: chipRow && respect };
+}
+
 function Header({ state, onMenu }) {
   const [open, setOpen] = useState(false);
   // Cash reads either way; Heat only matters climbing, Health only falling.
@@ -107,6 +120,7 @@ function Header({ state, onMenu }) {
   // actually applying pressure, so a first-Morning arrival gets one calm line
   // instead of inheriting a Day 6 operator's chrome. Every value stays one tap
   // away in the status drawer, and Home always shows the full situation.
+  const shown = headerShows(state);
   const showHeat = state.player.heat >= 3;
   const showDebt = hasDreDebt && state.lender.balance > 0 && state.lender.dueDay - state.run.day <= 2;
   const showRespect = state.rival.respect > 0;
@@ -123,7 +137,7 @@ function Header({ state, onMenu }) {
       <button className="status-toggle" aria-expanded={open} aria-label="Show more status" onClick={() => setOpen(!open)}>Status <span>{open ? "Hide" : "View"}</span></button>
       <button className="menu-btn" onClick={onMenu}>Menu</button>
     </div>
-    {hasDreDebt && (showHeat || showDebt || showRespect) && <div className="hud chip-row">
+    {shown.chipRow && <div className="hud chip-row">
       {showHeat && <Chip label="Heat" value={`${state.player.heat}/15 · ${heatLabel}`} tone={state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : ""} flash={heatFlash} />}
       {showDebt && <Chip label="Debt" value={dreValue} tone={dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : ""} />}
       {showRespect && <Chip label="Respect" value={state.rival.respect} tone="" />}
@@ -184,42 +198,44 @@ const PRIORITY_TARGETS = {
 // what is pressing, and where might I go — nothing else. Everything below the
 // situation block is gated on progression, so Day 1 renders four tiles and a
 // sentence while Day 6 renders the organization the player actually built.
-function Home({ state, navigate }) {
+// Home is where the player actually lives, plus whatever is pressing. The
+// header already carries day, time, location, cash, and the pressure chips, so
+// none of that is restated here. What is left is the room, the people in it,
+// and the short list of things that will hurt if ignored.
+function Home({ state, dispatch, navigate }) {
   const view = C.selectors.homeSituation(state);
-  const org = view.organization;
-  const showOrgStats = view.unlocks.territory || view.unlocks.soldiers || view.unlocks.district || view.unlocks.rival;
+  const shown = headerShows(state);
+  const hasDreDebt = state.lender.status === "active" || state.lender.status === "cleared";
+  const atHome = state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID;
+  const household = state.people.household;
+  const storedProducts = C.PRODUCTS.reduce((total, product) => total + state.home.storedInventory[product.id].qty, 0);
+  const askedToday = household.lastQuestionDay === state.run.day;
+  const openRoom = () => navigate("travel", "root", null, "household");
+  // Health lives in the collapsed drawer, so it earns a tile. Heat and Debt
+  // only earn one when the header chips are not already showing them.
+  const showHeatTile = !shown.heat;
+  const showDebtTile = hasDreDebt && !shown.debt;
   return <div className="scroll home">
-    <div className="home-hero">
-      <div className="home-when">Day {view.day}{state.run.checkpointDay ? ` of ${state.run.checkpointDay}` : ""} · {view.partLabel}</div>
-      <h1 className="home-where">{view.districtName}</h1>
-      <p className="home-summary">{view.summary}</p>
-      <div className="home-identity"><span className="k">Street Identity</span><b>{view.identity.label}</b></div>
-    </div>
-    <div className="stat-row">
-      <StatTile label="Cash" value={money(view.cash)} tone="good" />
-      <StatTile label="Health" value={view.health} note="of 100" tone={view.health < 40 ? "bad" : view.health < 70 ? "warn" : ""} />
-      <StatTile label="Heat" value={view.heat.label} note={`${view.heat.value} of 15`} tone={view.heat.tone === "good" ? "" : view.heat.tone} text />
-      {(state.lender.status === "active" || state.lender.status === "cleared") && <StatTile label="Debt" value={view.debt.label} note={view.debt.note} tone={view.debt.tone} />}
-    </div>
     {view.priorities.length > 0 && <>
       <div className="section-label">Needs Attention</div>
       {view.priorities.map((item) => <button key={item.id} className={`priority-row ${item.tone}`} onClick={() => navigate(...(PRIORITY_TARGETS[item.id] || ["home"]))}><span className="menu-row-main"><b>{item.label}</b><small>{item.detail}</small></span><span className="menu-row-arrow" aria-hidden="true">›</span></button>)}
     </>}
-    {view.unlocks.operations && <>
-      <div className="section-label">Your Operation</div>
-      {showOrgStats && <div className="stat-row">
-        {view.unlocks.territory && <StatTile label="Blocks" value={`${org.blocks}/${org.blockTotal}`} />}
-        {view.unlocks.soldiers && <StatTile label="Soldiers" value={`${org.soldiers}/${org.soldierCapacity}`} />}
-        {view.unlocks.district && <StatTile label="District" value={org.district} text />}
-        {view.unlocks.rival && <StatTile label="Respect" value={org.respect} />}
-      </div>}
-      <MenuRow title="Operations" status="Open" description={view.unlocks.territory ? "Territory, soldiers, safehouse, and gear." : "Safehouse, gear, and a Rob opportunity."} onClick={() => navigate("more", "operations")} />
-    </>}
-    <div className="section-label">Manage</div>
-    <MenuRow title="Finances" status={state.lender.status === "active" || state.lender.status === "cleared" ? view.debt.note : `${money(state.player.cleanCash)} clean`} description={state.lender.status === "active" || state.lender.status === "cleared" ? "Cash, debt, and financial risk." : "Cash and financial risk."} onClick={() => navigate("more", "finances")} />
-    {state.inventory.laptop && state.nineZeroSevenList.known && state.world.currentNeighborhoodId === "north_star_lot" && <MenuRow title="907List Laptop" status="5 today" description="Open the daily Home listings." onClick={() => navigate("more", "907list", "home")} />}
-    {view.unlocks.laundering && <MenuRow title="Laundering" status="Available" description="Turn dirty cash into clean cash." onClick={() => navigate("more", "finances", "laundering")} />}
-    {view.unlocks.recovery && <MenuRow title="Recovery" status={`Health ${view.health}`} description="Treat injuries or lay low to cool Heat." onClick={() => navigate("more", "recovery")} />}
+    <div className="home-hero">
+      <p className="home-summary">{view.summary}</p>
+      <div className="home-identity"><span className="k">Street Identity</span><b>{view.identity.label}</b></div>
+    </div>
+    <div className="stat-row">
+      <StatTile label="Health" value={view.health} note="of 100" tone={view.health < 40 ? "bad" : view.health < 70 ? "warn" : ""} />
+      {showHeatTile && <StatTile label="Heat" value={view.heat.label} note={`${view.heat.value} of 15`} tone={view.heat.tone === "good" ? "" : view.heat.tone} text />}
+      {showDebtTile && <StatTile label="Debt" value={view.debt.label} note={view.debt.note} tone={view.debt.tone} />}
+    </div>
+    <div className="section-label">Yalonda and John's</div>
+    {atHome ? <>
+      <MenuRow title="Stash" status={`${money(state.home.storedCash)} · ${storedProducts}/2 held`} description={household.evicted ? "The room is closed to you." : "Cash is safe here. Contraband is not."} onClick={openRoom} />
+      <button className="btn full secondary" disabled={household.evicted || askedToday} onClick={() => dispatch({ type: "ASK_JOHN" })}>Ask John one local question<span className="action-copy">{askedToday ? "Already asked today" : "Free · once daily"}</span></button>
+      <button className="btn full primary" disabled={household.evicted} onClick={() => dispatch({ type: "SLEEP_HOME" })}>Sleep at home<span className="action-copy">$0 · uses one part of day</span></button>
+      {state.inventory.laptop && state.nineZeroSevenList.known && <MenuRow title="907List Laptop" status="5 today" description="Open the daily Home listings." onClick={() => navigate("more", "907list", "home")} />}
+    </> : <MenuRow title="The spare room" status="Back in Spenard" description="Storage, John, and sleep wait until you return." onClick={openRoom} />}
   </div>;
 }
 
@@ -1207,8 +1223,8 @@ function GameShell({ state, dispatch, onTitle }) {
   // inside its callback, and React 18 batches by default, so the update is
   // flushed synchronously. Browsers without the API take the plain path and
   // swap instantly, exactly as before.
-  function navigate(nextTab, more = "root", sub = null) {
-    const apply = () => { setNav((prev) => ({ tab: nextTab, more, sub, token: prev.token + 1 })); setTravelPage("root"); };
+  function navigate(nextTab, more = "root", sub = null, travel = "root") {
+    const apply = () => { setNav((prev) => ({ tab: nextTab, more, sub, token: prev.token + 1 })); setTravelPage(travel); };
     if (typeof document === "undefined" || typeof document.startViewTransition !== "function") { apply(); return; }
     document.startViewTransition(() => ReactDOM.flushSync(apply));
   }
@@ -1234,7 +1250,7 @@ function GameShell({ state, dispatch, onTitle }) {
   if (state.run.status === "creating_character") return <CharacterCreation dispatch={dispatch} />;
   const navigateMore = () => navigate("more", "finances", "debt");
   const screens = {
-    home: <Home state={state} navigate={navigate} />,
+    home: <Home state={state} dispatch={act} navigate={navigate} />,
     market: state.market.visible ? <Market state={state} onTrade={setTrade} /> : null,
     boost: state.boost.visible ? <Boost state={state} dispatch={act} /> : null,
     rob: state.rob.visible ? <Rob state={state} dispatch={act} /> : null,

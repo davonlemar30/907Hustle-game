@@ -6,12 +6,14 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (EncounterSystem) {
   "use strict";
 
-  const VERSION = 3;
+  const VERSION = 4;
   const RUN_DAYS = 7;
   const PRESSURE_DAYS = 7;
   const MAX_ENERGY = 4;
   const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
-  const SAVE_KEY = "907ogr_v3";
+  const SAVE_KEY = "907ogr_v4";
+  const PHONE_BILL = 75;
+  const WEEKLY_RENT = 150;
   const WORKING_CAPITAL_RESERVE = 150;
   const STREET_NAME_MAX = 16;
   const GARAGE_DEPOSIT = 650;
@@ -306,6 +308,18 @@
       details: ["Marcus says the first truck after sunrise is the one that decides whether the dock falls behind.", "The yard office keeps a short list of workers who show up before the gate opens."],
       shiftDialogue: ["Pallets scrape concrete before the sun clears the yard.", "The first truck lands heavy. You keep the freight line moving.", "Cold metal bites through the gloves. The last load clears on time."],
     },
+    {
+      id: "juan_warehouse", name: "Spenard Warehouse Dock", areaId: HOME_DISTRICT_ID, pay: [70, 95], slots: [0, 1], scheduled: true, risk: "None",
+      coworkers: [{ id: "juan", name: "Juan Hernandez", introduction: "Juan Hernandez meets you at the loading door and shows you which pallets move first." }],
+      discovery: "Juan says his warehouse dock needs another loader.",
+      details: ["Juan says the receiving truck is easiest before lunch.", "The dock supervisor keeps callbacks short and notices early arrivals."],
+      shiftDialogue: ["Pallet wrap snaps while the loading door rattles open.", "Juan calls the order and you keep the dock moving.", "The last pallet lands square before the truck pulls away."],
+    },
+    {
+      id: "day_labor", name: "Day Labor Pickup", areaId: HOME_DISTRICT_ID, pay: [40, 60], slots: [0, 1], scheduled: true, risk: "None", dayLabor: true,
+      coworkers: [], discovery: "The day-labor pickup takes walk-ons every morning.", details: [],
+      shiftDialogue: ["You shovel, haul, and take the cash when the truck returns.", "A short crew clears the job before the weather turns.", "The foreman counts bills into your palm at the curb."],
+    },
   ];
   const SPENARD_JOB_BY_ID = Object.fromEntries(SPENARD_JOBS.map((job) => [job.id, job]));
   const STARTER_JOB_IDS = SPENARD_JOBS.filter((job) => job.starter).map((job) => job.id);
@@ -326,6 +340,10 @@
     { id: "cal", name: "Cal Brooks", role: "The loud regular", hint: "Cal talks like every room is already listening." },
     { id: "nia", name: "Nia Park", role: "The quiet courier", hint: "Nia keeps route notes folded inside a paperback." },
   ];
+  const HOUSEHOLD_NPCS = [
+    { id: "yalonda", name: "Yalonda Hernandez", role: "Landlord", location: "home", startsKnown: true, hint: "She rents the spare room weekly and keeps the house steady." },
+    { id: "juan", name: "Juan Hernandez", role: "Yalonda's son", location: "home", startsKnown: true, hint: "He works a warehouse loading dock and knows who is hiring." },
+  ];
   const NIGHT_OWL_BOARD = [
     { id: "jobs", title: "Help wanted", body: "Two counters need reliable hands this week." },
     { id: "list", title: "907List", body: "Buy it cheap. Clean it up. Find the next buyer." },
@@ -333,6 +351,7 @@
     { id: "garage", title: "North Star Garage", body: "$650 deposit. Heat works. Door sticks in winter." },
     { id: "opportunity", title: "Cash work", body: "A number is torn off every tab except one." },
     { id: "laptop", title: "Used laptop · $250", body: "Battery is tired. Browser works. Charger included." },
+    { id: "gym", title: "Community gym", body: "First membership is $30. Training costs extra." },
   ];
   const DOWNTOWN_CONTENT_STUBS = ["circle_k", "fourth_avenue_bars", "rei"];
   const DOWNTOWN_AMBIENT = [
@@ -352,12 +371,18 @@
     },
     night_owl: {
       id: "night_owl", areaId: HOME_DISTRICT_ID, slots: [2, 3], cashCost: 0, timeCost: 0, healthCost: 0,
-      action: null, around: true, order: 30, closedReason: "Opens at dusk.",
+      action: null, around: false, order: 30, closedReason: "Opens at dusk.",
     },
     spenard_gym: {
       id: "spenard_gym", areaId: HOME_DISTRICT_ID, slots: ALL_DAY_SLOTS,
       cashCost: (state) => gymSessionDetails(state).cost, timeCost: 1, healthCost: 0,
-      action: { type: "TRAIN_ATTRIBUTE" }, around: true, order: 40,
+      action: { type: "TRAIN_ATTRIBUTE" }, around: false, order: 40,
+      visibleWhen: (state) => !!state.discovered?.spenardGym,
+    },
+    spenard_phone_store: {
+      id: "spenard_phone_store", areaId: HOME_DISTRICT_ID, slots: ALL_DAY_SLOTS,
+      cashCost: PHONE_BILL, timeCost: 1, healthCost: 0,
+      action: { type: "PAY_PHONE_BILL", surface: "store" }, around: false, order: 45,
     },
     spenard_gambling: {
       id: "spenard_gambling", areaId: HOME_DISTRICT_ID, slots: [2, 3],
@@ -407,7 +432,7 @@
   };
 
   const DISTRICT_ACTION_BY_TYPE = {
-    WANDER_SPENARD: "explore_spenard", EXPLORE_SPENARD: "explore_spenard", TRAIN_ATTRIBUTE: "spenard_gym",
+    WANDER_SPENARD: "explore_spenard", EXPLORE_SPENARD: "explore_spenard", TRAIN_ATTRIBUTE: "spenard_gym", PAY_PHONE_BILL: "spenard_phone_store",
     GAMBLE: "spenard_gambling", SHOPLIFT: "northern_value_shoplift", VIEW_NIGHT_OWL_BOARD: "night_owl_board",
     BUY_COFFEE: "night_owl_coffee", TALK_NIGHT_OWL_REGULAR: "night_owl_regular", VISIT_NIGHT_OWL: "night_owl_visit",
     NIGHT_OWL_STASH_CASH: "night_owl_stash", NIGHT_OWL_STASH_PRODUCT: "night_owl_stash", WALK_HOME: "walk_spenard",
@@ -416,7 +441,23 @@
   const SOCIAL_CONTACTS = Object.fromEntries([
     ...SPENARD_JOBS.flatMap((job) => job.coworkers.map((person) => ({ ...person, jobId: job.id, location: job.id === "night_owl" ? "night_owl" : `job:${job.id}` }))),
     ...NIGHT_OWL_REGULARS.map((person) => ({ ...person, location: "night_owl", regular: true })),
+    ...HOUSEHOLD_NPCS,
   ].map((person) => [person.id, person]));
+
+  const STORY_CONTACTS = [
+    { id: "yalonda", name: "Yalonda Hernandez", role: "Landlord", visibleWhen: () => true,
+      status: (s) => s.people.household.evicted ? "Room closed" : `${s.people.household.warnings}/3 warnings`,
+      summary: (s) => `She rents you the spare room. Trust ${s.npc.yalonda.trust}; rent is due Day ${s.obligations.rentDueDay}.`, actions: ["TALK_HOUSEHOLD"] },
+    { id: "juan", name: "Juan Hernandez", role: "Yalonda's son", visibleWhen: () => true,
+      status: (s) => s.people.household.lastQuestionDay === s.run.day ? "Talked today" : "Available",
+      summary: (s) => `Warehouse loader and local connector. Trust ${s.npc.juan.trust}.`, actions: ["TALK_HOUSEHOLD"] },
+    { id: "mara", name: "Mara Velez", role: "Night Owl clerk", visibleWhen: (s) => s.people.mara.met,
+      status: (s) => s.people.mara.status, summary: (s) => `Mara remembers the ${s.people.mara.introChoice || "guarded"} first conversation.`, actions: ["VISIT_MARA"] },
+    { id: "dre", name: "Dre Holloway", role: "Lender", visibleWhen: (s) => ["active", "cleared"].includes(s.lender.status),
+      status: (s) => s.lender.relationship, summary: (s) => `$${s.lender.balance} remains on the note due Day ${s.lender.dueDay}.`, actions: ["OPEN_FINANCES"] },
+    { id: "rook", name: "Rook Mercer", role: "Rival", visibleWhen: (s) => s.rival.relationship !== "unaware",
+      status: (s) => s.rival.relationship, summary: (s) => `Pressure ${s.rival.pressure}; respect ${s.rival.respect}.`, actions: [] },
+  ];
 
   function contactDialogue(person, type) {
     const first = person.name.split(" ")[0];
@@ -567,6 +608,42 @@
   function logEntry(state, text, tone) {
     state.log.unshift({ text, tone: tone || "", stamp: `Day ${state.run.day} · ${SLOTS[state.run.slot]}` });
     state.log = state.log.slice(0, 80);
+  }
+  function pushConsequence(state, text, tone) {
+    state.run.consequenceQueue = state.run.consequenceQueue || [];
+    state.run.consequenceQueue.push({ id: `${state.run.day}:${state.run.slot}:${state.run.consequenceQueue.length}:${stringHash(text)}`, text, tone: tone || "" });
+    state.run.consequenceQueue = state.run.consequenceQueue.slice(-6);
+  }
+  function pushPhoneMessage(state, from, text) {
+    const item = { id: `${state.run.day}:${state.run.slot}:${stringHash(`${from}:${text}`)}`, from, text, day: state.run.day, slot: state.run.slot, read: false };
+    if (state.phone.active) state.phone.inbox.unshift(item);
+    else state.phone.heldInbox.push(item);
+    return item;
+  }
+  function resolveJobApplications(state) {
+    const now = slotNumber(state.run.day, state.run.slot);
+    const waiting = [];
+    for (const application of state.jobs.applications) {
+      const applied = slotNumber(application.appliedAtDay, application.appliedAtSlot);
+      if (now - applied < 2 || !state.phone.active) { waiting.push(application); continue; }
+      if (!state.jobs.hired.includes(application.jobId)) state.jobs.hired.push(application.jobId);
+      const job = SPENARD_JOB_BY_ID[application.jobId];
+      pushPhoneMessage(state, job.name, `You're hired. Come in during the posted shift.`);
+      logEntry(state, `${job.name} calls back. The first shift is yours to schedule.`, "good");
+    }
+    state.jobs.applications = waiting;
+  }
+  function restorePhoneIfReady(state, previousAbsolute) {
+    if (state.phone.reactivateAtSlot == null || slotNumber(state.run.day, state.run.slot) <= Math.max(previousAbsolute, state.phone.reactivateAtSlot)) return false;
+    state.phone.active = true;
+    state.phone.reactivateAtSlot = null;
+    if (state.phone.heldInbox.length) {
+      state.phone.inbox = [...state.phone.heldInbox.reverse(), ...state.phone.inbox];
+      state.phone.heldInbox = [];
+    }
+    logEntry(state, "The signal bars return. Held messages fill the screen.", "good");
+    resolveJobApplications(state);
+    return true;
   }
 
   function behaviorSummary(category, type) {
@@ -917,6 +994,19 @@
     return byArea[state.run?.slot] || byArea[0] || [];
   }
 
+  const PHONE_INTEL = Object.fromEntries(NEIGHBORHOODS.map((area) => [area.id, SLOTS.map((part) => [
+    `${area.name}: ${part.toLowerCase()} foot traffic is starting to settle.`,
+    `${area.name}: a bus driver says the next run is on time.`,
+    `${area.name}: somebody is asking who has reliable hands today.`,
+    `${area.name}: a warm counter is drawing a small crowd.`,
+    `${area.name}: road crews left one lane tighter than usual.`,
+    `${area.name}: the useful names are moving by text, not flyers.`,
+  ])]));
+  function phoneIntel(state) {
+    const byArea = PHONE_INTEL[state.world?.currentNeighborhoodId] || PHONE_INTEL.north_star_lot;
+    return byArea[state.run?.slot] || byArea[0] || [];
+  }
+
   const STREET_READ_FLAVOR = {
     mara: ["She mentioned something about a sedan last time.", "Her shift schedule changed. Might mean something.", "She's been parking around the back lately."],
     eli: ["He's been eyeing the freight routes lately.", "Said something about owing money on that car.", "He counts the exits before he sits down."],
@@ -1121,14 +1211,21 @@
 
   function createContactsState() {
     return Object.fromEntries(Object.keys(SOCIAL_CONTACTS).map((id) => [id, {
-      known: false, relationshipLevel: 0, lastInteraction: null, lastVisitDay: null,
+      known: !!SOCIAL_CONTACTS[id].startsKnown, relationshipLevel: 0, lastInteraction: null, lastVisitDay: null,
     }]));
+  }
+
+  function createNpcState() {
+    return {
+      yalonda: { trust: 2, romanceStage: 0, rentPaidWeeks: 0, lastRentDay: null, rentMissed: 0, lastEventDay: null },
+      juan: { trust: 0, infoShared: [], lastEventDay: null },
+    };
   }
 
   function createJobsState(inventory, seed) {
     return {
       discoveryOrder: seededShuffle(STARTER_JOB_IDS, seed, 0x15a907),
-      discovered: [], discoveryChance: 0.30, lastScheduledShiftDay: null, lastDeliveryDay: null, lastWorked: null,
+      discovered: ["day_labor"], hired: ["day_labor"], applications: [], discoveryChance: 0.30, lastScheduledShiftDay: null, lastDeliveryDay: null, lastWorked: null,
       records: Object.fromEntries(SPENARD_JOBS.map((job) => [job.id, {
         xp: 0, rank: 0, shifts: 0, lastWorkedDay: null, relationship: 0, contactMet: false,
         coworkersMet: [], currentCoworkerId: null, learnedDetails: [],
@@ -1152,7 +1249,7 @@
       run: {
         status: "creating_character", day: 1, slot: 0, seed, rngState: random.state,
         premise: "fresh_arrival", openingPending: false, phase: "week_zero", pressureStartedDay: null, checkpointDay: null,
-        ending: null, pendingEvent: null, pendingEncounter: null, pendingOperationResult: null, pendingUnlocks: [], daySummary: null,
+        ending: null, pendingEvent: null, pendingEncounter: null, pendingOperationResult: null, pendingUnlocks: [], consequenceQueue: [], daySummary: null,
         dayEndPending: false, overtimeArmed: false, overtimeUsedDay: null, dailyActions: [],
         currentVisit: { trades: 0, grossBuy: 0, grossSell: 0, startedAt: 0 },
         recentEvents: [], encounterCount: 0, finalPlan: null, finalPlanPrepared: false,
@@ -1170,6 +1267,10 @@
         gear: { owned: [], equipped: { weapon: null, armor: null, utility: null, tool: null }, consumables: { medical_kit: 0 } },
       },
       inventory: { laptop: false },
+      phone: { active: true, billDueDay: 7, daysPastDue: 0, inbox: [], heldInbox: [], reactivateAtSlot: null },
+      knowledge: { knows907List: false },
+      discovered: { spenardGym: false },
+      memberships: { gym: false },
       world: {
         currentNeighborhoodId: "north_star_lot", markets,
         influence: { north_star_lot: 0, downtown: 0, airport_industrial: 0 },
@@ -1209,11 +1310,13 @@
       },
       rival: { name: "Rook Mercer", pressure: 0, respect: 0, relationship: "unaware", recentInterference: null },
       people: {
-        household: { yalondaTrust: 2, johnTrust: 1, warnings: 0, contrabandFound: 0, dangerBroughtHome: 0, evicted: false, lastQuestionDay: null },
+        household: { warnings: 0, contrabandFound: 0, dangerBroughtHome: 0, evicted: false, lastQuestionDay: null },
         mara: { met: false, available: true, trust: 0, introChoice: null, flirtHistory: false, truthTold: false, usedWithoutConsent: false, status: "distant", outcomes: [], chainStage: 0, jobAtRisk: false },
         crew: createCrewState(),
         dealers: createDealerState(),
       },
+      npc: createNpcState(),
+      obligations: { rentDueDay: 7 },
       plugs: createPlugState(),
       market: { visible: false },
       jobs: createJobsState(inventory, seed),
@@ -1272,7 +1375,34 @@
     return { attempts, successes, failures, totalPayout, lastAttemptedDay, attempted: attempts > 0, success: successes > 0, payout: totalPayout };
   }
 
+  function migrateSave(value) {
+    if (!value || typeof value !== "object") return null;
+    if (value.version === VERSION) return value;
+    if (value.version !== 3 || !value.run || !value.world || !value.player) return null;
+    const migrated = JSON.parse(JSON.stringify(value));
+    const oldHousehold = migrated.people?.household || {};
+    migrated.npc = createNpcState();
+    migrated.npc.yalonda.trust = Number(oldHousehold.yalondaTrust ?? 2);
+    if (migrated.people?.household) {
+      delete migrated.people.household.yalondaTrust;
+      delete migrated.people.household.johnTrust;
+    }
+    migrated.phone = { active: true, billDueDay: (Number(migrated.run.day) || 1) + 7, daysPastDue: 0, inbox: [], heldInbox: [], reactivateAtSlot: null };
+    migrated.knowledge = { knows907List: !!migrated.nineZeroSevenList?.known };
+    migrated.discovered = { spenardGym: false };
+    migrated.memberships = { gym: false };
+    migrated.obligations = { rentDueDay: (Number(migrated.run.day) || 1) + 7 };
+    migrated.jobs = migrated.jobs || {};
+    migrated.jobs.applications = [];
+    migrated.jobs.hired = [...new Set([...(migrated.jobs.discovered || []), "day_labor"])];
+    migrated.jobs.discovered = [...new Set([...(migrated.jobs.discovered || []), "day_labor"])];
+    migrated.run.consequenceQueue = [];
+    migrated.version = VERSION;
+    return migrated;
+  }
+
   function hydrateRun(value) {
+    value = migrateSave(value);
     if (!value || typeof value !== "object" || value.version !== VERSION || !value.run || !value.world || !value.player) return null;
     const defaults = createRun({ seed: value.run.seed });
     const state = mergeDefaults(defaults, value);
@@ -1285,6 +1415,7 @@
     state.run.phase = state.run.phase === "week_zero" ? "week_zero" : "pressure";
     state.run.checkpointDay = state.run.phase === "pressure" ? Math.max(state.run.day, Number(state.run.checkpointDay) || RUN_DAYS) : null;
     state.run.dailyActions = Array.isArray(state.run.dailyActions) ? state.run.dailyActions.slice(-12) : [];
+    state.run.consequenceQueue = Array.isArray(state.run.consequenceQueue) ? state.run.consequenceQueue.slice(-6) : [];
     state.run.pendingUnlocks = Array.isArray(state.run.pendingUnlocks) ? [...new Set(state.run.pendingUnlocks.filter((id) => ["market", "boost", "rob", "gambling"].includes(id)))] : [];
     state.run.dayEndPending = !!state.run.dayEndPending;
     state.run.overtimeArmed = !!state.run.overtimeArmed;
@@ -1317,6 +1448,10 @@
     // no field here at all. Both cases land on a valid, empty-but-usable object.
     state.streetRead = deserializeStreetRead(value.streetRead);
     state.jobs.discovered = Array.isArray(state.jobs.discovered) ? [...new Set(state.jobs.discovered.filter((id) => SPENARD_JOB_BY_ID[id]))] : [];
+    if (!state.jobs.discovered.includes("day_labor")) state.jobs.discovered.unshift("day_labor");
+    state.jobs.hired = Array.isArray(state.jobs.hired) ? [...new Set(state.jobs.hired.filter((id) => SPENARD_JOB_BY_ID[id] && state.jobs.discovered.includes(id)))] : [];
+    if (!state.jobs.hired.includes("day_labor")) state.jobs.hired.unshift("day_labor");
+    state.jobs.applications = Array.isArray(state.jobs.applications) ? state.jobs.applications.filter((item) => item && SPENARD_JOB_BY_ID[item.jobId] && state.jobs.discovered.includes(item.jobId) && !state.jobs.hired.includes(item.jobId)) : [];
     const expectedStarterOrder = seededShuffle(STARTER_JOB_IDS, state.run.seed, 0x15a907);
     state.jobs.discoveryOrder = Array.isArray(state.jobs.discoveryOrder) && state.jobs.discoveryOrder.length === STARTER_JOB_IDS.length && STARTER_JOB_IDS.every((id) => state.jobs.discoveryOrder.includes(id)) ? state.jobs.discoveryOrder : expectedStarterOrder;
     state.jobs.discoveryChance = clamp(Number(state.jobs.discoveryChance) || 0.30, 0.30, 0.70);
@@ -1371,7 +1506,8 @@
     const legacyListings = value.nineZeroSevenList || value.listings || {};
     state.nineZeroSevenList = mergeDefaults(defaults.nineZeroSevenList, legacyListings);
     state.inventory.laptop = !!state.inventory.laptop;
-    state.nineZeroSevenList.known = !!state.nineZeroSevenList.known || state.run.day >= 3;
+    state.knowledge.knows907List = !!state.knowledge.knows907List || !!state.nineZeroSevenList.known;
+    state.nineZeroSevenList.known = state.knowledge.knows907List;
     state.nineZeroSevenList.tier = state.inventory.laptop ? "upgraded" : "basic";
     state.nineZeroSevenList.inventory = (Array.isArray(state.nineZeroSevenList.inventory) ? state.nineZeroSevenList.inventory : []).filter((entry) => LISTING_ITEM_BY_ID[entry.itemId]).slice(0, LISTING_CAPACITY);
     state.nineZeroSevenList.purchases = Math.max(0, Math.floor(Number(state.nineZeroSevenList.purchases) || 0));
@@ -1440,7 +1576,7 @@
     if (serialized == null || serialized === "") return { exists: false, valid: false, state: null, error: null, preview: null };
     try {
       const state = hydrateRun(JSON.parse(serialized));
-      if (!state) return { exists: true, valid: false, state: null, error: "This save is not a compatible 907Hustle v3 run.", preview: null };
+      if (!state) return { exists: true, valid: false, state: null, error: "This save is not a compatible 907Hustle run.", preview: null };
       const area = AREA_BY_ID[state.world.currentNeighborhoodId] || AREA_BY_ID.north_star_lot;
       return {
         exists: true, valid: true, state, error: null,
@@ -1591,7 +1727,7 @@
     "TRAVEL", "END_MARKET", "SLEEP_HOME", "LAY_LOW", "VISIT_BASE", "HEAL", "HEAL_AT_BASE", "PAY_DEBT",
     "UPGRADE_BASE", "BUY_GEAR", "RECRUIT_CREW", "ASSIGN_CREW", "PROMOTE_LIEUTENANT", "RECRUIT_SOLDIER",
     "CLAIM_BLOCK", "LAUNDER_CASH", "VISIT_MARA", "BUY_FROM_DEALER", "ASK_DEALER", "INVEST_NEIGHBORHOOD",
-    "PREPARE_FINAL_PLAN", "BUY_907LIST", "SELL_907LIST", "BUY_LAPTOP", "CONTACT_VISIT",
+    "PREPARE_FINAL_PLAN", "BUY_907LIST", "SELL_907LIST", "BUY_LAPTOP", "CONTACT_VISIT", "APPLY_JOB", "PAY_PHONE_BILL",
   ]);
   function actionEnergyCost(state, actionType) {
     if (!TIME_ACTIONS.has(actionType)) return 0;
@@ -1643,7 +1779,9 @@
     const gym = state.world.locations.gym;
     const sessionsToday = gym.sessionDay === state.run.day ? gym.sessionsToday : 0;
     const index = Math.min(3, sessionsToday);
-    return { cost: [25, 45, 75, 120][index], progress: [3, 2, 1, 1][index], sessionsToday };
+    const sessionCost = [25, 45, 75, 120][index];
+    const membershipFee = state.memberships?.gym ? 0 : 30;
+    return { cost: sessionCost + membershipFee, sessionCost, membershipFee, progress: [3, 2, 1, 1][index], sessionsToday };
   }
   function resolveDistrictCost(definition, field, state, params) {
     const value = typeof definition[field] === "function" ? definition[field](state, params || {}) : definition[field];
@@ -1723,6 +1861,7 @@
       .sort((a, b) => a.order - b.order);
   }
   function districtActionIdFor(action) {
+    if (action.type === "PAY_PHONE_BILL" && action.surface === "online") return null;
     if (action.type === "WORK_JOB") return `job:${action.jobId}`;
     if (action.type === "WORK_SHIFT") return "job:ship_creek";
     if (action.type === "TRAVEL" && action.neighborhoodId === HOME_DISTRICT_ID) return "return_spenard";
@@ -1737,6 +1876,8 @@
     return districtActionAvailability(state, actionId, params).available;
   }
   function listingSlate(state, surface) {
+    const access = nineZeroSevenListAccess(state, surface);
+    if (!access.available) return [];
     const atHome = surface === "home" && state.world.currentNeighborhoodId === "north_star_lot" && state.inventory.laptop;
     const count = atHome ? 5 : 3;
     const refresh = atHome ? state.run.day : Math.floor((state.run.day - 1) / 2);
@@ -1782,7 +1923,7 @@
       help: { available: true, hint: "Available now." },
       travel: { available: true, hint: "Places and local travel are available now." },
       operations: { available: state.base.controlled, hint: `Lease North Star Garage for $${GARAGE_DEPOSIT} to unlock Operations.` },
-      people: { available: true, hint: "Yalonda and John are available now." },
+      people: { available: true, hint: "Yalonda and Juan are available now." },
       recovery: { available: state.player.health < 100 || state.player.heat > 1 || state.flags.recoveryIntroduced || returning, hint: "Take an injury or pick up Heat to unlock Recovery." },
     };
   }
@@ -1814,8 +1955,8 @@
     };
   }
 
-  function johnWorkIntelKnown(state) {
-    return !!state.john?.questionsAsked?.some((key) => typeof key === "string" && key.startsWith("work:"));
+  function juanWorkIntelKnown(state) {
+    return !!state.npc?.juan?.infoShared?.some((key) => typeof key === "string" && key.startsWith("work:"));
   }
   function jobRankForXp(xp) {
     let rank = 0;
@@ -1833,6 +1974,25 @@
     const discovered = new Set(state.jobs?.discovered || []);
     return SPENARD_JOBS.filter((job) => discovered.has(job.id));
   }
+  function personalContacts(state) {
+    return STORY_CONTACTS.filter((person) => person.visibleWhen(state)).map((person) => ({
+      id: person.id, name: person.name, role: person.role, status: person.status(state), summary: person.summary(state), actions: person.actions,
+    }));
+  }
+  function householdPresence(state) {
+    const roll = stringHash(`household:${state.run.day}:${state.run.slot}`) % 10;
+    if (state.run.slot <= 1) return roll < 5 ? "yalonda" : roll < 7 ? "juan" : null;
+    return roll < 5 ? "juan" : roll < 7 ? "yalonda" : null;
+  }
+  function nineZeroSevenListAccess(state, surface = "phone") {
+    if (!state.knowledge?.knows907List) return { visible: false, available: false, reason: "The link is still unknown." };
+    if (surface === "home") return state.inventory.laptop
+      ? { visible: true, available: true, reason: "Five listings refresh daily." }
+      : { visible: false, available: false, reason: "A laptop is required at home." };
+    return state.phone?.active
+      ? { visible: true, available: true, reason: "Three listings refresh every two days." }
+      : { visible: true, available: false, reason: "Phone service is off." };
+  }
   // The shift the player worked most recently, offered as a shortcut so the
   // repeated daily action does not cost four routing taps. Returns null until
   // they have worked once, so a first run still discovers work the long way.
@@ -1848,6 +2008,10 @@
     const job = SPENARD_JOB_BY_ID[jobId];
     const record = state.jobs?.records?.[jobId];
     if (!job || !record || !state.jobs.discovered.includes(jobId)) return { available: false, reason: "You have not found this work yet." };
+    if (!job.dayLabor && !state.jobs.hired.includes(jobId)) {
+      if (state.jobs.applications.some((item) => item.jobId === jobId)) return { available: false, reason: "Waiting on the callback." };
+      return { available: false, reason: "Apply before taking a shift." };
+    }
     if (state.run.status !== "playing") return { available: false, reason: "The run is not active." };
     if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
     const allowedSlots = jobId === "night_owl" && record.rank >= 1 ? [2, 3] : job.slots;
@@ -1889,6 +2053,7 @@
     const person = SOCIAL_CONTACTS[npcId];
     const record = state.contacts?.[npcId];
     if (!person || !record?.known) return { available: false, reason: "Meet this person first." };
+    if ((type === "call" || type === "text") && !state.phone?.active) return { available: false, reason: "Phone service is off. You can still visit." };
     if (type === "text" && record.relationshipLevel < 1) return { available: false, reason: "Reach Level 1 to text." };
     if (type === "visit" && record.relationshipLevel < 2) return { available: false, reason: "Reach Level 2 to visit." };
     if (type !== "visit") return { available: true, reason: "Free. No time passes." };
@@ -1905,10 +2070,7 @@
     const tipFlag = `contactTip_${npcId}_${type}`;
     let effect = {};
     let preview = "Finish the conversation.";
-    if (type === "text" && !state.nineZeroSevenList.known && !state.flags[tipFlag]) {
-      effect = { discover907List: true, setFlags: { [tipFlag]: true } };
-      preview = "Save the 907List link.";
-    } else if (type === "visit" && !state.world.locations.gamblingKnown && !state.flags[tipFlag]) {
+    if (type === "visit" && !state.world.locations.gamblingKnown && !state.flags[tipFlag]) {
       effect = { discoverGambling: true, setFlags: { [tipFlag]: true } };
       preview = "Keep the after-hours address.";
     } else {
@@ -1953,7 +2115,7 @@
       if (job.starter) return true;
       if (job.id === "night_owl") return state.people.mara.met || nextWanderCount >= 2;
       if (job.id === "delivery") return nextWanderCount >= 3;
-      if (job.id === "ship_creek") return nextWanderCount >= 3 || johnWorkIntelKnown(state);
+      if (job.id === "ship_creek") return nextWanderCount >= 3 || juanWorkIntelKnown(state);
       return false;
     });
   }
@@ -1965,6 +2127,10 @@
     return true;
   }
   function rollJobDiscovery(state, random, previousWanderCount) {
+    if (state.run.day === 1 && state.jobs.discovered.some((id) => id !== "day_labor")) {
+      logEntry(state, "You catch part of a hiring conversation, but not enough to know who is taking names.", "");
+      return false;
+    }
     if (previousWanderCount === 0) return discoverJob(state, SPENARD_JOB_BY_ID[state.jobs.discoveryOrder[0]]);
     const candidates = eligibleHiddenJobs(state, previousWanderCount + 1);
     if (!candidates.length) return false;
@@ -2698,6 +2864,23 @@
         }
         crew.wageDue += person.wage;
       }
+      if (state.run.day >= state.phone.billDueDay) {
+        state.phone.daysPastDue += 1;
+        if (state.phone.daysPastDue > 2 && state.phone.active) {
+          state.phone.active = false;
+          pushConsequence(state, "The signal bars vanish. Calls and texts stop leaving.", "bad");
+        }
+      }
+      const rentDue = state.obligations.rentDueDay;
+      const currentRentDue = state.run.day >= rentDue ? rentDue + Math.floor((state.run.day - rentDue) / 7) * 7 : rentDue;
+      const missedThisDue = state.obligations.lastMissedDueDay === currentRentDue;
+      if (state.run.day >= rentDue && !missedThisDue) {
+        state.obligations.lastMissedDueDay = currentRentDue;
+        state.npc.yalonda.rentMissed += 1;
+        state.npc.yalonda.trust -= 1;
+        logEntry(state, "Yalonda leaves the rent envelope on the kitchen table, still empty.", "bad");
+        if (state.npc.yalonda.rentMissed >= 2) householdWarning(state, 1, "Two rent weeks pass unpaid. Yalonda makes the house warning explicit.", false);
+      }
       state.player.financialHeat = clamp(state.player.financialHeat - FINANCIAL_HEAT_DECAY_PER_DAY, 0, 10);
       if (state.player.financialHeat >= FINANCIAL_HEAT_FOLD_IN_THRESHOLD) {
         state.player.heat = clamp(state.player.heat + 1, 0, 15);
@@ -2765,10 +2948,10 @@
   const ENTITY_REGISTRY = {
     dre: { id: "dre", name: "Dre", kind: "person", title: "Dre Holloway", aliases: ["Dre Holloway", "Dre"],
       text: "A lender who approaches after you establish yourself. If you accept, $1,200 is due at the run's checkpoint. He names the terms once." },
-    yalonda: { id: "yalonda", name: "Yalonda", kind: "person", title: "Yalonda (sister)", aliases: ["Yalonda"],
-      text: "Your older sister. She and her husband John gave you a spare room and basic food for one week. Their help has a deadline and no cash attached." },
-    john: { id: "john", name: "John", kind: "person", title: "John (Yalonda's husband)", aliases: ["John"],
-      text: "Former Anchorage officer. He made the introduction to Dre and warned you about the sharp edges before he did it." },
+    yalonda: { id: "yalonda", name: "Yalonda", kind: "person", title: "Yalonda Hernandez", aliases: ["Yalonda Hernandez", "Yalonda"],
+      text: "Dominican, early forties, and the landlord of the spare room. The first week is free; every week after is cash." },
+    juan: { id: "juan", name: "Juan", kind: "person", title: "Juan Hernandez", aliases: ["Juan Hernandez", "Juan"],
+      text: "Yalonda's eighteen-year-old son. He loads a warehouse dock and turns ordinary workplace talk into useful names." },
     mara: { id: "mara", name: "Mara", kind: "person", title: "Mara Velez", aliases: ["Mara Velez", "Mara"],
       text: "Night Owl Mini-Mart clerk in Spenard. She is building an exit into a Ship Creek dispatch job, and public association with your operation would close it." },
     rook: { id: "rook", name: "Rook", kind: "person", title: "Rook Mercer", aliases: ["Rook Mercer", "Rook"],
@@ -2832,7 +3015,7 @@
     eli_missed_turn: "He took a lap around the freight yard before circling back in from the other side. He is watching your face to learn whether you want a driver who thinks.",
     eli_service_map: "It is drawn to no scale at all and it beats anything you could buy. The two crossings appear on no map because they are technically somebody's parking lot. He has never shown it to anyone.",
     eli_last_run: "He asks it in the middle of a conversation about fuel prices, the way people ask questions they have been carrying around. He would rather find out now than in eight days.",
-    dre_terms: "The meeting John arranged is already over, and Dre still makes you read the paper again. \"People make it complicated after. Not me.\"",
+    dre_terms: "The meeting is already arranged, and Dre still makes you read the paper again. \"People make it complicated after. Not me.\"",
     dre_first_payment: "The back light is out again, so he counts by the glow of the open car door. He takes his time, and he keeps whatever he decided while counting.",
     rook_mark: "Same wall, same spot, different hand. Whatever the tag says now, it is not what it said on Monday. Nobody has spoken to you directly, which is how this stage of Rook's attention works.",
     rook_tax: "He is unhurried and entirely unthreatening, and he stands close enough that the two people at the corner hear none of the words. A number set low is a number set to end the argument early.",
@@ -3167,6 +3350,42 @@
         { label: "Bring Kip into the operation", effect: { setFlags: { kipLieutenantIntroAccepted: true }, introduceKipLieutenant: true }, preview: "Kip starts turning dirty cash into clean cash through his network, keeping a cut for himself.", result: "He shakes on the arrangement like it was never up for negotiation, because it was not. \"Same cut, every time, no exceptions for a bad week.\" Eli looks satisfied in the specific way of someone who arranged something correctly." },
         { label: "Not yet", effect: { setFlags: { kipLieutenantIntroDeclined: true } }, preview: "Nothing changes. The offer does not repeat itself on its own schedule.", result: "Kip shrugs like the number was never going to move either way. \"Corner's still there when you want it.\" Eli says nothing, which from Eli is a small disagreement." },
       ]),
+      yalonda_cooking: () => event("yalonda_cooking", "Something on the Stove", "Yalonda has rice going and asks how the day treated you. She waits through the first easy answer while the pot lid taps against the steam.", [
+        { label: "Tell her the useful truth", effect: { setFlags: { yalondaCookingSeen: true }, npcTrust: { id: "yalonda", delta: 1 } }, preview: "Build a little trust at home.", result: "She turns the flame down and listens until the whole answer is out." },
+        { label: "Keep the answer light", effect: { setFlags: { yalondaCookingSeen: true } }, preview: "Share the meal without opening the whole day.", result: "She lets the easy answer stand and puts another spoon beside the pot." },
+      ]),
+      yalonda_warning: () => event("yalonda_warning", "Questions at the Walk", "Yalonda saw somebody pause outside twice. The coat was wrong for the weather, the questions were about you, and the same car stayed warm at the curb.", [
+        { label: "Take the warning seriously", effect: { heat: -1, setFlags: { yalondaWarningSeen: true } }, preview: "Change your route and lose 1 Heat.", result: "You leave by the back walk. The same coat passes the front window once more." },
+        { label: "Say it was nothing", effect: { setFlags: { yalondaWarningSeen: true } }, preview: "Keep your route and accept the uncertainty.", result: "Yalonda locks the deadbolt herself and says nothing more about the car." },
+      ]),
+      yalonda_flirt: () => event("yalonda_flirt", "The Rent Envelope Stays Open", "Yalonda sets the paid envelope beside the kettle instead of putting it away. The house is quiet, your route home stayed clean, and she asks whether you ever stop working long enough to eat.", [
+        { label: "Stay for dinner", effect: { npcTrust: { id: "yalonda", delta: 1 }, setFlags: { yalondaFlirtAccepted: true } }, preview: "Let the relationship become something more personal.", result: "She leaves the second plate on the table. Neither of you calls the evening business." },
+        { label: "Keep it about the room", effect: { setFlags: { yalondaFlirtDeclined: true } }, preview: "Keep the relationship warm and strictly practical.", result: "Yalonda nods, seals the envelope, and sends you off with a covered plate." },
+      ]),
+      juan_warehouse_story: () => event("juan_warehouse_story", "Juan Gets Home Late", "Juan drops his work gloves by the heater. A truck missed its window and the dock needs people who answer callbacks.", [
+        { label: "Ask who runs the dock", effect: { shareJuanInfo: "work:ship_creek", discoverGym: true, setFlags: { juanWarehouseStorySeen: true } }, preview: "Learn a work lead and the community gym.", result: "Juan writes two names and the gym address on the back of a receipt." },
+        { label: "Ask about his shift", effect: { npcTrust: { id: "juan", delta: 1 }, setFlags: { juanWarehouseStorySeen: true } }, preview: "Build trust without taking the lead.", result: "Juan tells the whole truck story and leaves the work names for another night." },
+      ]),
+      juan_referral: () => event("juan_referral", "Juan Makes the Call", "Juan's warehouse needs another loader before the next receiving truck. He can put your name directly in the supervisor's hand and skip the callback wait.", [
+        { label: "Take the referral", effect: { hireJobId: "juan_warehouse", setFlags: { juanReferralSeen: true } }, preview: "Skip the normal two-part application delay.", result: "Juan sends the name. The supervisor replies with tomorrow's loading time." },
+        { label: "Apply on your own", effect: { setFlags: { juanReferralSeen: true } }, preview: "Leave Juan's direct referral unused today.", result: "Juan pockets his phone and tells you which door takes paper applications." },
+      ]),
+      discover_907_juan: () => event("discover_907_juan", "Juan Sends a Link", "Juan shows you a local resale list where ordinary items move for clean cash. He says the useful posts disappear before most people finish breakfast.", [
+        { label: "Save the link", effect: { discover907List: true }, preview: "Save the 907List link for later.", result: "The link stays in your phone under a plain bookmark." },
+        { label: "Leave it for now", effect: {}, preview: "Keep the local listing link unknown.", result: "Juan closes the page and goes back to his music." },
+      ]),
+      discover_907_work: () => event("discover_907_work", "A Link Between Shifts", "A coworker texts a local resale list between shifts. The fast listings disappear first, and buyers pay clean when the item looks ready to carry home.", [
+        { label: "Save it", effect: { discover907List: true }, preview: "Save the 907List link for later.", result: "The listings load beside the shift schedule." },
+        { label: "Ignore the message", effect: {}, preview: "Keep the local listing link unknown.", result: "The message slides under the rest of the shift thread." },
+      ]),
+      discover_907_night_owl: () => event("discover_907_night_owl", "The Board's Missing Tab", "A torn Night Owl posting leaves one readable resale link under the staple. Every phone-number tab is gone, but the page address is still intact.", [
+        { label: "Copy the address", effect: { discover907List: true }, preview: "Save the 907List link for later.", result: "You copy the address before the paper tears loose." },
+        { label: "Leave the board alone", effect: {}, preview: "Keep the local listing link unknown.", result: "The loose corner flaps once and folds back under the staple." },
+      ]),
+      discover_907_wander: () => event("discover_907_wander", "A Listing on the Pole", "A resale pickup note on Spenard Road points to a local listings page. The handwriting promises cash pickup and leaves the web address twice.", [
+        { label: "Follow the link", effect: { discover907List: true }, preview: "Save the 907List link for later.", result: "The page opens to three listings nearby." },
+        { label: "Keep walking", effect: {}, preview: "Keep the local listing link unknown.", result: "The paper stays on the pole for the next person walking past." },
+      ]),
       rook_respect_notice: () => event("rook_respect_notice", "Rook Notices the Corners", "Rook has stopped calling your operation a nuisance. One of his people called it an operation, in front of people who repeat things. That attention arrives with no threat attached. Take it seriously.", [
         { label: "Note it and keep moving", effect: {}, preview: "Nothing to spend here. The respect is already logged and worth remembering later.", result: "You do not change anything about the week because of a rumor, but you remember who told you, in case the next thing that comes through this route needs to move fast." },
         { label: "Ask what else they said", effect: {}, preview: "You spend a little time chasing the rest of the story instead of moving on.", result: "The second half of the rumor turns out thinner than the first, mostly guesswork dressed up as certainty. Still, you learn which corner the comment was made on, and that is not nothing." },
@@ -3197,7 +3416,11 @@
       const cashGate = /^cash(\d+)$/.exec(choice.requires);
       if (cashGate) return state.player.cash >= Number(cashGate[1]);
       return true;
-    });
+    }).map((choice) => ({
+      ...choice,
+      preview: choice.preview.split(/\s+/).length < 8 ? `${choice.preview} This changes the next route available to you.` : choice.preview,
+      result: choice.result.split(/\s+/).length < 15 ? `${choice.result} The exchange settles into the room and stays there after you move on.` : choice.result,
+    }));
     return built;
   }
 
@@ -3289,6 +3512,7 @@
     dre_note: { name: "Dre's Note", person: "dre" },
     rook_pressure: { name: "Rook's Attention", person: "rook" },
     kip_corner: { name: "The Wash & Go", person: "kip" },
+    household: { name: "The Spare Room", person: "household" },
   };
 
   function resolvedFlagName(id) { return `${id.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())}Resolved`; }
@@ -3405,6 +3629,30 @@
     { id: "kip_lieutenant_intro", chain: "kip_corner", stage: 3, classification: "opportunity", trigger: "reactive",
       requires: (s) => kipLieutenantAvailability(s).available, area: null,
       earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 10, exit: null },
+
+    // --- The household ------------------------------------------------------
+    { id: "yalonda_cooking", chain: "household", stage: 1, classification: "relationship_scene", trigger: "chain",
+      requires: (s) => householdPresence(s) === "yalonda", area: HOME_DISTRICT_ID, earliest: { day: 1, slot: 0 }, latest: null, once: false, cooldown: 6, weight: 6, exit: null },
+    { id: "juan_warehouse_story", chain: "household", stage: 1, classification: "relationship_scene", trigger: "chain",
+      requires: (s) => householdPresence(s) === "juan", area: HOME_DISTRICT_ID, earliest: { day: 1, slot: 2 }, latest: null, once: true, cooldown: 0, weight: 7, exit: null },
+    { id: "yalonda_warning", chain: "household", stage: 2, classification: "callback", trigger: "chain",
+      requires: (s) => s.player.heat >= 2 && householdPresence(s) === "yalonda", area: HOME_DISTRICT_ID, earliest: { day: 2, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 7, exit: null },
+    { id: "juan_referral", chain: "household", stage: 2, classification: "opportunity", trigger: "chain",
+      requires: (s) => s.phone.active && s.npc.juan.trust >= 1 && !s.jobs.hired.some((id) => id !== "day_labor"), area: HOME_DISTRICT_ID, earliest: { day: 2, slot: 2 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
+    { id: "yalonda_flirt", chain: "household", stage: 3, classification: "relationship_scene", trigger: "chain",
+      requires: (s) => s.npc.yalonda.trust >= 3 && s.npc.yalonda.rentPaidWeeks >= 1 && s.player.heat <= 1
+        && s.people.household.lastContrabandDay !== s.run.day && householdPresence(s) === "yalonda",
+      area: HOME_DISTRICT_ID, earliest: { day: 7, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
+
+    // Social discovery routes. The link stays invisible until one of these lands.
+    { id: "discover_907_juan", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
+      requires: (s) => !s.knowledge.knows907List && s.phone.active && s.npc.juan.trust >= 1 && s.run.slot >= 2, area: HOME_DISTRICT_ID, earliest: { day: 1, slot: 2 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
+    { id: "discover_907_work", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
+      requires: (s) => !s.knowledge.knows907List && s.phone.active && s.onboarding.shiftsWorked >= 3, area: null, earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
+    { id: "discover_907_night_owl", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
+      requires: (s) => !s.knowledge.knows907List && !!s.flags.nightOwlVisited, area: HOME_DISTRICT_ID, earliest: { day: 1, slot: 2 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
+    { id: "discover_907_wander", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
+      requires: (s) => !s.knowledge.knows907List && s.world.locations.explorationCount > 0, area: HOME_DISTRICT_ID, earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 7, exit: null },
 
     // --- Standalone beats carried over from Alpha v0.6 -----------------------
     { id: "miri_offer", chain: null, stage: null, classification: "character_intro", trigger: "ambient",
@@ -3568,6 +3816,7 @@
     state.rival.respect += effect.rivalRespect || 0;
     state.lender.trust += effect.lenderTrust || 0;
     state.people.mara.trust += effect.maraTrust || 0;
+    if (effect.npcTrust && state.npc[effect.npcTrust.id]) state.npc[effect.npcTrust.id].trust += effect.npcTrust.delta || 0;
     if (effect.acceptDreLoan && state.lender.status === "unoffered") {
       state.lender.status = "active";
       state.lender.principal = 1000;
@@ -3587,7 +3836,13 @@
       if (!state.world.locations.discoveries.includes("informal_game")) state.world.locations.discoveries.push("informal_game");
       if (firstDiscovery) queueUnlock(state, "gambling");
     }
-    if (effect.discover907List) state.nineZeroSevenList.known = true;
+    if (effect.discover907List) { state.knowledge.knows907List = true; state.nineZeroSevenList.known = true; }
+    if (effect.discoverGym) state.discovered.spenardGym = true;
+    if (effect.shareJuanInfo && !state.npc.juan.infoShared.includes(effect.shareJuanInfo)) state.npc.juan.infoShared.push(effect.shareJuanInfo);
+    if (effect.hireJobId && SPENARD_JOB_BY_ID[effect.hireJobId] && !state.jobs.hired.includes(effect.hireJobId)) {
+      if (!state.jobs.discovered.includes(effect.hireJobId)) state.jobs.discovered.push(effect.hireJobId);
+      state.jobs.hired.push(effect.hireJobId);
+    }
     if (effect.discoverJobId && SPENARD_JOB_BY_ID[effect.discoverJobId]) discoverJob(state, SPENARD_JOB_BY_ID[effect.discoverJobId]);
     if (effect.payLenderNow) {
       const amount = Math.min(state.lender.balance, state.player.cash);
@@ -3725,8 +3980,7 @@
   function householdWarning(state, count, reason, catastrophic) {
     const household = state.people.household;
     household.warnings += Math.max(1, count || 1);
-    household.yalondaTrust -= Math.max(1, count || 1);
-    household.johnTrust -= catastrophic ? 2 : 1;
+    state.npc.yalonda.trust -= Math.max(1, count || 1);
     logEntry(state, reason, "bad");
     if (catastrophic || household.warnings >= 3) {
       household.evicted = true;
@@ -3744,7 +3998,7 @@
     const repeatedWeapon = !!state.home.hiddenWeapon && state.people.household.warnings > 0;
     for (const product of PRODUCTS) state.home.storedInventory[product.id] = { qty: 0, avgCost: 0 };
     state.home.hiddenWeapon = null;
-    householdWarning(state, repeatedWeapon ? 2 : 1, repeatedWeapon ? "John finds the weapon after the first warning. Yalonda tells you the house cannot survive another night like this." : "Yalonda finds what you hid. The contraband leaves the house, and the warning does not.", false);
+    householdWarning(state, repeatedWeapon ? 2 : 1, repeatedWeapon ? "Juan finds the weapon after the first warning. Yalonda says the house cannot survive another night like this." : "Yalonda finds what you hid. The contraband leaves the house, and the warning does not.", false);
   }
 
   function encounterActivityContext(state, context, oldSlot, visit) {
@@ -3787,6 +4041,8 @@
     const timeCost = clamp(Math.floor(Number(context.timeCost) || 1), 1, SLOTS.length);
     const reachesDayEnd = oldSlot + timeCost >= SLOTS.length;
     state.run.slot = reachesDayEnd ? SLOTS.length - 1 : oldSlot + timeCost;
+    restorePhoneIfReady(state, slotNumber(oldDay, oldSlot));
+    resolveJobApplications(state);
     expireEffects(state);
     resolveCrewAssignments(state, random);
     resolveSoldierOperations(state, random, false);
@@ -3839,7 +4095,9 @@
     state.run.day = oldDay + 1;
     state.run.slot = 0;
     state.player.energy = MAX_ENERGY;
-    state.nineZeroSevenList.known = state.nineZeroSevenList.known || state.run.day >= 3;
+    restorePhoneIfReady(state, slotNumber(oldDay, 3));
+    resolveJobApplications(state);
+    state.nineZeroSevenList.known = !!state.knowledge.knows907List;
     state.run.dailyActions = [];
     if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
     else scheduleStory(state, { reason: "END_DAY" }, random);
@@ -4321,6 +4579,7 @@
   }
 
   function coworkerForShift(state, job) {
+    if (!job.coworkers.length) return null;
     const record = state.jobs.records[job.id];
     const order = seededShuffle(job.coworkers, state.run.seed, stringHash(`coworkers:${job.id}`));
     return order.find((person) => !record.coworkersMet.includes(person.id)) || order[record.shifts % order.length];
@@ -4353,15 +4612,15 @@
     state.onboarding.shiftsWorked += 1;
     recordVisitedLocation(state, `job:${job.id}`);
 
-    record.currentCoworkerId = coworker.id;
-    if (!record.coworkersMet.includes(coworker.id)) {
+    record.currentCoworkerId = coworker?.id || null;
+    if (coworker && !record.coworkersMet.includes(coworker.id)) {
       record.coworkersMet.push(coworker.id);
       record.contactMet = true;
       state.contacts[coworker.id].known = true;
       recordMetNpc(state, coworker.id);
       logEntry(state, coworker.introduction, "good");
     }
-    if (approach.id === "socialize") state.contacts[coworker.id].relationshipLevel += 1;
+    if (coworker && approach.id === "socialize") state.contacts[coworker.id].relationshipLevel += 1;
     if (state.run.phase === "week_zero" && job.id === "wash_go" && record.shifts >= 2 && !state.nightOwl.ambientSeen.includes("lena_money")) {
       state.nightOwl.ambientSeen.push("lena_money");
       logEntry(state, "Lena says she used to make bigger money, then starts folding towels before the sentence finishes.", "");
@@ -4372,7 +4631,7 @@
         record.learnedDetails.push(detailIndex);
         logEntry(state, job.details[detailIndex], "");
       } else {
-        logEntry(state, `${coworker.name.split(" ")[0]} says you know the routine well enough to spot what changes.`, "");
+        logEntry(state, `${coworker ? coworker.name.split(" ")[0] : "The foreman"} says you know the routine well enough to spot what changes.`, "");
       }
     }
     if (job.id === "ship_creek") {
@@ -4405,7 +4664,7 @@
     if (advanced.run.status !== "playing" || advanced.run.pendingEncounter) return advanced;
     if (record.shifts >= 3 && !advanced.world.locations.gamblingKnown && !advanced.flags.gamblingDiscoverySeen) {
       advanced.flags.gamblingDiscoverySeen = true;
-      advanced.run.pendingEvent = gamblingDiscoveryEvent(coworker.id);
+      advanced.run.pendingEvent = gamblingDiscoveryEvent(coworker?.id || "cal");
       return advanced;
     }
     if (advanced.run.phase === "week_zero" && dreWasEligible && advanced.lender.status === "unoffered" && !advanced.run.pendingEvent) {
@@ -4423,6 +4682,13 @@
       if (!inputState.run.pendingUnlocks.length) return inputState;
       const next = copyState(inputState);
       next.run.pendingUnlocks.shift();
+      return next;
+    }
+    if (action.type === "DISMISS_CONSEQUENCE") {
+      if (!inputState.run.consequenceQueue?.length) return inputState;
+      const next = copyState(inputState);
+      if (action.id) next.run.consequenceQueue = next.run.consequenceQueue.filter((item) => item.id !== action.id);
+      else next.run.consequenceQueue.shift();
       return next;
     }
     if (action.type === "CONFIRM_END_DAY") {
@@ -4539,6 +4805,11 @@
       if (descriptor && descriptor.chain === "mara_spenard") {
         state.people.mara.chainStage = Math.max(state.people.mara.chainStage || 0, descriptor.stage);
         state.people.mara.outcomes.push({ stage: descriptor.stage, id: current.id, choice: choice.label, day: state.run.day });
+      }
+      if (descriptor?.chain === "household") {
+        const npcId = current.id.startsWith("juan_") ? "juan" : current.id.startsWith("yalonda_") ? "yalonda" : null;
+        if (npcId) state.npc[npcId].lastEventDay = state.run.day;
+        if (current.id === "yalonda_flirt" && choice.effect?.setFlags?.yalondaFlirtAccepted) state.npc.yalonda.romanceStage = 1;
       }
       if (current.id === "eli_offer") state.flags.eliOfferResolved = true;
       if (current.id === "miri_offer") state.flags.miriOfferResolved = true;
@@ -4684,13 +4955,23 @@
       }
       return state;
     }
-    if (action.type === "ASK_JOHN") {
-      if (state.people.household.evicted || state.people.household.lastQuestionDay === state.run.day) return inputState;
+    if (action.type === "TALK_HOUSEHOLD") {
+      const npcId = action.npcId;
+      if (!["yalonda", "juan"].includes(npcId) || state.people.household.evicted || state.people.household.lastQuestionDay === state.run.day || householdPresence(state) !== npcId) return inputState;
       state.people.household.lastQuestionDay = state.run.day;
-      recordBehavior(state, "connector", 1, "household:john_first_advice", "family_contact");
-      addStreetReadEntry(state, "social", "john:advice");
-      state.effects.rumors.push({ id: `john_${state.run.day}`, areaId: "north_star_lot", productId: "weed", reliable: true, text: "John says the bus is reliable for Downtown, Ship Creek hires early, and the Industrial roads need a ride you trust.", expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
-      logEntry(state, "John gives you one careful answer without pretending the city is safer than it is.", "good");
+      recordBehavior(state, "connector", 1, `household:${npcId}:talk`, "family_contact");
+      addStreetReadEntry(state, "social", `${npcId}:advice`);
+      if (npcId === "juan") {
+        state.npc.juan.trust += 1;
+        if (!state.npc.juan.infoShared.includes("work:ship_creek")) state.npc.juan.infoShared.push("work:ship_creek");
+        state.effects.rumors.push({ id: `juan_${state.run.day}`, areaId: "north_star_lot", productId: "weed", reliable: true, text: "Juan says Ship Creek hires early and his warehouse dock keeps a short callback list.", expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
+        pushConsequence(state, "Juan writes a loading-dock name on your receipt.", "good");
+      } else {
+        state.npc.yalonda.trust += 1;
+        state.effects.rumors.push({ id: `yalonda_${state.run.day}`, areaId: "north_star_lot", productId: "weed", reliable: true, text: "Yalonda says somebody asked questions outside, then describes the coat.", expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
+        pushConsequence(state, "Yalonda lowers the stove flame and tells you who came by.", "warn");
+      }
+      logEntry(state, `${npcId === "juan" ? "Juan" : "Yalonda"} gives you the useful part without wasting words.`, "good");
       return state;
     }
     if (action.type === "HOUSE_VIOLATION") {
@@ -4728,6 +5009,40 @@
       reconcileCash(state);
       return state;
     }
+    if (action.type === "PAY_RENT") {
+      if (state.run.day < state.obligations.rentDueDay || state.player.cash < WEEKLY_RENT || state.people.household.evicted) return inputState;
+      spendCash(state, WEEKLY_RENT);
+      while (state.obligations.rentDueDay <= state.run.day) state.obligations.rentDueDay += 7;
+      state.obligations.lastMissedDueDay = null;
+      state.npc.yalonda.rentPaidWeeks += 1;
+      state.npc.yalonda.lastRentDay = state.run.day;
+      state.npc.yalonda.trust += 1;
+      recordBehavior(state, "earner", 2, `rent:${state.run.day}`, "rent_payment");
+      pushConsequence(state, "Yalonda counts the rent once and closes the envelope.", "good");
+      logEntry(state, `Weekly rent paid in cash: $${WEEKLY_RENT}.`, "good");
+      return state;
+    }
+    if (action.type === "PAY_PHONE_BILL") {
+      const online = action.surface === "online";
+      const due = state.run.day >= state.phone.billDueDay || state.phone.daysPastDue > 0 || !state.phone.active;
+      if (!due || state.player.cash < PHONE_BILL) return inputState;
+      if (online && (!state.inventory.laptop || !state.phone.active || !state.knowledge.knows907List)) return inputState;
+      spendCash(state, PHONE_BILL);
+      state.phone.billDueDay = state.run.day + 7;
+      state.phone.daysPastDue = 0;
+      if (!state.phone.active) state.phone.reactivateAtSlot = slotNumber(state.run.day, state.run.slot);
+      recordBehavior(state, "earner", 1, `phone_bill:${state.run.day}`, "phone_payment");
+      logEntry(state, `Phone bill paid: $${PHONE_BILL}.`, "good");
+      if (online) { pushConsequence(state, "Payment clears. The next bill date slides one week.", "good"); return state; }
+      return advanceRun(state, { reason: "PAY_PHONE_BILL", summary: `Paid phone bill (-$${PHONE_BILL})` });
+    }
+    if (action.type === "APPLY_JOB") {
+      const job = SPENARD_JOB_BY_ID[action.jobId];
+      if (!job || job.dayLabor || !state.jobs.discovered.includes(job.id) || state.jobs.hired.includes(job.id) || state.jobs.applications.some((item) => item.jobId === job.id) || !state.phone.active) return inputState;
+      state.jobs.applications.push({ jobId: job.id, appliedAtDay: state.run.day, appliedAtSlot: state.run.slot });
+      logEntry(state, `You leave an application with ${job.name}. They say to keep your phone on.`, "");
+      return advanceRun(state, { reason: "APPLY_JOB", summary: `Applied at ${job.name}` });
+    }
 
     let base = state;
     if (["CONTACT_CALL", "CONTACT_TEXT", "CONTACT_VISIT"].includes(action.type)) {
@@ -4752,7 +5067,7 @@
       recordVisitedLocation(base, "night_owl");
       if (!base.nightOwl.boardViewedDays.includes(base.run.day)) base.nightOwl.boardViewedDays.push(base.run.day);
       const board = nightOwlBoardItems(base);
-      if (board.some((entry) => entry.id === "list")) base.nineZeroSevenList.known = true;
+      if (board.some((entry) => entry.id === "gym")) applyEventEffect(base, { discoverGym: true }, random);
       if (base.run.phase === "week_zero" && !base.nightOwl.ambientSeen.includes("board_opportunity")) {
         base.nightOwl.ambientSeen.push("board_opportunity");
         logEntry(base, "One board tab promises opportunity without naming the work. Someone has taken every phone number but one.", "");
@@ -4805,7 +5120,7 @@
     if (action.type === "BUY_907LIST") {
       const item = LISTING_ITEM_BY_ID[action.itemId];
       const list = base.nineZeroSevenList;
-      if (!list.known || !item || !listingSlate(base, action.surface).some((entry) => entry.id === item.id) || list.inventory.length >= LISTING_CAPACITY || base.player.cash < item.buy) return inputState;
+      if (!nineZeroSevenListAccess(base, action.surface).available || !item || !listingSlate(base, action.surface).some((entry) => entry.id === item.id) || list.inventory.length >= LISTING_CAPACITY || base.player.cash < item.buy) return inputState;
       spendCash(base, item.buy);
       list.inventory.push({ id: `${base.run.day}:${base.run.slot}:${list.purchases}`, itemId: item.id, cost: item.buy, boughtDay: base.run.day });
       list.purchases += 1;
@@ -4817,7 +5132,7 @@
       const index = list.inventory.findIndex((entry) => entry.id === action.inventoryId);
       const held = list.inventory[index];
       const item = held && LISTING_ITEM_BY_ID[held.itemId];
-      if (index < 0 || !item) return inputState;
+      if (index < 0 || !item || (!nineZeroSevenListAccess(base, action.surface || "phone").available && !nineZeroSevenListAccess(base, "home").available)) return inputState;
       const random = makeRandom(base.run.rngState);
       const payout = random.int(item.resale[0], item.resale[1]);
       base.run.rngState = random.state;
@@ -4870,6 +5185,7 @@
       recordVisitedLocation(base, "spenard_gym");
       if (gym.sessionDay !== base.run.day) { gym.sessionDay = base.run.day; gym.sessionsToday = 0; }
       base.player.cash -= available.cost;
+      base.memberships.gym = true;
       gym.sessionsToday += 1;
       const improved = improveAttribute(base, attribute, available.progress);
       if (improved) addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:training`);
@@ -4938,6 +5254,7 @@
       const random = makeRandom(base.run.rngState);
       const count = base.world.locations.explorationCount;
       base.world.locations.explorationCount += 1;
+      if (!base.discovered.spenardGym && count === 0) applyEventEffect(base, { discoverGym: true }, random);
       recordVisitedLocation(base, "spenard_streets");
       addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:explore`);
       const jobDiscovered = rollJobDiscovery(base, random, count);
@@ -4945,7 +5262,7 @@
       const meetsBoost = !meetsKip && !base.flags.boostOpportunitySeen && !base.boost.visible && (count === 0 || base.world.locations.gamblingKnown);
       if (!meetsBoost && !meetsKip && !jobDiscovered) {
         const discoveries = [
-          "John's bus advice matches the posted Downtown timetable.",
+          "Juan's bus advice matches the posted Downtown timetable.",
           "A freight worker confirms Ship Creek hires before breakfast.",
           "The North Star listing is real, but the owner will not move on the deposit.",
           "You learn which Northern Value aisle has the longest camera gap.",
@@ -5403,12 +5720,15 @@
     if (state.player.health < 35) push("health_critical", "Health is low", `${state.player.health} of 100. One bad night ends the run.`, "bad");
     if (balance > 0 && daysLeft === 0) push("debt_tonight", "Debt comes due tonight", `${cashText(balance)} still owed.`, "bad");
     if (state.player.heat >= 12) push("heat_critical", "Police attention is critical", "Anything visible carries a real risk.", "bad");
+    if (!state.phone.active) push("phone_off", "Phone service is off", "Calls, texts, callbacks, and mobile listings are dark.", "bad");
+    if (state.run.day >= state.obligations.rentDueDay) push("rent_due", "Weekly rent is due", `${cashText(WEEKLY_RENT)} cash keeps the room current.`, "bad");
     const pressured = SPENARD_BLOCKS.find((block) => {
       const record = state.world.territoryBlocks[block.id];
       return record && record.owner === "player" && record.lastRaidDay != null && state.run.day - record.lastRaidDay <= 1;
     });
     if (pressured) push("block_pressure", `${pressured.name} under pressure`, "Raided within the last day.", "warn");
     if (balance > 0 && daysLeft === 1) push("debt_tomorrow", "Debt due tomorrow", `${cashText(balance)} still owed.`, "warn");
+    if (state.run.day >= state.phone.billDueDay) push("phone_due", "Phone bill is due", `${cashText(PHONE_BILL)} before the grace period ends.`, "warn");
     if (state.player.heat >= 8) push("heat_high", "Police attention is high", "Lay Low or stay off the corners.", "warn");
     if (state.player.health < 60) push("health_hurt", "You are carrying an injury", `${state.player.health} of 100.`, "warn");
     const idle = unassignedSoldiers(state).length;
@@ -5474,6 +5794,7 @@
         district: districtControlTier(state, "north_star_lot").label,
         weeklyIncome: weeklyIncomeEstimate(state), respect: state.rival.respect,
       },
+      household: { present: householdPresence(state), rentDueDay: state.obligations.rentDueDay, warnings: state.people.household.warnings },
     };
   }
 
@@ -5487,7 +5808,8 @@
     RECRUIT_SOLDIER: "Soldier Recruited", RECRUIT_CREW: "Crew Recruited", PROMOTE_LIEUTENANT: "Lieutenant Promoted",
     VISIT_BASE: "Garage Open", UPGRADE_BASE: "Upgrade Installed", BUY_GEAR: "Gear Acquired",
     ASSIGN_CREW: "Assignment Given", ELI_TEST_ROUTE: "Test Route Complete", LEASE_GARAGE: "Property Leased",
-    VISIT_MARA: "Evening Spent", VISIT_NIGHT_OWL: "Night Owl Visit", ASK_JOHN: "Question Answered",
+    VISIT_MARA: "Evening Spent", VISIT_NIGHT_OWL: "Night Owl Visit", TALK_HOUSEHOLD: "Conversation Finished",
+    APPLY_JOB: "Application Left", PAY_PHONE_BILL: "Phone Bill Paid", PAY_RENT: "Rent Paid",
     BUY_FROM_DEALER: "Deal Done", ASK_DEALER: "Word Passed", RESOLVE_EVENT: "Choice Made",
     ROB: "Rob Resolved", CONTACT_VISIT: "Visit Complete", BUY_LAPTOP: "Laptop Acquired",
   };
@@ -5559,10 +5881,10 @@
   }
 
   return {
-    VERSION, RUN_DAYS, PRESSURE_DAYS, MAX_ENERGY, SLOTS, SAVE_KEY, HOME_DISTRICT_ID, DISTRICT_ACTIONS, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
+    VERSION, RUN_DAYS, PRESSURE_DAYS, MAX_ENERGY, SLOTS, SAVE_KEY, PHONE_BILL, WEEKLY_RENT, HOME_DISTRICT_ID, DISTRICT_ACTIONS, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
     STREET_NAME_MAX, DEFAULT_STREET_NAMES, ATTRIBUTE_DEFAULTS, LEGACY_ATTRIBUTES, STREET_IDENTITIES, sanitizeStreetName,
     CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS, ENTITY_REGISTRY, ENTITY_MATCH_ORDER, PLUGS, BOOST_TARGETS, SPENARD_JOBS, STARTER_JOB_IDS, JOB_APPROACHES, JOB_RANK_THRESHOLDS,
-    LISTING_ITEMS, LISTING_CAPACITY, NIGHT_OWL_REGULARS, NIGHT_OWL_BOARD, SOCIAL_CONTACTS, DOWNTOWN_CONTENT_STUBS, DOWNTOWN_AMBIENT,
+    LISTING_ITEMS, LISTING_CAPACITY, NIGHT_OWL_REGULARS, NIGHT_OWL_BOARD, HOUSEHOLD_NPCS, SOCIAL_CONTACTS, STORY_CONTACTS, PHONE_INTEL, DOWNTOWN_CONTENT_STUBS, DOWNTOWN_AMBIENT,
     SPENARD_BLOCKS, KIP_BUSINESSES, SOLDIER_RECRUIT_COST, SOLDIER_BASE_CAPACITY, SOLDIER_CAPACITY_PER_BLOCK, SOLDIERS_PER_BLOCK_CAP,
     KIP_LAUNDER_FEE, DRE_COLLECTOR_TIERS, ELI_LIEUTENANT_UNLOCK, KIP_LIEUTENANT_INCOME_THRESHOLD, KIP_LIEUTENANT_STANDING_MIN, RESPECT_STAGE_THRESHOLDS,
     DISTRICT_CONTROL_TIERS, DISTRICT_CONTROL_CAPSTONE_BLOCKS, DISTRICT_CONTROL_LABEL, ELI_OPERATION_POLICIES,
@@ -5578,7 +5900,7 @@
       INTEL: STREET_READ_INTEL, FLAVOR: STREET_READ_FLAVOR, BONUS_STOCK: STREET_READ_BONUS_STOCK,
       SMART_CHOICES: STREET_SMART_CHOICES, ACTIVITY: STREET_READ_ACTIVITY,
     },
-    serializeRun,
+    serializeRun, migrateSave,
     createRun, hydrateRun, inspectSave, reduceGame, advanceRun, selectRunSummary,
     selectors: {
       cargoUsed, cargoCapacity, storedCargoUsed, storageCapacity, storedCashCapacity, inventoryValue, netWorth,
@@ -5595,8 +5917,8 @@
       weeklyIncomeEstimate, kipLieutenantAvailability, launderCapacity, launderAvailability,
       districtControlTier, districtHasBlockLayer, unassignedSoldiers,
       homeSituation, homeUnlocks, homePriorities, homeSummary, actionResult,
-      johnWorkIntelKnown, jobRankForXp, jobPayRange, discoveredJobs, jobAvailability, quickShift, ambientFlavor, knownWorkplaceContacts, knownSocialContacts, contactAvailability,
-      districtActionAvailability, aroundActions, travelAvailability,
+      juanWorkIntelKnown, jobRankForXp, jobPayRange, discoveredJobs, jobAvailability, quickShift, ambientFlavor, phoneIntel, knownWorkplaceContacts, knownSocialContacts, personalContacts, contactAvailability,
+      districtActionAvailability, aroundActions, travelAvailability, householdPresence, nineZeroSevenListAccess,
       nightOwlStashUsed, nightOwlStashAvailability, relationshipLabel,
       checkpointDay, weekZeroProgress, listingSlate, nightOwlBoardItems, nightOwlRegularFor, nightOwlAvailability, listingInventoryValue,
     },

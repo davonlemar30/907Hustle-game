@@ -2,29 +2,32 @@
 
 907Hustle: One Good Run is a mobile-first, single-player crime, trading, resource-management, and light RPG web game set in an Anchorage-inspired version of Spenard.
 
-The current playable build is **v1.5: Job Variety, Contact Utility, and Downtown Scaffolding**. The player begins as a broke newcomer staying with family, establishes a Week Zero routine, manages Dre's debt, trades and hustles for money, develops relationships and reputation, acquires the North Star Garage, and can grow into an operator who controls blocks through soldiers and lieutenants.
+The current playable build is **v1.7: Character Rework, Obligation Layer, and Social Gating**. The player begins as a broke newcomer renting Yalonda's spare room, establishes a Week Zero routine, manages recurring bills and Dre's debt, trades and hustles for money, develops relationships and reputation, acquires the North Star Garage, and can grow into an operator who controls blocks through soldiers and lieutenants.
 
 The game uses a classless progression model. Access and identity emerge from behavior, attributes, relationships, Street Read, Respect, money, property, crew, and territory rather than a fixed class path.
 
-## Current Build: v1.5
+## Current Build: v1.7
 
-v1.5 extends the organization and daily-life foundation with seeded starter-job variety, useful social contacts, first-unlock celebrations, canonical Rob navigation, a laptop-powered 907List tier, strict Night Owl hours, and the first Downtown arrival scaffold.
+v1.7 turns the apartment, phone, jobs, and 907List into connected social and logistical systems. Access now comes through people and places, while phone service and rent establish the first recurring upkeep layer.
 
-### v1.5 additions
+### v1.7 additions
 
-- The first Wander guarantees one seeded starter job from Wash & Go, Spenard Chevron, Rebel Convenience, or Northern Value; later job discovery retains its ramp.
-- Every starter workplace has two coworkers, three or more shift lines, unseen-coworker priority, and a possible gambling referral after the third shift.
-- People and Explore Spenard share one Contacts screen. Call is free, Text unlocks at relationship Level 1, and Visit unlocks at Level 2, costs one part of day, respects location hours, and grants at most one relationship level per contact each day.
-- Market, Boost, Rob, and Gambling raise a persisted two-second unlock celebration only on their first true unlock.
-- Rob is the canonical action everywhere. Its opportunity begins in Operations and moves to the primary Market → Boost → Rob sequence after the first success; `stats.robbery` remains the compatible outcome ledger.
-- Night Owl actions are reducer- and UI-guarded until Evening or Night.
-- The first two Downtown arrivals show seeded, once-per-run ambient cards. Around Downtown currently contains only a prominent Return to Spenard action; Circle K, Fourth Avenue bars, and REI remain inert future definitions.
-- Basic phone access shows three 907List listings from a two-day bucket. A $250 laptop adds a Home entry with five listings refreshed daily. Alert state exists only as an inert compatibility hook.
-- Saves continue to use `907ogr_v3`; hydration is additive and does not replay celebrations for features an older save already unlocked.
+- Yalonda Hernandez is the player's landlord and Juan Hernandez is her 18-year-old son. Both have deterministic household schedules, persistent trust, free daily conversation, story events, and useful local knowledge.
+- Explore Spenard is split into Places and Activities. Night Owl, the discoverable community gym, and the walk-in phone store live under Places.
+- People → Contacts now includes a Personal section for Yalonda, Juan, Mara, Dre, and Rook; the duplicate Personal menu and dead routes are gone.
+- Free actions can raise short, non-blocking consequence cards. Time-consuming actions keep the existing action-result overlay.
+- Home and More both reach a Phone screen with texts, the current day's log, rotating local intel, and online bill payment.
+- Phone service costs **$75 weekly**. It shuts off after three missed daily grace ticks, blocking calls, texts, callbacks, and mobile listings until a walk-in payment restores service on the next part of day.
+- Rent costs **$150 weekly** after the first free week. Misses reduce Yalonda's trust, and repeated missed weeks enter the household warning system.
+- 907List is invisible until discovered through Juan, work, Night Owl, or wandering. Phone access shows three listings; an owned laptop preserves a five-listing Home tier even when phone service is off.
+- Employers require a one-part application and a callback two elapsed parts later. Juan can refer the player directly to his warehouse, while Day Labor remains an always-available $40–$60 survival option.
+- The gym is hidden until discovered and charges a one-time **$30 membership fee** with the first session.
+- New Game, run restart, and reserve-crossing debt payments use accessible in-game confirmations instead of blocking native browser dialogs.
+- Saves use version 4 and `907ogr_v4`; v3 saves migrate household trust, known listings, existing jobs, and completed runs without losing progress.
 
 ### Core gameplay
 
-- Seven-day run with Morning, Afternoon, Evening, and Night
+- Dynamic 10–14 day typical run with Morning, Afternoon, Evening, and Night
 - Spenard and Industrial Service Roads gameplay, plus a return-safe Downtown arrival scaffold
 - Four-product market with seeded price movement and weighted-average cost basis
 - Buy/sell previews with revenue, cost basis, projected profit or loss, cash after, and cargo after
@@ -143,8 +146,10 @@ Dre's debt remains the central seven-day obligation.
 
 ## Story and Relationships
 
-The current build preserves the authored character and event systems from v0.9.
+The current build extends the authored character and event systems with an occupied household and social access gates.
 
+- **Yalonda Hernandez:** landlord, rent relationship, household boundaries, warnings, and a trust-gated personal path
+- **Juan Hernandez:** warehouse worker, job referral, Ship Creek intel, gym discovery, and local connector
 - **Mara Velez:** relationship progression with friendship, romance, boundaries, danger, and Day 7 outcomes
 - **Eli Ward:** contact-to-crew-to-lieutenant progression
 - **Dre Holloway:** lender relationship, payment behavior, warnings, and enforcement
@@ -168,8 +173,8 @@ Progressive bottom-bar destinations, icon over label:
 - **Boost** — hidden until the first successful lift
 - **Rob** — hidden until the first successful Rob
 - **Travel** — where to go, how to get there, what is around you
-- **People** — social contacts, personal, street contacts, crew, lieutenants
-- **More** — Finances, Operations, Recovery, Character, Street Read, Help
+- **People** — personal and social contacts, street contacts, crew, lieutenants
+- **More** — Phone, Finances, Operations, Recovery, Character, Street Read, Help
 
 Navigation sits at the bottom edge where a thumb reaches it. The header is one
 status line (day part, district, cash, status drawer, menu); a pressure row of
@@ -178,11 +183,11 @@ Heat / Debt / Respect chips appears only once one of them is applying pressure.
 ### Home
 
 Home is the landing screen for a new or loaded run and the calmest screen in the
-game. It answers where you are, what part of the day it is, what you have, what
-is pressing, and where you might go next — nothing else. Its model comes from
-`selectors.homeSituation`, which produces an authored situation summary, at most
-two priorities, and a per-system unlock map so empty systems stay hidden rather
-than rendering as `Soldiers: 0`.
+game. The header owns day, location, cash, and status; Home owns the residence,
+household presence, immediate obligations, and the next useful routes. Its model
+comes from `selectors.homeSituation`, which produces an authored situation
+summary, at most two priorities, and a per-system unlock map so empty systems
+stay hidden rather than rendering as `Soldiers: 0`.
 
 ### Menu hubs
 
@@ -190,8 +195,8 @@ Each hub lists destinations; each subpage answers one gameplay question and
 carries an explicit Back control.
 
 ```text
-Travel      → Destinations · Around <district> · Home · Transit · Local Intel · Listings
-People      → Contacts · Personal · Street Contacts · Crew · Lieutenants · Recent History
+Travel      → Destinations · Around <district> · Explore Spenard (Places · Activities) · Home · Transit · Local Intel
+People      → Contacts (Personal · Social) · Street Contacts · Crew · Lieutenants · Recent History
 Operations  → Overview · Safehouse · Territory · Soldiers · District Control · Gear · Rob opportunity
 Safehouse   → Protected Cash · Storage · Upgrades · Assignments
 Finances    → Overview · Debt & Obligations · Laundering · Financial Risk
@@ -216,6 +221,11 @@ event surfaces. Richer surfaces still own their outcomes: takeovers keep the
 operation modal and a crossed day keeps the day summary, and the receipt stays
 silent rather than stacking on top of them.
 
+Free and automatic changes use a separate consequence stack that never blocks the
+controls beneath it. Cards auto-dismiss after 2.5 seconds, support tap-to-close,
+announce politely to assistive technology, and disable entrance motion when the
+operating system requests reduced motion.
+
 The overlay is driven by `selectors.actionResult(before, after, actionType)`, a
 pure diff of two committed states. The shell routes every dispatch through one
 wrapper so no time-consuming action can slip past it, and the reducer is
@@ -238,8 +248,8 @@ untouched.
 - passive soldier and territory resolution runs inside the same pipeline
 - organization activity consumes no hidden extra turns
 - deterministic RNG is preserved across combat, events, territory, raids, and passive systems
-- save version remains `3`
-- older compatible v3 saves hydrate through additive defaults and migration rules
+- save version is `4`
+- compatible v3 saves migrate explicitly before additive hydration
 
 ## Verification
 
@@ -250,27 +260,30 @@ node --test tests/*.test.js
 node tests/simulate-runs.js
 ```
 
-Latest recorded results (v1.1 navigation pass):
+Latest recorded results (v1.7 systems pass):
 
-- **171 / 171 automated tests passing**
-- **2,000 simulated runs across 10 strategies, byte-identical to the pre-pass baseline**
+- **332 / 332 automated tests passing**
+- **2,000 simulated runs (200 per strategy across 10 strategies) with zero dead ends**
+- simulation baseline SHA-256: `56abc0e4b5d22d46ff3d4e5b572787c0ac326c15e21b80d86fac06d28653eb97`
 - operator strategy covers garage, Eli, soldiers, territory, Kip, and laundering progression
 - zero simulation crashes reported
 - Node-driven end-to-end organization run completed through save/load
 
-The navigation pass added domain tests for the two new presentation selectors
-(`homeSituation`, `actionResult`) and UI-contract tests for Home, the five-cell
-bottom navigation, the Travel/Operations/Finances/Safehouse hubs, progressive
-disclosure, and the action-result overlay.
+The v1.7 contract suite covers household presence and trust, rent and phone
+obligations, application callbacks, all four 907List discovery routes, gym
+discovery and membership, consequence queues, v3-to-v4 migration, accessible
+confirmation dialogs, navigation structure, and presentation invariants.
 
 ### Rendered verification
 
-v1.1 was verified in real Chromium (Playwright) at 320×568, 375×667, 390×844,
-430×932, 375×560 reduced height, and 1280×800 desktop, driving the actual
-`index.html` with cache-busting and `no-store` so a stale preview cannot fake a
-pass: **486 measured checks, all passing**, covering horizontal overflow,
-touch-target height, bottom-nav reachability, action-result content and time
-label, every day-part transition, and the full save → title → load → Home cycle.
+The real v1.7 `index.html` loads in Chromium. Native `window.confirm` calls were
+replaced with accessible in-game confirmation dialogs so browser control and normal
+play use the same reliable flow. The interactive pass opened New Game, confirmed a
+fresh run, entered a Street Name, reached Home, and exercised Explore Spenard,
+Contacts, and Phone. Viewports at 320×568, 375×667, 390×844, 430×932, 375×560,
+and 1280×800 all reported zero horizontal overflow and a 44px minimum visible button
+height; the browser console reported zero errors. Automated UI-contract tests also
+cover consequence stacking and reduced-motion rules.
 
 That pass found a **pre-existing layout bug that also reproduces on the previous
 main**: `.app` and several number grids declared bare `1fr` tracks. A bare `1fr`
@@ -296,14 +309,9 @@ garage
 → save/load
 ```
 
-Human playtesting on a physical device is still recommended for feel and pacing.
-Two limitations of the automated rendered pass are worth naming: the sandbox
-proxy blocks `unpkg.com`, so React/ReactDOM/Babel were served from locally
-vendored copies of the exact pinned versions `index.html` requests, and Google
-Fonts were unavailable, so Anton and Barlow Condensed rendered as fallbacks.
-Every 907Hustle file under test — `index.html` markup, `v05.css`,
-`game-core.js`, `ui.jsx` — was the real one. Final typography and the title
-artwork tiers still deserve a look on a real handset.
+Human playtesting on a physical device is still recommended for feel, pacing,
+final typography, and the title-artwork tiers. The automated rendered pass used
+the real `index.html`, `v05.css`, `game-core.js`, and `ui.jsx` runtime.
 
 ## Run Locally
 
@@ -330,12 +338,13 @@ The active runtime is:
 
 ## Save Compatibility
 
-- Save version: `3`
-- Save key: `907ogr_v3`
-- v0.9 and v1.0 state additions hydrate through additive defaults and migration rules
+- Save version: `4`
+- Save key: `907ogr_v4`
+- compatible v3 state first migrates to v4, then hydrates through additive defaults
 - pre-existing cash migrates into the dirty-cash model
 - legacy Rook progression is preserved during the Respect migration
-- older compatible v3 saves remain playable
+- v3-discovered jobs become hired jobs, known 907List access is preserved, and household trust moves to the new NPC state
+- fresh, Week Zero, pressure-phase, and completed v3 runs remain playable
 
 ## Project Direction
 
@@ -356,10 +365,10 @@ street-level survival
 
 Near-term development priority:
 
-1. human playtesting of the v1.1 navigation on a physical handset
-2. balance validation of the v1.0 organization systems
+1. human pacing validation of applications, phone grace, and weekly rent
+2. balance validation of the organization systems
 3. stronger District Control rewards and capstone presentation
-4. later expansion of block territory into Downtown and Industrial
+4. later expansion of obligations, vehicles, and block territory
 
 ## Documentation
 
@@ -372,6 +381,7 @@ Key repository references:
 - `ALPHA_V0.9.md` — v0.9 daily-life foundation
 - `EIGHTH_PLAYTEST_AUDIT.md` — v0.9 verification record
 - `COPY_REVIEW.md` — current narrative-copy review
+- `tests/v1-7.test.js` — v1.7 household, obligation, access, job-friction, and migration contract
 - PR #52 — v1.0 Soldiers, Territory, Lieutenants, Laundering, and stabilization work
 
 The ClickUp 907Hustle Master Doc remains the broader design and playtesting source of truth.

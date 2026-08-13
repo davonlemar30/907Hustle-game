@@ -51,7 +51,8 @@ test("Around actions are filtered to the current district", () => {
   state.world.locations.gamblingKnown = true;
   state.run.slot = 2;
   const spenard = C.selectors.aroundActions(state).map((entry) => entry.id);
-  for (const id of ["explore_spenard", "local_intel", "night_owl", "spenard_gym", "spenard_gambling"]) assert.ok(spenard.includes(id), id);
+  for (const id of ["explore_spenard", "local_intel", "spenard_gambling"]) assert.ok(spenard.includes(id), id);
+  assert.ok(!spenard.includes("night_owl")); assert.ok(!spenard.includes("spenard_gym"));
   assert.ok(!spenard.includes("return_spenard"));
 
   for (const area of C.NEIGHBORHOODS.filter((entry) => entry.id !== C.HOME_DISTRICT_ID)) {
@@ -146,11 +147,8 @@ test("Night Owl visibility and reducer guards share the same four-slot rule", ()
   for (let slot = 0; slot < C.SLOTS.length; slot += 1) {
     const state = place(fresh(91100 + slot), C.HOME_DISTRICT_ID, { cash: 500, slot });
     const access = C.selectors.districtActionAvailability(state, "night_owl");
-    const entry = C.selectors.aroundActions(state).find((action) => action.id === "night_owl");
     assert.equal(access.visible, true, C.SLOTS[slot]);
     assert.equal(access.available, slot >= 2, C.SLOTS[slot]);
-    assert.equal(entry.available, slot >= 2, C.SLOTS[slot]);
-    if (slot < 2) assert.equal(entry.reason, "Opens at dusk.", C.SLOTS[slot]);
     const next = C.reduceGame(state, { type: "VIEW_NIGHT_OWL_BOARD" });
     if (slot < 2) assert.strictEqual(next, state, C.SLOTS[slot]);
     else assert.notStrictEqual(next, state, C.SLOTS[slot]);
@@ -168,7 +166,7 @@ test("Around UI renders generic returns and normalizes a closed Night Owl page",
   assert.match(ui, /ride\.available \? `\$\{ride\.cashCost \? "\$5 fare" : "Pass covers fare"\}/);
   assert.match(ui, /Walk back<span className="action-copy">\$0 · two parts of day · −3 Health/);
   assert.match(ui, /const actions = C\.selectors\.aroundActions\(state\)/);
-  assert.match(ui, /const closedNightOwlPage = page === "nightowl" && !nightOwl\?\.available/);
-  assert.match(ui, /const effectivePage = staleLocalPage \|\| closedNightOwlPage \? "root" : page/);
-  assert.match(ui, /useEffect\(\(\) => \{ if \(effectivePage !== page\) setPage\("root"\); \}/);
+  assert.match(ui, /const closedNightOwlPage = page === "nightowl" && !nightOwl\.available/);
+  assert.match(ui, /const effectivePage = closedNightOwlPage \? "places" : page/);
+  assert.match(ui, /if \(closedNightOwlPage\) setPage\("places"\)/);
 });

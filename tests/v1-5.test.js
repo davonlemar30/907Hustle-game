@@ -26,7 +26,7 @@ test("all four starter jobs lead the seeded order across 50 seeds and first Wand
     assert.equal(state.jobs.discoveryOrder.length, 4);
     leaders.add(state.jobs.discoveryOrder[0]);
     state = C.reduceGame(state, { type: "WANDER_SPENARD" });
-    assert.deepEqual(state.jobs.discovered, [state.jobs.discoveryOrder[0]], `seed ${seed}`);
+    assert.deepEqual(state.jobs.discovered, ["day_labor", state.jobs.discoveryOrder[0]], `seed ${seed}`);
   }
   assert.deepEqual(leaders, new Set(C.STARTER_JOB_IDS));
 });
@@ -34,7 +34,7 @@ test("all four starter jobs lead the seeded order across 50 seeds and first Wand
 test("starter shifts prioritize unseen coworkers and any third shift can refer the gambling game", () => {
   for (const jobId of C.STARTER_JOB_IDS) {
     let state = fresh(1600 + C.STARTER_JOB_IDS.indexOf(jobId));
-    state.jobs.discovered = [jobId];
+    state.jobs.discovered = ["day_labor", jobId]; state.jobs.hired = ["day_labor", jobId];
     const seen = [];
     for (let shift = 1; shift <= 3; shift += 1) {
       clear(state);
@@ -172,6 +172,7 @@ test("Downtown shows two seeded once-per-run arrivals and always supports the re
 test("phone listings refresh every two days while the home laptop has five daily listings", () => {
   const state = fresh(2100);
   state.nineZeroSevenList.known = true;
+  state.knowledge.knows907List = true;
   const phone1 = C.selectors.listingSlate(state, "phone").map((item) => item.id);
   state.run.day = 2;
   assert.deepEqual(C.selectors.listingSlate(state, "phone").map((item) => item.id), phone1);

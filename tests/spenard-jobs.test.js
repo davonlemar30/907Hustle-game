@@ -19,14 +19,17 @@ function clearSurfaces(state) {
   return state;
 }
 function discover(state, ...ids) {
-  for (const id of ids) if (!state.jobs.discovered.includes(id)) state.jobs.discovered.push(id);
+  for (const id of ids) {
+    if (!state.jobs.discovered.includes(id)) state.jobs.discovered.push(id);
+    if (!state.jobs.hired.includes(id)) state.jobs.hired.push(id);
+  }
   return state;
 }
 
 test("the first Wander always discovers the first seeded starter and still fires the existing first-walk event", () => {
   let state = fresh(1001);
   state = C.reduceGame(state, { type: "WANDER_SPENARD" });
-  assert.deepEqual(state.jobs.discovered, [state.jobs.discoveryOrder[0]]);
+  assert.deepEqual(state.jobs.discovered, ["day_labor", state.jobs.discoveryOrder[0]]);
   assert.equal(state.jobs.discoveryChance, 0.30);
   assert.ok(state.log.some((entry) => entry.text.includes(C.SPENARD_JOBS.find((job) => job.id === state.jobs.discoveryOrder[0]).name.split(" ")[0])));
   assert.equal(state.run.pendingEvent?.id, "boost_first_opportunity");
@@ -41,7 +44,7 @@ test("later Wanders discover at most one eligible hidden job and ramp or reset t
     state.world.locations.explorationCount = 2;
     state.jobs.discoveryChance = 0.30;
     state.flags.boostOpportunitySeen = true;
-    state.run.day = 1;
+    state.run.day = 2;
     const before = state.jobs.discovered.length;
     state = C.reduceGame(state, { type: "WANDER_SPENARD" });
     const delta = state.jobs.discovered.length - before;
@@ -53,26 +56,27 @@ test("later Wanders discover at most one eligible hidden job and ramp or reset t
   assert.equal(observedHit, true);
 });
 
-test("structured John work intel makes Ship Creek eligible without depending on a John implementation", () => {
+test("structured Juan work intel makes Ship Creek eligible", () => {
   let found = false;
   for (let seed = 1; seed < 300 && !found; seed += 1) {
     let state = fresh(seed);
-    state.john = { questionsAsked: ["work:1"] };
+    state.npc.juan.infoShared = ["work:ship_creek"];
     discover(state, ...C.STARTER_JOB_IDS, "night_owl");
     state.world.locations.explorationCount = 1;
     state.jobs.discoveryChance = 0.70;
     state.flags.boostOpportunitySeen = true;
+    state.run.day = 2;
     state = C.reduceGame(state, { type: "WANDER_SPENARD" });
     found = state.jobs.discovered.includes("ship_creek");
   }
   assert.equal(found, true);
-  assert.equal(C.selectors.johnWorkIntelKnown({ john: undefined }), false);
+  assert.equal(C.selectors.juanWorkIntelKnown({ npc: { juan: { infoShared: [] } } }), false);
 });
 
 test("discovered job selectors keep hidden jobs absent and show unmet execution gates", () => {
   const state = fresh();
   discover(state, "wash_go", "night_owl", "delivery");
-  assert.deepEqual(C.selectors.discoveredJobs(state).map((job) => job.id), ["wash_go", "night_owl", "delivery"]);
+  assert.deepEqual(C.selectors.discoveredJobs(state).map((job) => job.id), ["wash_go", "night_owl", "delivery", "day_labor"]);
   assert.equal(C.selectors.jobAvailability(state, "ship_creek").available, false);
   assert.equal(C.selectors.jobAvailability(state, "night_owl").reason, "Meet the Night Owl clerk first.");
   assert.equal(C.selectors.jobAvailability(state, "delivery").reason, "Needs a reliable ride.");
@@ -134,16 +138,16 @@ test("Night Owl ranks unlock Night scheduling, the exclusive stash, and Deshawn'
   assert.equal(C.reduceGame(state, { type: "NIGHT_OWL_STASH_CASH", direction: "store", amount: 1 }), state);
 });
 
-test("job state and Night Owl storage hydrate additively under the v3 save key", () => {
+test("job state and Night Owl storage hydrate additively under the v4 save key", () => {
   let state = fresh(); discover(state, "wash_go");
   state.jobs.records.wash_go.xp = 4; state.jobs.records.wash_go.rank = 1; state.jobs.records.wash_go.contactMet = true;
   const hydrated = C.inspectSave(C.serializeRun(state));
   assert.equal(hydrated.valid, true);
-  assert.deepEqual(hydrated.state.jobs.discovered, ["wash_go"]);
+  assert.deepEqual(hydrated.state.jobs.discovered, ["day_labor", "wash_go"]);
   assert.equal(hydrated.state.jobs.records.wash_go.rank, 1);
   const legacy = JSON.parse(C.serializeRun(state)); delete legacy.jobs;
   const migrated = C.hydrateRun(legacy);
-  assert.deepEqual(migrated.jobs.discovered, []);
+  assert.deepEqual(migrated.jobs.discovered, ["day_labor"]);
   assert.equal(migrated.jobs.discoveryChance, 0.30);
 });
 

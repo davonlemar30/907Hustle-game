@@ -7,8 +7,8 @@ const ui = fs.readFileSync(path.join(root, "ui.jsx"), "utf8");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "v05.css"), "utf8");
 
-test("active shell is v1.4 with a packaged title asset and no stale version copy", () => {
-  assert.match(ui, /One Good Run · v1\.4/); assert.match(html, /ui\.jsx/); assert.doesNotMatch(html, /legacy-v1-ui-reference|text\/plain/);
+test("active shell is v1.5 with a packaged title asset and no stale version copy", () => {
+  assert.match(ui, /One Good Run · v1\.5/); assert.match(html, /ui\.jsx/); assert.doesNotMatch(html, /legacy-v1-ui-reference|text\/plain/);
   assert.match(ui, /907hustle-title\.png/); assert.ok(fs.existsSync(path.join(root, "assets", "907hustle-title.png")));
   assert.doesNotMatch(ui, /Alpha v0\.9|v0\.9/);
 });
@@ -16,11 +16,11 @@ test("title screen exposes safe load, new-game confirmation, preview, and help",
   for (const token of ["Load Game", "New Game", "Saved run", "How to Play", "inspectSave", "HYDRATE_RUN", "replace the current autosave"]) assert.ok(ui.includes(token), token);
   assert.match(ui, /screen !== "game"/);
 });
-test("new games are classless and expose one Start from the Bottom confirmation", () => {
-  assert.match(ui, /Start from the Bottom/); assert.match(ui, /type: "START_RUN"/); assert.doesNotMatch(ui, /Choose your edge|C\.STARTING_EDGES\.map|C\.BACKGROUNDS\.map/);
+test("new games are classless and expose one Start confirmation", () => {
+  assert.match(ui, /<b>Start<\/b>/); assert.match(ui, /type: "START_RUN"/); assert.doesNotMatch(ui, /Choose your edge|C\.STARTING_EDGES\.map|C\.BACKGROUNDS\.map/);
 });
 test("progressive primary navigation leads with Home and keeps Boost after Market", () => {
-  assert.match(ui, /const NAV = \[\["home", "Home"\], \["market", "Market"\], \["boost", "Boost"\], \["travel", "Travel"\], \["people", "People"\], \["more", "More"\]\]/);
+  assert.match(ui, /const NAV = \[\["home", "Home"\], \["market", "Market"\], \["boost", "Boost"\], \["rob", "Rob"\], \["travel", "Travel"\], \["people", "People"\], \["more", "More"\]\]/);
   for (const label of ["Character", "Operations", "Finances", "Recovery", "Help"]) assert.match(ui, new RegExp(`title="${label}"`));
   assert.match(css, /grid-template-columns:repeat\(5,1fr\)/);
 });
@@ -29,7 +29,7 @@ test("Travel exposes the fresh-arrival activity and access model", () => {
 });
 
 test("Spenard exploration is a discoverable Jobs, Wander, and Contacts submenu", () => {
-  for (const token of ["No work found yet", "Wander to look around", 'type: "WANDER_SPENARD"', "Work you found by learning the neighborhood", "Choose a shift approach", "People you met through work"]) assert.ok(ui.includes(token), token);
+  for (const token of ["No work found yet", "Wander to look around", 'type: "WANDER_SPENARD"', "Work you found by learning the neighborhood", "Choose a shift approach", "Call, text, or visit"]) assert.ok(ui.includes(token), token);
   assert.match(ui, /contacts\.length > 0 && <MenuRow title="Contacts"/);
   assert.doesNotMatch(ui, /onClick=\{\(\) => dispatch\(\{ type: "EXPLORE_SPENARD" \}\)\}/);
   assert.doesNotMatch(ui, /PlaceAction title="Ship Creek Freight"/);
@@ -39,7 +39,7 @@ test("HUD shows three primary values and a one-tap status drawer", () => {
   assert.match(ui, /aria-expanded=\{open\}/);
 });
 test("People and Operations use nested full-screen navigation", () => {
-  for (const token of ["Personal", "Recent History", "Quick Score", "Territory", "Gear", "Safehouse", "← Back"]) assert.ok(ui.includes(token), token);
+  for (const token of ["Personal", "Recent History", "Rob", "Territory", "Gear", "Safehouse", "← Back"]) assert.ok(ui.includes(token), token);
   assert.match(ui, /page\.startsWith\("crew:"\)/); assert.match(ui, /page === "safehouse"/);
 });
 test("Finance exposes increments, clamped preview, and reserve wording", () => {
@@ -190,10 +190,10 @@ test("the persistent HUD is progressive: pressure chips appear only under pressu
   assert.match(ui, /hasDreDebt && \(showHeat \|\| showDebt \|\| showRespect\) && <div className="hud chip-row">/);
 });
 
-test("primary navigation is a five-cell bottom bar with icons and stays above 44px", () => {
+test("primary navigation is a progressive bottom bar with icons and 44px targets", () => {
   assert.match(ui, /function NavIcon\(/);
   assert.match(ui, /<NavIcon id=\{id\} \/>/);
-  assert.match(css, /\.nav\{grid-template-columns:repeat\(5,1fr\)[^}]*border-top:1px solid var\(--line\)\}/);
+  assert.match(css, /\.nav\{grid-template-columns:repeat\(5,1fr\)[^}]*border-top:1px solid var\(--line\)[^}]*overflow-x:auto/);
   assert.match(css, /\.nav button\{[^}]*min-height:52px/);
   // Three shell rows now that navigation sits at the bottom edge.
   assert.match(css, /\.app\{grid-template-rows:auto minmax\(0,1fr\) auto;/);
@@ -204,7 +204,8 @@ test("Travel exposes exactly three root choices with focused subpages", () => {
   assert.match(ui, /if \(page === "destinations"\) return <Destinations/);
   const root = ui.slice(ui.indexOf("function Travel("), ui.indexOf("function SpenardBlockCard("));
   assert.equal((root.match(/<MenuRow/g) || []).length, 3);
-  for (const title of ["Spenard", "Home", "Leave Spenard"]) assert.match(root, new RegExp(`<MenuRow title="${title}"`));
+  for (const title of ["Home", "Leave Spenard"]) assert.match(root, new RegExp(`<MenuRow title="${title}"`));
+  assert.match(root, /Around Downtown/);
 });
 
 test("Leave Spenard combines known destinations, automatic fares, and passes", () => {
@@ -218,7 +219,7 @@ test("Leave Spenard combines known destinations, automatic fares, and passes", (
 
 test("Operations and Finances are hubs with focused subpages and Back on every one", () => {
   for (const fn of ["function OperationsOverview(", "function DistrictControlPage(", "function TerritoryBlocks(", "function FinanceOverview(", "function DebtPage(", "function FinancialRisk("]) assert.ok(ui.includes(fn), fn);
-  for (const page of ["overview", "territory", "district", "soldiers", "gear", "safehouse", "quick"]) assert.match(ui, new RegExp(`page === "${page}"`));
+  for (const page of ["overview", "territory", "district", "soldiers", "gear", "safehouse", "rob"]) assert.match(ui, new RegExp(`page === "${page}"`));
   for (const page of ["overview", "debt", "laundering", "risk"]) assert.match(ui, new RegExp(`page === "${page}"`));
   // Every nested page owns an explicit Back control.
   assert.equal((ui.match(/onBack=\{\(\) => setPage\("root"\)\}/g) || []).length >= 8, true);
@@ -289,7 +290,7 @@ test("Safehouse is a hub instead of the longest page in the build", () => {
 
 test("the play-screen header is one status line, not a wordmark row", () => {
   assert.doesNotMatch(ui, /className="brand-row"/);
-  assert.match(ui, /<h1 className="sr-only">907Hustle: One Good Run · v1\.4<\/h1>/);
+  assert.match(ui, /<h1 className="sr-only">907Hustle: One Good Run · v1\.5<\/h1>/);
   assert.match(ui, /<button className="menu-btn" onClick=\{onMenu\}>Menu<\/button>/);
   assert.match(css, /\.primary-hud\{grid-template-columns:minmax\(0,1\.35fr\) minmax\(0,\.72fr\) auto auto/);
 });

@@ -136,7 +136,7 @@
    Clamping the track to minmax(0,1fr) lets each child's own min-width:0 and
    text-overflow:ellipsis do their job. Regression test: ui-contract. */
 .app{grid-template-rows:auto minmax(0,1fr) auto;grid-template-columns:minmax(0,1fr)}
-.nav{grid-template-columns:repeat(5,1fr);gap:3px;padding:4px 5px calc(4px + env(safe-area-inset-bottom));border-bottom:0;border-top:1px solid var(--line)}
+.nav{grid-template-columns:repeat(5,1fr);gap:3px;padding:4px 5px calc(4px + env(safe-area-inset-bottom));border-bottom:0;border-top:1px solid var(--line);overflow-x:auto;overscroll-behavior-x:contain}
 .nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:52px;padding:5px 1px;font-size:.6rem;letter-spacing:.03em}
 .nav-icon{display:block;width:19px;height:19px}
 .nav button.active .nav-icon{color:var(--red2)}
@@ -206,6 +206,21 @@
 @media(prefers-reduced-motion:no-preference){.result-card{animation:result-in .18s ease-out}}
 @keyframes result-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 
+/* Shared social list and first-unlock celebration. */
+.contact-card{padding:0;overflow:hidden}
+.contact-toggle{display:flex;align-items:center;gap:10px;width:100%;min-height:58px;padding:10px 11px;border:0;background:transparent;color:var(--white);text-align:left}
+.contact-toggle>span:first-child{flex:1;min-width:0}.contact-toggle b,.contact-toggle small{display:block}.contact-toggle small{margin-top:2px;color:var(--muted)}
+.contact-toggle>span:last-child{color:var(--amber);font-family:var(--mono);font-size:.66rem;text-align:right}
+.contact-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:0 10px 10px;border-top:1px solid var(--line)}
+.contact-actions .btn{margin-top:9px;min-width:0}
+.unlock-backdrop{position:fixed;inset:0;z-index:75;display:grid;place-items:center;padding:16px;background:radial-gradient(circle,rgba(95,25,20,.36),rgba(0,0,0,.9));cursor:pointer}
+.unlock-card{width:min(390px,100%);padding:26px 18px;border:1px solid #744039;border-top:5px solid var(--red2);background:linear-gradient(180deg,#21110f,#0d0d0d);box-shadow:0 20px 60px rgba(0,0,0,.7);text-align:center}
+.unlock-card>span,.unlock-card>small{display:block;color:var(--amber);font-size:.65rem;font-weight:700;letter-spacing:.2em;text-transform:uppercase}
+.unlock-title{margin:10px 0 13px;font-family:var(--head);font-size:2rem;letter-spacing:.07em;text-transform:uppercase}
+@media(prefers-reduced-motion:no-preference){.unlock-card{animation:unlock-in .3s ease-out}}
+@keyframes unlock-in{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
+
 /* Narrow phones (320–360px). Five navigation cells stay above 44px wide at
    320px; only the type and icons tighten. */
 @media(max-width:360px){
@@ -219,6 +234,7 @@
   .stat-row{grid-template-columns:repeat(2,1fr)}
   .destination-meta{grid-template-columns:1fr}
   .result-title{font-size:1.3rem}
+  .contact-actions{grid-template-columns:1fr}
 }
 @media(max-height:600px){.feed-list{max-height:70px}.home{padding-top:10px}.home-hero{padding-bottom:9px;margin-bottom:9px}.home-where{font-size:1.65rem}}
 

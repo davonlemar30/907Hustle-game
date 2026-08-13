@@ -46,6 +46,7 @@ test("fresh characters require a valid Street Name and start with only $100 clea
 
 test("Week Zero progress deduplicates locations and eligible NPCs", () => {
   let state = fresh(2);
+  state.run.slot = 2;
   state = C.reduceGame(state, { type: "VIEW_NIGHT_OWL_BOARD" });
   state = C.reduceGame(state, { type: "VIEW_NIGHT_OWL_BOARD" });
   assert.equal(state.onboarding.visitedLocations.filter((id) => id === "night_owl").length, 1);
@@ -164,6 +165,7 @@ test("legacy v3 saves hydrate directly into pressure with inferred lender state"
 
 test("Night Owl postings rotate deterministically and regulars keep separate relationships", () => {
   let state = fresh(10);
+  state.run.slot = 2;
   const boardA = C.selectors.nightOwlBoardItems(state).map((item) => item.id);
   const boardB = C.selectors.nightOwlBoardItems(state).map((item) => item.id);
   assert.deepEqual(boardA, boardB);
@@ -179,8 +181,7 @@ test("Cal Level 2 and Lena's third shift both unlock gambling through a scene", 
   cal.nightOwl.regulars.cal.relationship = 1;
   cal.run.seed = 11;
   cal.run.day = 1;
-  cal.run.slot = 0;
-  while (C.selectors.nightOwlRegularFor(cal).id !== "cal") cal.run.slot += 1;
+  cal.run.slot = 2;
   cal = C.reduceGame(cal, { type: "TALK_NIGHT_OWL_REGULAR", regularId: "cal" });
   assert.equal(cal.run.pendingEvent?.id, "gambling_discovery");
   cal = C.reduceGame(cal, { type: "RESOLVE_EVENT", choiceIndex: 0 });
@@ -196,7 +197,7 @@ test("Cal Level 2 and Lena's third shift both unlock gambling through a scene", 
 
 test("907List has three deterministic listings, a three-item cap, and clean resale profit", () => {
   let state = fresh(13);
-  state.listings.known = true;
+  state.nineZeroSevenList.known = true;
   state.player.cash = 500;
   state.player.cleanCash = 500;
   state.player.dirtyCash = 0;
@@ -206,17 +207,17 @@ test("907List has three deterministic listings, a three-item cap, and clean resa
   for (const item of slate) {
     state = clearStory(C.reduceGame(state, { type: "BUY_907LIST", itemId: item.id }));
   }
-  assert.equal(state.listings.inventory.length, 3);
+  assert.equal(state.nineZeroSevenList.inventory.length, 3);
   const blocked = C.reduceGame(state, { type: "BUY_907LIST", itemId: slate[0].id });
   assert.equal(blocked, state);
-  const held = state.listings.inventory[0];
+  const held = state.nineZeroSevenList.inventory[0];
   const item = C.LISTING_ITEMS.find((entry) => entry.id === held.itemId);
   const cleanBefore = state.player.cleanCash;
   state = C.reduceGame(state, { type: "SELL_907LIST", inventoryId: held.id });
   const payout = state.player.cleanCash - cleanBefore;
   assert.ok(payout >= item.resale[0] && payout <= item.resale[1]);
-  assert.equal(state.listings.inventory.length, 2);
-  assert.equal(state.listings.profit, payout - held.cost);
+  assert.equal(state.nineZeroSevenList.inventory.length, 2);
+  assert.equal(state.nineZeroSevenList.profit, payout - held.cost);
 });
 
 test("travel applies a $5 fare unless a pass covers it", () => {
@@ -238,7 +239,8 @@ test("UI exposes the three Travel roots, Night Owl hub, 907List, and hidden debt
   const ui = fs.readFileSync(path.join(__dirname, "..", "ui.jsx"), "utf8");
   const travel = ui.slice(ui.indexOf("function Travel("), ui.indexOf("function SpenardBlockCard"));
   assert.equal((travel.match(/<MenuRow title=/g) || []).length, 3);
-  for (const label of ["Spenard", "Home", "Leave Spenard"]) assert.match(travel, new RegExp(`title=\\"${label}\\"`));
+  for (const label of ["Home", "Leave Spenard"]) assert.match(travel, new RegExp(`title=\\"${label}\\"`));
+  assert.match(travel, /Around Downtown/);
   assert.match(ui, /function NightOwlHub/);
   assert.match(ui, /nightOwlRegularFor/);
   assert.match(ui, /title="907List"/);

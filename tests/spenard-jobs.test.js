@@ -23,12 +23,12 @@ function discover(state, ...ids) {
   return state;
 }
 
-test("the first Wander always discovers Wash & Go and still fires the existing first-walk event", () => {
+test("the first Wander always discovers the first seeded starter and still fires the existing first-walk event", () => {
   let state = fresh(1001);
   state = C.reduceGame(state, { type: "WANDER_SPENARD" });
-  assert.deepEqual(state.jobs.discovered, ["wash_go"]);
+  assert.deepEqual(state.jobs.discovered, [state.jobs.discoveryOrder[0]]);
   assert.equal(state.jobs.discoveryChance, 0.30);
-  assert.ok(state.log.some((entry) => entry.text.includes("Help Wanted") && entry.text.includes("Wash & Go")));
+  assert.ok(state.log.some((entry) => entry.text.includes(C.SPENARD_JOBS.find((job) => job.id === state.jobs.discoveryOrder[0]).name.split(" ")[0])));
   assert.equal(state.run.pendingEvent?.id, "boost_first_opportunity");
   assert.equal(state.world.locations.explorationCount, 1);
 });
@@ -58,7 +58,7 @@ test("structured John work intel makes Ship Creek eligible without depending on 
   for (let seed = 1; seed < 300 && !found; seed += 1) {
     let state = fresh(seed);
     state.john = { questionsAsked: ["work:1"] };
-    discover(state, "wash_go", "night_owl");
+    discover(state, ...C.STARTER_JOB_IDS, "night_owl");
     state.world.locations.explorationCount = 1;
     state.jobs.discoveryChance = 0.70;
     state.flags.boostOpportunitySeen = true;
@@ -148,7 +148,7 @@ test("job state and Night Owl storage hydrate additively under the v3 save key",
 });
 
 test("all authored job discovery, introduction, detail, and live result copy stays under forty words", () => {
-  const authored = C.SPENARD_JOBS.flatMap((job) => [job.discovery, job.contact.introduction, ...job.details]);
+  const authored = C.SPENARD_JOBS.flatMap((job) => [job.discovery, ...job.coworkers.map((person) => person.introduction), ...job.details, ...job.shiftDialogue]);
   for (const line of authored) assert.ok(line.trim().split(/\s+/).length < 40, line);
   for (const job of C.SPENARD_JOBS) {
     let state = fresh(); discover(state, job.id);

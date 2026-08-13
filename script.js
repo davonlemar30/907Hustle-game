@@ -503,7 +503,7 @@ function buildRobberyEncounter() {
   return { targetType, targetLabel: base.label, situation: base.text, choices };
 }
 
-function executeRobberyChoice(encounter, choiceProfile) {
+function executeRobChoice(encounter, choiceProfile) {
   const area = currentArea();
   const pressure = rookPressureState();
   const tracker = GAME.robberyTracker;
@@ -615,7 +615,7 @@ function resolveRobberyChoice(profile, targetType) {
     store_clerk: "Store Clerk",
   })[encounter.targetType] || "Target";
 
-  executeRobberyChoice(encounter, profile);
+  executeRobChoice(encounter, profile);
   GAME.flags.robbedRecently = profile !== "walkaway";
   GAME.robberyTracker.lastTargetType = encounter.targetType;
 

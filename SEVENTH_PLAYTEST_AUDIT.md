@@ -19,7 +19,7 @@ Combat is `round(Strength × .40 + Reflexes × .35 + Endurance × .25)`. Charism
 | --- | --- |
 | Mover | qualifying profitable sales, fair Kip purchases, market information, Kip choices |
 | Earner | Dre and crew payments, safehouse or neighborhood investment, final plan, Dre choices |
-| Stickup | Quick Score, dealer robbery, confrontation, intimidation, territory attack, Rook choices |
+| Stickup | Rob, dealer robbery, confrontation, intimidation, territory attack, Rook choices |
 | Connector | relationship choices, recruitment, Eli test route, Mara and Eli choices |
 
 Sources are deduplicated, repetitive sources are capped, and history is bounded to 50. Navigation, quantity changes, and invalid actions record nothing.

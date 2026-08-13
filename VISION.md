@@ -150,7 +150,7 @@ Five categories, tracked in a behavior ledger:
 |---|---|
 | **Mover** | Profitable sales, supplier negotiation, bulk purchases, market intelligence, reliable dealer business |
 | **Earner** | Legitimate work, training, steady debt payments, attendance, dependable promises |
-| **Stickup** | Dealer robbery, Quick Score, fighting, intimidation, weapon use |
+| **Stickup** | Dealer robbery, Rob, fighting, intimidation, weapon use |
 | **Connector** | Relationships, favors, recruitment, information sharing, contact jobs |
 | **Wild Card** | Mixed behavior with no dominant category, frequent changes of approach, unpredictable decisions |
 
@@ -280,7 +280,7 @@ interface.
 
 ## 10. Crime
 
-Faster gains, stronger consequences. Eventually: Quick Score, dealer robbery,
+Faster gains, stronger consequences. Eventually: Rob, dealer robbery,
 shoplifting, burglary, vehicle theft, stickups, crew operations, territory
 actions.
 

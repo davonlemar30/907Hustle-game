@@ -2,18 +2,30 @@
 
 907Hustle: One Good Run is a mobile-first, single-player crime, trading, resource-management, and light RPG web game set in an Anchorage-inspired version of Spenard.
 
-The current playable build is **v1.0: Organization Layer**. The player begins as a broke newcomer staying with family, works through a seven-day run, manages Dre's debt, trades and hustles for money, develops relationships and reputation, acquires the North Star Garage, and can grow into an operator who controls blocks through soldiers and lieutenants.
+The current playable build is **v1.5: Job Variety, Contact Utility, and Downtown Scaffolding**. The player begins as a broke newcomer staying with family, establishes a Week Zero routine, manages Dre's debt, trades and hustles for money, develops relationships and reputation, acquires the North Star Garage, and can grow into an operator who controls blocks through soldiers and lieutenants.
 
 The game uses a classless progression model. Access and identity emerge from behavior, attributes, relationships, Street Read, Respect, money, property, crew, and territory rather than a fixed class path.
 
-## Current Build: v1.0
+## Current Build: v1.5
 
-v1.0 extends the v0.9 daily-life foundation with a midgame organization layer.
+v1.5 extends the organization and daily-life foundation with seeded starter-job variety, useful social contacts, first-unlock celebrations, canonical Rob navigation, a laptop-powered 907List tier, strict Night Owl hours, and the first Downtown arrival scaffold.
+
+### v1.5 additions
+
+- The first Wander guarantees one seeded starter job from Wash & Go, Spenard Chevron, Rebel Convenience, or Northern Value; later job discovery retains its ramp.
+- Every starter workplace has two coworkers, three or more shift lines, unseen-coworker priority, and a possible gambling referral after the third shift.
+- People and Explore Spenard share one Contacts screen. Call is free, Text unlocks at relationship Level 1, and Visit unlocks at Level 2, costs one part of day, respects location hours, and grants at most one relationship level per contact each day.
+- Market, Boost, Rob, and Gambling raise a persisted two-second unlock celebration only on their first true unlock.
+- Rob is the canonical action everywhere. Its opportunity begins in Operations and moves to the primary Market → Boost → Rob sequence after the first success; `stats.robbery` remains the compatible outcome ledger.
+- Night Owl actions are reducer- and UI-guarded until Evening or Night.
+- The first two Downtown arrivals show seeded, once-per-run ambient cards. Around Downtown currently contains only a prominent Return to Spenard action; Circle K, Fourth Avenue bars, and REI remain inert future definitions.
+- Basic phone access shows three 907List listings from a two-day bucket. A $250 laptop adds a Home entry with five listings refreshed daily. Alert state exists only as an inert compatibility hook.
+- Saves continue to use `907ogr_v3`; hydration is additive and does not replay celebrations for features an older save already unlocked.
 
 ### Core gameplay
 
 - Seven-day run with Morning, Afternoon, Evening, and Night
-- Three active districts: Spenard, Downtown, and Industrial Service Roads
+- Spenard and Industrial Service Roads gameplay, plus a return-safe Downtown arrival scaffold
 - Four-product market with seeded price movement and weighted-average cost basis
 - Buy/sell previews with revenue, cost basis, projected profit or loss, cash after, and cargo after
 - Legal work, exploration, gym training, informal gambling, shoplifting, transit, relationships, and property progression
@@ -149,12 +161,14 @@ systems appear in the menus only once the run has unlocked them.
 
 ### Primary navigation
 
-Five bottom-bar destinations, icon over label:
+Progressive bottom-bar destinations, icon over label:
 
 - **Home** — situation overview and the run's anchor
-- **Market** — the hero trading surface, always one tap away
+- **Market** — the hero trading surface after supplier access
+- **Boost** — hidden until the first successful lift
+- **Rob** — hidden until the first successful Rob
 - **Travel** — where to go, how to get there, what is around you
-- **People** — personal, street contacts, crew, lieutenants
+- **People** — social contacts, personal, street contacts, crew, lieutenants
 - **More** — Finances, Operations, Recovery, Character, Street Read, Help
 
 Navigation sits at the bottom edge where a thumb reaches it. The header is one
@@ -177,8 +191,8 @@ carries an explicit Back control.
 
 ```text
 Travel      → Destinations · Around <district> · Home · Transit · Local Intel · Listings
-People      → Personal · Street Contacts · Crew · Lieutenants · Recent History
-Operations  → Overview · Safehouse · Territory · Soldiers · District Control · Gear · Quick Score
+People      → Contacts · Personal · Street Contacts · Crew · Lieutenants · Recent History
+Operations  → Overview · Safehouse · Territory · Soldiers · District Control · Gear · Rob opportunity
 Safehouse   → Protected Cash · Storage · Upgrades · Assignments
 Finances    → Overview · Debt & Obligations · Laundering · Financial Risk
 ```
@@ -211,7 +225,7 @@ untouched.
 
 - 44px minimum visible control height, verified by measurement in Chromium
 - zero horizontal overflow at 320, 375, 390, 430, and 375×560 reduced height
-- bottom navigation fully on screen with five cells above 44×44
+- bottom navigation uses 44px minimum cells and contained horizontal scrolling when every progressive tab is visible on a narrow phone
 - player-facing time shown as day parts
 - nested screens use explicit Back controls
 - trading remains the strongest primary gameplay surface

@@ -32,7 +32,7 @@ The supplied `907chatgptimage.png` is a 941×1672 RGB PNG (approximately 1.9 MB)
 - Keep Strategist internally for old saves while exposing only Silver-Tongued Hustler and Steady-Hand Shooter to new runs.
 - Centralize feature availability and unlock notices in the domain layer.
 - Introduce Mara before a relationship-dependent threat and stage Eli through a test route before recruitment.
-- Replace the run-level robbery flag with a once-per-day Quick Score and cumulative statistics.
+- Replace the run-level robbery flag with a once-per-day Rob and cumulative statistics.
 - Reorganize People and Operations into nested full-screen views; simplify the HUD and primary navigation.
 - Preserve the economy, transaction projections, territory rules, and single time-advance pipeline unless this phase explicitly changes presentation or gating.
 
@@ -57,9 +57,9 @@ Verification, event-gating diagrams, simulation results, mobile results, save-co
 7. Rewrote Eli's introduction and added contact stages, a $35 test route that uses one part of day, deterministic risk/reward, a rejection callback, and recruitment gating.
 8. Hid Recent Local Context until a prior local price exists.
 9. Replaced player-facing time “slot” copy with part-of-day language while preserving internal `run.slot` and equipment-slot identifiers.
-10. Reworked Emergency Robbery into Quick Score: visible in Operations, available below the $150 comeback threshold at most once per day, repeatable on later days, and increasingly risky across the week.
-11. Added cumulative Quick Score attempts, successes, failures, total payout, and last-attempted day while retaining legacy summary fields.
-12. Reorganized Operations into Quick Score, Territory, Gear, and Safehouse. Safehouse now surfaces protected cash, stored inventory, upgrades, and assignments.
+10. Reworked Emergency Robbery into Rob: visible in Operations, available below the $150 comeback threshold at most once per day, repeatable on later days, and increasingly risky across the week.
+11. Added cumulative Rob attempts, successes, failures, total payout, and last-attempted day while retaining legacy summary fields.
+12. Reorganized Operations into Rob, Territory, Gear, and Safehouse. Safehouse now surfaces protected cash, stored inventory, upgrades, and assignments.
 13. Added +$25/+50/+100, Safe Maximum, and Pay Full debt controls with clamped cash/debt previews and the existing reserve warning.
 14. Simplified Recovery through progressive treatment reveal and an accurate Lay Low preview.
 15. Updated display copy to Spenard, Night Owl Mini-Mart, North Star Garage, Downtown, and Industrial Service Roads without changing stable location IDs.
@@ -91,7 +91,7 @@ If Mara is not introduced, unavailable, or lacks interaction history, the early 
 
 `Rejected → Day 4 callback → reopen test route | final rejection`
 
-## Quick Score balance model
+## Rob balance model
 
 - Requires working capital below $150, no unresolved event/encounter/operation, and time remaining.
 - May be attempted once on each in-game day.
@@ -99,7 +99,7 @@ If Mara is not introduced, unavailable, or lacks interaction history, the early 
 - Payout is $115–$210. Repeated attempts reduce success chance and increase Heat, Rook pressure, and injury range.
 - Failure never creates a permanent weekly lockout; a later day can reopen the action if the player still needs recovery capital.
 
-The deterministic agents attempted Quick Score in 331 of 600 runs/attempt opportunities total (52 cautious, 72 balanced, 207 aggressive). Successful payout totaled $20,816, but aggressive use produced 127 failures and a peak-Heat average of 14. The action therefore functions as emergency recovery rather than a low-risk replacement for market trading.
+The deterministic agents attempted Rob in 331 of 600 runs/attempt opportunities total (52 cautious, 72 balanced, 207 aggressive). Successful payout totaled $20,816, but aggressive use produced 127 failures and a peak-Heat average of 14. The action therefore functions as emergency recovery rather than a low-risk replacement for market trading.
 
 ## Save compatibility decision
 
@@ -114,14 +114,14 @@ Save schema and key remain version 3 / `907ogr_v3`.
 Command: `node --test tests/*.test.js`
 
 - 40 passed, 0 failed.
-- Covers save inspection, corrupt saves, legacy hydration, two new-run edges, feature unlocks, Mara gating/callback, Eli test-route progression, Quick Score daily gating/stat normalization, Finance clamping, trade-projection parity, local-context reveal, nested navigation contracts, player-facing time terminology, and existing clock/economy/territory/endings.
+- Covers save inspection, corrupt saves, legacy hydration, two new-run edges, feature unlocks, Mara gating/callback, Eli test-route progression, Rob daily gating/stat normalization, Finance clamping, trade-projection parity, local-context reveal, nested navigation contracts, player-facing time terminology, and existing clock/economy/territory/endings.
 
 ### Deterministic simulations
 
 Command: `node tests/simulate-runs.js 200`
 
 - 600/600 runs terminated; 0 dead ends.
-- Cautious: average cash $100, net worth −$392, debt $782, peak Heat 6, 52 Quick Score attempts / 25 successes.
+- Cautious: average cash $100, net worth −$392, debt $782, peak Heat 6, 52 Rob attempts / 25 successes.
 - Balanced: average cash $82, net worth −$385, debt $781, peak Heat 11, 72 attempts / 26 successes.
 - Aggressive: average cash $127, net worth −$432, debt $667, peak Heat 14, 207 attempts / 80 successes.
 - Territory attempts remained 0 because the existing deterministic profiles do not accumulate the required crew/gear/cash readiness. This is an agent limitation and a continuing balance-observation gap, not a disabled mechanic.

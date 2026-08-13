@@ -57,7 +57,7 @@ Last updated: 2026-08-12 (America/Anchorage)
 ## Alpha v0.7.1 implementation
 
 1. Kip Sallis is the dealer prototype: one persistent named NPC supporting Buy, Ask, and Rob, so the Hustle and Stickup tracks are legible against the same person. Robbing him pays cash and free product but chokes Spenard supply for two days; two successes put him off the block permanently.
-2. `executeDealerRobbery` mirrors `executeRobbery`, including the `suppressStory` tail. The stickup is deliberately not gated by the Quick Score working-capital threshold.
+2. `executeDealerRobbery` mirrors `executeRob`, including the `suppressStory` tail. The stickup is deliberately not gated by the Rob working-capital threshold.
 3. Eli, Dre, and Rook chains completed — ten new authored beats. The registry now carries 43 beats across five chains.
 4. The registry supports branch stages, so a chain can offer alternative beats at the same point.
 5. Place-rooted beats outrank anywhere-beats when the player is standing in that place. This fixed Mara collapsing to 9% once three area-agnostic chains were added.
@@ -110,7 +110,7 @@ Command: `node tests/simulate-runs.js 200`
 - aggressive: 5.6 story / 3.6 ambient beats, Mara stage 4+ in 0%, quiet runs 145/200.
 - stickup: 7.7 story / 4.3 ambient beats, Mara stage 4+ in 54% and 6 in 37%, 332 dealer robberies across 200 runs.
 
-The aggressive profile never returns to Spenard, so Mara is structurally unreachable for it — the district gate working as intended. Its quiet count is largely an artifact of the bot spamming Quick Score, which passes `suppressStory: true` and therefore rolls no beat. See `SIXTH_PLAYTEST_AUDIT.md` for the full reading and for two measurement errors corrected during the pass.
+The aggressive profile never returns to Spenard, so Mara is structurally unreachable for it — the district gate working as intended. Its quiet count is largely an artifact of the bot spamming Rob, which passes `suppressStory: true` and therefore rolls no beat. See `SIXTH_PLAYTEST_AUDIT.md` for the full reading and for two measurement errors corrected during the pass.
 
 ## Known limitations
 

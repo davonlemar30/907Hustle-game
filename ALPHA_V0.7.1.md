@@ -23,7 +23,7 @@ During a seven-day run, the player can:
 - Manage Health, Heat, cargo, equipment, protected storage, and the North Star Garage
 - Recruit crew and prepare territory operations against Rook
 - Build or damage relationships through event choices and recurring callbacks
-- Use Quick Score as an emergency recovery action
+- Use Rob as an emergency recovery action
 - Meet Kip Sallis and choose between fair business, information, and robbery
 
 ## Kip Sallis
@@ -46,7 +46,7 @@ Kip is a named Spenard dealer working from the Wash & Go lot. He exists to make 
 ### Rob Kip
 
 - Available as a deliberate playstyle choice
-- Independent of the Quick Score working-capital gate
+- Independent of the Rob working-capital gate
 - Uses combat ability, equipment, crew, Insight-equivalent logic, Heat, and robbery history
 
 Possible rewards:

@@ -234,19 +234,19 @@ test("debt payment advances once and full payoff unlocks Dre's offer", () => {
   assert.equal(state.lender.balance, 0); assert.equal(state.lender.afterPayoffOffer, "available"); assert.equal(state.stats.pipelineAdvances, 1);
 });
 
-test("Quick Score is available once per day and returns on a later day", () => {
-  let state = run(123); state.player.cash = 100; assert.equal(C.selectors.robberyAvailability(state).available, true);
-  state = C.reduceGame(state, { type: "QUICK_SCORE" });
+test("Rob is available once per day and returns on a later day", () => {
+  let state = run(123); state.player.cash = 100; assert.equal(C.selectors.robAvailability(state).available, true);
+  state = C.reduceGame(state, { type: "ROB" });
   assert.equal(state.stats.robbery.attempts, 1); assert.equal(state.stats.robbery.lastAttemptedDay, 1); assert.equal(state.stats.pipelineAdvances, 1); assert.ok(state.run.pendingOperationResult || state.run.status === "ended");
   if (state.run.status === "playing") {
     state = C.reduceGame(state, { type: "ACKNOWLEDGE_OPERATION_RESULT" });
-    assert.equal(C.selectors.robberyAvailability(state).available, false);
+    assert.equal(C.selectors.robAvailability(state).available, false);
     while (state.run.pendingEncounter && state.run.status === "playing") {
       const choiceId = C.selectors.encounterChoices(state)[0].id;
       state = C.reduceGame(state, { type: "RESOLVE_ENCOUNTER", choiceId });
     }
     state.run.day = 2; state.run.slot = 0; state.player.cash = 50; state.base.storedCash = 0;
-    assert.equal(C.selectors.robberyAvailability(state).available, true);
+    assert.equal(C.selectors.robAvailability(state).available, true);
   }
 });
 
@@ -354,6 +354,7 @@ test("fresh runs expose Places and People while garage operations remain earned"
 
 test("Mara introduction resolves once and does not by itself arm her threat", () => {
   let state = run(); assert.equal(C.selectors.maraThreatEligible(state), false);
+  state.run.slot = 2;
   state = C.reduceGame(state, { type: "VISIT_NIGHT_OWL" }); assert.equal(state.run.pendingEvent.id, "mara_intro");
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
   assert.equal(state.people.mara.met, true); assert.equal(state.people.mara.introChoice, "friendly");
@@ -463,6 +464,7 @@ test("the saved-run preview carries the name alongside the run position", () => 
 
 test("Mara's stages record chain progress without exposing it to the player", () => {
   let state = run();
+  state.run.slot = 2;
   state = C.reduceGame(state, { type: "VISIT_NIGHT_OWL" });
   const built = state.run.pendingEvent;
   assert.equal(built.chain, undefined); assert.equal(built.stage, undefined); assert.equal(built.weight, undefined);
@@ -590,10 +592,10 @@ test("standing raises the dealer discount", () => {
   assert.ok(C.selectors.dealerActions(warm, "kip").buy.discount > C.selectors.dealerActions(cold, "kip").buy.discount);
 });
 
-test("robbing the dealer is not gated behind the Quick Score comeback threshold", () => {
+test("robbing the dealer is not gated behind the Rob comeback threshold", () => {
   const state = metKip();
   state.player.cash = 5000; // far above the working-capital reserve
-  assert.equal(C.selectors.robberyAvailability(state).available, false, "Quick Score stays a comeback lever");
+  assert.equal(C.selectors.robAvailability(state).available, false, "Rob stays a comeback lever");
   assert.equal(C.selectors.dealerActions(state, "kip").rob.available, true, "the stickup is a playstyle, not a comeback");
 });
 

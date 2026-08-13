@@ -39,7 +39,7 @@ test("v1.1 shell passes market visibility through the icon nav and keeps hidden 
   const ui = fs.readFileSync(path.join(root, "ui.jsx"), "utf8");
   const css = fs.readFileSync(path.join(root, "v05.css"), "utf8");
   assert.match(ui, /<Navigation tab=\{tab\} setTab=\{setTab\} features=\{features\} marketVisible=\{state\.market\.visible\}/);
-  assert.match(ui, /setTab\(state\.market\.visible \? "market" : "travel"\)/);
+  assert.match(ui, /setTab\("travel"\)/);
   assert.match(css, /\.nav\.market-hidden\{grid-template-columns:repeat\(4,1fr\)\}/);
 });
 

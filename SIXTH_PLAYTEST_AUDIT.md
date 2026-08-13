@@ -164,9 +164,9 @@ conclusions:
 
 The aggressive profile reaches Mara 0% of the time because its route never
 returns to Spenard. That is the design working. Its high quiet count is largely
-an artifact of the bot spamming Quick Score: `QUICK_SCORE`, `ELI_TEST_ROUTE`, and
+an artifact of the bot spamming Rob: `ROB`, `ELI_TEST_ROUTE`, and
 `TAKEOVER` pass `suppressStory: true` so they never stack two modals on one tick,
-so those slots roll no beat. A human uses Quick Score rarely — it is gated to
+so those slots roll no beat. A human uses Rob rarely — it is gated to
 working capital below $150.
 
 **Human playtest is required** to settle the true Mara frequency; the bots

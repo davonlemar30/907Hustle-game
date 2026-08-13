@@ -54,7 +54,7 @@ First-time-only unless a cap is stated.
 | Clear Dre's note completely | 40 | once |
 | Take a territory | 35 | each |
 | Resolve a story-chain stage | 15 | cap 6 |
-| First Quick Score success | 20 | once |
+| First Rob success | 20 | once |
 | First dealer robbery success | 20 | once |
 | Unlock a new product access tier | 20 | each |
 | Prepare the Day 7 plan | 25 | once |

@@ -114,7 +114,7 @@ continuation past Day 7 ("Keep Moving") · larger gang and territory management.
 ### Sequencing notes
 
 - **"Keep Moving" has one clean hook**: the `finalSlot` branch in `advanceRun`
-  that currently calls `endRun`. The `RUN_DAYS` gates in `robberyAvailability`
+  that currently calls `endRun`. The `RUN_DAYS` gates in `robAvailability`
   and `eliTestRouteAvailability` become "checkpoint reached" checks instead of
   "is it day 7" checks.
 - **Obligations should reuse the crew-wage pattern** — `wageDue` accruing on the

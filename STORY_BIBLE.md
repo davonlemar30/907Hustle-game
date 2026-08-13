@@ -313,10 +313,10 @@ The v0.6 ladder produced exactly one.
 - The **aggressive profile never returns to Spenard** (its route is
   Industrial → Downtown), so Mara is structurally unreachable at 0%. That is the
   design working: you do not meet the Night Owl clerk if you never go there.
-- Its high quiet count is mostly an artifact of the bot spamming Quick Score.
-  `QUICK_SCORE`, `ELI_TEST_ROUTE`, and `TAKEOVER` pass `suppressStory: true`
+- Its high quiet count is mostly an artifact of the bot spamming Rob.
+  `ROB`, `ELI_TEST_ROUTE`, and `TAKEOVER` pass `suppressStory: true`
   (game-core.js) so they do not stack two modals on one tick — slots spent on
-  them never roll a beat. A human uses Quick Score rarely; it is gated to
+  them never roll a beat. A human uses Rob rarely; it is gated to
   working capital below $150.
 - A Spenard-resident probe measures Mara ≥4 at 64% and ≥6 at 37%. The truth is
   between the two, and **human playtest is required** to settle it.

@@ -1510,6 +1510,496 @@
     }
   });
 
+  // src/data/observations.js
+  var require_observations = __commonJS({
+    "src/data/observations.js"(exports, module) {
+      var OBSERVATION_CATEGORIES = [
+        "presence",
+        "honesty",
+        "violence",
+        "financial",
+        "heat_exposure",
+        "loyalty",
+        "betrayal",
+        "discretion",
+        "growth",
+        "submission",
+        "defiance"
+      ];
+      var OBSERVATION_CATEGORY_SET = new Set(OBSERVATION_CATEGORIES);
+      var OBSERVATION_SOURCES = ["witnessed", "told", "household", "neighborhood", "network", "reputation"];
+      var OBSERVATION_SOURCE_SET = new Set(OBSERVATION_SOURCES);
+      var MAX_LEDGER_ROWS = 120;
+      var ESCALATING_EVENT = "missed_obligation";
+      function normalizeCategory(type) {
+        return OBSERVATION_CATEGORY_SET.has(type) ? type : null;
+      }
+      function createObservation({ type, event = null, location = null, value = null, day = 1, source = "witnessed", count = 1 } = {}) {
+        const category = normalizeCategory(type);
+        if (!category) return null;
+        return {
+          type: category,
+          event: event == null ? null : String(event),
+          location: location == null ? null : String(location),
+          value: value == null ? null : Number(value) || 0,
+          day: Math.max(1, Math.floor(Number(day) || 1)),
+          count: Math.max(1, Math.floor(Number(count) || 1)),
+          source: OBSERVATION_SOURCE_SET.has(source) ? source : "witnessed"
+        };
+      }
+      function observationKey(observation) {
+        return [observation.type, observation.event || "", observation.location || "", observation.source].join("|");
+      }
+      function addObservation(ledger, observation) {
+        if (!Array.isArray(ledger) || !observation) return null;
+        const key = observationKey(observation);
+        const existing = ledger.find((row) => observationKey(row) === key);
+        if (existing) {
+          existing.count += observation.count;
+          existing.day = Math.max(existing.day, observation.day);
+          if (observation.value != null) existing.value = observation.value;
+          return existing;
+        }
+        if (ledger.length >= MAX_LEDGER_ROWS) return null;
+        ledger.push(observation);
+        return observation;
+      }
+      var MAX_EFFECTIVE_COUNT = 4;
+      function effectiveCount(observation) {
+        const count = Math.max(1, Number(observation.count) || 1);
+        if (observation.type === "betrayal") return count;
+        if (observation.event === ESCALATING_EVENT) return count;
+        return Math.min(MAX_EFFECTIVE_COUNT, Math.log2(count + 1));
+      }
+      module.exports = {
+        OBSERVATION_CATEGORIES,
+        OBSERVATION_CATEGORY_SET,
+        OBSERVATION_SOURCES,
+        MAX_LEDGER_ROWS,
+        ESCALATING_EVENT,
+        createObservation,
+        observationKey,
+        addObservation,
+        effectiveCount
+      };
+    }
+  });
+
+  // src/data/npc-lenses.js
+  var require_npc_lenses = __commonJS({
+    "src/data/npc-lenses.js"(exports, module) {
+      var { OBSERVATION_CATEGORIES } = require_observations();
+      var CIVILIAN = {
+        presence: 1,
+        honesty: 1.5,
+        violence: -3,
+        financial: 1.5,
+        heat_exposure: -2.5,
+        loyalty: 1.5,
+        betrayal: -4,
+        discretion: 1,
+        growth: 1,
+        submission: 0.5,
+        defiance: -1
+      };
+      var STREET = {
+        presence: 0.6,
+        honesty: 1,
+        violence: -0.5,
+        financial: 2,
+        heat_exposure: -1,
+        loyalty: 2,
+        betrayal: -5,
+        discretion: 1.5,
+        growth: 1.5,
+        submission: -0.5,
+        defiance: 0.5
+      };
+      var ROMANTIC = {
+        presence: 1.5,
+        honesty: 2.5,
+        violence: -2,
+        financial: 0.3,
+        heat_exposure: -1.5,
+        loyalty: 2,
+        betrayal: -6,
+        discretion: 2,
+        growth: 1,
+        submission: 0,
+        defiance: -0.5
+      };
+      var THREAT = {
+        presence: -0.3,
+        honesty: 0.5,
+        violence: -2.5,
+        financial: -1.5,
+        heat_exposure: -1.5,
+        loyalty: 1,
+        betrayal: -3,
+        discretion: 1.5,
+        growth: -2,
+        submission: 2,
+        defiance: -2.5
+      };
+      var ARCHETYPES = { CIVILIAN, STREET, ROMANTIC, THREAT };
+      var SHARED_EVENT_WEIGHTS = {
+        missed_obligation: -2.5,
+        let_them_down: -2,
+        walked_a_debt: -3,
+        botched_mission: -2,
+        refused_work: -1.5
+      };
+      var INVERTED_ARCHETYPES = /* @__PURE__ */ new Set(["THREAT"]);
+      var NPC_LENSES = {
+        mina: {
+          archetype: "ROMANTIC",
+          weights: { violence: -4, discretion: 4 },
+          // She hears things. What the network carries back weighs double what she
+          // watches happen across her own counter.
+          sourceMultipliers: { network: 2 }
+        },
+        curtis: {
+          archetype: "THREAT",
+          weights: { growth: -3 }
+        },
+        dre: {
+          archetype: "STREET",
+          weights: { financial: 4, honesty: 2 }
+        },
+        yalonda: {
+          archetype: "CIVILIAN",
+          weights: { heat_exposure: -3, presence: 1.5 },
+          eventWeights: { rent_paid: 3 }
+        },
+        juan: {
+          archetype: "CIVILIAN",
+          weights: { violence: -1, growth: 2, discretion: 1.5 }
+        },
+        simone: {
+          // Stubbed on the base table until her content exists. Listed rather than
+          // omitted so a missing lens is always a bug, never a silent default.
+          archetype: "THREAT",
+          weights: {}
+        }
+      };
+      var EXPOSURE_NPC_IDS = Object.keys(NPC_LENSES);
+      function resolveLens(npcId) {
+        const definition = NPC_LENSES[npcId];
+        if (!definition) return null;
+        const base = ARCHETYPES[definition.archetype];
+        const weights = {};
+        for (const category of OBSERVATION_CATEGORIES) {
+          weights[category] = definition.weights && category in definition.weights ? definition.weights[category] : base[category];
+        }
+        return {
+          npcId,
+          archetype: definition.archetype,
+          inverted: INVERTED_ARCHETYPES.has(definition.archetype),
+          weights,
+          eventWeights: { ...SHARED_EVENT_WEIGHTS, ...definition.eventWeights || {} },
+          sourceMultipliers: definition.sourceMultipliers || {}
+        };
+      }
+      module.exports = {
+        ARCHETYPES,
+        SHARED_EVENT_WEIGHTS,
+        INVERTED_ARCHETYPES,
+        NPC_LENSES,
+        EXPOSURE_NPC_IDS,
+        resolveLens
+      };
+    }
+  });
+
+  // src/data/disposition-bands.js
+  var require_disposition_bands = __commonJS({
+    "src/data/disposition-bands.js"(exports, module) {
+      var BANDS = {
+        HOSTILE: 0,
+        COLD: 1,
+        NEUTRAL: 2,
+        WARM: 3,
+        TRUSTED: 4,
+        BONDED: 5
+      };
+      var BAND_IDS = ["hostile", "cold", "neutral", "warm", "trusted", "bonded"];
+      var BAND_LABELS = {
+        hostile: "Hostile",
+        cold: "Cold",
+        neutral: "Neutral",
+        warm: "Warm",
+        trusted: "Trusted",
+        bonded: "Bonded"
+      };
+      var BAND_FLOORS = [
+        [BANDS.BONDED, 9],
+        [BANDS.TRUSTED, 6],
+        [BANDS.WARM, 3],
+        [BANDS.NEUTRAL, 0],
+        [BANDS.COLD, -5]
+      ];
+      function bandFor(score) {
+        const value = Number(score) || 0;
+        for (const [band, floor] of BAND_FLOORS) if (value >= floor) return band;
+        return BANDS.HOSTILE;
+      }
+      function bandId(band) {
+        return BAND_IDS[band] || BAND_IDS[BANDS.NEUTRAL];
+      }
+      function bandLabel(band) {
+        return BAND_LABELS[bandId(band)];
+      }
+      module.exports = { BANDS, BAND_IDS, BAND_LABELS, BAND_FLOORS, bandFor, bandId, bandLabel };
+    }
+  });
+
+  // src/data/propagation.js
+  var require_propagation = __commonJS({
+    "src/data/propagation.js"(exports, module) {
+      var { OBSERVATION_CATEGORIES } = require_observations();
+      var CHANNELS = {
+        direct: { id: "direct", arrival: "now", source: "witnessed", presence: false, timeOfDay: true },
+        household: { id: "household", arrival: "end_of_day", source: "household", presence: false, timeOfDay: false },
+        neighborhood: { id: "neighborhood", arrival: "days", days: 1, maxExtraDays: 1, source: "neighborhood", presence: true, timeOfDay: true },
+        network: { id: "network", arrival: "days", days: 1, source: "network", presence: false, timeOfDay: false },
+        reputation: { id: "reputation", arrival: "days", days: 7, source: "reputation", presence: false, timeOfDay: false }
+      };
+      var CHANNEL_IDS = Object.keys(CHANNELS);
+      var NPC_CHANNELS = {
+        yalonda: ["direct", "household", "neighborhood"],
+        juan: ["direct", "household", "neighborhood"],
+        mina: ["direct", "neighborhood", "network"],
+        curtis: ["direct", "network", "reputation"],
+        dre: ["direct", "network"],
+        simone: ["direct", "network"]
+      };
+      var CURTIS_NETWORK_CATEGORIES = /* @__PURE__ */ new Set(["violence", "defiance", "growth"]);
+      var CURTIS_VOLUME_THRESHOLD = 200;
+      var HEAT_CHANNEL_THRESHOLDS = [
+        { above: 12, channel: "network" },
+        { above: 10, channel: "neighborhood" },
+        { above: 8, channel: "household" }
+      ];
+      var NPC_PRESENCE_SLOTS = {
+        yalonda: [0, 2, 3],
+        juan: [0, 2, 3],
+        mina: [2, 3],
+        curtis: [1, 2, 3],
+        dre: [1, 2, 3],
+        simone: [1, 2, 3]
+      };
+      var NPC_PRESENCE_AREAS = {
+        yalonda: ["north_star_lot"],
+        juan: ["north_star_lot"],
+        mina: ["north_star_lot"],
+        curtis: ["north_star_lot", "downtown"],
+        dre: ["north_star_lot", "downtown"],
+        simone: ["north_star_lot", "downtown"]
+      };
+      function channelFor(id) {
+        return CHANNELS[id] || CHANNELS.direct;
+      }
+      function listensOn(npcId, channelId) {
+        return (NPC_CHANNELS[npcId] || ["direct"]).includes(channelId);
+      }
+      function clearsCurtisFilter(observation) {
+        if (CURTIS_NETWORK_CATEGORIES.has(observation.type)) return true;
+        if (observation.type === "financial") return Math.abs(Number(observation.value) || 0) >= CURTIS_VOLUME_THRESHOLD;
+        return false;
+      }
+      function heatChannel(heat) {
+        const value = Number(heat) || 0;
+        for (const entry of HEAT_CHANNEL_THRESHOLDS) if (value > entry.above) return entry.channel;
+        return null;
+      }
+      module.exports = {
+        CHANNELS,
+        CHANNEL_IDS,
+        NPC_CHANNELS,
+        CURTIS_NETWORK_CATEGORIES,
+        CURTIS_VOLUME_THRESHOLD,
+        HEAT_CHANNEL_THRESHOLDS,
+        NPC_PRESENCE_SLOTS,
+        NPC_PRESENCE_AREAS,
+        OBSERVATION_CATEGORIES,
+        channelFor,
+        listensOn,
+        clearsCurtisFilter,
+        heatChannel
+      };
+    }
+  });
+
+  // src/exposure/engine.js
+  var require_engine = __commonJS({
+    "src/exposure/engine.js"(exports, module) {
+      var { slotNumber } = require_selectors();
+      var { stringHash } = require_random();
+      var { createObservation, addObservation, effectiveCount } = require_observations();
+      var { resolveLens, EXPOSURE_NPC_IDS } = require_npc_lenses();
+      var { BANDS, bandFor, bandId, bandLabel } = require_disposition_bands();
+      var {
+        channelFor,
+        listensOn,
+        clearsCurtisFilter,
+        heatChannel,
+        NPC_PRESENCE_SLOTS,
+        NPC_PRESENCE_AREAS
+      } = require_propagation();
+      function ledgerOf(state, npcId) {
+        const record = state && state.npc && state.npc[npcId];
+        if (!record) return [];
+        if (!Array.isArray(record.ledger)) record.ledger = [];
+        return record.ledger;
+      }
+      function rowWeight(lens, row) {
+        const base = row.event && row.event in lens.eventWeights ? lens.eventWeights[row.event] : lens.weights[row.type];
+        const multiplier = lens.sourceMultipliers[row.source] || 1;
+        return base * multiplier * effectiveCount(row);
+      }
+      function getDisposition(npcId, state) {
+        const lens = resolveLens(npcId);
+        if (!lens) return 0;
+        let score = 0;
+        for (const row of ledgerOf(state, npcId)) score += rowWeight(lens, row);
+        return Math.round(score * 100) / 100;
+      }
+      function getDispositionBand(npcId, state) {
+        return bandFor(getDisposition(npcId, state));
+      }
+      function recordObservation(state, npcId, spec) {
+        if (!state || !state.npc || !state.npc[npcId]) return null;
+        const observation = createObservation({ ...spec, day: spec.day || state.run.day });
+        if (!observation) return null;
+        return addObservation(ledgerOf(state, npcId), observation);
+      }
+      function couldObserve(npcId, { slot, location }) {
+        const slots = NPC_PRESENCE_SLOTS[npcId];
+        if (slots && slot != null && !slots.includes(slot)) return false;
+        const areas = NPC_PRESENCE_AREAS[npcId];
+        if (areas && location && !areas.includes(location)) return false;
+        return true;
+      }
+      var LAST_SLOT = 3;
+      function deliverySlot(state, channel, observation, { day, slot }) {
+        if (channel.arrival === "now") return slotNumber(day, slot);
+        if (channel.arrival === "end_of_day") return slotNumber(day, LAST_SLOT);
+        let days = channel.days || 1;
+        if (channel.maxExtraDays) {
+          const key = `${state.run.seed}:gossip:${observation.type}:${observation.event || ""}:${observation.location || ""}:${day}`;
+          days += stringHash(key) % (channel.maxExtraDays + 1);
+        }
+        return slotNumber(day + days, 0);
+      }
+      function receives(npcId, channelId, observation, context) {
+        if (!listensOn(npcId, channelId)) return false;
+        const channel = channelFor(channelId);
+        if (channel.presence && !couldObserve(npcId, context)) return false;
+        if (channel.timeOfDay && !channel.presence && context.slot != null) {
+          const slots = NPC_PRESENCE_SLOTS[npcId];
+          if (slots && !slots.includes(context.slot)) return false;
+        }
+        if (npcId === "curtis" && channelId === "network" && !clearsCurtisFilter(observation)) return false;
+        return true;
+      }
+      function broadcastObservation(state, spec) {
+        const channelId = spec.channel || "direct";
+        const channel = channelFor(channelId);
+        const day = spec.day || state.run.day;
+        const slot = spec.slot == null ? state.run.slot : spec.slot;
+        const observation = createObservation({ ...spec, day, source: channel.source });
+        if (!observation) return [];
+        const context = { slot, location: spec.location || state.world.currentNeighborhoodId };
+        const reached = [];
+        for (const npcId of EXPOSURE_NPC_IDS) {
+          if (!state.npc[npcId]) continue;
+          if (!receives(npcId, channelId, observation, context)) continue;
+          reached.push(npcId);
+          const deliverAtSlot = deliverySlot(state, channel, observation, { day, slot });
+          if (deliverAtSlot <= slotNumber(day, slot)) {
+            addObservation(ledgerOf(state, npcId), { ...observation });
+            continue;
+          }
+          state.run.pendingObservations.push({ npcId, observation: { ...observation }, deliverAtSlot });
+        }
+        return reached;
+      }
+      function resolveObservationQueue(state) {
+        const queue = state.run.pendingObservations;
+        if (!Array.isArray(queue) || !queue.length) return 0;
+        const now = slotNumber(state.run.day, state.run.slot);
+        const waiting = [];
+        let delivered = 0;
+        for (const entry of queue) {
+          if (!entry || !state.npc[entry.npcId] || !entry.observation) continue;
+          if (now < entry.deliverAtSlot) {
+            waiting.push(entry);
+            continue;
+          }
+          addObservation(ledgerOf(state, entry.npcId), entry.observation);
+          delivered += 1;
+        }
+        state.run.pendingObservations = waiting;
+        return delivered;
+      }
+      function propagateHeat(state) {
+        const channel = heatChannel(state.player.heat);
+        if (!channel) return null;
+        broadcastObservation(state, {
+          type: "heat_exposure",
+          event: `heat_${channel}`,
+          value: state.player.heat,
+          channel,
+          day: state.run.day,
+          slot: state.run.slot
+        });
+        return channel;
+      }
+      function describeDisposition(state, npcId) {
+        const lens = resolveLens(npcId);
+        if (!lens) return null;
+        const rows = ledgerOf(state, npcId).map((row) => ({
+          type: row.type,
+          event: row.event,
+          location: row.location,
+          source: row.source,
+          count: row.count,
+          day: row.day,
+          baseWeight: row.event && row.event in lens.eventWeights ? lens.eventWeights[row.event] : lens.weights[row.type],
+          sourceMultiplier: lens.sourceMultipliers[row.source] || 1,
+          effectiveCount: Math.round(effectiveCount(row) * 100) / 100,
+          contribution: Math.round(rowWeight(lens, row) * 100) / 100
+        })).sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
+        const score = getDisposition(npcId, state);
+        const band = bandFor(score);
+        return {
+          npcId,
+          archetype: lens.archetype,
+          inverted: lens.inverted,
+          score,
+          band,
+          bandId: bandId(band),
+          bandLabel: bandLabel(band),
+          rows,
+          pending: (state.run.pendingObservations || []).filter((entry) => entry.npcId === npcId).map((entry) => ({ type: entry.observation.type, event: entry.observation.event, deliverAtSlot: entry.deliverAtSlot }))
+        };
+      }
+      module.exports = {
+        BANDS,
+        EXPOSURE_NPC_IDS,
+        getDisposition,
+        getDispositionBand,
+        recordObservation,
+        broadcastObservation,
+        resolveObservationQueue,
+        propagateHeat,
+        describeDisposition,
+        couldObserve,
+        ledgerOf
+      };
+    }
+  });
+
   // src/data/products.js
   var require_products = __commonJS({
     "src/data/products.js"(exports, module) {
@@ -1833,13 +2323,17 @@
         const { normalizeSeed, stringHash, makeRandom, seededShuffle, isEligible, getWeight } = require_random();
         const { effectPreview, event, activeEvent } = require_cards();
         const { checkpointDay, controlled, slotNumber } = require_selectors();
-        const VERSION = 5;
+        const Exposure = require_engine();
+        const { BANDS, bandFor, bandId, bandLabel } = require_disposition_bands();
+        const { EXPOSURE_NPC_IDS } = require_npc_lenses();
+        const { NPC_CHANNELS } = require_propagation();
+        const VERSION = 6;
         const RUN_DAYS = 7;
         const PRESSURE_DAYS = 7;
         const MAX_ENERGY = 4;
         const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
-        const SAVE_KEY = "907ogr_v5";
-        const LEGACY_SAVE_KEYS = ["907ogr_v4", "907ogr_v3"];
+        const SAVE_KEY = "907ogr_v6";
+        const LEGACY_SAVE_KEYS = ["907ogr_v5", "907ogr_v4", "907ogr_v3"];
         const PHONE_BILL = 75;
         const WEEKLY_RENT = 150;
         const WORKING_CAPITAL_RESERVE = 150;
@@ -2169,7 +2663,7 @@
             role: "Landlord",
             visibleWhen: () => true,
             status: (s) => s.people.household.evicted ? "Room closed" : `${s.people.household.warnings}/3 warnings`,
-            summary: (s) => `She rents you the spare room. Trust ${s.npc.yalonda.trust}; rent is due Day ${s.obligations.rentDueDay}.`,
+            summary: (s) => `She rents you the spare room. ${bandLabel(bandOf(s, "yalonda"))} with you; rent is due Day ${s.obligations.rentDueDay}.`,
             actions: ["TALK_HOUSEHOLD"]
           },
           {
@@ -2178,7 +2672,7 @@
             role: "Yalonda's son",
             visibleWhen: () => true,
             status: (s) => s.people.household.lastQuestionDay === s.run.day ? "Talked today" : "Available",
-            summary: (s) => `Warehouse loader and local connector. Trust ${s.npc.juan.trust}.`,
+            summary: (s) => `Warehouse loader and local connector. ${bandLabel(bandOf(s, "juan"))} with you.`,
             actions: ["TALK_HOUSEHOLD"]
           },
           {
@@ -2205,7 +2699,7 @@
             role: "Rival",
             visibleWhen: (s) => s.npc.curtis.relationship !== "unaware",
             status: (s) => s.npc.curtis.relationship,
-            summary: (s) => `Attention ${s.npc.curtis.attention}/8; respect ${s.npc.curtis.respect}.`,
+            summary: (s) => `He reads you as ${s.npc.curtis.relationship}.`,
             actions: []
           },
           {
@@ -2213,8 +2707,8 @@
             name: "Simone Hart",
             role: "Independent protection organizer",
             visibleWhen: (s) => s.npc.simone.known,
-            status: (s) => s.npc.simone.truce ? "Truce" : s.npc.simone.threat > s.npc.simone.trust ? "Watching" : "Independent",
-            summary: (s) => `Trust ${s.npc.simone.trust}; threat ${s.npc.simone.threat}; leverage ${s.npc.simone.leverage}.`,
+            status: (s) => s.npc.simone.truce ? "Truce" : s.npc.simone.threat > 0 ? "Watching" : "Independent",
+            summary: (s) => `She reads you as ${bandLabel(bandOf(s, "simone"))}. Leverage ${s.npc.simone.leverage}.`,
             actions: []
           }
         ];
@@ -2248,8 +2742,8 @@
           const curtis = (_a = state.npc) == null ? void 0 : _a.curtis;
           if (!curtis || curtis.attentionMilestones.includes(id)) return false;
           curtis.attentionMilestones.push(id);
-          if (force || !curtis.taxActive || curtis.attention < 5) curtis.attention = clamp(curtis.attention + 1, 0, 8);
-          curtis.pressure = curtis.attention;
+          const MILESTONE_TYPES = { units_10: "growth", units_25: "growth", units_50: "growth", revenue_600: "financial", revenue_1200: "financial", spenard_sale: "growth", named_report: "defiance", network_escalation: "defiance", tax_rejected: "defiance" };
+          Exposure.recordObservation(state, "curtis", { type: MILESTONE_TYPES[id] || "growth", event: id, source: "network" });
           return true;
         }
         function refreshCurtisAttention(state) {
@@ -2271,7 +2765,7 @@
         }
         function applyCurtisDecision(state, choice) {
           const curtis = state.npc.curtis;
-          if (curtis.attention < 4 || curtis.friendship || curtis.taxActive) return false;
+          if (!curtisHostile(state) || curtis.friendship || curtis.taxActive) return false;
           if (choice === "pay_tax") curtis.taxActive = true;
           else if (choice === "friendship") {
             curtis.friendship = "accepted";
@@ -2279,13 +2773,13 @@
             curtis.protectionUntilDay = state.run.day + 2;
           } else if (choice === "guarded") {
             curtis.friendship = "guarded";
-            curtis.respect += 1;
+            Exposure.recordObservation(state, "curtis", { type: "submission", event: "stood_guarded", source: "witnessed" });
           } else if (choice === "reject") {
             curtis.friendship = "rejected";
-            curtis.respect += 2;
+            Exposure.recordObservation(state, "curtis", { type: "defiance", event: "rejected_tax", source: "witnessed" });
             awardCurtisExposure(state, "tax_rejected", true);
           } else return false;
-          curtis.relationship = relationshipForRival(curtis);
+          curtis.relationship = relationshipForRival(state);
           return true;
         }
         function addDirtyCash(state, amount) {
@@ -2607,6 +3101,22 @@
           ELI_TEST_ROUTE: "risk",
           CLAIM_BLOCK: "risk"
         };
+        const OBSERVED_ACTIONS = {
+          WORK_SHIFT: { type: "presence", event: "steady_work", channel: "neighborhood" },
+          WORK_JOB: { type: "presence", event: "steady_work", channel: "neighborhood" },
+          SLEEP_HOME: { type: "presence", event: "home_at_night", channel: "household" },
+          VISIT_NIGHT_OWL: { type: "presence", event: "night_owl", channel: "direct" },
+          CONTACT_VISIT: { type: "presence", event: "keeps_in_touch", channel: "neighborhood" },
+          TRAIN_ATTRIBUTE: { type: "growth", event: "training", channel: "neighborhood" },
+          LAY_LOW: { type: "discretion", event: "kept_quiet", channel: "neighborhood" },
+          ROB: { type: "violence", event: "robbery", channel: "neighborhood" },
+          ROB_DEALER: { type: "violence", event: "robbery", channel: "neighborhood" },
+          TAKEOVER: { type: "defiance", event: "territory_claim", channel: "network" },
+          CLAIM_BLOCK: { type: "defiance", event: "territory_claim", channel: "network" },
+          SHOPLIFT: { type: "financial", event: "petty_theft", channel: "neighborhood" },
+          BOOST: { type: "financial", event: "boosting", channel: "network" },
+          GAMBLE: { type: "financial", event: "gambling", channel: "neighborhood" }
+        };
         const STREET_READ_INTEL = {
           north_star_lot: [
             "Goodie: Northern Value's been dry all week. Might restock tomorrow.",
@@ -2829,7 +3339,7 @@
           }]));
         }
         function createNpcState() {
-          return {
+          const base = {
             yalonda: { trust: 2, romanceStage: 0, rentPaidWeeks: 0, lastRentDay: null, rentMissed: 0, lastEventDay: null },
             juan: { trust: 0, infoShared: [], lastEventDay: null },
             mina: {
@@ -2839,18 +3349,12 @@
               arcStage: 0,
               chainStage: 0,
               introChoice: null,
-              introTone: null,
               flirtHistory: false,
-              truthTold: false,
-              betrayalFlag: false,
               usedWithoutConsent: false,
-              downplayed: false,
-              violenceWitnessed: false,
               cleanLifeAtRisk: false,
               status: "distant",
               outcome: null,
-              outcomes: [],
-              recoveryLockedUntilDay: null
+              outcomes: []
             },
             curtis: {
               name: "Curtis Foyer",
@@ -2858,24 +3362,20 @@
               pressure: 0,
               respect: 0,
               relationship: "unaware",
-              warned: false,
               taxActive: false,
               friendship: null,
               friendshipDay: null,
               protectionUntilDay: null,
               betrayed: false,
-              attentionMilestones: [],
-              recentInterference: null
+              attentionMilestones: []
             },
             dre: {
               known: false,
               trust: 0,
-              trustTier: 0,
               missionHistory: [],
               refusals: 0,
               cleanCompletions: 0,
               activeMission: null,
-              nextMissionId: null,
               offersDisabled: false,
               backstoryFragments: [],
               loansTaken: 0,
@@ -2891,6 +3391,13 @@
               outcomes: []
             }
           };
+          for (const id of EXPOSURE_NPC_IDS) {
+            if (!base[id]) continue;
+            base[id].ledger = [];
+            base[id].channels = [...NPC_CHANNELS[id] || ["direct"]];
+          }
+          base.yalonda.ledger.push({ type: "presence", event: "family_household", location: HOME_DISTRICT_ID, value: null, day: 1, count: 2, source: "household" });
+          return base;
         }
         function createJobsState(inventory, seed) {
           return {
@@ -2949,6 +3456,7 @@
               pendingOperationResult: null,
               pendingUnlocks: [],
               consequenceQueue: [],
+              pendingObservations: [],
               daySummary: null,
               dayEndPending: false,
               overtimeArmed: false,
@@ -3159,7 +3667,7 @@
           var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u;
           if (!value || typeof value !== "object") return null;
           if (value.version === VERSION) return value;
-          if (![3, 4].includes(value.version) || !value.run || !value.world || !value.player) return null;
+          if (![3, 4, 5].includes(value.version) || !value.run || !value.world || !value.player) return null;
           const migrated = JSON.parse(JSON.stringify(value));
           const oldHousehold = ((_a = migrated.people) == null ? void 0 : _a.household) || {};
           const legacyNpc = migrated.npc || {};
@@ -3219,6 +3727,7 @@
           migrated.jobs.offers = eligibleEmployers.filter((id) => id !== activeJobId);
           migrated.jobs.applications = Array.isArray(migrated.jobs.applications) ? migrated.jobs.applications : [];
           migrated.run.consequenceQueue = Array.isArray(migrated.run.consequenceQueue) ? migrated.run.consequenceQueue : [];
+          migrated.run.pendingObservations = Array.isArray(migrated.run.pendingObservations) ? migrated.run.pendingObservations : [];
           const renameStoryId = (id) => typeof id === "string" ? id.replace(/^mara_/, "mina_").replace(/^rook_/, "curtis_").replace(/^kip_/, "goodie_").replace(/^miri_/, "pherris_") : id;
           const renameFlag = (id) => typeof id === "string" ? id.replace(/^mara/, "mina").replace(/^rook/, "curtis").replace(/^kip/, "goodie").replace(/^miri/, "pherris") : id;
           migrated.flags = Object.fromEntries(Object.entries(migrated.flags || {}).map(([id, flag]) => [renameFlag(id), flag]));
@@ -3247,6 +3756,7 @@
         }
         function hydrateRun(value) {
           var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w;
+          const incomingVersion = value && typeof value === "object" ? value.version : null;
           value = migrateSave(value);
           if (!value || typeof value !== "object" || value.version !== VERSION || !value.run || !value.world || !value.player) return null;
           const defaults = createRun({ seed: value.run.seed });
@@ -3425,6 +3935,56 @@
               else crew.contactStage = "recruitable";
             }
           }
+          if (incomingVersion !== VERSION) seedExposureLedgers(state);
+          return state;
+        }
+        function seedExposureLedgers(state) {
+          var _a;
+          const day = state.run.day;
+          const seed = (npcId, spec) => Exposure.recordObservation(state, npcId, { day, ...spec });
+          for (const id of ["yalonda", "juan", "mina", "dre", "simone"]) {
+            const trust = Math.floor(Number((_a = state.npc[id]) == null ? void 0 : _a.trust) || 0);
+            if (trust > 0) seed(id, { type: "presence", event: "legacy_history", count: trust, source: "witnessed" });
+            if (trust < 0) seed(id, { type: "defiance", event: "legacy_friction", count: Math.abs(trust), source: "witnessed" });
+          }
+          const milestoneCategory = {
+            units_10: "growth",
+            units_25: "growth",
+            units_50: "growth",
+            revenue_600: "financial",
+            revenue_1200: "financial",
+            spenard_sale: "growth",
+            named_report: "defiance",
+            network_escalation: "defiance",
+            tax_rejected: "defiance"
+          };
+          for (const milestone of state.npc.curtis.attentionMilestones || []) {
+            const type = milestoneCategory[milestone];
+            if (type) seed("curtis", { type, event: milestone, source: "network" });
+          }
+          const unexplained = Math.max(0, Math.floor(Number(state.npc.curtis.attention) || 0) - (state.npc.curtis.attentionMilestones || []).length);
+          if (unexplained > 0) seed("curtis", { type: "growth", event: "legacy_exposure", count: unexplained, source: "network" });
+          const respect = Math.floor(Number(state.npc.curtis.respect) || 0);
+          if (respect > 0) seed("curtis", { type: "submission", event: "legacy_respect", count: respect, source: "witnessed" });
+          const flags = state.flags || {};
+          if (flags.toldMinaTruth) seed("mina", { type: "honesty", event: "told_truth", source: "witnessed" });
+          if (flags.minaDateNight) seed("mina", { type: "presence", event: "date_night", source: "witnessed" });
+          if (flags.valeProtectedMina) seed("mina", { type: "loyalty", event: "protected_her", source: "witnessed" });
+          if (flags.usedMinaWithoutConsent || state.npc.mina.usedWithoutConsent) {
+            seed("mina", { type: "betrayal", event: "used_without_consent", source: "witnessed" });
+          }
+          if (flags.exploitedValeName) seed("mina", { type: "betrayal", event: "exploited_name", source: "network" });
+          if (flags.seriousViolence) {
+            for (const id of EXPOSURE_NPC_IDS) seed(id, { type: "violence", event: "serious_violence", source: "network" });
+          }
+          const paidWeeks = Math.floor(Number(state.npc.yalonda.rentPaidWeeks) || 0);
+          if (paidWeeks > 0) seed("yalonda", { type: "financial", event: "rent_paid", count: paidWeeks, source: "household" });
+          const missed = Math.floor(Number(state.npc.yalonda.rentMissed) || 0);
+          if (missed > 0) seed("yalonda", { type: "financial", event: "missed_obligation", count: missed, source: "household" });
+          const dre = state.npc.dre;
+          if (dre.cleanCompletions > 0) seed("dre", { type: "loyalty", event: "clean_mission", count: Math.floor(dre.cleanCompletions), source: "witnessed" });
+          if (dre.loansRepaid > 0) seed("dre", { type: "financial", event: "loan_repaid", count: Math.floor(dre.loansRepaid), source: "witnessed" });
+          if (dre.refusals > 0) seed("dre", { type: "defiance", event: "refused_work", count: Math.floor(dre.refusals), source: "witnessed" });
           return state;
         }
         function serializeRun(state) {
@@ -4132,7 +4692,7 @@
         }
         function minaThreatEligible(state) {
           const relevantHistory = !!(state.npc.mina.introChoice || state.flags.minaFlirted || state.flags.minaFriendlyIntro || state.flags.minaDistantIntro || state.flags.toldMinaAboutGarage || state.stats.moneySpent.relationships > 0);
-          return !!(state.flags.minaBoundaryResolved && state.npc.mina.met && state.npc.mina.available !== false && state.npc.mina.status !== "gone" && relevantHistory && state.npc.curtis.pressure >= 4 && !state.flags.minaSedanNightResolved);
+          return !!(state.flags.minaBoundaryResolved && state.npc.mina.met && state.npc.mina.available !== false && state.npc.mina.status !== "gone" && relevantHistory && curtisHostile(state) && !state.flags.minaSedanNightResolved);
         }
         function recruitmentCost(state, crewId) {
           const person = CREW_BY_ID[crewId];
@@ -4250,7 +4810,7 @@
           if (!plug) return 1;
           const standing = ((_a = plugRecord(state, plug.id)) == null ? void 0 : _a.standing) || 0;
           let discount = plug.id === "goodie" ? standing >= 3 ? 0.18 : 0.12 : standing >= 4 ? 0.06 : standing >= 2 ? 0.03 : 0;
-          if (plug.id === "goodie") discount = Math.min(0.25, discount + (state.npc.mina.trust >= 3 ? 0.08 : state.npc.mina.trust >= 2 ? 0.05 : 0));
+          if (plug.id === "goodie") discount = Math.min(0.25, discount + (atLeastBand(state, "mina", BANDS.TRUSTED) ? 0.08 : atLeastBand(state, "mina", BANDS.WARM) ? 0.05 : 0));
           const relationshipDiscount = 1 - discount;
           return plug.priceModifier * relationshipDiscount;
         }
@@ -4346,7 +4906,7 @@
             return { label: controlled(state, areaId) ? DISTRICT_CONTROL_LABEL : "Neutral", blocks: 0, capstone: false, hasBlockLayer: false };
           }
           const blocks = districtBlockCount(state, areaId);
-          const capstone = blocks >= DISTRICT_CONTROL_CAPSTONE_BLOCKS && state.npc.curtis.respect >= DISTRICT_CONTROL_CAPSTONE_RESPECT;
+          const capstone = blocks >= DISTRICT_CONTROL_CAPSTONE_BLOCKS && atLeastBand(state, "curtis", BANDS.TRUSTED);
           if (capstone) return { label: DISTRICT_CONTROL_LABEL, blocks, capstone: true, hasBlockLayer: true };
           const tier = [...DISTRICT_CONTROL_TIERS].reverse().find((item) => blocks >= item.minBlocks) || DISTRICT_CONTROL_TIERS[0];
           return { label: tier.label, blocks, capstone: false, hasBlockLayer: true };
@@ -4471,7 +5031,7 @@
           if (state.world.currentNeighborhoodId !== definition.areaId) return blocked(`${definition.name.split(" ")[0]} works out of ${AREA_BY_ID[definition.areaId].name}.`);
           if (state.run.day === checkpointDay(state) && state.run.slot === 3) return blocked("There is no part of the run left for this.");
           const plug = PLUG_BY_ID[id];
-          const minaBonus = state.npc.mina.trust >= 3 ? 0.08 : state.npc.mina.trust >= 2 ? 0.05 : 0;
+          const minaBonus = atLeastBand(state, "mina", BANDS.TRUSTED) ? 0.08 : atLeastBand(state, "mina", BANDS.WARM) ? 0.05 : 0;
           const discount = Math.min(0.25, (record.standing >= 3 ? 0.18 : 0.12) + minaBonus);
           const availableProducts = definition.products.filter((productId) => !!unlockedPlugForProduct(state, productId));
           const cheapest = availableProducts.length ? Math.min(...availableProducts.map((productId) => Math.round(tradeUnitPrices(state, productId).buy * (1 - discount)))) : Infinity;
@@ -4496,7 +5056,7 @@
         function operationScore(state) {
           const crew = recruitedCrew(state).reduce((sum, person) => sum + Math.max(0, state.people.crew[person.id].loyalty + 2) * 35, 0);
           const influence = Object.values(state.world.influence).reduce((sum, value) => sum + value * 70, 0);
-          const relationships = Math.max(0, state.npc.mina.trust) * 35 + Math.max(0, state.lender.trust) * 20 + Math.max(0, state.npc.curtis.respect) * 20;
+          const relationships = Math.max(0, dispositionOf(state, "mina")) * 12 + Math.max(0, dispositionOf(state, "dre")) * 7 + Math.max(0, dispositionOf(state, "curtis")) * 7;
           const access = Object.values(state.world.productAccess).filter(Boolean).length * 45;
           return Math.round(netWorth(state) + baseValue(state) * 0.65 + gearValue(state) * 0.35 + crew + influence + relationships + access);
         }
@@ -4542,38 +5102,44 @@
           }
           return decorate({ id: "normal", label: "STEADY", symbol: "\u2014" });
         }
-        function relationshipForLender(lender, day) {
+        function relationshipForLender(state) {
+          const lender = state.lender;
+          const day = state.run.day;
           if (lender.status === "unoffered") return "unknown";
           if (lender.status === "declined") return "offer declined";
-          if (lender.balance <= 0) return lender.trust >= 2 ? "helpful" : "businesslike";
-          if (day > lender.dueDay + 1) return lender.trust < 0 ? "threatening" : "demanding";
+          const band = bandOf(state, "dre");
+          if (lender.balance <= 0) return band >= BANDS.TRUSTED ? "helpful" : "businesslike";
+          if (day > lender.dueDay + 1) return band <= BANDS.COLD ? "threatening" : "demanding";
           if (day > lender.dueDay) return "demanding";
-          if (lender.trust >= 2) return "patient";
+          if (band >= BANDS.TRUSTED) return "patient";
           return "businesslike";
         }
         function dreTrustTier(state) {
-          const trust = clamp(Math.floor(Number(state.npc.dre.trust) || 0), 0, 3);
-          return ["Stranger", "Reliable", "Earner", "Inner Circle"][trust];
+          const band = bandOf(state, "dre");
+          if (band >= BANDS.BONDED) return "Inner Circle";
+          if (band >= BANDS.TRUSTED) return "Earner";
+          if (band >= BANDS.WARM) return "Reliable";
+          return "Stranger";
         }
         function dreIntroductionEligible(state) {
           const noLoan = state.lender.status !== "active" || state.lender.balance <= 0;
-          const route = state.npc.juan.trust >= 1 || !state.phone.active || state.phone.daysPastDue > 0;
+          const route = knowsYou(state, "juan") || !state.phone.active || state.phone.daysPastDue > 0;
           return state.run.day >= 2 && state.player.cash <= 80 && noLoan && state.lender.status === "unoffered" && route;
         }
         function dreMissionAvailability(state) {
           const dre = state.npc.dre;
-          if (!dre.known || dre.trust < 1) return { available: false, reason: "Build a Reliable relationship with Dre first." };
+          if (!dre.known || !atLeastBand(state, "dre", BANDS.TRUSTED)) return { available: false, reason: "Build a Reliable relationship with Dre first." };
           if (dre.offersDisabled) return { available: false, reason: "Three refusals ended Dre's mission offers for this run." };
           if (dre.activeMission) return { available: false, reason: "Finish or refuse the current mission first." };
           return { available: true, reason: "Dre can put one job in front of you." };
         }
         function sharkUnlocked(state) {
-          return state.npc.dre.trust >= 3 && state.npc.dre.cleanCompletions >= 3 && state.npc.dre.loansRepaid >= 2;
+          return atLeastBand(state, "dre", BANDS.BONDED) && state.npc.dre.cleanCompletions >= 3 && state.npc.dre.loansRepaid >= 2;
         }
         function sharkRiskLabel(state, borrower, amount, term) {
           const amountPressure = amount >= 500 ? 2 : amount >= 250 ? 1 : 0;
           const termRelief = term >= 7 ? 2 : term >= 4 ? 1 : 0;
-          const score = borrower.risk + amountPressure - termRelief - Math.floor((normalizedAttributes(state).insight - 1) / 2) - (state.npc.dre.trust >= 3 ? 1 : 0);
+          const score = borrower.risk + amountPressure - termRelief - Math.floor((normalizedAttributes(state).insight - 1) / 2) - (atLeastBand(state, "dre", BANDS.BONDED) ? 1 : 0);
           return score <= 0 ? "Low" : score <= 2 ? "Guarded" : score <= 4 ? "High" : "Severe";
         }
         function sharkLoanAvailability(state, borrowerId, amount, term) {
@@ -4586,21 +5152,24 @@
           if (state.player.cash < amount) return { available: false, reason: "Not enough cash to fund the principal." };
           return { available: true, reason: `${sharkRiskLabel(state, borrower, amount, term)} risk.`, risk: sharkRiskLabel(state, borrower, amount, term) };
         }
-        function relationshipForRival(rival) {
-          if (rival.pressure <= 0 && rival.respect <= 0) return "unaware";
-          if (rival.respect >= 4 && rival.pressure <= 6) return "respectful";
-          if (rival.respect >= 2 && rival.pressure <= 4) return "cooperative";
-          if (rival.pressure >= 7) return "aggressive";
-          if (rival.pressure >= 4) return "competitive";
+        function relationshipForRival(state) {
+          const score = dispositionOf(state, "curtis");
+          if (score === 0) return "unaware";
+          if (score >= 6) return "respectful";
+          if (score >= 3) return "cooperative";
+          if (score <= -9) return "aggressive";
+          if (score <= -5) return "competitive";
           return "dismissive";
         }
-        function minaStatus(person) {
+        function minaStatus(state) {
+          const person = state.npc.mina;
           if (person.available === false) return "gone";
-          if (person.usedWithoutConsent && person.trust < 1) return "gone";
+          const band = bandOf(state, "mina");
+          if (person.usedWithoutConsent && band < BANDS.WARM) return "gone";
           if (person.usedWithoutConsent) return "compromised";
-          if (person.trust >= 5) return "committed";
-          if (person.trust >= 3) return "trusted";
-          if (person.trust >= 1) return "cautious";
+          if (band >= BANDS.BONDED) return "committed";
+          if (band >= BANDS.TRUSTED) return "trusted";
+          if (band >= BANDS.WARM) return "cautious";
           return "distant";
         }
         function closeVisit(state, reason) {
@@ -4666,7 +5235,7 @@
             } else if (person.id === "tone") {
               if (assignment === "guard_base") {
                 state.base.watched = false;
-                state.npc.curtis.pressure = clamp(state.npc.curtis.pressure - 1, 0, 15);
+                Exposure.recordObservation(state, "curtis", { type: "discretion", event: "kept_low", source: "network" });
                 logEntry(state, "Tone spends the shift across from the garage. The sedan watching the door leaves first.", "good");
               } else {
                 state.flags.toneIntimidatedBuyer = true;
@@ -4735,7 +5304,7 @@
                 record.lastRaidDay = state.run.day;
                 record.raidCount += 1;
                 state.player.heat = clamp(state.player.heat + 1, 0, 15);
-                state.npc.curtis.pressure = clamp(state.npc.curtis.pressure + 1, 0, 15);
+                Exposure.recordObservation(state, "curtis", { type: "growth", event: "visible_business", source: "network" });
                 raidedCount += 1;
                 raidedBlockNames.push(block.name);
                 if (random.next() < RAID_BLOCK_LOSS_CHANCE) {
@@ -4781,14 +5350,14 @@
           if (context.reason === "TRAVEL") {
             const riskReduction = ((_a = territoryBenefits(state, area.id)) == null ? void 0 : _a.riskReduction) || 0;
             state.player.heat = clamp(state.player.heat + Math.max(0, area.risk - 1 - riskReduction), 0, 15);
-            if (pressureActive) state.npc.curtis.pressure = clamp(state.npc.curtis.pressure + Math.max(0, area.rival - Math.floor(state.world.influence[area.id] / 2)), 0, 15);
+            if (pressureActive && area.rival - Math.floor(state.world.influence[area.id] / 2) > 0) Exposure.recordObservation(state, "curtis", { type: "growth", event: "rival_ground", location: area.id, source: "network" });
           } else if (context.reason === "LAY_LOW") {
             const baseBonus = state.world.currentNeighborhoodId === "north_star_lot" ? state.base.tracks.security : 0;
             const danger = state.base.watched && state.world.currentNeighborhoodId === "north_star_lot" ? 1 : 0;
             state.player.heat = clamp(state.player.heat - Math.max(1, 2 + baseBonus - danger), 0, 15);
-            state.npc.curtis.pressure = clamp(state.npc.curtis.pressure - 1, 0, 15);
+            Exposure.recordObservation(state, "curtis", { type: "discretion", event: "quiet_day", source: "network" });
           } else if (pressureActive && area.role === "Outer") {
-            state.npc.curtis.pressure = clamp(state.npc.curtis.pressure + 1, 0, 15);
+            Exposure.recordObservation(state, "curtis", { type: "growth", event: "busy_day", source: "network" });
           }
           if (crossedDay) {
             let territoryIncome = 0;
@@ -4833,7 +5402,7 @@
                 logEntry(state, "Deshawn de-escalates the rent conversation and buys one extra grace intervention this week.", "good");
               } else {
                 state.npc.yalonda.rentMissed += 1;
-                state.npc.yalonda.trust -= 1;
+                Exposure.recordObservation(state, "yalonda", { type: "financial", event: "missed_obligation", source: "household" });
                 logEntry(state, "Yalonda leaves the rent envelope on the kitchen table, still empty.", "bad");
                 if (state.npc.yalonda.rentMissed >= 2) householdWarning(state, 1, "Two rent weeks pass unpaid. Yalonda makes the house warning explicit.", false);
               }
@@ -4852,7 +5421,7 @@
               state.lender.balance += fee;
               state.lender.feesAdded += fee;
               state.lender.penaltyHistory.push({ day: state.run.day, slot: state.run.slot, amount: fee });
-              state.lender.trust -= 1;
+              Exposure.recordObservation(state, "dre", { type: "financial", event: "missed_obligation", source: "witnessed" });
               state.lender.lastPenaltyDay = state.run.day;
               state.player.heat = clamp(state.player.heat + 1, 0, 15);
               logEntry(state, `Dre leaves the new total under the Mini-Mart wiper: $${state.lender.balance}. No greeting.`, "bad");
@@ -4864,9 +5433,9 @@
             logEntry(state, "Dre's patience runs out with the note still open. Somebody is coming to collect in person.", "bad");
           }
           state.npc.curtis.pressure = state.npc.curtis.attention;
-          state.lender.relationship = relationshipForLender(state.lender, state.run.day);
-          state.npc.curtis.relationship = relationshipForRival(state.npc.curtis);
-          state.npc.mina.status = minaStatus(state.npc.mina);
+          state.lender.relationship = relationshipForLender(state);
+          state.npc.curtis.relationship = relationshipForRival(state);
+          state.npc.mina.status = minaStatus(state);
           state.stats.highestHeat = Math.max(state.stats.highestHeat, state.player.heat);
         }
         function setPendingEvent(state, item) {
@@ -4939,7 +5508,7 @@
           return !!state.flags[resolvedFlagName(id)];
         }
         const minaOpen = (state) => state.npc.mina.available !== false && state.npc.mina.status !== "gone";
-        const rivalAttentionEarned = (state) => state.npc.curtis.attention > 0;
+        const rivalAttentionEarned = (state) => curtisNoticed(state);
         const STORY_REGISTRY = [
           // --- The Night Owl -------------------------------------------------------
           {
@@ -4978,7 +5547,7 @@
             stage: 3,
             classification: "relationship_scene",
             trigger: "chain",
-            requires: (s) => !!s.flags.minaShiftChangeResolved && minaOpen(s) && s.npc.mina.trust >= 2 && !s.flags.minaDateNight && !s.flags.minaSawGarage && !s.flags.minaInvitationClosed,
+            requires: (s) => !!s.flags.minaShiftChangeResolved && minaOpen(s) && atLeastBand(s, "mina", BANDS.TRUSTED) && !s.flags.minaDateNight && !s.flags.minaSawGarage && !s.flags.minaInvitationClosed,
             area: "north_star_lot",
             earliest: { day: 3, slot: 1 },
             latest: { day: 6 },
@@ -4993,7 +5562,7 @@
             stage: 4,
             classification: "main_chapter",
             trigger: "chain",
-            requires: (s) => !!s.flags.minaShiftChangeResolved && minaOpen(s) && s.npc.mina.trust >= 1,
+            requires: (s) => !!s.flags.minaShiftChangeResolved && minaOpen(s) && atLeastBand(s, "mina", BANDS.WARM),
             area: "north_star_lot",
             earliest: { day: 4, slot: 1 },
             latest: null,
@@ -5008,7 +5577,7 @@
             stage: 5,
             classification: "threat",
             trigger: "chain",
-            requires: (s) => minaOpen(s) && s.npc.curtis.attention >= 6 && s.hustle.soldUnits >= 50 && s.npc.mina.trust >= 2,
+            requires: (s) => minaOpen(s) && curtisHostile(s) && s.hustle.soldUnits >= 50 && atLeastBand(s, "mina", BANDS.TRUSTED),
             area: "north_star_lot",
             earliest: { day: 5, slot: 1 },
             latest: null,
@@ -5283,7 +5852,7 @@
             stage: 3,
             classification: "main_chapter",
             trigger: "chain",
-            requires: (s) => s.npc.curtis.attention >= 4,
+            requires: (s) => curtisHostile(s),
             area: null,
             earliest: { day: 3, slot: 0 },
             latest: null,
@@ -5303,7 +5872,7 @@
             stage: 4,
             classification: "callback",
             trigger: "chain",
-            requires: (s) => !!s.flags.curtisTaxResolved && s.npc.curtis.respect >= RESPECT_STAGE_THRESHOLDS.cut,
+            requires: (s) => !!s.flags.curtisTaxResolved && atLeastBand(s, "curtis", BANDS.WARM),
             area: null,
             earliest: { day: 4, slot: 0 },
             latest: null,
@@ -5481,7 +6050,7 @@
             stage: 2,
             classification: "opportunity",
             trigger: "chain",
-            requires: (s) => s.phone.active && s.npc.juan.trust >= 1 && !s.jobs.hired.some((id) => id !== "day_labor"),
+            requires: (s) => s.phone.active && knowsYou(s, "juan") && !s.jobs.hired.some((id) => id !== "day_labor"),
             area: HOME_DISTRICT_ID,
             earliest: { day: 2, slot: 2 },
             latest: null,
@@ -5496,7 +6065,7 @@
             stage: 3,
             classification: "relationship_scene",
             trigger: "chain",
-            requires: (s) => s.npc.yalonda.trust >= 3 && s.npc.yalonda.rentPaidWeeks >= 1 && s.player.heat <= 1 && s.people.household.lastContrabandDay !== s.run.day && householdPresence(s) === "yalonda",
+            requires: (s) => atLeastBand(s, "yalonda", BANDS.BONDED) && s.npc.yalonda.rentPaidWeeks >= 1 && s.player.heat <= 1 && s.people.household.lastContrabandDay !== s.run.day && householdPresence(s) === "yalonda",
             area: HOME_DISTRICT_ID,
             earliest: { day: 7, slot: 0 },
             latest: null,
@@ -5512,7 +6081,7 @@
             stage: null,
             classification: "opportunity",
             trigger: "ambient",
-            requires: (s) => !s.knowledge.knows907List && s.phone.active && s.npc.juan.trust >= 1 && s.run.slot >= 2,
+            requires: (s) => !s.knowledge.knows907List && s.phone.active && knowsYou(s, "juan") && s.run.slot >= 2,
             area: HOME_DISTRICT_ID,
             earliest: { day: 1, slot: 2 },
             latest: null,
@@ -5708,7 +6277,7 @@
             stage: null,
             classification: "ambient",
             trigger: "ambient",
-            requires: (s) => s.npc.curtis.respect >= RESPECT_STAGE_THRESHOLDS.tax && controlledBlockCount(s) > 0,
+            requires: (s) => atLeastBand(s, "curtis", BANDS.WARM) && controlledBlockCount(s) > 0,
             area: null,
             earliest: { day: 1, slot: 0 },
             latest: null,
@@ -5844,7 +6413,7 @@
             stage: null,
             classification: "ambient",
             trigger: "ambient",
-            requires: (s) => s.npc.curtis.pressure >= 2,
+            requires: (s) => curtisNoticed(s),
             area: null,
             earliest: { day: 2, slot: 0 },
             latest: null,
@@ -5941,20 +6510,46 @@
           const chance = Math.min(0.55, AMBIENT_BASE_CHANCE + (quiet ? AMBIENT_QUIET_BONUS : 0) + state.player.heat * 0.01 + area.risk * 0.015);
           if (random.next() <= chance) fireStory(state, weightedPick(ambient, state, random));
         }
-        function applyEventEffect(state, effect, random) {
+        const dispositionOf = (state, npcId) => Exposure.getDisposition(npcId, state);
+        const bandOf = (state, npcId) => Exposure.getDispositionBand(npcId, state);
+        const atLeastBand = (state, npcId, band) => bandOf(state, npcId) >= band;
+        const atMostBand = (state, npcId, band) => bandOf(state, npcId) <= band;
+        const knowsYou = (state, npcId) => dispositionOf(state, npcId) > 0;
+        const curtisNoticed = (state) => atMostBand(state, "curtis", BANDS.COLD);
+        const curtisHostile = (state) => atMostBand(state, "curtis", BANDS.HOSTILE);
+        const curtisPressureScore = (state) => -dispositionOf(state, "curtis");
+        const EFFECT_OBSERVATIONS = {
+          minaTrust: { npcId: "mina", up: "loyalty", down: "loyalty" },
+          lenderTrust: { npcId: "dre", up: "loyalty", down: "loyalty" },
+          rivalRespect: { npcId: "curtis", up: "submission", down: "defiance", downEvent: "pushed_back" },
+          rivalPressure: { npcId: "curtis", up: "growth", down: "discretion", downEvent: "dropped_profile" }
+        };
+        const LETDOWN_EVENT = "let_them_down";
+        function recordRelationshipDelta(state, npcId, delta, sourceId, mapping) {
+          const amount = Math.round(Number(delta) || 0);
+          if (!amount || !state.npc[npcId]) return;
+          const type = amount > 0 ? mapping.up : mapping.down;
+          const event2 = amount > 0 ? sourceId || "story_choice" : mapping.downEvent || LETDOWN_EVENT;
+          Exposure.recordObservation(state, npcId, { type, event: event2, count: Math.abs(amount), source: "witnessed" });
+        }
+        function applyRelationshipEffects(state, effect, context) {
+          const sourceId = context && context.eventId || "story_choice";
+          for (const [key, mapping] of Object.entries(EFFECT_OBSERVATIONS)) {
+            if (!effect[key]) continue;
+            recordRelationshipDelta(state, mapping.npcId, effect[key], sourceId, mapping);
+          }
+          if (effect.npcTrust && state.npc[effect.npcTrust.id]) {
+            recordRelationshipDelta(state, effect.npcTrust.id, effect.npcTrust.delta, sourceId, { up: "loyalty", down: "defiance" });
+          }
+        }
+        function applyEventEffect(state, effect, random, context) {
           var _a, _b;
           const cashBefore = state.player.cash;
           state.player.cash = Math.max(0, state.player.cash + (effect.cash || 0));
           state.player.health = clamp(state.player.health + (effect.health || 0), 0, 100);
           state.player.heat = clamp(state.player.heat + (effect.heat || 0), 0, 15);
-          state.npc.curtis.attention = clamp(state.npc.curtis.attention + (effect.rivalPressure || 0), 0, 8);
-          state.npc.curtis.pressure = state.npc.curtis.attention;
-          state.npc.curtis.respect += effect.rivalRespect || 0;
-          state.lender.trust += effect.lenderTrust || 0;
-          state.npc.dre.trust = clamp(state.lender.trust, 0, 3);
-          state.npc.mina.trust += effect.minaTrust || 0;
+          applyRelationshipEffects(state, effect, context);
           if (effect.curtisDecision) applyCurtisDecision(state, effect.curtisDecision);
-          if (effect.npcTrust && state.npc[effect.npcTrust.id]) state.npc[effect.npcTrust.id].trust += effect.npcTrust.delta || 0;
           if (effect.acceptDreLoan && state.lender.status === "unoffered") {
             state.lender.status = "active";
             state.lender.principal = 1e3;
@@ -6078,9 +6673,9 @@
           if (effect.cash < 0) state.stats.moneySpent.events += Math.min(cashBefore, -effect.cash);
           state.stats.largestLoss = Math.max(state.stats.largestLoss, Math.max(0, cashBefore - state.player.cash));
           state.npc.curtis.pressure = state.npc.curtis.attention;
-          state.lender.relationship = relationshipForLender(state.lender, state.run.day);
-          state.npc.curtis.relationship = relationshipForRival(state.npc.curtis);
-          state.npc.mina.status = minaStatus(state.npc.mina);
+          state.lender.relationship = relationshipForLender(state);
+          state.npc.curtis.relationship = relationshipForRival(state);
+          state.npc.mina.status = minaStatus(state);
         }
         function endingLabel(id) {
           return {
@@ -6110,12 +6705,12 @@
           if (state.player.heat >= 15) return "arrested";
           if (state.base.damage >= 3) return "base_lost";
           const plan = state.run.finalPlan;
-          const minaIntact = state.npc.mina.trust >= 3 && !state.npc.mina.usedWithoutConsent && state.npc.mina.available !== false && !state.flags.seriousViolence;
+          const minaIntact = atLeastBand(state, "mina", BANDS.BONDED) && !state.npc.mina.usedWithoutConsent && state.npc.mina.available !== false && !state.flags.seriousViolence;
           if (plan === "escape" && minaIntact) return "mina_escape";
           if (plan === "escape") return "clean_exit";
           if (state.npc.mina.available === false && state.npc.mina.chainStage >= 6) return "mina_gone";
           if (minaIntact && !state.npc.mina.cleanLifeAtRisk && state.npc.mina.chainStage >= 6) return "mina_clear";
-          if (plan === "partner" && state.npc.curtis.respect >= 2) return "curtis_partner";
+          if (plan === "partner" && atLeastBand(state, "curtis", BANDS.WARM)) return "curtis_partner";
           if (plan === "challenge" && Object.values(state.world.influence).reduce((a, b) => a + b, 0) >= 5) return "takeover";
           if (state.flags.acceptedSecondNote && state.lender.balance <= 0) return "dre_expansion";
           if (plan === "defend" && recruitedCrew(state).some((person) => state.people.crew[person.id].loyalty >= 1)) return "crew_saved";
@@ -6135,7 +6730,7 @@
         function householdWarning(state, count, reason, catastrophic) {
           const household = state.people.household;
           household.warnings += Math.max(1, count || 1);
-          state.npc.yalonda.trust -= Math.max(1, count || 1);
+          Exposure.recordObservation(state, "yalonda", { type: "financial", event: "missed_obligation", count: Math.max(1, count || 1), source: "household" });
           logEntry(state, reason, "bad");
           if (catastrophic || household.warnings >= 3) {
             household.evicted = true;
@@ -6188,6 +6783,16 @@
           }
           const activity = STREET_READ_ACTIVITY[context.reason];
           if (activity) addStreetReadEntry(state, "routine", `${SLOTS[oldSlot].toLowerCase()}:${activity}`);
+          const observed = OBSERVED_ACTIONS[context.reason];
+          if (observed) {
+            Exposure.broadcastObservation(state, {
+              ...observed,
+              location: state.world.currentNeighborhoodId,
+              value: Math.abs(Number(context.cashDelta) || 0),
+              day: oldDay,
+              slot: oldSlot
+            });
+          }
           closeVisit(state, context.reason);
           recordDailyAction(state, context);
           const timeCost = clamp(Math.floor(Number(context.timeCost) || 1), 1, SLOTS.length);
@@ -6195,6 +6800,7 @@
           state.run.slot = reachesDayEnd ? SLOTS.length - 1 : oldSlot + timeCost;
           restorePhoneIfReady(state, slotNumber(oldDay, oldSlot));
           resolveJobApplications(state);
+          Exposure.resolveObservationQueue(state);
           expireEffects(state);
           resolveCrewAssignments(state, random);
           resolveSoldierOperations(state, random, false);
@@ -6237,7 +6843,7 @@
             }
           }
           const friendshipMature = curtis.friendship === "accepted" && curtis.friendshipDay != null && state.run.day >= curtis.friendshipDay + 2;
-          if (!curtis.betrayed && friendshipMature && curtis.attention >= 7 && state.run.day > curtis.protectionUntilDay) {
+          if (!curtis.betrayed && friendshipMature && curtisPressureScore(state) >= 8 && state.run.day > curtis.protectionUntilDay) {
             const deshawn = state.people.crew.deshawn;
             if ((deshawn == null ? void 0 : deshawn.recruited) && deshawn.tier >= 3 && deshawn.loyalty >= 5) {
               curtis.betrayed = true;
@@ -6267,7 +6873,7 @@
           for (const loan of state.hustle.shark.loans) {
             if (!["active", "extended"].includes(loan.status) || state.run.day < loan.dueDay) continue;
             const borrower = SHARK_BORROWERS.find((item) => item.id === loan.borrowerId);
-            const probability = clamp(borrower.risk + (loan.amount >= 500 ? 0.18 : loan.amount >= 250 ? 0.08 : 0) + (loan.term === 2 ? 0.12 : loan.term === 4 ? 0.04 : -0.04) - normalizedAttributes(state).insight * 0.025 - (state.npc.dre.trust >= 3 ? 0.08 : 0), 0.03, 0.82);
+            const probability = clamp(borrower.risk + (loan.amount >= 500 ? 0.18 : loan.amount >= 250 ? 0.08 : 0) + (loan.term === 2 ? 0.12 : loan.term === 4 ? 0.04 : -0.04) - normalizedAttributes(state).insight * 0.025 - (atLeastBand(state, "dre", BANDS.BONDED) ? 0.08 : 0), 0.03, 0.82);
             const roll = stringHash(`${state.run.seed}:shark:${loan.id}:${loan.dueDay}`) % 1e4 / 1e4;
             if (roll < probability) {
               loan.status = "defaulted";
@@ -6323,6 +6929,8 @@
           settleCurtisNight(state);
           resolveSharkLoans(state);
           resolveCrewTracks(state);
+          Exposure.propagateHeat(state);
+          Exposure.resolveObservationQueue(state);
           evolveMarkets(state, random);
           if (state.run.phase === "pressure" && oldDay >= checkpointDay(state)) {
             state.run.dailyActions = [];
@@ -6335,6 +6943,7 @@
           state.player.energy = MAX_ENERGY;
           restorePhoneIfReady(state, slotNumber(oldDay, 3));
           resolveJobApplications(state);
+          Exposure.resolveObservationQueue(state);
           state.nineZeroSevenList.known = !!state.knowledge.knows907List;
           state.run.dailyActions = [];
           if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
@@ -6466,7 +7075,7 @@
             state.player.heat = clamp(state.player.heat + 2, 0, 15);
             finishEncounter(state, "win", "Tone arrives without raising his voice. The other side leaves, and two nearby windows close their blinds.");
           } else if (choice === "call_mina") {
-            state.npc.mina.trust -= 1;
+            Exposure.recordObservation(state, "mina", { type: "defiance", event: "called_her_into_it", source: "witnessed" });
             state.player.heat = clamp(state.player.heat + 1, 0, 15);
             finishEncounter(state, "escape", "Mina hits the Mini-Mart alarm. The collector runs before the patrol car reaches the lot.");
           } else if (choice === "use_base") {
@@ -6482,15 +7091,15 @@
             encounter.step += 1;
             encounter.feedback = "You seal the worst injury and force your hands steady. One decision remains.";
           } else if (choice === "intimidate") {
-            const chance = clamp(0.38 + intelligenceRating(state) * 0.1 + state.npc.curtis.respect * 0.03 - encounter.guard, 0.15, 0.9);
+            const chance = clamp(0.38 + intelligenceRating(state) * 0.1 + Math.max(0, dispositionOf(state, "curtis")) * 0.03 - encounter.guard, 0.15, 0.9);
             if (random.next() < chance) finishEncounter(state, "talk", "You name the cameras, exits, and people they failed to count. Their threat collapses under its own cost.");
             else failEncounterStep(state, random, "The calculation");
           } else if (choice === "talk") {
             const influence = state.world.influence[state.world.currentNeighborhoodId] * 0.04;
-            const relationship = encounter.id === "mid" ? state.npc.curtis.respect * 0.035 : encounter.id === "mina_sedan_night" ? state.npc.mina.trust * 0.02 : 0;
+            const relationship = encounter.id === "mid" ? Math.max(0, dispositionOf(state, "curtis")) * 0.035 : encounter.id === "mina_sedan_night" ? Math.max(0, dispositionOf(state, "mina")) * 0.02 : 0;
             const chance = clamp(0.28 + charismaRating(state) * 0.08 + influence + relationship - encounter.guard, 0.1, 0.9);
             if (random.next() < chance) {
-              if (encounter.id === "mid") state.npc.curtis.respect += 1;
+              if (encounter.id === "mid") Exposure.recordObservation(state, "curtis", { type: "submission", event: "held_the_line", source: "witnessed" });
               finishEncounter(state, "talk", "You name the people and consequences they forgot to count. The lane opens without anybody reaching for a weapon.");
             } else failEncounterStep(state, random, "The explanation");
           } else if (choice === "run") {
@@ -6513,7 +7122,7 @@
               encounter.enemyHealth -= damage;
               if (encounter.enemyHealth <= 0) {
                 if (firearm || encounter.id === "late") state.flags.seriousViolence = true;
-                state.npc.curtis.respect += 1;
+                Exposure.recordObservation(state, "curtis", { type: "submission", event: "won_the_room", source: "witnessed" });
                 influenceChange(state, state.world.currentNeighborhoodId, 1);
                 if (encounter.id === "dre_collector") {
                   state.lender.collectorsKilled += 1;
@@ -6526,7 +7135,7 @@
               }
             } else failEncounterStep(state, random, firearm ? "The shot" : "The swing");
           }
-          state.npc.mina.status = minaStatus(state.npc.mina);
+          state.npc.mina.status = minaStatus(state);
           state.run.rngState = random.state;
           reconcileCash(state);
           return state;
@@ -6556,7 +7165,7 @@
             const addedHeat = 2 + Math.floor((attemptNumber - 1) / 2);
             state.player.cash += payout;
             state.player.heat = clamp(state.player.heat + addedHeat, 0, 15);
-            state.npc.curtis.pressure = clamp(state.npc.curtis.pressure + Math.min(3, attemptNumber), 0, 15);
+            Exposure.recordObservation(state, "curtis", { type: "violence", event: "stickup", count: Math.min(3, attemptNumber), source: "network" });
             state.stats.robbery.successes += 1;
             addStreetReadEntry(state, "risk", `rob:${state.world.currentNeighborhoodId}`);
             state.stats.robbery.totalPayout += payout;
@@ -6578,7 +7187,7 @@
             const addedHeat = Math.min(5, 3 + Math.floor((attemptNumber - 1) / 2));
             state.player.health = clamp(state.player.health - damage, 0, 100);
             state.player.heat = clamp(state.player.heat + addedHeat, 0, 15);
-            state.npc.curtis.pressure = clamp(state.npc.curtis.pressure + Math.min(4, attemptNumber + 1), 0, 15);
+            Exposure.recordObservation(state, "curtis", { type: "violence", event: "dealer_stickup", count: Math.min(4, attemptNumber + 1), source: "network" });
             state.stats.robbery.failures += 1;
             state.stats.robbery.success = state.stats.robbery.successes > 0;
             result = {
@@ -6609,7 +7218,7 @@
           const success = random.next() < actions.rob.chance;
           record.robbedCount += success ? 1 : 0;
           record.lastRobbedDay = state.run.day;
-          state.npc.curtis.pressure = clamp(state.npc.curtis.pressure + 1, 0, 15);
+          Exposure.recordObservation(state, "curtis", { type: "defiance", event: "took_ground", source: "network" });
           const effects = [];
           let result;
           if (success) {
@@ -6657,8 +7266,8 @@
             robbedPlug.standing = Math.min(robbedPlug.standing, record.standing);
             syncPlugProductAccess(state, dealerId, false);
           }
-          if (state.npc.mina.chainStage >= 2 && state.npc.mina.trust >= 1 && state.npc.mina.available !== false) {
-            state.npc.mina.trust -= 1;
+          if (state.npc.mina.chainStage >= 2 && knowsYou(state, "mina") && state.npc.mina.available !== false) {
+            Exposure.broadcastObservation(state, { type: "violence", event: "robbery_near_her", location: HOME_DISTRICT_ID, channel: "neighborhood" });
             logEntry(state, "Mina works two blocks from the Wash & Go. She hears about it before the end of her shift.", "warn");
           }
           state.stats.majorDecisions.push(`Robbed ${first}: ${success ? "took the corner" : "came away empty"}`);
@@ -6739,7 +7348,7 @@
             state.world.territories[areaId].owner = "player";
             state.world.territories[areaId].capturedDay = state.run.day;
             state.world.influence[areaId] = 4;
-            state.npc.curtis.pressure = clamp(state.npc.curtis.pressure - 2, 0, 15);
+            Exposure.recordObservation(state, "curtis", { type: "discretion", event: "laid_low", count: 2, source: "network" });
             if (areaId === "downtown") state.world.productAccess.cocaine = true;
             if (areaId === "airport_industrial") state.world.productAccess.meth = true;
             title = `${AREA_BY_ID[areaId].name} Changes Hands`;
@@ -6748,7 +7357,7 @@
           } else {
             state.stats.takeovers.losses += 1;
             state.player.heat = clamp(state.player.heat + 3, 0, 15);
-            state.npc.curtis.pressure = clamp(state.npc.curtis.pressure + 2, 0, 15);
+            Exposure.recordObservation(state, "curtis", { type: "growth", event: "pushed_hard", count: 2, source: "network" });
             effects.push("+3 Heat", "+2 Curtis pressure");
             const participants = recruitedCrew(state);
             if (participants.length) {
@@ -6976,10 +7585,9 @@
               state2.lender.dueDay = 4;
               state2.lender.status = "active";
               state2.npc.dre.known = true;
-              state2.npc.dre.trust = Math.max(1, state2.npc.dre.trust);
+              Exposure.recordObservation(state2, "dre", { type: "financial", event: "took_the_note", source: "witnessed" });
               state2.npc.dre.loansTaken = Math.max(1, state2.npc.dre.loansTaken);
-              state2.npc.curtis.pressure = 1;
-              state2.npc.curtis.attention = 1;
+              Exposure.recordObservation(state2, "curtis", { type: "growth", event: "arrived_working", source: "network" });
               state2.npc.curtis.relationship = "dismissive";
               state2.world.productAccess.weed = true;
               state2.world.productAccess.shrooms = true;
@@ -7030,7 +7638,7 @@
             const choice = (_c = current == null ? void 0 : current.choices) == null ? void 0 : _c[action.choiceIndex];
             if (!current || !choice) return inputState;
             state.run.pendingEvent = null;
-            applyEventEffect(state, choice.effect || {}, random);
+            applyEventEffect(state, choice.effect || {}, random, { eventId: current.id });
             const eventCategory = current.id.startsWith("dre_") ? "earner" : current.id.startsWith("curtis_") ? "stickup" : current.id.startsWith("eli_") || current.id.startsWith("mina_") ? "connector" : current.id.startsWith("goodie_") ? "mover" : null;
             if (eventCategory) recordBehavior(state, eventCategory, current.id.endsWith("day7") ? 2 : 1, `event:${current.id}`, "story_choice");
             if (!/^(leave|cancel|walk away|say nothing)/i.test(choice.label)) {
@@ -7057,7 +7665,7 @@
               state.npc.mina.arcStage = state.npc.mina.chainStage;
               state.npc.mina.outcomes.push({ stage: descriptor.stage, id: current.id, choice: choice.label, day: state.run.day });
               if (current.id === "mina_after") {
-                state.npc.mina.outcome = state.npc.mina.available === false || state.flags.exploitedValeName || state.npc.mina.trust <= 0 ? "mina_gone" : state.npc.mina.trust >= 3 && (state.flags.toldMinaTruth || state.flags.valeProtectedMina || state.flags.minaBrokeredVale) ? "mina_stays" : "mina_calls_home";
+                state.npc.mina.outcome = state.npc.mina.available === false || state.flags.exploitedValeName || dispositionOf(state, "mina") <= 0 ? "mina_gone" : atLeastBand(state, "mina", BANDS.BONDED) && (state.flags.toldMinaTruth || state.flags.valeProtectedMina || state.flags.minaBrokeredVale) ? "mina_stays" : "mina_calls_home";
               }
             }
             if ((descriptor == null ? void 0 : descriptor.chain) === "household") {
@@ -7234,12 +7842,12 @@
             recordBehavior(state, "connector", 1, `household:${npcId}:talk`, "family_contact");
             addStreetReadEntry(state, "social", `${npcId}:advice`);
             if (npcId === "juan") {
-              state.npc.juan.trust += 1;
+              Exposure.recordObservation(state, "juan", { type: "loyalty", event: "sat_and_talked", source: "household" });
               if (!state.npc.juan.infoShared.includes("work:ship_creek")) state.npc.juan.infoShared.push("work:ship_creek");
               state.effects.rumors.push({ id: `juan_${state.run.day}`, areaId: "north_star_lot", productId: "weed", reliable: true, text: "Juan says Ship Creek hires early and his warehouse dock keeps a short callback list.", expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
               pushConsequence(state, "Juan writes a loading-dock name on your receipt.", "good");
             } else {
-              state.npc.yalonda.trust += 1;
+              Exposure.recordObservation(state, "yalonda", { type: "loyalty", event: "sat_and_talked", source: "household" });
               state.effects.rumors.push({ id: `yalonda_${state.run.day}`, areaId: "north_star_lot", productId: "weed", reliable: true, text: "Yalonda says somebody asked questions outside, then describes the coat.", expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
               pushConsequence(state, "Yalonda lowers the stove flame and tells you who came by.", "warn");
             }
@@ -7295,7 +7903,7 @@
             state.obligations.lastMissedDueDay = null;
             state.npc.yalonda.rentPaidWeeks += 1;
             state.npc.yalonda.lastRentDay = state.run.day;
-            state.npc.yalonda.trust += 1;
+            Exposure.recordObservation(state, "yalonda", { type: "financial", event: "rent_paid", source: "household" });
             recordBehavior(state, "earner", 2, `rent:${state.run.day}`, "rent_payment");
             pushConsequence(state, "Yalonda counts the rent once and closes the envelope.", "good");
             logEntry(state, `Weekly rent paid in cash: $${WEEKLY_RENT}.`, "good");
@@ -7396,13 +8004,13 @@
             if (pay) addDirtyCash(state, pay);
             if (outcome === "clean") {
               state.npc.dre.cleanCompletions += 1;
-              state.npc.dre.trust = clamp(state.npc.dre.trust + 1, 0, 3);
+              Exposure.recordObservation(state, "dre", { type: "loyalty", event: "clean_mission", source: "witnessed" });
             } else if (outcome === "violent") {
               state.player.heat = clamp(state.player.heat + 2, 0, 15);
-              state.npc.dre.trust = Math.max(0, state.npc.dre.trust - 1);
-            } else if (outcome === "soft") state.npc.dre.trust = clamp(state.npc.dre.trust + (mission.id === "intelligence" ? 1 : 0), 0, 3);
-            else state.npc.dre.trust = Math.max(0, state.npc.dre.trust - 1);
-            state.lender.trust = state.npc.dre.trust;
+              Exposure.broadcastObservation(state, { type: "violence", event: "mission_went_loud", channel: "network" });
+            } else if (outcome === "soft") {
+              if (mission.id === "intelligence") Exposure.recordObservation(state, "dre", { type: "loyalty", event: "useful_intel", source: "witnessed" });
+            } else Exposure.recordObservation(state, "dre", { type: "defiance", event: "botched_mission", source: "witnessed" });
             state.npc.dre.missionHistory.push({ ...active, outcome, pay, day: state.run.day });
             state.npc.dre.activeMission = null;
             if (sharkUnlocked(state)) {
@@ -7413,7 +8021,7 @@
             return advanceRun(state, { reason: "DRE_MISSION", suppressStory: true });
           }
           if (action.type === "DRE_TALK") {
-            if (state.npc.dre.trust < 2) return inputState;
+            if (!atLeastBand(state, "dre", BANDS.BONDED)) return inputState;
             const remaining = DRE_BACKSTORY.map((_, index2) => index2).filter((index2) => !state.npc.dre.backstoryFragments.includes(index2));
             if (!remaining.length) return inputState;
             const index = remaining[stringHash(`${state.run.seed}:dre-story:${state.npc.dre.backstoryFragments.length}`) % remaining.length];
@@ -7443,7 +8051,7 @@
             }
             if (action.type === "FORGIVE_SHARK") {
               loan.status = "forgiven";
-              state.npc.dre.trust = Math.max(0, state.npc.dre.trust - 1);
+              Exposure.recordObservation(state, "dre", { type: "defiance", event: "walked_a_debt", source: "witnessed" });
               pushConsequence(state, "You forgive the note. Dre calls it mercy once and poor underwriting twice.", "warn");
               return state;
             }
@@ -7460,12 +8068,12 @@
           if (action.type === "SIMONE_CHOICE") {
             if (!["respect", "poach", "threaten", "leverage", "truce"].includes(action.choice)) return inputState;
             state.npc.simone.known = true;
-            if (action.choice === "respect") state.npc.simone.trust += 1;
+            if (action.choice === "respect") Exposure.recordObservation(state, "simone", { type: "submission", event: "gave_respect", source: "witnessed" });
             else if (["poach", "threaten"].includes(action.choice)) state.npc.simone.threat += 1;
             else if (action.choice === "leverage") {
               state.npc.simone.leverage += 1;
               state.npc.simone.threat += 1;
-            } else if (action.choice === "truce" && state.npc.simone.trust >= 2) state.npc.simone.truce = true;
+            } else if (action.choice === "truce" && atLeastBand(state, "simone", BANDS.WARM)) state.npc.simone.truce = true;
             state.npc.simone.outcomes.push({ choice: action.choice, day: state.run.day });
             return state;
           }
@@ -7494,10 +8102,10 @@
           }
           if (action.type === "BROKER_CURTIS_TRUCE") {
             const deshawn = state.people.crew.deshawn;
-            if (!(deshawn == null ? void 0 : deshawn.recruited) || deshawn.tier < 2 || state.npc.curtis.attention < 4) return inputState;
+            if (!(deshawn == null ? void 0 : deshawn.recruited) || deshawn.tier < 2 || !curtisHostile(state)) return inputState;
             state.npc.curtis.protectionUntilDay = Math.max(state.npc.curtis.protectionUntilDay || 0, state.run.day + 1);
             deshawn.trucesBrokered += 1;
-            state.npc.simone.truce = state.npc.simone.trust >= 1 || state.npc.simone.leverage > 0;
+            state.npc.simone.truce = knowsYou(state, "simone") || state.npc.simone.leverage > 0;
             pushConsequence(state, "Deshawn brokers a temporary Curtis truce through the people who can enforce it.", "good");
             return state;
           }
@@ -7807,7 +8415,7 @@
             const kind = action.passType;
             const cost = kind === "day" ? 12 : kind === "week" ? 45 : 0;
             if (!cost || state.player.cash < cost) return inputState;
-            base.player.cash -= cost;
+            spendCash(base, cost);
             if (kind === "day") base.world.transport.dayPassDay = base.run.day;
             else base.world.transport.weekPass = true;
             logEntry(base, `You buy a ${kind === "day" ? "day" : "seven-day"} People Mover pass for $${cost}.`, "good");
@@ -7819,7 +8427,7 @@
             const access = travelAvailability(state, destination);
             if (!access.available) return inputState;
             const cost = access.cashCost;
-            base.player.cash -= cost;
+            if (cost) spendCash(base, cost);
             base.world.currentNeighborhoodId = destination;
             recordVisitedLocation(base, destination);
             base.world.transport.busRides += 1;
@@ -7921,20 +8529,19 @@
             base.lender.payments += amount;
             base.lender.paymentCount += 1;
             base.lender.paymentHistory.push({ day: base.run.day, slot: base.run.slot, amount });
-            base.lender.trust += amount >= 150 ? 1 : 0;
+            if (amount >= 150) Exposure.recordObservation(base, "dre", { type: "financial", event: "paid_down", source: "witnessed" });
             base.stats.moneySpent.debt += amount;
             if (!base.lender.balance) {
               base.lender.status = "cleared";
-              base.lender.trust += 2;
+              Exposure.recordObservation(base, "dre", { type: "financial", event: "loan_repaid", count: 2, source: "witnessed" });
               base.lender.clearedAt = { day: base.run.day, slot: base.run.slot };
               base.lender.afterPayoffOffer = "available";
               base.flags.drePaidEarly = base.run.day <= base.lender.dueDay;
             }
-            base.lender.relationship = relationshipForLender(base.lender, base.run.day);
+            base.lender.relationship = relationshipForLender(base);
             recordBehavior(base, "earner", amount >= 150 || !base.lender.balance ? 2 : 1, `dre_payment:${base.run.day}:${base.lender.paymentCount}`, "dre_payment");
             addStreetReadEntry(base, "social", "dre:payment");
             logEntry(base, base.lender.balance ? `Dre counts $${amount} behind the Mini-Mart. $${base.lender.balance} stays written on the note.` : "Dre counts the final stack, tears the note in half, and keeps one piece.", "good");
-            base.npc.dre.trust = base.lender.trust;
             if (!base.lender.balance) {
               base.npc.dre.loansRepaid += 1;
               base.hustle.sections.shark = sharkUnlocked(base);
@@ -8061,7 +8668,7 @@
             block.capturedDay = base.run.day;
             base.world.soldiers[occupier.id].blockId = action.blockId;
             block.soldiersAssigned.push(occupier.id);
-            base.npc.curtis.respect += 1;
+            Exposure.recordObservation(base, "curtis", { type: "submission", event: "claimed_block", source: "network" });
             base.hustle.exposure.networkEscalation = true;
             refreshCurtisAttention(base);
             recordBehavior(base, "stickup", 2, `block:${action.blockId}`, "territory_expansion");
@@ -8072,7 +8679,7 @@
           if (action.type === "VISIT_MINA") {
             if (!state.npc.mina.met || !nightOwlAvailability(state).available || state.npc.mina.lastConversationDay === state.run.day) return inputState;
             base.npc.mina.lastConversationDay = state.run.day;
-            if (base.npc.mina.trust >= 2) {
+            if (atLeastBand(base, "mina", BANDS.TRUSTED)) {
               const product = PRODUCTS[stringHash(`${base.run.seed}:mina-tip:${base.run.day}`) % PRODUCTS.length];
               base.effects.rumors.push({ id: `mina_${base.run.day}`, areaId: "north_star_lot", productId: product.id, reliable: true, text: `Mina passes along one reliable Spenard buyer tip for ${product.name}.`, expiresAt: slotNumber(base.run.day + 1, 0) });
             }
@@ -8410,6 +9017,11 @@
           };
         }
         return {
+          BANDS,
+          bandFor,
+          bandId,
+          bandLabel,
+          EXPOSURE_NPC_IDS,
           VERSION,
           RUN_DAYS,
           PRESSURE_DAYS,
@@ -8513,6 +9125,12 @@
           advanceRun,
           selectRunSummary,
           selectors: {
+            // Exposure reads. getDispositionBand is the gate every piece of content
+            // now asks; describeDisposition is the dev inspector and is never shown
+            // to a player.
+            disposition: (state, npcId) => Exposure.getDisposition(npcId, state),
+            dispositionBand: (state, npcId) => Exposure.getDispositionBand(npcId, state),
+            describeDisposition: (state, npcId) => Exposure.describeDisposition(state, npcId),
             cargoUsed,
             cargoCapacity,
             storedCargoUsed,
@@ -8822,19 +9440,17 @@
       function PlaceAction({ title, status, purpose, cost, time, disabled, reason, onClick }) {
         return /* @__PURE__ */ React.createElement("div", { className: `card area-card${disabled ? " locked" : ""}` }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, title, /* @__PURE__ */ React.createElement("small", null, status)), /* @__PURE__ */ React.createElement("p", null, purpose), /* @__PURE__ */ React.createElement("div", { className: "area-meta" }, /* @__PURE__ */ React.createElement("span", null, "Cost ", cost), /* @__PURE__ */ React.createElement("span", null, time)), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled, onClick }, disabled ? "Unavailable" : "Go", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, reason)));
       }
-      function Destinations({ state, dispatch, setTab, onBack }) {
+      function Destinations({ state, dispatch, onBack }) {
         const here = state.world.currentNeighborhoodId;
         const knownOf = { north_star_lot: true, downtown: state.world.transport.downtownKnown, airport_industrial: state.world.transport.industrialRouteKnown };
         function go(area) {
           dispatch({ type: area.travelAction || "TRAVEL", neighborhoodId: area.id });
-          setTab(area.id === "downtown" ? "travel" : state.market.visible ? "market" : "travel");
         }
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Leave Spenard", sub: "Known destinations and People Mover passes", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(Transit, { state, dispatch }), C.NEIGHBORHOODS.filter((area) => area.id !== C.HOME_DISTRICT_ID).map((area) => {
-          const current = area.id === here;
-          const known = knownOf[area.id] || current;
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: `Leave ${areaOf(state).name}`, sub: "Known destinations and People Mover passes", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(Transit, { state, dispatch }), C.NEIGHBORHOODS.filter((area) => area.id !== here).map((area) => {
+          const known = knownOf[area.id];
           const access = C.selectors.travelAvailability(state, area.id);
           const fare = access.cashCost ? "$5" : "Pass covers it";
-          return /* @__PURE__ */ React.createElement("div", { className: `card destination-card${current ? " cleared-card" : ""}${!current && !access.available ? " locked" : ""}`, key: area.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, area.name, /* @__PURE__ */ React.createElement("small", null, current ? "YOU ARE HERE" : known ? area.role.toUpperCase() : "UNVISITED")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, known ? area.blurb : "You have not been out here yet. What sells, what it costs you, and who works the block are all unknown until you go."), /* @__PURE__ */ React.createElement("div", { className: "destination-meta" }, /* @__PURE__ */ React.createElement("span", null, "Fare ", fare), /* @__PURE__ */ React.createElement("span", null, current ? "You are already here" : "One part of day"), /* @__PURE__ */ React.createElement("span", null, known ? `Risk ${area.risk}/5` : "Risk unknown"), /* @__PURE__ */ React.createElement("span", null, known ? `Rival presence ${area.rival}/5` : "Rival presence unknown")), !current && /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !access.available, onClick: () => go(area) }, "Go to ", area.name, /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, access.available ? `${access.reason} Uses one part of day.` : access.reason)));
+          return /* @__PURE__ */ React.createElement("div", { className: `card destination-card${!access.available ? " locked" : ""}`, key: area.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, area.name, /* @__PURE__ */ React.createElement("small", null, known ? area.role.toUpperCase() : "UNVISITED")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, known ? area.blurb : "You have not been out here yet. What sells, what it costs you, and who works the block are all unknown until you go."), /* @__PURE__ */ React.createElement("div", { className: "destination-meta" }, /* @__PURE__ */ React.createElement("span", null, "Fare ", fare), /* @__PURE__ */ React.createElement("span", null, "One part of day"), /* @__PURE__ */ React.createElement("span", null, known ? `Risk ${area.risk}/5` : "Risk unknown"), /* @__PURE__ */ React.createElement("span", null, known ? `Rival presence ${area.rival}/5` : "Rival presence unknown")), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !access.available, onClick: () => go(area) }, "Go to ", area.name, /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, access.available ? `${access.reason} Uses one part of day.` : access.reason)));
         })));
       }
       function Transit({ state, dispatch, onBack }) {
@@ -8965,8 +9581,8 @@
           return /* @__PURE__ */ React.createElement("div", { className: "card", key: held.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, item.name, /* @__PURE__ */ React.createElement("small", null, "BOUGHT ", money(held.cost))), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Expected buyer range ", money(item.resale[0]), "\u2013", money(item.resale[1]), "."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", onClick: () => dispatch({ type: "SELL_907LIST", inventoryId: held.id, surface: atHome ? "home" : "phone" }) }, "Find a buyer", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free transaction \xB7 proceeds are clean cash")));
         })), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Aspirational property"), /* @__PURE__ */ React.createElement(PlaceAction, { title: "North Star Garage", status: state.base.controlled ? "CONTROLLED" : "$650 DEPOSIT", purpose: "Storage and operations space. This property never occupies a 907List inventory slot.", cost: state.base.controlled ? "Paid" : "$650", time: state.base.controlled ? "Owned" : "Leasing uses one part of day", disabled: state.base.controlled || state.player.cash < C.GARAGE_DEPOSIT, reason: state.base.controlled ? "Already controlled." : state.player.cash < C.GARAGE_DEPOSIT ? `You need ${money(C.GARAGE_DEPOSIT - state.player.cash)} more.` : "Deposit and first week included.", onClick: () => dispatch({ type: "LEASE_GARAGE" }) })));
       }
-      function Travel({ state, dispatch, setTab, page, setPage }) {
-        if (page === "destinations") return /* @__PURE__ */ React.createElement(Destinations, { state, dispatch, setTab, onBack: () => setPage("root") });
+      function Travel({ state, dispatch, page, setPage }) {
+        if (page === "destinations") return /* @__PURE__ */ React.createElement(Destinations, { state, dispatch, onBack: () => setPage("root") });
         if (page === "around" || page.startsWith("around:")) return /* @__PURE__ */ React.createElement(AroundHere, { state, dispatch, onBack: () => setPage("root"), initialPage: page.startsWith("around:") ? page.slice("around:".length) : "root" });
         if (page === "household") return /* @__PURE__ */ React.createElement(Household, { state, dispatch, onBack: () => setPage("root") });
         const covered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
@@ -8977,8 +9593,7 @@
       function StreetScreen({ state, dispatch, page, setPage, onTrade }) {
         if (page === "people") return /* @__PURE__ */ React.createElement(People, { state, dispatch, navigateMore: () => setPage("root") });
         if (page === "market") return /* @__PURE__ */ React.createElement(Market, { state, onTrade });
-        if (page.startsWith("travel:")) return /* @__PURE__ */ React.createElement(Travel, { state, dispatch, setTab: () => {
-        }, page: page.slice(7), setPage: (next) => setPage(`travel:${next}`) });
+        if (page.startsWith("travel:")) return /* @__PURE__ */ React.createElement(Travel, { state, dispatch, page: page.slice(7), setPage: (next) => setPage(`travel:${next}`) });
         const area = areaOf(state);
         return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Street", sub: "Destinations, local places, activities, and people" }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(MenuRow, { title: `Around ${area.name}`, status: "Places & activities", description: "Travel, explore, work, train, and handle local business.", onClick: () => setPage("travel:root") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "People", status: `${C.selectors.personalContacts(state).length} personal contacts`, description: "Contacts, street suppliers, crew, and relationship history.", onClick: () => setPage("people") }), !state.hustle.visible && state.market.visible && /* @__PURE__ */ React.createElement(MenuRow, { title: "Street Market", status: "Discovered", description: "Buy and make the first sale here. Hustle unlocks after dirty income lands.", onClick: () => setPage("market") })));
       }
@@ -9394,10 +10009,31 @@
           onClose();
         } }, mode, " ", selected)));
       }
+      function exposureDebugEnabled() {
+        try {
+          return localStorage.getItem("907_exposure_debug") === "1";
+        } catch {
+          return false;
+        }
+      }
+      function ExposureDebug({ state }) {
+        const [open, setOpen] = useState(false);
+        const [who, setWho] = useState(C.EXPOSURE_NPC_IDS[0]);
+        if (!exposureDebugEnabled()) return null;
+        const read = C.selectors.describeDisposition(state, who);
+        if (!read) return null;
+        return /* @__PURE__ */ React.createElement("div", { className: "exposure-debug" }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: () => setOpen(!open) }, "Ledger: ", who, " ", read.bandLabel, " (", read.score, ")"), open && /* @__PURE__ */ React.createElement("div", { className: "exposure-debug-body" }, /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, C.EXPOSURE_NPC_IDS.map((id) => /* @__PURE__ */ React.createElement("button", { key: id, className: `btn ${id === who ? "primary" : "secondary"}`, onClick: () => setWho(id) }, id))), /* @__PURE__ */ React.createElement("p", { className: "compact" }, read.archetype, read.inverted ? " (inverted: lower is more hostile)" : "", " \xB7 score ", read.score, " \xB7 ", read.bandLabel), /* @__PURE__ */ React.createElement("table", { className: "exposure-debug-table" }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", null, "category"), /* @__PURE__ */ React.createElement("th", null, "event"), /* @__PURE__ */ React.createElement("th", null, "src"), /* @__PURE__ */ React.createElement("th", null, "n"), /* @__PURE__ */ React.createElement("th", null, "eff"), /* @__PURE__ */ React.createElement("th", null, "w"), /* @__PURE__ */ React.createElement("th", null, "total"))), /* @__PURE__ */ React.createElement("tbody", null, read.rows.map((row, index) => /* @__PURE__ */ React.createElement("tr", { key: index }, /* @__PURE__ */ React.createElement("td", null, row.type), /* @__PURE__ */ React.createElement("td", null, row.event), /* @__PURE__ */ React.createElement("td", null, row.source), /* @__PURE__ */ React.createElement("td", null, row.count), /* @__PURE__ */ React.createElement("td", null, row.effectiveCount), /* @__PURE__ */ React.createElement("td", null, row.baseWeight), /* @__PURE__ */ React.createElement("td", null, row.contribution))))), read.pending.length > 0 && /* @__PURE__ */ React.createElement("p", { className: "compact" }, "pending: ", read.pending.map((entry) => `${entry.type}/${entry.event}@${entry.deliverAtSlot}`).join(", "))));
+      }
       function CharacterCreation({ dispatch }) {
         const [streetName, setStreetName] = useState("");
         const validName = C.sanitizeStreetName(streetName);
-        return /* @__PURE__ */ React.createElement("div", { className: "edge-screen" }, /* @__PURE__ */ React.createElement("div", { className: "edge-panel" }, /* @__PURE__ */ React.createElement("div", { className: "eyebrow" }, "New run"), /* @__PURE__ */ React.createElement("h1", null, "Start from the Bottom"), /* @__PURE__ */ React.createElement("p", null, "Bring a Street Name. The neighborhood decides what it means."), /* @__PURE__ */ React.createElement("div", { className: "street-name" }, /* @__PURE__ */ React.createElement("label", { htmlFor: "street-name-input" }, "Street Name"), /* @__PURE__ */ React.createElement("input", { id: "street-name-input", className: "street-name-field", type: "text", autoComplete: "off", maxLength: C.STREET_NAME_MAX, placeholder: "What do they call you?", value: streetName, onChange: (event) => setStreetName(event.target.value) }), /* @__PURE__ */ React.createElement("small", null, "Required. Letters, numbers, spaces, apostrophes, periods, and hyphens are accepted.")), /* @__PURE__ */ React.createElement("button", { className: "edge-card", disabled: !validName, onClick: () => dispatch({ type: "START_RUN", streetName }) }, /* @__PURE__ */ React.createElement("b", null, "Start"), /* @__PURE__ */ React.createElement("span", null, "$100 clean cash. No debt. Six equal attributes. The neighborhood decides what comes next."), /* @__PURE__ */ React.createElement("small", null, "Strength \xB7 Endurance \xB7 Reflexes \xB7 Presence \xB7 Insight \xB7 Discipline"))));
+        const rejected = streetName.trim().length > 0 && !validName;
+        function start(event) {
+          if (event) event.preventDefault();
+          if (!validName) return;
+          dispatch({ type: "START_RUN", streetName });
+        }
+        return /* @__PURE__ */ React.createElement("div", { className: "edge-screen" }, /* @__PURE__ */ React.createElement("form", { className: "edge-panel", onSubmit: start }, /* @__PURE__ */ React.createElement("div", { className: "eyebrow" }, "New run"), /* @__PURE__ */ React.createElement("h1", null, "Start from the Bottom"), /* @__PURE__ */ React.createElement("p", null, "Bring a Street Name. The neighborhood decides what it means."), /* @__PURE__ */ React.createElement("div", { className: "street-name" }, /* @__PURE__ */ React.createElement("label", { htmlFor: "street-name-input" }, "Street Name"), /* @__PURE__ */ React.createElement("input", { id: "street-name-input", className: "street-name-field", type: "text", autoComplete: "off", maxLength: C.STREET_NAME_MAX, placeholder: "What do they call you?", value: streetName, onChange: (event) => setStreetName(event.target.value), "aria-invalid": rejected || void 0, "aria-describedby": rejected ? "street-name-error" : void 0 }), /* @__PURE__ */ React.createElement("small", null, "Required. Letters, numbers, spaces, apostrophes, periods, and hyphens are accepted."), rejected && /* @__PURE__ */ React.createElement("div", { className: "save-error", id: "street-name-error", role: "alert" }, "Nothing in that name survives. Use letters or numbers.")), /* @__PURE__ */ React.createElement("button", { className: "edge-card", type: "submit", disabled: !validName }, /* @__PURE__ */ React.createElement("b", null, "Start"), /* @__PURE__ */ React.createElement("span", null, "$100 clean cash. No debt. Six equal attributes. The neighborhood decides what comes next."), /* @__PURE__ */ React.createElement("small", null, "Strength \xB7 Endurance \xB7 Reflexes \xB7 Presence \xB7 Insight \xB7 Discipline"), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, validName ? `The block will call you ${validName}.` : "Enter a Street Name to begin."))));
       }
       function EventModal({ event, dispatch }) {
         const detail = /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, /* @__PURE__ */ React.createElement(Outcome, { label: "Who", value: event.who }), /* @__PURE__ */ React.createElement(Outcome, { label: "Where", value: event.where })), /* @__PURE__ */ React.createElement("p", { className: "warn" }, /* @__PURE__ */ React.createElement("b", null, "Stakes:"), " ", event.stakes), event.flavor && /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, /* @__PURE__ */ React.createElement(EntityText, { text: event.flavor })));
@@ -9554,7 +10190,7 @@
           phone: /* @__PURE__ */ React.createElement(PhoneScreen, { state, dispatch: act, openList: () => navigate("more", "907list") }),
           more: /* @__PURE__ */ React.createElement(More, { state, dispatch: act, features, page: nav.more, setPage: setMorePage, sub: nav.sub, subToken: nav.token })
         };
-        return /* @__PURE__ */ React.createElement("div", { className: "app" }, /* @__PURE__ */ React.createElement(Header, { state, onMenu: () => setMenu(true) }), /* @__PURE__ */ React.createElement("main", { className: "main" }, screens[tab]), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement(AmbientTicker, { state }), /* @__PURE__ */ React.createElement(Feed, { entries: state.log }), (tab === "hustle" && hustlePage === "market" || tab === "street" && streetPage === "market") && /* @__PURE__ */ React.createElement("div", { className: "action-bar one" }, /* @__PURE__ */ React.createElement("button", { className: "btn primary", onClick: () => act({ type: "END_MARKET" }) }, "Finish Trading", /* @__PURE__ */ React.createElement("small", null, "Close this market visit \xB7 advance to ", nextPartLabel(state)))), state.run.overtimeArmed && /* @__PURE__ */ React.createElement("div", { className: "action-bar one" }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: () => act({ type: "CONFIRM_END_DAY" }) }, "End Day Now", /* @__PURE__ */ React.createElement("small", null, "Cancel the armed extension and process tonight"))), /* @__PURE__ */ React.createElement(Navigation, { tab, setTab, hustleVisible: state.hustle.visible })), trade && /* @__PURE__ */ React.createElement(TradeModal, { state, productId: trade, dispatch: act, onClose: () => setTrade(null) }), menu && /* @__PURE__ */ React.createElement(MenuModal, { state, dispatch, onClose: () => setMenu(false), onTitle }), state.run.openingPending && /* @__PURE__ */ React.createElement(OpeningModal, { dispatch: act }), state.run.pendingEncounter && /* @__PURE__ */ React.createElement(EncounterModal, { state, dispatch: act }), !state.run.pendingEncounter && state.run.pendingOperationResult && /* @__PURE__ */ React.createElement(OperationResultModal, { result: state.run.pendingOperationResult, dispatch: act }), !state.run.pendingEncounter && !state.run.pendingOperationResult && state.run.pendingEvent && /* @__PURE__ */ React.createElement(EventModal, { event: state.run.pendingEvent, dispatch: act }), !state.run.pendingEncounter && !state.run.pendingOperationResult && !state.run.pendingEvent && state.run.dayEndPending && state.run.status === "playing" && /* @__PURE__ */ React.createElement(EndDayModal, { state, dispatch: act }), state.run.status === "ended" && /* @__PURE__ */ React.createElement(EndModal, { state, onTitle }), result && !state.run.dayEndPending && !state.run.pendingEvent && !state.run.pendingEncounter && /* @__PURE__ */ React.createElement(ActionResultOverlay, { result, onDismiss: () => setResult(null) }), state.run.pendingUnlocks[0] && !result && !state.run.openingPending && !state.run.pendingEvent && !state.run.pendingEncounter && !state.run.pendingOperationResult && !state.run.dayEndPending && state.run.status === "playing" && /* @__PURE__ */ React.createElement(TabUnlockedOverlay, { unlock: state.run.pendingUnlocks[0], onDismiss: () => dispatch({ type: "DISMISS_TAB_UNLOCK" }) }), /* @__PURE__ */ React.createElement(ConsequencePopup, { items: state.run.consequenceQueue || [], onDismiss: (id) => dispatch({ type: "DISMISS_CONSEQUENCE", id }) }));
+        return /* @__PURE__ */ React.createElement("div", { className: "app" }, /* @__PURE__ */ React.createElement(Header, { state, onMenu: () => setMenu(true) }), /* @__PURE__ */ React.createElement("main", { className: "main" }, screens[tab]), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement(AmbientTicker, { state }), /* @__PURE__ */ React.createElement(Feed, { entries: state.log }), (tab === "hustle" && hustlePage === "market" || tab === "street" && streetPage === "market") && /* @__PURE__ */ React.createElement("div", { className: "action-bar one" }, /* @__PURE__ */ React.createElement("button", { className: "btn primary", onClick: () => act({ type: "END_MARKET" }) }, "Finish Trading", /* @__PURE__ */ React.createElement("small", null, "Close this market visit \xB7 advance to ", nextPartLabel(state)))), state.run.overtimeArmed && /* @__PURE__ */ React.createElement("div", { className: "action-bar one" }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: () => act({ type: "CONFIRM_END_DAY" }) }, "End Day Now", /* @__PURE__ */ React.createElement("small", null, "Cancel the armed extension and process tonight"))), /* @__PURE__ */ React.createElement(Navigation, { tab, setTab, hustleVisible: state.hustle.visible })), /* @__PURE__ */ React.createElement(ExposureDebug, { state }), trade && /* @__PURE__ */ React.createElement(TradeModal, { state, productId: trade, dispatch: act, onClose: () => setTrade(null) }), menu && /* @__PURE__ */ React.createElement(MenuModal, { state, dispatch, onClose: () => setMenu(false), onTitle }), state.run.openingPending && /* @__PURE__ */ React.createElement(OpeningModal, { dispatch: act }), state.run.pendingEncounter && /* @__PURE__ */ React.createElement(EncounterModal, { state, dispatch: act }), !state.run.pendingEncounter && state.run.pendingOperationResult && /* @__PURE__ */ React.createElement(OperationResultModal, { result: state.run.pendingOperationResult, dispatch: act }), !state.run.pendingEncounter && !state.run.pendingOperationResult && state.run.pendingEvent && /* @__PURE__ */ React.createElement(EventModal, { event: state.run.pendingEvent, dispatch: act }), !state.run.pendingEncounter && !state.run.pendingOperationResult && !state.run.pendingEvent && state.run.dayEndPending && state.run.status === "playing" && /* @__PURE__ */ React.createElement(EndDayModal, { state, dispatch: act }), state.run.status === "ended" && /* @__PURE__ */ React.createElement(EndModal, { state, onTitle }), result && !state.run.dayEndPending && !state.run.pendingEvent && !state.run.pendingEncounter && /* @__PURE__ */ React.createElement(ActionResultOverlay, { result, onDismiss: () => setResult(null) }), state.run.pendingUnlocks[0] && !result && !state.run.openingPending && !state.run.pendingEvent && !state.run.pendingEncounter && !state.run.pendingOperationResult && !state.run.dayEndPending && state.run.status === "playing" && /* @__PURE__ */ React.createElement(TabUnlockedOverlay, { unlock: state.run.pendingUnlocks[0], onDismiss: () => dispatch({ type: "DISMISS_TAB_UNLOCK" }) }), /* @__PURE__ */ React.createElement(ConsequencePopup, { items: state.run.consequenceQueue || [], onDismiss: (id) => dispatch({ type: "DISMISS_CONSEQUENCE", id }) }));
       }
       function App() {
         const [state, dispatch] = useReducer(C.reduceGame, null, () => C.createRun({ seed: Date.now() }));

@@ -1,6 +1,48 @@
 # 907Hustle: One Good Run — Project Status
 
-Last updated: 2026-08-12 (America/Anchorage)
+Last updated: 2026-08-14 (America/Anchorage)
+
+## v1.9a Exposure System and Bug Fixes — branch in progress
+
+- Branch: `codex/v1-9a-exposure-system`, based on `origin/main` commit `dc6aff4`
+  containing merged PR #66 (v1.8.1).
+- NPC relationships are no longer integers. Each of the six core NPCs
+  (Yalonda, Juan, Mina, Curtis, Dre, Simone) carries a ledger of typed
+  observations and a channel subscription; disposition is computed from the
+  ledger through a personality lens on every read and is never stored.
+- Eleven observation categories; four archetypes (CIVILIAN, STREET, ROMANTIC,
+  THREAT) with three to five per-character overrides. THREAT is inverted, so a
+  high score with Curtis means being no problem to him rather than being liked.
+- Five gossip channels (direct, household, neighborhood, network, reputation)
+  with presence and time-of-day checks. Curtis's network filters out
+  corner-level activity. Heat above 8/10/12 propagates on its own.
+- Repeated behavior follows `min(4, log2(count + 1))`. Betrayal is exempt and
+  missed obligations escalate. The clamp is what actually prevents grinding:
+  `log2` alone has no ceiling.
+- Six shared bands (Hostile, Cold, Neutral, Warm, Trusted, Bonded) replace every
+  per-character threshold. Roughly 55 read sites migrated. The sixty relationship
+  effects declared across the event cards were left declared and are translated
+  into observations in one place, `applyRelationshipEffects`.
+- Save schema/key advanced to version 6 / `907ogr_v6`. v3, v4, and v5 all load;
+  pre-Exposure relationships, Curtis's attention milestones, rent history, and
+  the Mina flags convert into ledger entries rather than being discarded.
+- Two blockers fixed. Neither matched its report: the name gate already existed
+  at both layers and was missing only its disabled styling and reason, and the
+  Downtown return already worked in the reducer and was hidden by a destination
+  list that filtered on the home district instead of the current one. The
+  outbound bus leg also bypassed `spendCash`, leaving cash and the dirty/clean
+  split disagreeing after a round trip.
+- Dev-only ledger inspector behind `localStorage 907_exposure_debug`.
+- Verification: 377 tests passed (up from 345); 2,000/2,000 seeded runs completed
+  with zero dead ends; overall economy within 3.3% of v1.8.1 on cash and net
+  worth. New simulation baselines are
+  `c2f0e24d5e9355bf3a0372a978c2f226c1442342bf0c9c27bcecfe74332f1bc2` (200-run)
+  and `3e0b84f6d2856ddf292eed0aadeb5a5e8d46540ef215d8ac3d8efb30590453f1`
+  (2,000-run); the hash moved because gameplay changed on purpose. Browser QA at
+  320x568 through 1440x900: zero horizontal overflow, zero console errors, and
+  real v3, v4, and v5 saves migrated to v6 and stayed playable. One pre-existing
+  sub-44px control remains, the inline `.entity-chip` name link, unchanged from
+  v1.8.1. This build is ready for draft review and is not shipped.
 
 ## v1.4 Week Zero and Early Game Rework — branch in progress
 

@@ -92,6 +92,53 @@ test("every non-Spenard district inherits paid, pass-covered, and walking return
   }
 });
 
+// The reducer always allowed the ride home. The Leave-Spenard list filtered on
+// the home constant rather than the current district, so Downtown offered no
+// card and the player was stuck with the fare in hand.
+test("the destination list from Downtown offers Spenard and never lists where you stand", () => {
+  const here = "downtown";
+  const offered = C.NEIGHBORHOODS.filter((area) => area.id !== here).map((area) => area.id);
+  assert.ok(offered.includes(C.HOME_DISTRICT_ID));
+  assert.ok(!offered.includes(here));
+  for (const area of C.NEIGHBORHOODS) {
+    const list = C.NEIGHBORHOODS.filter((entry) => entry.id !== area.id);
+    assert.ok(list.length > 0, area.id);
+    assert.ok(!list.some((entry) => entry.id === area.id), area.id);
+  }
+});
+
+test("a Spenard to Downtown round trip charges $5 each way and keeps the cash split honest", () => {
+  let state = place(fresh(90810), C.HOME_DISTRICT_ID, { cash: 40, slot: 0 });
+  state.world.transport.downtownKnown = true;
+  state.player.dirtyCash = 25;
+  state.player.cleanCash = 15;
+
+  const out = C.reduceGame(state, { type: "BUS_TRAVEL", neighborhoodId: "downtown" });
+  assert.equal(out.world.currentNeighborhoodId, "downtown");
+  assert.equal(out.player.cash, 35);
+  assert.equal(out.player.dirtyCash + out.player.cleanCash, out.player.cash, "outbound leg split");
+  assert.equal(out.player.dirtyCash, 20);
+
+  // Arriving Downtown queues a once-per-run arrival card, which holds the
+  // reducer until it is resolved. Clear it so this test is about the fare.
+  out.run.pendingEvent = null;
+  out.run.pendingEncounter = null;
+  out.run.dayEndPending = false;
+  const back = C.reduceGame(out, { type: "TRAVEL", neighborhoodId: C.HOME_DISTRICT_ID });
+  assert.equal(back.world.currentNeighborhoodId, C.HOME_DISTRICT_ID);
+  assert.equal(back.player.cash, 30);
+  assert.equal(back.player.dirtyCash + back.player.cleanCash, back.player.cash, "return leg split");
+});
+
+test("a People Mover pass draws from the dirty and clean pools like every other purchase", () => {
+  const state = place(fresh(90811), C.HOME_DISTRICT_ID, { cash: 60, slot: 0 });
+  state.player.dirtyCash = 30;
+  state.player.cleanCash = 30;
+  const bought = C.reduceGame(state, { type: "BUY_BUS_PASS", passType: "day" });
+  assert.equal(bought.player.cash, 48);
+  assert.equal(bought.player.dirtyCash + bought.player.cleanCash, bought.player.cash);
+});
+
 test("Walk back costs 3 Health, consumes two parts, clamps at Night, and bypasses Energy", () => {
   const expectations = [
     { from: 0, to: 2, dayEnd: false },

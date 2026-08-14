@@ -17,6 +17,12 @@ function clearStory(state) {
   return state;
 }
 
+// Tests used to write a trust integer straight into state. There is no such
+// number any more, so they write the evidence that produces one instead.
+function ledgerRow(type, count, event, source) {
+  return { type, event: event || "test_history", location: null, value: null, day: 1, count: count || 1, source: source || "witnessed" };
+}
+
 function readyForDre(day = 4) {
   const state = fresh(1440);
   state.run.day = day;
@@ -24,7 +30,7 @@ function readyForDre(day = 4) {
   state.jobs.discovered = ["wash_go"];
   state.jobs.hired = ["wash_go", "day_labor"];
   state.jobs.activeJobId = "wash_go";
-  state.npc.juan.trust = 1;
+  state.npc.juan.ledger.push(ledgerRow("loyalty", 1, "sat_and_talked", "household"));
   state.player.cash = 60; state.player.cleanCash = 60; state.player.dirtyCash = 0;
   state.onboarding.shiftsWorked = 3;
   state.onboarding.visitedLocations = ["home", "spenard_streets", "night_owl", "spenard_gym"];
@@ -164,7 +170,7 @@ test("legacy v3 saves hydrate directly into pressure with inferred lender state"
   assert.equal(loaded.run.checkpointDay, 7);
   assert.equal(loaded.lender.status, "active");
   assert.ok(loaded.onboarding);
-  assert.equal(C.SAVE_KEY, "907ogr_v5");
+  assert.equal(C.SAVE_KEY, "907ogr_v6");
 });
 
 test("Night Owl postings rotate deterministically and regulars keep separate relationships", () => {

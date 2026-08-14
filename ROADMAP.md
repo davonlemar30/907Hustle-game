@@ -4,25 +4,58 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
-## In progress — v1.4 Week Zero and Early Game Rework
+## In progress — v1.9a Exposure System and Bug Fixes
 
-Branch: `codex/v1-4-week-zero-early-game`. This work is under review and is not
-shipped.
+Branch: `codex/v1-9a-exposure-system`. Under review, not yet merged.
 
-- Required Street Name; $100 clean start; no opening debt or fixed ending date.
-- Week Zero onboarding through three shifts, four physical locations, and two
-  eligible workplace or Night Owl contacts.
-- Dre approach after the following shift, with an optional $1,000 dirty-cash
-  advance and a dynamic checkpoint seven calendar days later.
-- Hidden daily Energy, pre-rollover end-day confirmation, structured action
-  recaps, and one controlled overtime action.
-- Three-root Travel hierarchy, expanded Night Owl hub, relationship-driven
-  gambling discovery, and the deterministic 907List resale loop.
-- Additive `907ogr_v3` hydration into pressure-phase compatibility behavior.
+- Flat relationship integers replaced by per-NPC observation ledgers read through
+  personality lenses; disposition is derived, never stored.
+- Eleven observation categories, four archetypes with per-character overrides,
+  five gossip channels, six shared disposition bands.
+- Clamped logarithmic diminishing returns, with betrayal exempt and missed
+  obligations escalating.
+- Heat above 8 / 10 / 12 propagates to household / neighborhood / network,
+  closing the connection the v1.8.1 audit filed as absent.
+- Save schema v6; v3, v4, and v5 migrate, converting old relationships into
+  ledger entries.
+- Two blockers fixed: the Start control now shows its disabled state and says
+  why, and the destination list is relative to where the player stands so
+  Downtown is no longer one-way.
+- Dev-only ledger inspector behind `localStorage 907_exposure_debug`.
 
-Post-merge work: update the Build Changelog and shipped build-order record. Keep
-Moving, Mina Date Night, broader transportation progression, social-media hustle,
-and the larger day/night foundation remain outside this branch.
+Gameplay changed on purpose, so the simulation hash moved. New 2,000-run
+baseline `3e0b84f6d2856ddf292eed0aadeb5a5e8d46540ef215d8ac3d8efb30590453f1`;
+377 tests pass; 2,000 seeded runs finish with zero dead ends; overall economy
+within 3.3% of v1.8.1.
+
+**Next:** v1.9b, the 907List tiered broker system, which depends on the
+Exposure integration points this build ships.
+
+## Shipped — v1.8.1 (Refactor, Code Hygiene, and Architecture Prep)
+
+Runtime Babel removed for an esbuild bundle · title art down 96.5% on phones ·
+`game-core.js` split into `src/data/` and `src/events/` · one event eligibility
+gate · ~11MB of dead files deleted · `ARCHITECTURE.md` added. No gameplay
+change: the 2,000-run hash was identical to v1.8.
+
+## Shipped — v1.8 (Character, Relationship, and Hustle Rework)
+
+Final character identities across all copy · Mina's six-scene Night Owl arc ·
+Curtis's exposure/tax/friendship/betrayal paths · Dre's loans, missions, and
+Shark track · Goodie reduced to dealer-only · Simone added · one-active-employer
+job model · Market/Boost/Stickup/Shark consolidated under Hustle · save v5.
+
+## Shipped — v1.7 (Character Rework, Obligation Layer, and Social Gating)
+
+Yalonda and Juan replace the John/spouse placeholders · Places and Activities
+split · shared Contacts surface · phone bill as the first obligation · weekly
+rent · 907List gated behind social discovery · save v4.
+
+## Shipped — v1.4 through v1.6
+
+Week Zero and the classless opening (v1.4) · job variety, Contacts, and Downtown
+scaffolding (v1.5) · the `playSound` crash fix and the UX/presentation pass
+(v1.6).
 
 ## Shipped — Alpha v0.9 (Fresh Start and Daily Life)
 

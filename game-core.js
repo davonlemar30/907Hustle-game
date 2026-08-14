@@ -8,14 +8,18 @@
   const { normalizeSeed, stringHash, makeRandom, seededShuffle, isEligible, getWeight } = require("./src/events/random.js");
   const { effectPreview, event, activeEvent } = require("./src/events/cards.js");
   const { checkpointDay, controlled, slotNumber } = require("./src/selectors.js");
+  const Exposure = require("./src/exposure/engine.js");
+  const { BANDS, bandFor, bandId, bandLabel } = require("./src/data/disposition-bands.js");
+  const { EXPOSURE_NPC_IDS } = require("./src/data/npc-lenses.js");
+  const { NPC_CHANNELS } = require("./src/data/propagation.js");
 
-  const VERSION = 5;
+  const VERSION = 6;
   const RUN_DAYS = 7;
   const PRESSURE_DAYS = 7;
   const MAX_ENERGY = 4;
   const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
-  const SAVE_KEY = "907ogr_v5";
-  const LEGACY_SAVE_KEYS = ["907ogr_v4", "907ogr_v3"];
+  const SAVE_KEY = "907ogr_v6";
+  const LEGACY_SAVE_KEYS = ["907ogr_v5", "907ogr_v4", "907ogr_v3"];
   const PHONE_BILL = 75;
   const WEEKLY_RENT = 150;
   const WORKING_CAPITAL_RESERVE = 150;
@@ -272,19 +276,19 @@
   const STORY_CONTACTS = [
     { id: "yalonda", name: "Yalonda Hernandez", role: "Landlord", visibleWhen: () => true,
       status: (s) => s.people.household.evicted ? "Room closed" : `${s.people.household.warnings}/3 warnings`,
-      summary: (s) => `She rents you the spare room. Trust ${s.npc.yalonda.trust}; rent is due Day ${s.obligations.rentDueDay}.`, actions: ["TALK_HOUSEHOLD"] },
+      summary: (s) => `She rents you the spare room. ${bandLabel(bandOf(s, "yalonda"))} with you; rent is due Day ${s.obligations.rentDueDay}.`, actions: ["TALK_HOUSEHOLD"] },
     { id: "juan", name: "Juan Hernandez", role: "Yalonda's son", visibleWhen: () => true,
       status: (s) => s.people.household.lastQuestionDay === s.run.day ? "Talked today" : "Available",
-      summary: (s) => `Warehouse loader and local connector. Trust ${s.npc.juan.trust}.`, actions: ["TALK_HOUSEHOLD"] },
+      summary: (s) => `Warehouse loader and local connector. ${bandLabel(bandOf(s, "juan"))} with you.`, actions: ["TALK_HOUSEHOLD"] },
     { id: "mina", name: "Mina Vale", role: "Night Owl clerk", visibleWhen: (s) => s.npc.mina.met,
       status: (s) => s.npc.mina.status, summary: (s) => `Mina remembers the ${s.npc.mina.introChoice || "guarded"} first conversation.`, actions: ["VISIT_MINA"] },
     { id: "dre", name: "Dre Smooth", role: "Lender", visibleWhen: (s) => ["active", "cleared"].includes(s.lender.status),
       status: (s) => s.lender.relationship, summary: (s) => `$${s.lender.balance} remains on the note due Day ${s.lender.dueDay}.`, actions: ["OPEN_FINANCES"] },
     { id: "curtis", name: "Curtis Foyer", role: "Rival", visibleWhen: (s) => s.npc.curtis.relationship !== "unaware",
-      status: (s) => s.npc.curtis.relationship, summary: (s) => `Attention ${s.npc.curtis.attention}/8; respect ${s.npc.curtis.respect}.`, actions: [] },
+      status: (s) => s.npc.curtis.relationship, summary: (s) => `He reads you as ${s.npc.curtis.relationship}.`, actions: [] },
     { id: "simone", name: "Simone Hart", role: "Independent protection organizer", visibleWhen: (s) => s.npc.simone.known,
-      status: (s) => s.npc.simone.truce ? "Truce" : s.npc.simone.threat > s.npc.simone.trust ? "Watching" : "Independent",
-      summary: (s) => `Trust ${s.npc.simone.trust}; threat ${s.npc.simone.threat}; leverage ${s.npc.simone.leverage}.`, actions: [] },
+      status: (s) => s.npc.simone.truce ? "Truce" : s.npc.simone.threat > 0 ? "Watching" : "Independent",
+      summary: (s) => `She reads you as ${bandLabel(bandOf(s, "simone"))}. Leverage ${s.npc.simone.leverage}.`, actions: [] },
   ];
 
   function contactDialogue(person, type) {
@@ -315,8 +319,11 @@
     const curtis = state.npc?.curtis;
     if (!curtis || curtis.attentionMilestones.includes(id)) return false;
     curtis.attentionMilestones.push(id);
-    if (force || !curtis.taxActive || curtis.attention < 5) curtis.attention = clamp(curtis.attention + 1, 0, 8);
-    curtis.pressure = curtis.attention;
+    // Milestones stay deduplicated the way they always were; what changes is
+    // that each one now lands in his ledger as the kind of thing it actually
+    // was, instead of incrementing a single undifferentiated counter.
+    const MILESTONE_TYPES = { units_10: "growth", units_25: "growth", units_50: "growth", revenue_600: "financial", revenue_1200: "financial", spenard_sale: "growth", named_report: "defiance", network_escalation: "defiance", tax_rejected: "defiance" };
+    Exposure.recordObservation(state, "curtis", { type: MILESTONE_TYPES[id] || "growth", event: id, source: "network" });
     return true;
   }
   function refreshCurtisAttention(state) {
@@ -337,7 +344,7 @@
   }
   function applyCurtisDecision(state, choice) {
     const curtis = state.npc.curtis;
-    if (curtis.attention < 4 || curtis.friendship || curtis.taxActive) return false;
+    if (!curtisHostile(state) || curtis.friendship || curtis.taxActive) return false;
     if (choice === "pay_tax") curtis.taxActive = true;
     else if (choice === "friendship") {
       curtis.friendship = "accepted";
@@ -345,13 +352,13 @@
       curtis.protectionUntilDay = state.run.day + 2;
     } else if (choice === "guarded") {
       curtis.friendship = "guarded";
-      curtis.respect += 1;
+      Exposure.recordObservation(state, "curtis", { type: "submission", event: "stood_guarded", source: "witnessed" });
     } else if (choice === "reject") {
       curtis.friendship = "rejected";
-      curtis.respect += 2;
+      Exposure.recordObservation(state, "curtis", { type: "defiance", event: "rejected_tax", source: "witnessed" });
       awardCurtisExposure(state, "tax_rejected", true);
     } else return false;
-    curtis.relationship = relationshipForRival(curtis);
+    curtis.relationship = relationshipForRival(state);
     return true;
   }
   // Dirty/clean cash is a bookkeeping layer on top of the single pervasive
@@ -655,6 +662,34 @@
     ROB: "risk", ROB_DEALER: "risk", TAKEOVER: "risk", ELI_TEST_ROUTE: "risk", CLAIM_BLOCK: "risk",
   };
 
+  // What each kind of action looks like from the outside.
+  //
+  // Every slot-consuming action already funnels through advanceRun, which makes
+  // this table the cheap way to cover most of the observation surface without
+  // touching individual reducer cases. Keyed on the same context.reason that
+  // STREET_READ_ACTIVITY uses.
+  //
+  // `channel` decides who hears. Working a shift is neighborhood-visible;
+  // sleeping at home is only visible to the household; a robbery travels the
+  // network. Actions with no entry are not worth remarking on, which is the
+  // right default: not everything a player does is a fact about them.
+  const OBSERVED_ACTIONS = {
+    WORK_SHIFT: { type: "presence", event: "steady_work", channel: "neighborhood" },
+    WORK_JOB: { type: "presence", event: "steady_work", channel: "neighborhood" },
+    SLEEP_HOME: { type: "presence", event: "home_at_night", channel: "household" },
+    VISIT_NIGHT_OWL: { type: "presence", event: "night_owl", channel: "direct" },
+    CONTACT_VISIT: { type: "presence", event: "keeps_in_touch", channel: "neighborhood" },
+    TRAIN_ATTRIBUTE: { type: "growth", event: "training", channel: "neighborhood" },
+    LAY_LOW: { type: "discretion", event: "kept_quiet", channel: "neighborhood" },
+    ROB: { type: "violence", event: "robbery", channel: "neighborhood" },
+    ROB_DEALER: { type: "violence", event: "robbery", channel: "neighborhood" },
+    TAKEOVER: { type: "defiance", event: "territory_claim", channel: "network" },
+    CLAIM_BLOCK: { type: "defiance", event: "territory_claim", channel: "network" },
+    SHOPLIFT: { type: "financial", event: "petty_theft", channel: "neighborhood" },
+    BOOST: { type: "financial", event: "boosting", channel: "network" },
+    GAMBLE: { type: "financial", event: "gambling", channel: "neighborhood" },
+  };
+
   // Tier 2 pays out as a contact volunteering something once a day. The line is
   // picked by area, then rotated by day, so a run that stays in one district
   // still hears different voices. Nothing here names a system or a number - it
@@ -910,26 +945,32 @@
     }]));
   }
 
+  // Every NPC now carries a ledger and a channel subscription. The remaining
+  // per-character fields are arc bookkeeping (which scene has fired, whether a
+  // tax is running); the relationship itself is derived from the ledger and is
+  // never stored. The old trust/attention/respect integers stay in the shape so
+  // v5 saves have somewhere to land during migration, and so the sim telemetry
+  // and day summary keep reading a number, but nothing gates on them any more.
   function createNpcState() {
-    return {
+    const base = {
       yalonda: { trust: 2, romanceStage: 0, rentPaidWeeks: 0, lastRentDay: null, rentMissed: 0, lastEventDay: null },
       juan: { trust: 0, infoShared: [], lastEventDay: null },
       mina: {
         met: false, available: true, trust: 0, arcStage: 0, chainStage: 0,
-        introChoice: null, introTone: null, flirtHistory: false, truthTold: false,
-        betrayalFlag: false, usedWithoutConsent: false, downplayed: false,
-        violenceWitnessed: false, cleanLifeAtRisk: false, status: "distant",
-        outcome: null, outcomes: [], recoveryLockedUntilDay: null,
+        introChoice: null, flirtHistory: false,
+        usedWithoutConsent: false,
+        cleanLifeAtRisk: false, status: "distant",
+        outcome: null, outcomes: [],
       },
       curtis: {
         name: "Curtis Foyer", attention: 0, pressure: 0, respect: 0,
-        relationship: "unaware", warned: false, taxActive: false, friendship: null,
+        relationship: "unaware", taxActive: false, friendship: null,
         friendshipDay: null, protectionUntilDay: null, betrayed: false,
-        attentionMilestones: [], recentInterference: null,
+        attentionMilestones: [],
       },
       dre: {
-        known: false, trust: 0, trustTier: 0, missionHistory: [], refusals: 0,
-        cleanCompletions: 0, activeMission: null, nextMissionId: null,
+        known: false, trust: 0, missionHistory: [], refusals: 0,
+        cleanCompletions: 0, activeMission: null,
         offersDisabled: false, backstoryFragments: [], loansTaken: 0, loansRepaid: 0,
       },
       simone: {
@@ -937,6 +978,16 @@
         leverage: 0, truce: false, outcomes: [],
       },
     };
+    for (const id of EXPOSURE_NPC_IDS) {
+      if (!base[id]) continue;
+      base[id].ledger = [];
+      base[id].channels = [...(NPC_CHANNELS[id] || ["direct"])];
+    }
+    // Yalonda opened at trust 2 because she is family and the player is already
+    // under her roof on Day 1. That head start is a fact about the household,
+    // not a number, so it starts as one row in her ledger instead.
+    base.yalonda.ledger.push({ type: "presence", event: "family_household", location: HOME_DISTRICT_ID, value: null, day: 1, count: 2, source: "household" });
+    return base;
   }
 
   function createJobsState(inventory, seed) {
@@ -966,7 +1017,7 @@
       run: {
         status: "creating_character", day: 1, slot: 0, seed, rngState: random.state,
         premise: "fresh_arrival", openingPending: false, phase: "week_zero", pressureStartedDay: null, checkpointDay: null,
-        ending: null, pendingEvent: null, pendingEncounter: null, pendingOperationResult: null, pendingUnlocks: [], consequenceQueue: [], daySummary: null,
+        ending: null, pendingEvent: null, pendingEncounter: null, pendingOperationResult: null, pendingUnlocks: [], consequenceQueue: [], pendingObservations: [], daySummary: null,
         dayEndPending: false, overtimeArmed: false, overtimeUsedDay: null, dailyActions: [],
         currentVisit: { trades: 0, grossBuy: 0, grossSell: 0, startedAt: 0 },
         recentEvents: [], encounterCount: 0, finalPlan: null, finalPlanPrepared: false,
@@ -1100,7 +1151,7 @@
   function migrateSave(value) {
     if (!value || typeof value !== "object") return null;
     if (value.version === VERSION) return value;
-    if (![3, 4].includes(value.version) || !value.run || !value.world || !value.player) return null;
+    if (![3, 4, 5].includes(value.version) || !value.run || !value.world || !value.player) return null;
     const migrated = JSON.parse(JSON.stringify(value));
     const oldHousehold = migrated.people?.household || {};
     const legacyNpc = migrated.npc || {};
@@ -1157,6 +1208,7 @@
     migrated.jobs.offers = eligibleEmployers.filter((id) => id !== activeJobId);
     migrated.jobs.applications = Array.isArray(migrated.jobs.applications) ? migrated.jobs.applications : [];
     migrated.run.consequenceQueue = Array.isArray(migrated.run.consequenceQueue) ? migrated.run.consequenceQueue : [];
+    migrated.run.pendingObservations = Array.isArray(migrated.run.pendingObservations) ? migrated.run.pendingObservations : [];
     const renameStoryId = (id) => typeof id === "string" ? id.replace(/^mara_/, "mina_").replace(/^rook_/, "curtis_").replace(/^kip_/, "goodie_").replace(/^miri_/, "pherris_") : id;
     const renameFlag = (id) => typeof id === "string" ? id.replace(/^mara/, "mina").replace(/^rook/, "curtis").replace(/^kip/, "goodie").replace(/^miri/, "pherris") : id;
     migrated.flags = Object.fromEntries(Object.entries(migrated.flags || {}).map(([id, flag]) => [renameFlag(id), flag]));
@@ -1185,6 +1237,10 @@
   }
 
   function hydrateRun(value) {
+    // Read the version off the save as it arrived. migrateSave stamps it to
+    // current and merges in default state, so after that call there is no way
+    // left to tell a pre-Exposure save from a converted one.
+    const incomingVersion = value && typeof value === "object" ? value.version : null;
     value = migrateSave(value);
     if (!value || typeof value !== "object" || value.version !== VERSION || !value.run || !value.world || !value.player) return null;
     const defaults = createRun({ seed: value.run.seed });
@@ -1362,6 +1418,89 @@
         else crew.contactStage = "recruitable";
       }
     }
+    if (incomingVersion !== VERSION) seedExposureLedgers(state);
+    return state;
+  }
+
+  // Turns a pre-v1.9a relationship into a ledger.
+  //
+  // Deliberately placed after hydrateRun rather than between it and migrateSave:
+  // tests/v1-8-1.test.js treats everything between those two function
+  // declarations as the amnesty window where legacy character ids are allowed,
+  // and this code has no business widening that window.
+  //
+  // The build prompt named three flags to convert. Only one of them was real:
+  // toldMinaTruth lives in the flat state.flags bag, and minaViolenceWitnessed /
+  // minaDownplayed never existed under any name. npc.mina.violenceWitnessed and
+  // .downplayed were declared and never once read or written. What follows
+  // converts the fields that actually carried meaning.
+  function seedExposureLedgers(state) {
+    // Only ever called for a save that predates the ledger. The caller decides
+    // that from the version the save arrived with, because by the time state
+    // exists mergeDefaults has already given every NPC an empty ledger.
+    const day = state.run.day;
+    const seed = (npcId, spec) => Exposure.recordObservation(state, npcId, { day, ...spec });
+
+    // Trust integers become presence: time spent, nothing more specific. That is
+    // honest about what the old number actually recorded, and it means a
+    // migrated save lands mid-band rather than inheriting content it never
+    // earned a reason for.
+    for (const id of ["yalonda", "juan", "mina", "dre", "simone"]) {
+      const trust = Math.floor(Number(state.npc[id]?.trust) || 0);
+      if (trust > 0) seed(id, { type: "presence", event: "legacy_history", count: trust, source: "witnessed" });
+      if (trust < 0) seed(id, { type: "defiance", event: "legacy_friction", count: Math.abs(trust), source: "witnessed" });
+    }
+
+    // Curtis's attention was already the closest thing in the old code to an
+    // observation ledger: deduplicated, milestone-keyed, and earned by concrete
+    // acts. Each milestone converts to the category it was actually measuring.
+    const milestoneCategory = {
+      units_10: "growth", units_25: "growth", units_50: "growth",
+      revenue_600: "financial", revenue_1200: "financial",
+      spenard_sale: "growth", named_report: "defiance", network_escalation: "defiance",
+      tax_rejected: "defiance",
+    };
+    for (const milestone of state.npc.curtis.attentionMilestones || []) {
+      const type = milestoneCategory[milestone];
+      if (type) seed("curtis", { type, event: milestone, source: "network" });
+    }
+    // Attention that outran its milestones (older saves, forced awards) lands as
+    // undifferentiated growth so the total still reads as exposure.
+    const unexplained = Math.max(0, Math.floor(Number(state.npc.curtis.attention) || 0) - (state.npc.curtis.attentionMilestones || []).length);
+    if (unexplained > 0) seed("curtis", { type: "growth", event: "legacy_exposure", count: unexplained, source: "network" });
+    const respect = Math.floor(Number(state.npc.curtis.respect) || 0);
+    if (respect > 0) seed("curtis", { type: "submission", event: "legacy_respect", count: respect, source: "witnessed" });
+
+    // Mina's history was split between npc.mina booleans and the flat flag bag,
+    // with usedWithoutConsent duplicated across both. Collapse to one row.
+    const flags = state.flags || {};
+    if (flags.toldMinaTruth) seed("mina", { type: "honesty", event: "told_truth", source: "witnessed" });
+    if (flags.minaDateNight) seed("mina", { type: "presence", event: "date_night", source: "witnessed" });
+    if (flags.valeProtectedMina) seed("mina", { type: "loyalty", event: "protected_her", source: "witnessed" });
+    if (flags.usedMinaWithoutConsent || state.npc.mina.usedWithoutConsent) {
+      seed("mina", { type: "betrayal", event: "used_without_consent", source: "witnessed" });
+    }
+    if (flags.exploitedValeName) seed("mina", { type: "betrayal", event: "exploited_name", source: "network" });
+    // Serious violence was the live substitute for the flag the prompt named.
+    // It is public, so it reaches everyone on the network, not only Mina.
+    if (flags.seriousViolence) {
+      for (const id of EXPOSURE_NPC_IDS) seed(id, { type: "violence", event: "serious_violence", source: "network" });
+    }
+
+    // Rent is the one obligation the old code tracked both ways. Paid weeks are
+    // financial credit; missed ones are the escalating kind that gets worse.
+    const paidWeeks = Math.floor(Number(state.npc.yalonda.rentPaidWeeks) || 0);
+    if (paidWeeks > 0) seed("yalonda", { type: "financial", event: "rent_paid", count: paidWeeks, source: "household" });
+    const missed = Math.floor(Number(state.npc.yalonda.rentMissed) || 0);
+    if (missed > 0) seed("yalonda", { type: "financial", event: "missed_obligation", count: missed, source: "household" });
+
+    // Dre kept the cleanest behavioral record of anyone: completions, repayments
+    // and refusals were all counted, and all three mean different things to him.
+    const dre = state.npc.dre;
+    if (dre.cleanCompletions > 0) seed("dre", { type: "loyalty", event: "clean_mission", count: Math.floor(dre.cleanCompletions), source: "witnessed" });
+    if (dre.loansRepaid > 0) seed("dre", { type: "financial", event: "loan_repaid", count: Math.floor(dre.loansRepaid), source: "witnessed" });
+    if (dre.refusals > 0) seed("dre", { type: "defiance", event: "refused_work", count: Math.floor(dre.refusals), source: "witnessed" });
+
     return state;
   }
 
@@ -1978,7 +2117,7 @@
   }
   function minaThreatEligible(state) {
     const relevantHistory = !!(state.npc.mina.introChoice || state.flags.minaFlirted || state.flags.minaFriendlyIntro || state.flags.minaDistantIntro || state.flags.toldMinaAboutGarage || state.stats.moneySpent.relationships > 0);
-    return !!(state.flags.minaBoundaryResolved && state.npc.mina.met && state.npc.mina.available !== false && state.npc.mina.status !== "gone" && relevantHistory && state.npc.curtis.pressure >= 4 && !state.flags.minaSedanNightResolved);
+    return !!(state.flags.minaBoundaryResolved && state.npc.mina.met && state.npc.mina.available !== false && state.npc.mina.status !== "gone" && relevantHistory && curtisHostile(state) && !state.flags.minaSedanNightResolved);
   }
   function recruitmentCost(state, crewId) {
     const person = CREW_BY_ID[crewId];
@@ -2089,7 +2228,7 @@
     if (!plug) return 1;
     const standing = plugRecord(state, plug.id)?.standing || 0;
     let discount = plug.id === "goodie" ? (standing >= 3 ? 0.18 : 0.12) : standing >= 4 ? 0.06 : standing >= 2 ? 0.03 : 0;
-    if (plug.id === "goodie") discount = Math.min(0.25, discount + (state.npc.mina.trust >= 3 ? 0.08 : state.npc.mina.trust >= 2 ? 0.05 : 0));
+    if (plug.id === "goodie") discount = Math.min(0.25, discount + (atLeastBand(state, "mina", BANDS.TRUSTED) ? 0.08 : atLeastBand(state, "mina", BANDS.WARM) ? 0.05 : 0));
     const relationshipDiscount = 1 - discount;
     return plug.priceModifier * relationshipDiscount;
   }
@@ -2185,7 +2324,7 @@
       return { label: controlled(state, areaId) ? DISTRICT_CONTROL_LABEL : "Neutral", blocks: 0, capstone: false, hasBlockLayer: false };
     }
     const blocks = districtBlockCount(state, areaId);
-    const capstone = blocks >= DISTRICT_CONTROL_CAPSTONE_BLOCKS && state.npc.curtis.respect >= DISTRICT_CONTROL_CAPSTONE_RESPECT;
+    const capstone = blocks >= DISTRICT_CONTROL_CAPSTONE_BLOCKS && atLeastBand(state, "curtis", BANDS.TRUSTED);
     if (capstone) return { label: DISTRICT_CONTROL_LABEL, blocks, capstone: true, hasBlockLayer: true };
     const tier = [...DISTRICT_CONTROL_TIERS].reverse().find((item) => blocks >= item.minBlocks) || DISTRICT_CONTROL_TIERS[0];
     return { label: tier.label, blocks, capstone: false, hasBlockLayer: true };
@@ -2300,7 +2439,7 @@
     if (state.run.day === checkpointDay(state) && state.run.slot === 3) return blocked("There is no part of the run left for this.");
 
     const plug = PLUG_BY_ID[id];
-    const minaBonus = state.npc.mina.trust >= 3 ? 0.08 : state.npc.mina.trust >= 2 ? 0.05 : 0;
+    const minaBonus = atLeastBand(state, "mina", BANDS.TRUSTED) ? 0.08 : atLeastBand(state, "mina", BANDS.WARM) ? 0.05 : 0;
     const discount = Math.min(0.25, (record.standing >= 3 ? 0.18 : 0.12) + minaBonus);
     // An offer you cannot take must not present as available: the button would
     // enable and then do nothing, and an agent would loop on it forever.
@@ -2338,7 +2477,7 @@
   function operationScore(state) {
     const crew = recruitedCrew(state).reduce((sum, person) => sum + Math.max(0, state.people.crew[person.id].loyalty + 2) * 35, 0);
     const influence = Object.values(state.world.influence).reduce((sum, value) => sum + value * 70, 0);
-    const relationships = Math.max(0, state.npc.mina.trust) * 35 + Math.max(0, state.lender.trust) * 20 + Math.max(0, state.npc.curtis.respect) * 20;
+    const relationships = Math.max(0, dispositionOf(state, "mina")) * 12 + Math.max(0, dispositionOf(state, "dre")) * 7 + Math.max(0, dispositionOf(state, "curtis")) * 7;
     const access = Object.values(state.world.productAccess).filter(Boolean).length * 45;
     return Math.round(netWorth(state) + baseValue(state) * 0.65 + gearValue(state) * 0.35 + crew + influence + relationships + access);
   }
@@ -2400,38 +2539,48 @@
     return decorate({ id: "normal", label: "STEADY", symbol: "—" });
   }
 
-  function relationshipForLender(lender, day) {
+  // The four label functions below keep the names the UI and the tests already
+  // read, and only change what they consult. Each one now derives from the
+  // ledger instead of an integer, which is where the old model was doing its
+  // one honest piece of work: turning a number into something a player can hear.
+  function relationshipForLender(state) {
+    const lender = state.lender;
+    const day = state.run.day;
     if (lender.status === "unoffered") return "unknown";
     if (lender.status === "declined") return "offer declined";
-    if (lender.balance <= 0) return lender.trust >= 2 ? "helpful" : "businesslike";
-    if (day > lender.dueDay + 1) return lender.trust < 0 ? "threatening" : "demanding";
+    const band = bandOf(state, "dre");
+    if (lender.balance <= 0) return band >= BANDS.TRUSTED ? "helpful" : "businesslike";
+    if (day > lender.dueDay + 1) return band <= BANDS.COLD ? "threatening" : "demanding";
     if (day > lender.dueDay) return "demanding";
-    if (lender.trust >= 2) return "patient";
+    if (band >= BANDS.TRUSTED) return "patient";
     return "businesslike";
   }
   function dreTrustTier(state) {
-    const trust = clamp(Math.floor(Number(state.npc.dre.trust) || 0), 0, 3);
-    return ["Stranger", "Reliable", "Earner", "Inner Circle"][trust];
+    const band = bandOf(state, "dre");
+    if (band >= BANDS.BONDED) return "Inner Circle";
+    if (band >= BANDS.TRUSTED) return "Earner";
+    if (band >= BANDS.WARM) return "Reliable";
+    return "Stranger";
   }
   function dreIntroductionEligible(state) {
     const noLoan = state.lender.status !== "active" || state.lender.balance <= 0;
-    const route = state.npc.juan.trust >= 1 || !state.phone.active || state.phone.daysPastDue > 0;
+    const route = knowsYou(state, "juan") || !state.phone.active || state.phone.daysPastDue > 0;
     return state.run.day >= 2 && state.player.cash <= 80 && noLoan && state.lender.status === "unoffered" && route;
   }
   function dreMissionAvailability(state) {
     const dre = state.npc.dre;
-    if (!dre.known || dre.trust < 1) return { available: false, reason: "Build a Reliable relationship with Dre first." };
+    if (!dre.known || !atLeastBand(state, "dre", BANDS.TRUSTED)) return { available: false, reason: "Build a Reliable relationship with Dre first." };
     if (dre.offersDisabled) return { available: false, reason: "Three refusals ended Dre's mission offers for this run." };
     if (dre.activeMission) return { available: false, reason: "Finish or refuse the current mission first." };
     return { available: true, reason: "Dre can put one job in front of you." };
   }
   function sharkUnlocked(state) {
-    return state.npc.dre.trust >= 3 && state.npc.dre.cleanCompletions >= 3 && state.npc.dre.loansRepaid >= 2;
+    return atLeastBand(state, "dre", BANDS.BONDED) && state.npc.dre.cleanCompletions >= 3 && state.npc.dre.loansRepaid >= 2;
   }
   function sharkRiskLabel(state, borrower, amount, term) {
     const amountPressure = amount >= 500 ? 2 : amount >= 250 ? 1 : 0;
     const termRelief = term >= 7 ? 2 : term >= 4 ? 1 : 0;
-    const score = borrower.risk + amountPressure - termRelief - Math.floor((normalizedAttributes(state).insight - 1) / 2) - (state.npc.dre.trust >= 3 ? 1 : 0);
+    const score = borrower.risk + amountPressure - termRelief - Math.floor((normalizedAttributes(state).insight - 1) / 2) - (atLeastBand(state, "dre", BANDS.BONDED) ? 1 : 0);
     return score <= 0 ? "Low" : score <= 2 ? "Guarded" : score <= 4 ? "High" : "Severe";
   }
   function sharkLoanAvailability(state, borrowerId, amount, term) {
@@ -2444,23 +2593,29 @@
     if (state.player.cash < amount) return { available: false, reason: "Not enough cash to fund the principal." };
     return { available: true, reason: `${sharkRiskLabel(state, borrower, amount, term)} risk.`, risk: sharkRiskLabel(state, borrower, amount, term) };
   }
-  function relationshipForRival(rival) {
-    if (rival.pressure <= 0 && rival.respect <= 0) return "unaware";
-    if (rival.respect >= 4 && rival.pressure <= 6) return "respectful";
-    if (rival.respect >= 2 && rival.pressure <= 4) return "cooperative";
-    if (rival.pressure >= 7) return "aggressive";
-    if (rival.pressure >= 4) return "competitive";
+  // Curtis's label is the inverted read made legible. A score at or above
+  // Neutral means he has no reason to look at you; every step below it is a
+  // step toward the tax and the confrontation.
+  function relationshipForRival(state) {
+    const score = dispositionOf(state, "curtis");
+    if (score === 0) return "unaware";
+    if (score >= 6) return "respectful";
+    if (score >= 3) return "cooperative";
+    if (score <= -9) return "aggressive";
+    if (score <= -5) return "competitive";
     return "dismissive";
   }
-  function minaStatus(person) {
-    // A departure is authoritative. Once she has left, no later trust arithmetic
+  function minaStatus(state) {
+    const person = state.npc.mina;
+    // A departure is authoritative. Once she has left, no later arithmetic
     // walks it back.
     if (person.available === false) return "gone";
-    if (person.usedWithoutConsent && person.trust < 1) return "gone";
+    const band = bandOf(state, "mina");
+    if (person.usedWithoutConsent && band < BANDS.WARM) return "gone";
     if (person.usedWithoutConsent) return "compromised";
-    if (person.trust >= 5) return "committed";
-    if (person.trust >= 3) return "trusted";
-    if (person.trust >= 1) return "cautious";
+    if (band >= BANDS.BONDED) return "committed";
+    if (band >= BANDS.TRUSTED) return "trusted";
+    if (band >= BANDS.WARM) return "cautious";
     return "distant";
   }
 
@@ -2529,7 +2684,7 @@
       } else if (person.id === "tone") {
         if (assignment === "guard_base") {
           state.base.watched = false;
-          state.npc.curtis.pressure = clamp(state.npc.curtis.pressure - 1, 0, 15);
+          Exposure.recordObservation(state, "curtis", { type: "discretion", event: "kept_low", source: "network" });
           logEntry(state, "Tone spends the shift across from the garage. The sedan watching the door leaves first.", "good");
         } else {
           state.flags.toneIntimidatedBuyer = true;
@@ -2614,7 +2769,7 @@
           record.lastRaidDay = state.run.day;
           record.raidCount += 1;
           state.player.heat = clamp(state.player.heat + 1, 0, 15);
-          state.npc.curtis.pressure = clamp(state.npc.curtis.pressure + 1, 0, 15);
+          Exposure.recordObservation(state, "curtis", { type: "growth", event: "visible_business", source: "network" });
           raidedCount += 1;
           raidedBlockNames.push(block.name);
           if (random.next() < RAID_BLOCK_LOSS_CHANCE) {
@@ -2662,14 +2817,14 @@
     if (context.reason === "TRAVEL") {
       const riskReduction = territoryBenefits(state, area.id)?.riskReduction || 0;
       state.player.heat = clamp(state.player.heat + Math.max(0, area.risk - 1 - riskReduction), 0, 15);
-      if (pressureActive) state.npc.curtis.pressure = clamp(state.npc.curtis.pressure + Math.max(0, area.rival - Math.floor(state.world.influence[area.id] / 2)), 0, 15);
+      if (pressureActive && area.rival - Math.floor(state.world.influence[area.id] / 2) > 0) Exposure.recordObservation(state, "curtis", { type: "growth", event: "rival_ground", location: area.id, source: "network" });
     } else if (context.reason === "LAY_LOW") {
       const baseBonus = state.world.currentNeighborhoodId === "north_star_lot" ? state.base.tracks.security : 0;
       const danger = state.base.watched && state.world.currentNeighborhoodId === "north_star_lot" ? 1 : 0;
       state.player.heat = clamp(state.player.heat - Math.max(1, 2 + baseBonus - danger), 0, 15);
-      state.npc.curtis.pressure = clamp(state.npc.curtis.pressure - 1, 0, 15);
+      Exposure.recordObservation(state, "curtis", { type: "discretion", event: "quiet_day", source: "network" });
     } else if (pressureActive && area.role === "Outer") {
-      state.npc.curtis.pressure = clamp(state.npc.curtis.pressure + 1, 0, 15);
+      Exposure.recordObservation(state, "curtis", { type: "growth", event: "busy_day", source: "network" });
     }
 
     if (crossedDay) {
@@ -2718,7 +2873,7 @@
           logEntry(state, "Deshawn de-escalates the rent conversation and buys one extra grace intervention this week.", "good");
         } else {
           state.npc.yalonda.rentMissed += 1;
-          state.npc.yalonda.trust -= 1;
+          Exposure.recordObservation(state, "yalonda", { type: "financial", event: "missed_obligation", source: "household" });
           logEntry(state, "Yalonda leaves the rent envelope on the kitchen table, still empty.", "bad");
           if (state.npc.yalonda.rentMissed >= 2) householdWarning(state, 1, "Two rent weeks pass unpaid. Yalonda makes the house warning explicit.", false);
         }
@@ -2742,7 +2897,7 @@
         state.lender.balance += fee;
         state.lender.feesAdded += fee;
         state.lender.penaltyHistory.push({ day: state.run.day, slot: state.run.slot, amount: fee });
-        state.lender.trust -= 1;
+        Exposure.recordObservation(state, "dre", { type: "financial", event: "missed_obligation", source: "witnessed" });
         state.lender.lastPenaltyDay = state.run.day;
         state.player.heat = clamp(state.player.heat + 1, 0, 15);
         logEntry(state, `Dre leaves the new total under the Mini-Mart wiper: $${state.lender.balance}. No greeting.`, "bad");
@@ -2759,9 +2914,9 @@
       logEntry(state, "Dre's patience runs out with the note still open. Somebody is coming to collect in person.", "bad");
     }
     state.npc.curtis.pressure = state.npc.curtis.attention;
-    state.lender.relationship = relationshipForLender(state.lender, state.run.day);
-    state.npc.curtis.relationship = relationshipForRival(state.npc.curtis);
-    state.npc.mina.status = minaStatus(state.npc.mina);
+    state.lender.relationship = relationshipForLender(state);
+    state.npc.curtis.relationship = relationshipForRival(state);
+    state.npc.mina.status = minaStatus(state);
     state.stats.highestHeat = Math.max(state.stats.highestHeat, state.player.heat);
   }
 
@@ -2888,7 +3043,7 @@
   // "Has Curtis noticed you at all" for the opening beat can still come from
   // other visible signals — Heat, robbery, a robbed dealer, district
   // influence — none of which are the pressure field itself.
-  const rivalAttentionEarned = (state) => state.npc.curtis.attention > 0;
+  const rivalAttentionEarned = (state) => curtisNoticed(state);
 
   const STORY_REGISTRY = [
     // --- The Night Owl -------------------------------------------------------
@@ -2898,14 +3053,14 @@
       requires: (s) => !!s.flags.minaIntroResolved && minaOpen(s), area: "north_star_lot",
       earliest: { day: 2, slot: 1 }, latest: { day: 6 }, once: true, cooldown: 0, weight: 8, exit: (s) => !minaOpen(s) },
     { id: "mina_invitation", chain: "mina_spenard", stage: 3, classification: "relationship_scene", trigger: "chain",
-      requires: (s) => !!s.flags.minaShiftChangeResolved && minaOpen(s) && s.npc.mina.trust >= 2
+      requires: (s) => !!s.flags.minaShiftChangeResolved && minaOpen(s) && atLeastBand(s, "mina", BANDS.TRUSTED)
         && !s.flags.minaDateNight && !s.flags.minaSawGarage && !s.flags.minaInvitationClosed,
       area: "north_star_lot", earliest: { day: 3, slot: 1 }, latest: { day: 6 }, once: false, cooldown: 4, weight: 6, exit: (s) => !minaOpen(s) },
     { id: "mina_boundary", chain: "mina_spenard", stage: 4, classification: "main_chapter", trigger: "chain",
-      requires: (s) => !!s.flags.minaShiftChangeResolved && minaOpen(s) && s.npc.mina.trust >= 1, area: "north_star_lot",
+      requires: (s) => !!s.flags.minaShiftChangeResolved && minaOpen(s) && atLeastBand(s, "mina", BANDS.WARM), area: "north_star_lot",
       earliest: { day: 4, slot: 1 }, latest: null, once: true, cooldown: 0, weight: 8, exit: (s) => !minaOpen(s) },
     { id: "mina_sedan_night", chain: "mina_spenard", stage: 5, classification: "threat", trigger: "chain",
-      requires: (s) => minaOpen(s) && s.npc.curtis.attention >= 6 && s.hustle.soldUnits >= 50 && s.npc.mina.trust >= 2, area: "north_star_lot",
+      requires: (s) => minaOpen(s) && curtisHostile(s) && s.hustle.soldUnits >= 50 && atLeastBand(s, "mina", BANDS.TRUSTED), area: "north_star_lot",
       earliest: { day: 5, slot: 1 }, latest: null, once: true, cooldown: 0, weight: 8, exit: (s) => !minaOpen(s) },
     { id: "mina_after", chain: "mina_spenard", stage: 6, classification: "callback", trigger: "chain",
       requires: (s) => !!s.flags.minaBoundaryResolved && (!!s.flags.minaSedanNightResolved || s.run.day >= checkpointDay(s)), area: "north_star_lot",
@@ -2961,7 +3116,7 @@
     { id: "early_street", chain: "curtis_pressure", stage: 2, classification: "threat", trigger: "chain", kind: "encounter",
       requires: (s) => !!s.flags.curtisMarkResolved, area: null, earliest: { day: 2, slot: 1 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
     { id: "curtis_tax", chain: "curtis_pressure", stage: 3, classification: "main_chapter", trigger: "chain",
-      requires: (s) => s.npc.curtis.attention >= 4, area: null,
+      requires: (s) => curtisHostile(s), area: null,
       earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
     // Respect is now the sole numeric driver of this stage — the migration
     // from the old pressure-OR-area.rival gate is complete. Legacy saves that
@@ -2969,7 +3124,7 @@
     // hydrateRun (respect is raised to this threshold), so they are not
     // re-locked out of content they already earned.
     { id: "curtis_cut", chain: "curtis_pressure", stage: 4, classification: "callback", trigger: "chain",
-      requires: (s) => !!s.flags.curtisTaxResolved && s.npc.curtis.respect >= RESPECT_STAGE_THRESHOLDS.cut,
+      requires: (s) => !!s.flags.curtisTaxResolved && atLeastBand(s, "curtis", BANDS.WARM),
       area: null, earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 6, exit: null },
     { id: "mid", chain: "curtis_pressure", stage: 5, classification: "threat", trigger: "chain", kind: "encounter",
       requires: (s) => !!s.flags.curtisTaxResolved, area: null,
@@ -3000,15 +3155,15 @@
     { id: "yalonda_warning", chain: "household", stage: 2, classification: "callback", trigger: "chain",
       requires: (s) => s.player.heat >= 2 && householdPresence(s) === "yalonda", area: HOME_DISTRICT_ID, earliest: { day: 2, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 7, exit: null },
     { id: "juan_referral", chain: "household", stage: 2, classification: "opportunity", trigger: "chain",
-      requires: (s) => s.phone.active && s.npc.juan.trust >= 1 && !s.jobs.hired.some((id) => id !== "day_labor"), area: HOME_DISTRICT_ID, earliest: { day: 2, slot: 2 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
+      requires: (s) => s.phone.active && knowsYou(s, "juan") && !s.jobs.hired.some((id) => id !== "day_labor"), area: HOME_DISTRICT_ID, earliest: { day: 2, slot: 2 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
     { id: "yalonda_flirt", chain: "household", stage: 3, classification: "relationship_scene", trigger: "chain",
-      requires: (s) => s.npc.yalonda.trust >= 3 && s.npc.yalonda.rentPaidWeeks >= 1 && s.player.heat <= 1
+      requires: (s) => atLeastBand(s, "yalonda", BANDS.BONDED) && s.npc.yalonda.rentPaidWeeks >= 1 && s.player.heat <= 1
         && s.people.household.lastContrabandDay !== s.run.day && householdPresence(s) === "yalonda",
       area: HOME_DISTRICT_ID, earliest: { day: 7, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
 
     // Social discovery routes. The link stays invisible until one of these lands.
     { id: "discover_907_juan", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
-      requires: (s) => !s.knowledge.knows907List && s.phone.active && s.npc.juan.trust >= 1 && s.run.slot >= 2, area: HOME_DISTRICT_ID, earliest: { day: 1, slot: 2 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
+      requires: (s) => !s.knowledge.knows907List && s.phone.active && knowsYou(s, "juan") && s.run.slot >= 2, area: HOME_DISTRICT_ID, earliest: { day: 1, slot: 2 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
     { id: "discover_907_work", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
       requires: (s) => !s.knowledge.knows907List && s.phone.active && s.onboarding.shiftsWorked >= 3, area: null, earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
     { id: "discover_907_night_owl", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
@@ -3039,7 +3194,7 @@
       requires: (s) => eliLieutenantActive(s) && !s.flags.spenardBlocksRevealed, area: "north_star_lot",
       earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 7, exit: null },
     { id: "curtis_respect_notice", chain: null, stage: null, classification: "ambient", trigger: "ambient",
-      requires: (s) => s.npc.curtis.respect >= RESPECT_STAGE_THRESHOLDS.tax && controlledBlockCount(s) > 0, area: null,
+      requires: (s) => atLeastBand(s, "curtis", BANDS.WARM) && controlledBlockCount(s) > 0, area: null,
       earliest: { day: 1, slot: 0 }, latest: null, once: false, cooldown: 6, weight: 5, exit: null },
     { id: "soldier_raid_aftermath", chain: null, stage: null, classification: "ambient", trigger: "ambient",
       requires: (s) => Object.values(s.world.territoryBlocks).some((block) => block.lastRaidDay === s.run.day - 1), area: null,
@@ -3061,7 +3216,7 @@
     { id: "garage_furnace", chain: null, stage: null, classification: "ambient", trigger: "ambient",
       requires: (s) => s.base.controlled, area: "north_star_lot", earliest: { day: 2, slot: 0 }, latest: null, once: false, cooldown: 8, weight: 3, exit: null },
     { id: "sedan_rumor", chain: null, stage: null, classification: "ambient", trigger: "ambient",
-      requires: (s) => s.npc.curtis.pressure >= 2, area: null, earliest: { day: 2, slot: 0 }, latest: null, once: false, cooldown: 8, weight: 5, exit: null },
+      requires: (s) => curtisNoticed(s), area: null, earliest: { day: 2, slot: 0 }, latest: null, once: false, cooldown: 8, weight: 5, exit: null },
     { id: "midtown_lights", chain: null, stage: null, classification: "threat", trigger: "ambient",
       requires: () => true, area: null, earliest: { day: 1, slot: 2 }, latest: null, once: false, cooldown: 8, weight: 4, exit: null },
   ];
@@ -3157,19 +3312,85 @@
     if (random.next() <= chance) fireStory(state, weightedPick(ambient, state, random));
   }
 
-  function applyEventEffect(state, effect, random) {
+  // The band readers. Every content gate in the game goes through one of these.
+  //
+  // Mapping from the old per-character thresholds: a relationship the old code
+  // called trust 1 is Warm, trust 2 is Trusted, trust 3 is Bonded. Curtis and
+  // Simone run on the inverted THREAT lens, so they read downward instead and
+  // get their own named helpers rather than a confusing >= against a rival.
+  const dispositionOf = (state, npcId) => Exposure.getDisposition(npcId, state);
+  const bandOf = (state, npcId) => Exposure.getDispositionBand(npcId, state);
+  const atLeastBand = (state, npcId, band) => bandOf(state, npcId) >= band;
+  const atMostBand = (state, npcId, band) => bandOf(state, npcId) <= band;
+  // "Any positive history at all", which is what the old trust >= 1 checks that
+  // were about acquaintance rather than closeness actually meant.
+  const knowsYou = (state, npcId) => dispositionOf(state, npcId) > 0;
+
+  // Curtis reads backwards. Neutral is invisible, Cold is watched, Hostile is
+  // the tax and the confrontation.
+  const curtisNoticed = (state) => atMostBand(state, "curtis", BANDS.COLD);
+  const curtisHostile = (state) => atMostBand(state, "curtis", BANDS.HOSTILE);
+  // How far past the Hostile floor he is, for the beats that used to key off
+  // deeper attention than the tax did.
+  const curtisPressureScore = (state) => -dispositionOf(state, "curtis");
+
+  // How a legacy relationship delta reads as an observation.
+  //
+  // A card that said "minaTrust: +2" was never really saying "add two"; it was
+  // saying "she saw you do something worth two". The sign picks the category and
+  // the magnitude becomes the count, so the diminishing-returns rule applies to
+  // repeats the way it does to everything else.
+  //
+  // rivalPressure is exposure, which the THREAT lens reads as growth and scores
+  // downward. rivalRespect is the player conceding standing to Curtis, which
+  // reads as submission and scores upward. That inversion is deliberate: for a
+  // rival, a high score means you are not a problem.
+  const EFFECT_OBSERVATIONS = {
+    minaTrust: { npcId: "mina", up: "loyalty", down: "loyalty" },
+    lenderTrust: { npcId: "dre", up: "loyalty", down: "loyalty" },
+    rivalRespect: { npcId: "curtis", up: "submission", down: "defiance", downEvent: "pushed_back" },
+    rivalPressure: { npcId: "curtis", up: "growth", down: "discretion", downEvent: "dropped_profile" },
+  };
+
+  // A positive delta keeps the card id, so repeats of the same scene diminish
+  // against themselves. A negative one collapses to a single named letdown row
+  // priced by SHARED_EVENT_WEIGHTS, because category sign cannot be trusted
+  // downward: Dre's lens reads defiance as a credit.
+  const LETDOWN_EVENT = "let_them_down";
+
+  function recordRelationshipDelta(state, npcId, delta, sourceId, mapping) {
+    const amount = Math.round(Number(delta) || 0);
+    if (!amount || !state.npc[npcId]) return;
+    // rivalPressure runs backwards: a negative delta was the player lowering
+    // their profile, which is a discretion credit, not a defiance debit.
+    const type = amount > 0 ? mapping.up : mapping.down;
+    const event = amount > 0 ? (sourceId || "story_choice") : (mapping.downEvent || LETDOWN_EVENT);
+    Exposure.recordObservation(state, npcId, { type, event, count: Math.abs(amount), source: "witnessed" });
+  }
+
+  function applyRelationshipEffects(state, effect, context) {
+    const sourceId = (context && context.eventId) || "story_choice";
+    for (const [key, mapping] of Object.entries(EFFECT_OBSERVATIONS)) {
+      if (!effect[key]) continue;
+      recordRelationshipDelta(state, mapping.npcId, effect[key], sourceId, mapping);
+    }
+    if (effect.npcTrust && state.npc[effect.npcTrust.id]) {
+      recordRelationshipDelta(state, effect.npcTrust.id, effect.npcTrust.delta, sourceId, { up: "loyalty", down: "defiance" });
+    }
+  }
+
+  function applyEventEffect(state, effect, random, context) {
     const cashBefore = state.player.cash;
     state.player.cash = Math.max(0, state.player.cash + (effect.cash || 0));
     state.player.health = clamp(state.player.health + (effect.health || 0), 0, 100);
     state.player.heat = clamp(state.player.heat + (effect.heat || 0), 0, 15);
-    state.npc.curtis.attention = clamp(state.npc.curtis.attention + (effect.rivalPressure || 0), 0, 8);
-    state.npc.curtis.pressure = state.npc.curtis.attention;
-    state.npc.curtis.respect += effect.rivalRespect || 0;
-    state.lender.trust += effect.lenderTrust || 0;
-    state.npc.dre.trust = clamp(state.lender.trust, 0, 3);
-    state.npc.mina.trust += effect.minaTrust || 0;
+    // Sixty relationship effects are declared across the event cards. Rather
+    // than rewrite all sixty into observation syntax and risk sixty separate
+    // mistakes, the declarations stay as they are and are translated here.
+    // This is the one write seam the old integer model had, so it is the one
+    // place the new model needs to intercept.
+    applyRelationshipEffects(state, effect, context);
     if (effect.curtisDecision) applyCurtisDecision(state, effect.curtisDecision);
-    if (effect.npcTrust && state.npc[effect.npcTrust.id]) state.npc[effect.npcTrust.id].trust += effect.npcTrust.delta || 0;
     if (effect.acceptDreLoan && state.lender.status === "unoffered") {
       state.lender.status = "active";
       state.lender.principal = 1000;
@@ -3284,9 +3505,9 @@
     if (effect.cash < 0) state.stats.moneySpent.events += Math.min(cashBefore, -effect.cash);
     state.stats.largestLoss = Math.max(state.stats.largestLoss, Math.max(0, cashBefore - state.player.cash));
     state.npc.curtis.pressure = state.npc.curtis.attention;
-    state.lender.relationship = relationshipForLender(state.lender, state.run.day);
-    state.npc.curtis.relationship = relationshipForRival(state.npc.curtis);
-    state.npc.mina.status = minaStatus(state.npc.mina);
+    state.lender.relationship = relationshipForLender(state);
+    state.npc.curtis.relationship = relationshipForRival(state);
+    state.npc.mina.status = minaStatus(state);
   }
 
   function endingLabel(id) {
@@ -3305,12 +3526,12 @@
     if (state.player.heat >= 15) return "arrested";
     if (state.base.damage >= 3) return "base_lost";
     const plan = state.run.finalPlan;
-    const minaIntact = state.npc.mina.trust >= 3 && !state.npc.mina.usedWithoutConsent && state.npc.mina.available !== false && !state.flags.seriousViolence;
+    const minaIntact = atLeastBand(state, "mina", BANDS.BONDED) && !state.npc.mina.usedWithoutConsent && state.npc.mina.available !== false && !state.flags.seriousViolence;
     if (plan === "escape" && minaIntact) return "mina_escape";
     if (plan === "escape") return "clean_exit";
     if (state.npc.mina.available === false && state.npc.mina.chainStage >= 6) return "mina_gone";
     if (minaIntact && !state.npc.mina.cleanLifeAtRisk && state.npc.mina.chainStage >= 6) return "mina_clear";
-    if (plan === "partner" && state.npc.curtis.respect >= 2) return "curtis_partner";
+    if (plan === "partner" && atLeastBand(state, "curtis", BANDS.WARM)) return "curtis_partner";
     if (plan === "challenge" && Object.values(state.world.influence).reduce((a, b) => a + b, 0) >= 5) return "takeover";
     if (state.flags.acceptedSecondNote && state.lender.balance <= 0) return "dre_expansion";
     if (plan === "defend" && recruitedCrew(state).some((person) => state.people.crew[person.id].loyalty >= 1)) return "crew_saved";
@@ -3331,7 +3552,7 @@
   function householdWarning(state, count, reason, catastrophic) {
     const household = state.people.household;
     household.warnings += Math.max(1, count || 1);
-    state.npc.yalonda.trust -= Math.max(1, count || 1);
+    Exposure.recordObservation(state, "yalonda", { type: "financial", event: "missed_obligation", count: Math.max(1, count || 1), source: "household" });
     logEntry(state, reason, "bad");
     if (catastrophic || household.warnings >= 3) {
       household.evicted = true;
@@ -3387,6 +3608,19 @@
     // before the clock moves so the entry is stamped with the day it happened.
     const activity = STREET_READ_ACTIVITY[context.reason];
     if (activity) addStreetReadEntry(state, "routine", `${SLOTS[oldSlot].toLowerCase()}:${activity}`);
+    // Same funnel, same reason: what the block saw you doing this slot. Sent
+    // before the clock moves so the observation carries the day and part of day
+    // it actually happened in, which is what the presence checks read.
+    const observed = OBSERVED_ACTIONS[context.reason];
+    if (observed) {
+      Exposure.broadcastObservation(state, {
+        ...observed,
+        location: state.world.currentNeighborhoodId,
+        value: Math.abs(Number(context.cashDelta) || 0),
+        day: oldDay,
+        slot: oldSlot,
+      });
+    }
     closeVisit(state, context.reason);
     recordDailyAction(state, context);
     const timeCost = clamp(Math.floor(Number(context.timeCost) || 1), 1, SLOTS.length);
@@ -3394,6 +3628,7 @@
     state.run.slot = reachesDayEnd ? SLOTS.length - 1 : oldSlot + timeCost;
     restorePhoneIfReady(state, slotNumber(oldDay, oldSlot));
     resolveJobApplications(state);
+    Exposure.resolveObservationQueue(state);
     expireEffects(state);
     resolveCrewAssignments(state, random);
     resolveSoldierOperations(state, random, false);
@@ -3437,7 +3672,7 @@
       }
     }
     const friendshipMature = curtis.friendship === "accepted" && curtis.friendshipDay != null && state.run.day >= curtis.friendshipDay + 2;
-    if (!curtis.betrayed && friendshipMature && curtis.attention >= 7 && state.run.day > curtis.protectionUntilDay) {
+    if (!curtis.betrayed && friendshipMature && curtisPressureScore(state) >= 8 && state.run.day > curtis.protectionUntilDay) {
       const deshawn = state.people.crew.deshawn;
       if (deshawn?.recruited && deshawn.tier >= 3 && deshawn.loyalty >= 5) {
         curtis.betrayed = true;
@@ -3467,7 +3702,7 @@
     for (const loan of state.hustle.shark.loans) {
       if (!["active", "extended"].includes(loan.status) || state.run.day < loan.dueDay) continue;
       const borrower = SHARK_BORROWERS.find((item) => item.id === loan.borrowerId);
-      const probability = clamp(borrower.risk + (loan.amount >= 500 ? 0.18 : loan.amount >= 250 ? 0.08 : 0) + (loan.term === 2 ? 0.12 : loan.term === 4 ? 0.04 : -0.04) - normalizedAttributes(state).insight * 0.025 - (state.npc.dre.trust >= 3 ? 0.08 : 0), 0.03, 0.82);
+      const probability = clamp(borrower.risk + (loan.amount >= 500 ? 0.18 : loan.amount >= 250 ? 0.08 : 0) + (loan.term === 2 ? 0.12 : loan.term === 4 ? 0.04 : -0.04) - normalizedAttributes(state).insight * 0.025 - (atLeastBand(state, "dre", BANDS.BONDED) ? 0.08 : 0), 0.03, 0.82);
       const roll = (stringHash(`${state.run.seed}:shark:${loan.id}:${loan.dueDay}`) % 10000) / 10000;
       if (roll < probability) {
         loan.status = "defaulted";
@@ -3524,6 +3759,12 @@
     settleCurtisNight(state);
     resolveSharkLoans(state);
     resolveCrewTracks(state);
+    // Heat is public past a point, so it spreads on its own with no card
+    // tagging it. This is the connection the v1.8.1 audit filed as absent:
+    // heat now reaches the people around the player instead of only the police
+    // roll. Raised before the queue drains so a hot night lands the same night.
+    Exposure.propagateHeat(state);
+    Exposure.resolveObservationQueue(state);
     evolveMarkets(state, random);
     if (state.run.phase === "pressure" && oldDay >= checkpointDay(state)) {
       state.run.dailyActions = [];
@@ -3536,6 +3777,10 @@
     state.player.energy = MAX_ENERGY;
     restorePhoneIfReady(state, slotNumber(oldDay, 3));
     resolveJobApplications(state);
+    // Drained again after the clock rolls: the network and neighborhood channels
+    // deliver at Morning of a later day, and a player who takes no action that
+    // morning should still have the news land on the right day.
+    Exposure.resolveObservationQueue(state);
     state.nineZeroSevenList.known = !!state.knowledge.knows907List;
     state.run.dailyActions = [];
     if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
@@ -3662,7 +3907,7 @@
       state.player.heat = clamp(state.player.heat + 2, 0, 15);
       finishEncounter(state, "win", "Tone arrives without raising his voice. The other side leaves, and two nearby windows close their blinds.");
     } else if (choice === "call_mina") {
-      state.npc.mina.trust -= 1;
+      Exposure.recordObservation(state, "mina", { type: "defiance", event: "called_her_into_it", source: "witnessed" });
       state.player.heat = clamp(state.player.heat + 1, 0, 15);
       finishEncounter(state, "escape", "Mina hits the Mini-Mart alarm. The collector runs before the patrol car reaches the lot.");
     } else if (choice === "use_base") {
@@ -3675,15 +3920,15 @@
       encounter.step += 1;
       encounter.feedback = "You seal the worst injury and force your hands steady. One decision remains.";
     } else if (choice === "intimidate") {
-      const chance = clamp(0.38 + intelligenceRating(state) * 0.1 + state.npc.curtis.respect * 0.03 - encounter.guard, 0.15, 0.9);
+      const chance = clamp(0.38 + intelligenceRating(state) * 0.1 + Math.max(0, dispositionOf(state, "curtis")) * 0.03 - encounter.guard, 0.15, 0.9);
       if (random.next() < chance) finishEncounter(state, "talk", "You name the cameras, exits, and people they failed to count. Their threat collapses under its own cost.");
       else failEncounterStep(state, random, "The calculation");
     } else if (choice === "talk") {
       const influence = state.world.influence[state.world.currentNeighborhoodId] * 0.04;
-      const relationship = encounter.id === "mid" ? state.npc.curtis.respect * 0.035 : encounter.id === "mina_sedan_night" ? state.npc.mina.trust * 0.02 : 0;
+      const relationship = encounter.id === "mid" ? Math.max(0, dispositionOf(state, "curtis")) * 0.035 : encounter.id === "mina_sedan_night" ? Math.max(0, dispositionOf(state, "mina")) * 0.02 : 0;
       const chance = clamp(0.28 + charismaRating(state) * 0.08 + influence + relationship - encounter.guard, 0.10, 0.90);
       if (random.next() < chance) {
-        if (encounter.id === "mid") state.npc.curtis.respect += 1;
+        if (encounter.id === "mid") Exposure.recordObservation(state, "curtis", { type: "submission", event: "held_the_line", source: "witnessed" });
         finishEncounter(state, "talk", "You name the people and consequences they forgot to count. The lane opens without anybody reaching for a weapon.");
       } else failEncounterStep(state, random, "The explanation");
     } else if (choice === "run") {
@@ -3706,7 +3951,7 @@
         encounter.enemyHealth -= damage;
         if (encounter.enemyHealth <= 0) {
           if (firearm || encounter.id === "late") state.flags.seriousViolence = true;
-          state.npc.curtis.respect += 1;
+          Exposure.recordObservation(state, "curtis", { type: "submission", event: "won_the_room", source: "witnessed" });
           influenceChange(state, state.world.currentNeighborhoodId, 1);
           if (encounter.id === "dre_collector") {
             state.lender.collectorsKilled += 1;
@@ -3719,7 +3964,7 @@
         }
       } else failEncounterStep(state, random, firearm ? "The shot" : "The swing");
     }
-    state.npc.mina.status = minaStatus(state.npc.mina);
+    state.npc.mina.status = minaStatus(state);
     state.run.rngState = random.state;
     reconcileCash(state);
     return state;
@@ -3751,7 +3996,7 @@
       const addedHeat = 2 + Math.floor((attemptNumber - 1) / 2);
       state.player.cash += payout;
       state.player.heat = clamp(state.player.heat + addedHeat, 0, 15);
-      state.npc.curtis.pressure = clamp(state.npc.curtis.pressure + Math.min(3, attemptNumber), 0, 15);
+      Exposure.recordObservation(state, "curtis", { type: "violence", event: "stickup", count: Math.min(3, attemptNumber), source: "network" });
       state.stats.robbery.successes += 1;
       addStreetReadEntry(state, "risk", `rob:${state.world.currentNeighborhoodId}`);
       state.stats.robbery.totalPayout += payout;
@@ -3768,7 +4013,7 @@
       const addedHeat = Math.min(5, 3 + Math.floor((attemptNumber - 1) / 2));
       state.player.health = clamp(state.player.health - damage, 0, 100);
       state.player.heat = clamp(state.player.heat + addedHeat, 0, 15);
-      state.npc.curtis.pressure = clamp(state.npc.curtis.pressure + Math.min(4, attemptNumber + 1), 0, 15);
+      Exposure.recordObservation(state, "curtis", { type: "violence", event: "dealer_stickup", count: Math.min(4, attemptNumber + 1), source: "network" });
       state.stats.robbery.failures += 1;
       state.stats.robbery.success = state.stats.robbery.successes > 0;
       result = {
@@ -3798,7 +4043,7 @@
     const success = random.next() < actions.rob.chance;
     record.robbedCount += success ? 1 : 0;
     record.lastRobbedDay = state.run.day;
-    state.npc.curtis.pressure = clamp(state.npc.curtis.pressure + 1, 0, 15);
+    Exposure.recordObservation(state, "curtis", { type: "defiance", event: "took_ground", source: "network" });
     const effects = [];
     let result;
 
@@ -3845,8 +4090,9 @@
       syncPlugProductAccess(state, dealerId, false);
     }
 
-    if (state.npc.mina.chainStage >= 2 && state.npc.mina.trust >= 1 && state.npc.mina.available !== false) {
-      state.npc.mina.trust -= 1;
+    if (state.npc.mina.chainStage >= 2 && knowsYou(state, "mina") && state.npc.mina.available !== false) {
+      // She works two blocks from this corner. The neighborhood carries it.
+      Exposure.broadcastObservation(state, { type: "violence", event: "robbery_near_her", location: HOME_DISTRICT_ID, channel: "neighborhood" });
       logEntry(state, "Mina works two blocks from the Wash & Go. She hears about it before the end of her shift.", "warn");
     }
     state.stats.majorDecisions.push(`Robbed ${first}: ${success ? "took the corner" : "came away empty"}`);
@@ -3929,7 +4175,7 @@
       state.world.territories[areaId].owner = "player";
       state.world.territories[areaId].capturedDay = state.run.day;
       state.world.influence[areaId] = 4;
-      state.npc.curtis.pressure = clamp(state.npc.curtis.pressure - 2, 0, 15);
+      Exposure.recordObservation(state, "curtis", { type: "discretion", event: "laid_low", count: 2, source: "network" });
       if (areaId === "downtown") state.world.productAccess.cocaine = true;
       if (areaId === "airport_industrial") state.world.productAccess.meth = true;
       title = `${AREA_BY_ID[areaId].name} Changes Hands`;
@@ -3938,7 +4184,7 @@
     } else {
       state.stats.takeovers.losses += 1;
       state.player.heat = clamp(state.player.heat + 3, 0, 15);
-      state.npc.curtis.pressure = clamp(state.npc.curtis.pressure + 2, 0, 15);
+      Exposure.recordObservation(state, "curtis", { type: "growth", event: "pushed_hard", count: 2, source: "network" });
       effects.push("+3 Heat", "+2 Curtis pressure");
       const participants = recruitedCrew(state);
       if (participants.length) {
@@ -4170,10 +4416,9 @@
         state.lender.dueDay = 4;
         state.lender.status = "active";
         state.npc.dre.known = true;
-        state.npc.dre.trust = Math.max(1, state.npc.dre.trust);
+        Exposure.recordObservation(state, "dre", { type: "financial", event: "took_the_note", source: "witnessed" });
         state.npc.dre.loansTaken = Math.max(1, state.npc.dre.loansTaken);
-        state.npc.curtis.pressure = 1;
-        state.npc.curtis.attention = 1;
+        Exposure.recordObservation(state, "curtis", { type: "growth", event: "arrived_working", source: "network" });
         state.npc.curtis.relationship = "dismissive";
         state.world.productAccess.weed = true;
         state.world.productAccess.shrooms = true;
@@ -4217,7 +4462,7 @@
       const choice = current?.choices?.[action.choiceIndex];
       if (!current || !choice) return inputState;
       state.run.pendingEvent = null;
-      applyEventEffect(state, choice.effect || {}, random);
+      applyEventEffect(state, choice.effect || {}, random, { eventId: current.id });
       const eventCategory = current.id.startsWith("dre_") ? "earner" : current.id.startsWith("curtis_") ? "stickup" : current.id.startsWith("eli_") || current.id.startsWith("mina_") ? "connector" : current.id.startsWith("goodie_") ? "mover" : null;
       if (eventCategory) recordBehavior(state, eventCategory, current.id.endsWith("day7") ? 2 : 1, `event:${current.id}`, "story_choice");
       // A scene the player engaged with counts as knowing the person in it, and
@@ -4246,7 +4491,7 @@
         state.npc.mina.arcStage = state.npc.mina.chainStage;
         state.npc.mina.outcomes.push({ stage: descriptor.stage, id: current.id, choice: choice.label, day: state.run.day });
         if (current.id === "mina_after") {
-          state.npc.mina.outcome = state.npc.mina.available === false || state.flags.exploitedValeName || state.npc.mina.trust <= 0 ? "mina_gone" : state.npc.mina.trust >= 3 && (state.flags.toldMinaTruth || state.flags.valeProtectedMina || state.flags.minaBrokeredVale) ? "mina_stays" : "mina_calls_home";
+          state.npc.mina.outcome = state.npc.mina.available === false || state.flags.exploitedValeName || dispositionOf(state, "mina") <= 0 ? "mina_gone" : atLeastBand(state, "mina", BANDS.BONDED) && (state.flags.toldMinaTruth || state.flags.valeProtectedMina || state.flags.minaBrokeredVale) ? "mina_stays" : "mina_calls_home";
         }
       }
       if (descriptor?.chain === "household") {
@@ -4412,12 +4657,12 @@
       recordBehavior(state, "connector", 1, `household:${npcId}:talk`, "family_contact");
       addStreetReadEntry(state, "social", `${npcId}:advice`);
       if (npcId === "juan") {
-        state.npc.juan.trust += 1;
+        Exposure.recordObservation(state, "juan", { type: "loyalty", event: "sat_and_talked", source: "household" });
         if (!state.npc.juan.infoShared.includes("work:ship_creek")) state.npc.juan.infoShared.push("work:ship_creek");
         state.effects.rumors.push({ id: `juan_${state.run.day}`, areaId: "north_star_lot", productId: "weed", reliable: true, text: "Juan says Ship Creek hires early and his warehouse dock keeps a short callback list.", expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
         pushConsequence(state, "Juan writes a loading-dock name on your receipt.", "good");
       } else {
-        state.npc.yalonda.trust += 1;
+        Exposure.recordObservation(state, "yalonda", { type: "loyalty", event: "sat_and_talked", source: "household" });
         state.effects.rumors.push({ id: `yalonda_${state.run.day}`, areaId: "north_star_lot", productId: "weed", reliable: true, text: "Yalonda says somebody asked questions outside, then describes the coat.", expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
         pushConsequence(state, "Yalonda lowers the stove flame and tells you who came by.", "warn");
       }
@@ -4466,7 +4711,7 @@
       state.obligations.lastMissedDueDay = null;
       state.npc.yalonda.rentPaidWeeks += 1;
       state.npc.yalonda.lastRentDay = state.run.day;
-      state.npc.yalonda.trust += 1;
+      Exposure.recordObservation(state, "yalonda", { type: "financial", event: "rent_paid", source: "household" });
       recordBehavior(state, "earner", 2, `rent:${state.run.day}`, "rent_payment");
       pushConsequence(state, "Yalonda counts the rent once and closes the envelope.", "good");
       logEntry(state, `Weekly rent paid in cash: $${WEEKLY_RENT}.`, "good");
@@ -4559,11 +4804,10 @@
       const outcome = allowed.includes(action.outcome) ? action.outcome : "clean";
       const pay = outcome === "failed" ? 0 : mission.pay[0] + (stringHash(`${state.run.seed}:${mission.id}:${state.run.day}`) % (mission.pay[1] - mission.pay[0] + 1));
       if (pay) addDirtyCash(state, pay);
-      if (outcome === "clean") { state.npc.dre.cleanCompletions += 1; state.npc.dre.trust = clamp(state.npc.dre.trust + 1, 0, 3); }
-      else if (outcome === "violent") { state.player.heat = clamp(state.player.heat + 2, 0, 15); state.npc.dre.trust = Math.max(0, state.npc.dre.trust - 1); }
-      else if (outcome === "soft") state.npc.dre.trust = clamp(state.npc.dre.trust + (mission.id === "intelligence" ? 1 : 0), 0, 3);
-      else state.npc.dre.trust = Math.max(0, state.npc.dre.trust - 1);
-      state.lender.trust = state.npc.dre.trust;
+      if (outcome === "clean") { state.npc.dre.cleanCompletions += 1; Exposure.recordObservation(state, "dre", { type: "loyalty", event: "clean_mission", source: "witnessed" }); }
+      else if (outcome === "violent") { state.player.heat = clamp(state.player.heat + 2, 0, 15); Exposure.broadcastObservation(state, { type: "violence", event: "mission_went_loud", channel: "network" }); }
+      else if (outcome === "soft") { if (mission.id === "intelligence") Exposure.recordObservation(state, "dre", { type: "loyalty", event: "useful_intel", source: "witnessed" }); }
+      else Exposure.recordObservation(state, "dre", { type: "defiance", event: "botched_mission", source: "witnessed" });
       state.npc.dre.missionHistory.push({ ...active, outcome, pay, day: state.run.day });
       state.npc.dre.activeMission = null;
       if (sharkUnlocked(state)) { state.hustle.shark.visible = true; state.hustle.sections.shark = true; }
@@ -4571,7 +4815,7 @@
       return advanceRun(state, { reason: "DRE_MISSION", suppressStory: true });
     }
     if (action.type === "DRE_TALK") {
-      if (state.npc.dre.trust < 2) return inputState;
+      if (!atLeastBand(state, "dre", BANDS.BONDED)) return inputState;
       const remaining = DRE_BACKSTORY.map((_, index) => index).filter((index) => !state.npc.dre.backstoryFragments.includes(index));
       if (!remaining.length) return inputState;
       const index = remaining[stringHash(`${state.run.seed}:dre-story:${state.npc.dre.backstoryFragments.length}`) % remaining.length];
@@ -4599,7 +4843,7 @@
       }
       if (action.type === "FORGIVE_SHARK") {
         loan.status = "forgiven";
-        state.npc.dre.trust = Math.max(0, state.npc.dre.trust - 1);
+        Exposure.recordObservation(state, "dre", { type: "defiance", event: "walked_a_debt", source: "witnessed" });
         pushConsequence(state, "You forgive the note. Dre calls it mercy once and poor underwriting twice.", "warn");
         return state;
       }
@@ -4616,10 +4860,10 @@
     if (action.type === "SIMONE_CHOICE") {
       if (!["respect", "poach", "threaten", "leverage", "truce"].includes(action.choice)) return inputState;
       state.npc.simone.known = true;
-      if (action.choice === "respect") state.npc.simone.trust += 1;
+      if (action.choice === "respect") Exposure.recordObservation(state, "simone", { type: "submission", event: "gave_respect", source: "witnessed" });
       else if (["poach", "threaten"].includes(action.choice)) state.npc.simone.threat += 1;
       else if (action.choice === "leverage") { state.npc.simone.leverage += 1; state.npc.simone.threat += 1; }
-      else if (action.choice === "truce" && state.npc.simone.trust >= 2) state.npc.simone.truce = true;
+      else if (action.choice === "truce" && atLeastBand(state, "simone", BANDS.WARM)) state.npc.simone.truce = true;
       state.npc.simone.outcomes.push({ choice: action.choice, day: state.run.day });
       return state;
     }
@@ -4644,10 +4888,10 @@
     }
     if (action.type === "BROKER_CURTIS_TRUCE") {
       const deshawn = state.people.crew.deshawn;
-      if (!deshawn?.recruited || deshawn.tier < 2 || state.npc.curtis.attention < 4) return inputState;
+      if (!deshawn?.recruited || deshawn.tier < 2 || !curtisHostile(state)) return inputState;
       state.npc.curtis.protectionUntilDay = Math.max(state.npc.curtis.protectionUntilDay || 0, state.run.day + 1);
       deshawn.trucesBrokered += 1;
-      state.npc.simone.truce = state.npc.simone.trust >= 1 || state.npc.simone.leverage > 0;
+      state.npc.simone.truce = knowsYou(state, "simone") || state.npc.simone.leverage > 0;
       pushConsequence(state, "Deshawn brokers a temporary Curtis truce through the people who can enforce it.", "good");
       return state;
     }
@@ -4940,7 +5184,7 @@
       const kind = action.passType;
       const cost = kind === "day" ? 12 : kind === "week" ? 45 : 0;
       if (!cost || state.player.cash < cost) return inputState;
-      base.player.cash -= cost;
+      spendCash(base, cost);
       if (kind === "day") base.world.transport.dayPassDay = base.run.day;
       else base.world.transport.weekPass = true;
       logEntry(base, `You buy a ${kind === "day" ? "day" : "seven-day"} People Mover pass for $${cost}.`, "good");
@@ -4951,8 +5195,11 @@
       if (![HOME_DISTRICT_ID, "downtown"].includes(destination) || destination === state.world.currentNeighborhoodId) return inputState;
       const access = travelAvailability(state, destination);
       if (!access.available) return inputState;
+      // The outbound bus leg used a raw cash decrement while the TRAVEL leg home
+      // used spendCash, so a Spenard/Downtown round trip left cash and the
+      // dirty/clean split disagreeing. Both legs draw the same way now.
       const cost = access.cashCost;
-      base.player.cash -= cost;
+      if (cost) spendCash(base, cost);
       base.world.currentNeighborhoodId = destination;
       recordVisitedLocation(base, destination);
       base.world.transport.busRides += 1;
@@ -5038,17 +5285,17 @@
       if (!amount || state.player.cash < amount) return inputState;
       base.player.cash -= amount; base.lender.balance -= amount; base.lender.payments += amount; base.lender.paymentCount += 1;
       base.lender.paymentHistory.push({ day: base.run.day, slot: base.run.slot, amount });
-      base.lender.trust += amount >= 150 ? 1 : 0; base.stats.moneySpent.debt += amount;
+      if (amount >= 150) Exposure.recordObservation(base, "dre", { type: "financial", event: "paid_down", source: "witnessed" });
+      base.stats.moneySpent.debt += amount;
       if (!base.lender.balance) {
         base.lender.status = "cleared";
-        base.lender.trust += 2; base.lender.clearedAt = { day: base.run.day, slot: base.run.slot }; base.lender.afterPayoffOffer = "available";
+        Exposure.recordObservation(base, "dre", { type: "financial", event: "loan_repaid", count: 2, source: "witnessed" }); base.lender.clearedAt = { day: base.run.day, slot: base.run.slot }; base.lender.afterPayoffOffer = "available";
         base.flags.drePaidEarly = base.run.day <= base.lender.dueDay;
       }
-      base.lender.relationship = relationshipForLender(base.lender, base.run.day);
+      base.lender.relationship = relationshipForLender(base);
       recordBehavior(base, "earner", amount >= 150 || !base.lender.balance ? 2 : 1, `dre_payment:${base.run.day}:${base.lender.paymentCount}`, "dre_payment");
       addStreetReadEntry(base, "social", "dre:payment");
       logEntry(base, base.lender.balance ? `Dre counts $${amount} behind the Mini-Mart. $${base.lender.balance} stays written on the note.` : "Dre counts the final stack, tears the note in half, and keeps one piece.", "good");
-      base.npc.dre.trust = base.lender.trust;
       if (!base.lender.balance) { base.npc.dre.loansRepaid += 1; base.hustle.sections.shark = sharkUnlocked(base); base.hustle.shark.visible = base.hustle.sections.shark; }
       pushConsequence(base, base.lender.balance ? `$${base.lender.balance} remains on Dre's note.` : "Dre tears the paid note in half.", "good");
       return base;
@@ -5166,7 +5413,7 @@
       block.capturedDay = base.run.day;
       base.world.soldiers[occupier.id].blockId = action.blockId;
       block.soldiersAssigned.push(occupier.id);
-      base.npc.curtis.respect += 1;
+      Exposure.recordObservation(base, "curtis", { type: "submission", event: "claimed_block", source: "network" });
       base.hustle.exposure.networkEscalation = true;
       refreshCurtisAttention(base);
       recordBehavior(base, "stickup", 2, `block:${action.blockId}`, "territory_expansion");
@@ -5177,7 +5424,7 @@
     if (action.type === "VISIT_MINA") {
       if (!state.npc.mina.met || !nightOwlAvailability(state).available || state.npc.mina.lastConversationDay === state.run.day) return inputState;
       base.npc.mina.lastConversationDay = state.run.day;
-      if (base.npc.mina.trust >= 2) {
+      if (atLeastBand(base, "mina", BANDS.TRUSTED)) {
         const product = PRODUCTS[stringHash(`${base.run.seed}:mina-tip:${base.run.day}`) % PRODUCTS.length];
         base.effects.rumors.push({ id: `mina_${base.run.day}`, areaId: "north_star_lot", productId: product.id, reliable: true, text: `Mina passes along one reliable Spenard buyer tip for ${product.name}.`, expiresAt: slotNumber(base.run.day + 1, 0) });
       }
@@ -5493,6 +5740,7 @@
   }
 
   return {
+    BANDS, bandFor, bandId, bandLabel, EXPOSURE_NPC_IDS,
     VERSION, RUN_DAYS, PRESSURE_DAYS, MAX_ENERGY, SLOTS, SAVE_KEY, LEGACY_SAVE_KEYS, PHONE_BILL, WEEKLY_RENT, HOME_DISTRICT_ID, DISTRICT_ACTIONS, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
     STREET_NAME_MAX, DEFAULT_STREET_NAMES, ATTRIBUTE_DEFAULTS, LEGACY_ATTRIBUTES, STREET_IDENTITIES, sanitizeStreetName,
     CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS, ENTITY_REGISTRY, ENTITY_MATCH_ORDER, PLUGS, BOOST_TARGETS, SPENARD_JOBS, STARTER_JOB_IDS, JOB_APPROACHES, JOB_RANK_THRESHOLDS,
@@ -5515,6 +5763,12 @@
     serializeRun, migrateSave,
     createRun, hydrateRun, inspectSave, reduceGame, advanceRun, selectRunSummary,
     selectors: {
+      // Exposure reads. getDispositionBand is the gate every piece of content
+      // now asks; describeDisposition is the dev inspector and is never shown
+      // to a player.
+      disposition: (state, npcId) => Exposure.getDisposition(npcId, state),
+      dispositionBand: (state, npcId) => Exposure.getDispositionBand(npcId, state),
+      describeDisposition: (state, npcId) => Exposure.describeDisposition(state, npcId),
       cargoUsed, cargoCapacity, storedCargoUsed, storageCapacity, storedCashCapacity, inventoryValue, netWorth,
       combatRating, charismaRating, intelligenceRating, derivedRatings,
       operationScore, baseValue, gearValue, heatBand, priceSignal, influenceLabel, encounterChoices, endingLabel,

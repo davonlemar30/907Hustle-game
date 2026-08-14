@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const C = require("../game-core.js");
+const { putInBand } = require("./exposure-helpers.js");
 
 function fresh(seed = 1800) {
   const state = C.reduceGame(C.createRun({ seed }), { type: "START_RUN", streetName: "North" });
@@ -23,10 +24,10 @@ function prepareNight(state, day = 5) {
   return state;
 }
 
-test("v1.8 owns save version 5 and continues to advertise v3/v4 migration keys", () => {
-  assert.equal(C.VERSION, 5);
-  assert.equal(C.SAVE_KEY, "907ogr_v5");
-  assert.deepEqual(C.LEGACY_SAVE_KEYS, ["907ogr_v4", "907ogr_v3"]);
+test("v1.9a owns save version 6 and continues to advertise v3/v4/v5 migration keys", () => {
+  assert.equal(C.VERSION, 6);
+  assert.equal(C.SAVE_KEY, "907ogr_v6");
+  assert.deepEqual(C.LEGACY_SAVE_KEYS, ["907ogr_v5", "907ogr_v4", "907ogr_v3"]);
 });
 
 test("fresh v5 state has authoritative Mina, Curtis, Dre, Simone, jobs, and hustle records", () => {
@@ -59,7 +60,7 @@ test("v4 identity and employment data migrate once to v5 without replaying old r
   delete raw.jobs.activeJobId;
   delete raw.jobs.offers;
   const state = C.hydrateRun(raw);
-  assert.equal(state.version, 5);
+  assert.equal(state.version, 6);
   assert.equal(state.npc.mina.chainStage, 4);
   assert.equal(state.npc.mina.cleanLifeAtRisk, true);
   assert.equal(state.npc.curtis.attention, 6);
@@ -110,9 +111,10 @@ test("Mina trust adds five then eight discount points and caps total discount at
   state.plugs.unlocked = ["goodie"];
   state.world.productAccess.weed = true;
   state.npc.mina.met = true;
-  state.npc.mina.trust = 2;
+  // Warm buys the five points, Trusted the eight, and the cap still holds.
+  putInBand(state, "mina", C.BANDS.WARM);
   assert.ok(Math.abs(C.selectors.dealerActions(state, "goodie").buy.discount - 0.23) < Number.EPSILON);
-  state.npc.mina.trust = 3;
+  putInBand(state, "mina", C.BANDS.TRUSTED);
   assert.equal(C.selectors.dealerActions(state, "goodie").buy.discount, 0.25);
 });
 
@@ -128,17 +130,22 @@ test("Curtis attention comes from concrete sales and minor dealing remains invis
   state.market.visible = true; state.plugs.unlocked = ["goodie"]; state.world.productAccess.weed = true;
   state.player.inventory.weed = { qty: 9, avgCost: 1 };
   state = C.reduceGame(state, { type: "SELL", productId: "weed", qty: 9 });
-  assert.equal(state.npc.curtis.attention, 1, "the conspicuous Spenard exposure is concrete even below ten cumulative units");
+  // Milestones stay deduplicated; each one now lands in his ledger as the kind
+  // of thing it was rather than incrementing one undifferentiated counter.
+  assert.equal(state.npc.curtis.attentionMilestones.length, 1, "the conspicuous Spenard exposure is concrete even below ten cumulative units");
+  assert.equal(state.npc.curtis.ledger.length, 1);
   state.player.inventory.weed = { qty: 1, avgCost: 1 };
   state = C.reduceGame(state, { type: "SELL", productId: "weed", qty: 1 });
-  assert.equal(state.npc.curtis.attention, 2);
+  assert.equal(state.npc.curtis.attentionMilestones.length, 2);
   assert.ok(state.npc.curtis.attentionMilestones.includes("units_10"));
+  assert.ok(state.npc.curtis.ledger.some((row) => row.event === "units_10"));
+  assert.ok(C.selectors.disposition(state, "curtis") < 0, "exposure drives his read downward");
 });
 
 test("Curtis tax, friendship, guarded, and reject choices write distinct authoritative paths", () => {
   for (const [choice, expected] of [["pay_tax", "tax"], ["friendship", "accepted"], ["guarded", "guarded"], ["reject", "rejected"]]) {
     const state = fresh(1810 + choice.length);
-    state.npc.curtis.attention = 4; state.npc.curtis.pressure = 4;
+    putInBand(state, "curtis", C.BANDS.HOSTILE);
     const next = C.reduceGame(state, { type: "CURTIS_DECISION", choice });
     if (expected === "tax") assert.equal(next.npc.curtis.taxActive, true);
     else assert.equal(next.npc.curtis.friendship, expected);
@@ -149,7 +156,9 @@ test("Curtis betrayal takes dirty cash, carried product, and Heat after protecti
   let state = prepareNight(fresh(1815));
   state.player.cash = 1000; state.player.dirtyCash = 1000; state.player.cleanCash = 0;
   state.player.inventory.weed = { qty: 8, avgCost: 10 };
-  Object.assign(state.npc.curtis, { attention: 7, pressure: 7, friendship: "accepted", friendshipDay: 1, protectionUntilDay: 3 });
+  Object.assign(state.npc.curtis, { friendship: "accepted", friendshipDay: 1, protectionUntilDay: 3 });
+  putInBand(state, "curtis", C.BANDS.HOSTILE);
+  state.npc.curtis.ledger.push({ type: "growth", event: "test_escalation", location: null, value: null, day: 1, count: 4, source: "network" });
   state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
   assert.equal(state.player.dirtyCash, 700);
   assert.equal(state.player.inventory.weed.qty, 6);
@@ -173,7 +182,9 @@ test("Simone leverage converts a matured Curtis betrayal into a truce", () => {
   let state = prepareNight(fresh(18161));
   state.player.cash = 1000; state.player.dirtyCash = 1000; state.player.cleanCash = 0;
   state.player.inventory.weed = { qty: 8, avgCost: 10 };
-  Object.assign(state.npc.curtis, { attention: 7, pressure: 7, friendship: "accepted", friendshipDay: 1, protectionUntilDay: 3 });
+  Object.assign(state.npc.curtis, { friendship: "accepted", friendshipDay: 1, protectionUntilDay: 3 });
+  putInBand(state, "curtis", C.BANDS.HOSTILE);
+  state.npc.curtis.ledger.push({ type: "growth", event: "test_escalation", location: null, value: null, day: 1, count: 4, source: "network" });
   state.npc.simone.leverage = 1;
   state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
   assert.equal(state.npc.simone.truce, true);
@@ -239,7 +250,7 @@ test("Deshawn damaged-route recruitment needs restitution and a clean Dre missio
 
 test("Dre missions are one-at-a-time, timed, outcome-aware, and stop after three refusals", () => {
   let state = fresh(1820);
-  state.npc.dre.known = true; state.npc.dre.trust = 1; state.lender.trust = 1;
+  state.npc.dre.known = true; putInBand(state, "dre", C.BANDS.TRUSTED);
   state = C.reduceGame(state, { type: "REQUEST_DRE_MISSION" });
   assert.ok(state.npc.dre.activeMission);
   const before = clock(state);
@@ -257,7 +268,7 @@ test("Dre missions are one-at-a-time, timed, outcome-aware, and stop after three
 test("Shark unlock requires Inner Circle, three clean missions, and two repaid Dre loans", () => {
   const state = fresh(1821);
   state.player.cash = 2000; state.player.cleanCash = 2000;
-  state.npc.dre.trust = 3; state.npc.dre.cleanCompletions = 3; state.npc.dre.loansRepaid = 1;
+  putInBand(state, "dre", C.BANDS.BONDED); state.npc.dre.cleanCompletions = 3; state.npc.dre.loansRepaid = 1;
   assert.equal(C.selectors.sharkLoanAvailability(state, "nora", 100, 2).available, false);
   state.npc.dre.loansRepaid = 2;
   const loan = C.selectors.sharkLoanAvailability(state, "nora", 100, 2);
@@ -269,7 +280,7 @@ test("Shark unlock requires Inner Circle, three clean missions, and two repaid D
 test("all Shark default choices preserve their distinct time, Heat, and relationship effects", () => {
   const seed = fresh(18211);
   seed.player.cash = 0; seed.player.cleanCash = 0; seed.player.dirtyCash = 0;
-  seed.npc.dre.trust = 3;
+  putInBand(seed, "dre", C.BANDS.BONDED);
   seed.hustle.shark.loans = [{ id: 1, borrowerId: "jamal", amount: 250, term: 4, openedDay: 1, dueDay: 5, status: "defaulted", risk: "Guarded", extensions: 0 }];
   for (const type of ["COLLECT_SHARK", "ENFORCE_SHARK"]) {
     const before = clock(seed);
@@ -283,7 +294,10 @@ test("all Shark default choices preserve their distinct time, Heat, and relation
   assert.deepEqual(clock(extended), clock(seed));
   const forgiven = C.reduceGame(seed, { type: "FORGIVE_SHARK", loanId: 1 });
   assert.equal(forgiven.hustle.shark.loans[0].status, "forgiven");
-  assert.equal(forgiven.npc.dre.trust, 2);
+  // Walking a debt is something Dre files against you rather than a point off
+  // a counter, and his lens reads defiance harder than most.
+  assert.ok(forgiven.npc.dre.ledger.some((row) => row.event === "walked_a_debt"));
+  assert.ok(C.selectors.disposition(forgiven, "dre") < C.selectors.disposition(seed, "dre"));
 });
 
 test("Pherris, Tone, and Deshawn tier prerequisites are independently enforced", () => {
@@ -329,13 +343,14 @@ test("Tone's Jacksonville Protect, Cut Loose, and Leverage outcomes all resolve"
 
 test("Mina's aftermath resolves all three authoritative relationship outcomes", () => {
   const cases = [
-    [{ trust: 3, available: true }, { toldMinaTruth: true }, "mina_stays"],
-    [{ trust: 2, available: true }, {}, "mina_calls_home"],
-    [{ trust: 3, available: false }, {}, "mina_gone"],
+    [{ available: true }, C.BANDS.BONDED, { toldMinaTruth: true }, "mina_stays"],
+    [{ available: true }, C.BANDS.TRUSTED, {}, "mina_calls_home"],
+    [{ available: false }, C.BANDS.BONDED, {}, "mina_gone"],
   ];
-  for (const [mina, flags, outcome] of cases) {
+  for (const [mina, band, flags, outcome] of cases) {
     let state = fresh(18240 + outcome.length);
     Object.assign(state.npc.mina, { met: true, chainStage: 5, ...mina });
+    putInBand(state, "mina", band);
     Object.assign(state.flags, flags);
     state.run.pendingEvent = C.buildEventForTest("mina_after", state);
     state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });

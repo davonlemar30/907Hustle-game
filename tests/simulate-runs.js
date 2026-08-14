@@ -13,6 +13,18 @@ function storyMetrics(state,beats){
   return {storyBeats:story,ambientBeats:beats.length-story,ambientVariety:ambient.size,
     minaChainDepth:state.npc.mina.chainStage||0,chainStall:stall>=8?1:0};
 }
+// v1.9a: what each NPC actually concluded about the player by the end of the
+// run. This is the calibration instrument for the Exposure System, and the only
+// way to tell "the lens is tuned" from "the content is unreachable".
+function exposureMetrics(state){
+  const out={taxActive:state.npc.curtis.taxActive?1:0,curtisBetrayed:state.npc.curtis.betrayed?1:0};
+  for(const id of C.EXPOSURE_NPC_IDS){
+    out[id+'Score']=C.selectors.disposition(state,id);
+    out[id+'Band']=C.selectors.dispositionBand(state,id);
+    out[id+'Rows']=(state.npc[id].ledger||[]).length;
+  }
+  return out;
+}
 const strategies={
   cautious:{products:['weed','shrooms'],areas:['north_star_lot','downtown'],profit:1.10,heatCap:4,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['intimidate','talk','run','pay','surrender'],mode:'trader'},
   balanced:{products:['weed','shrooms','cocaine'],areas:['north_star_lot','downtown'],profit:1.15,heatCap:7,plan:'defend',track:'security',gear:'utility_knife',crew:'pherris',encounter:['talk','run','fight','pay','surrender'],mode:'mixed',property:true},
@@ -78,7 +90,7 @@ function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun
     if(s.lender.balance&&s.player.cash>=s.lender.balance+100&&s.run.day>=2){s=C.reduceGame(s,{type:'PAY_DEBT',amount:s.lender.balance});continue}
     if(s.player.heat>p.heatCap){s=C.reduceGame(s,{type:'LAY_LOW'});continue}
     const next=p.areas[(Math.max(0,p.areas.indexOf(area))+1)%p.areas.length],busCovered=s.world.transport.weekPass||s.world.transport.dayPassDay===s.run.day;s=next===area?C.reduceGame(s,{type:'END_MARKET'}):next==='north_star_lot'&&s.player.cash<5&&!busCovered?C.reduceGame(s,{type:'WALK_HOME'}):['downtown','north_star_lot'].includes(next)&&s.player.cash<5&&!busCovered?C.reduceGame(s,{type:'END_MARKET'}):['downtown','north_star_lot'].includes(next)?C.reduceGame(s,{type:'BUS_TRAVEL',neighborhoodId:next}):C.reduceGame(s,{type:'TRAVEL',neighborhoodId:next});
-  }s=settle(s,p,beats);const summary=C.selectRunSummary(s);summary.completed=s.run.status==='ended';summary.finalState={day:s.run.day,slot:s.run.slot,energy:s.player.energy,phase:s.run.phase,pending:s.run.pendingEncounter?.id||s.run.pendingEvent?.id||null,dayEnd:s.run.dayEndPending,overtime:s.run.overtimeArmed,baseVisiting:s.base.visiting};summary.decisions=s.stats.decisions;summary.encounters=s.run.encounterCount;summary.baseValue=C.selectors.baseValue(s);summary.crew=C.selectors.recruitedCrew(s).length;summary.dealer={...(s.people.dealers?.goodie||{})};summary.identityAssignedDay=s.player.identityAssignedDay;summary.identityHistoryLength=s.player.identityHistory.length;summary.meaningfulActions=s.player.behavior.meaningfulActions;summary.derivedRatings=Object.values(C.selectors.derivedRatings(s)).join('/');summary.garageDay=s.base.acquiredDay||0;summary.evicted=s.people.household.evicted?1:0;summary.discoveries=s.world.locations.discoveries.length;summary.attributeGains=Object.values(s.player.attributes).reduce((n,v)=>n+Math.max(0,v-2),0);summary.streetReadTier=s.streetRead.tier;summary.streetReadScore=s.streetRead.score;summary.streetReadEntries=s.streetRead.totalLifetimeEntries;summary.employerStanding=s.world.locations.employer.standing;summary.gamblingNet=s.world.locations.gambling.net;Object.assign(summary,storyMetrics(s,beats));return summary}
+  }s=settle(s,p,beats);const summary=C.selectRunSummary(s);summary.completed=s.run.status==='ended';summary.finalState={day:s.run.day,slot:s.run.slot,energy:s.player.energy,phase:s.run.phase,pending:s.run.pendingEncounter?.id||s.run.pendingEvent?.id||null,dayEnd:s.run.dayEndPending,overtime:s.run.overtimeArmed,baseVisiting:s.base.visiting};summary.decisions=s.stats.decisions;summary.encounters=s.run.encounterCount;summary.baseValue=C.selectors.baseValue(s);summary.crew=C.selectors.recruitedCrew(s).length;summary.dealer={...(s.people.dealers?.goodie||{})};summary.identityAssignedDay=s.player.identityAssignedDay;summary.identityHistoryLength=s.player.identityHistory.length;summary.meaningfulActions=s.player.behavior.meaningfulActions;summary.derivedRatings=Object.values(C.selectors.derivedRatings(s)).join('/');summary.garageDay=s.base.acquiredDay||0;summary.evicted=s.people.household.evicted?1:0;summary.discoveries=s.world.locations.discoveries.length;summary.attributeGains=Object.values(s.player.attributes).reduce((n,v)=>n+Math.max(0,v-2),0);summary.streetReadTier=s.streetRead.tier;summary.streetReadScore=s.streetRead.score;summary.streetReadEntries=s.streetRead.totalLifetimeEntries;summary.employerStanding=s.world.locations.employer.standing;summary.gamblingNet=s.world.locations.gambling.net;Object.assign(summary,storyMetrics(s,beats));Object.assign(summary,exposureMetrics(s));return summary}
 function summarize(name,count){const runs=Array.from({length:count},(_,i)=>play(1000+i,name)),endings={};for(const r of runs)endings[r.endingLabel]=(endings[r.endingLabel]||0)+1;const avg=k=>Math.round(runs.reduce((n,r)=>n+(r[k]||0),0)/count);const robbery=k=>runs.reduce((n,r)=>n+(r.robbery?.[k]||0),0);return{strategy:name,runs:count,completed:runs.filter(r=>r.completed).length,averageCash:avg('cash'),averageNetWorth:avg('netWorth'),averageOperationScore:avg('operationScore'),averageDebt:avg('debt'),averageHighestHeat:avg('highestHeat'),averageDecisions:avg('decisions'),averageEncounters:avg('encounters'),averageBaseValue:avg('baseValue'),averageCrew:avg('crew'),robAttempts:robbery('attempts'),robSuccesses:robbery('successes'),robFailures:robbery('failures'),robPayout:robbery('totalPayout'),territoryAttempts:runs.reduce((n,r)=>n+(r.takeovers?.attempts||0),0),deadEnds:runs.filter(r=>!r.completed).length,
   averageStoryBeats:Number((runs.reduce((n,r)=>n+r.storyBeats,0)/count).toFixed(1)),
   averageAmbientBeats:Number((runs.reduce((n,r)=>n+r.ambientBeats,0)/count).toFixed(1)),
@@ -86,6 +98,12 @@ function summarize(name,count){const runs=Array.from({length:count},(_,i)=>play(
   minaReachedStage4:Number((100*runs.filter(r=>r.minaChainDepth>=4).length/count).toFixed(0)),
   minaReachedStage6:Number((100*runs.filter(r=>r.minaChainDepth>=6).length/count).toFixed(0)),
   chainStallRuns:runs.reduce((n,r)=>n+r.chainStall,0),
+  taxActiveRuns:runs.reduce((n,r)=>n+r.taxActive,0),
+  curtisBetrayedRuns:runs.reduce((n,r)=>n+r.curtisBetrayed,0),
+  ...Object.fromEntries(C.EXPOSURE_NPC_IDS.flatMap(id=>[
+    ['average'+id[0].toUpperCase()+id.slice(1)+'Score',Number((runs.reduce((n,r)=>n+r[id+'Score'],0)/count).toFixed(2))],
+    ['average'+id[0].toUpperCase()+id.slice(1)+'Rows',Number((runs.reduce((n,r)=>n+r[id+'Rows'],0)/count).toFixed(1))],
+  ])),
   dealerRobberies:runs.reduce((n,r)=>n+(r.dealer?.robbedCount||0),0),
   dealerGone:runs.filter(r=>r.dealer?.gone).length,
   averageDealerStanding:Number((runs.reduce((n,r)=>n+(r.dealer?.standing||0),0)/count).toFixed(1)),

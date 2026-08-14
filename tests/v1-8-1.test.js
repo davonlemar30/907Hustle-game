@@ -52,7 +52,7 @@ test("a v4 save drops every legacy key and carries plug access across the rename
   raw.world.territoryBlocks[Object.keys(raw.world.territoryBlocks)[0]].owner = "rook";
 
   const state = C.hydrateRun(raw);
-  assert.equal(state.version, 5);
+  assert.equal(state.version, 6);
 
   // Data carried over rather than reset.
   assert.equal(state.people.dealers.goodie.standing, 4);
@@ -74,16 +74,22 @@ test("a v4 save drops every legacy key and carries plug access across the rename
   assert.ok(Object.values(state.world.territoryBlocks).every((block) => block.owner !== "rook"), "block owners still say rook");
 });
 
-test("v3 and v4 saves both migrate to v5, and unsupported versions are refused", () => {
-  // LEGACY_SAVE_KEYS promises both older schemas still load.
-  assert.deepEqual(C.LEGACY_SAVE_KEYS, ["907ogr_v4", "907ogr_v3"]);
-  for (const version of [3, 4]) {
+test("v3, v4, and v5 saves all migrate to v6, and unsupported versions are refused", () => {
+  // LEGACY_SAVE_KEYS promises every older schema still loads.
+  assert.deepEqual(C.LEGACY_SAVE_KEYS, ["907ogr_v5", "907ogr_v4", "907ogr_v3"]);
+  for (const version of [3, 4, 5]) {
     const raw = JSON.parse(C.serializeRun(fresh(1900 + version)));
     raw.version = version;
+    for (const id of C.EXPOSURE_NPC_IDS) delete raw.npc[id].ledger;
     const state = C.hydrateRun(raw);
-    assert.equal(state.version, 5, `v${version} save should migrate to v5`);
+    assert.equal(state.version, 6, `v${version} save should migrate to v6`);
     assert.ok(state.run && state.player && state.world, `v${version} save lost a top-level section`);
     assert.equal(typeof state.player.cash, "number");
+    // Every pre-Exposure save comes out with a ledger it can be read from.
+    for (const id of C.EXPOSURE_NPC_IDS) {
+      assert.ok(Array.isArray(state.npc[id].ledger), `v${version} left ${id} without a ledger`);
+    }
+    assert.ok(state.npc.yalonda.ledger.length > 0, `v${version} should seed the household history`);
   }
   const tooOld = JSON.parse(C.serializeRun(fresh(1905)));
   tooOld.version = 2;

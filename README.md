@@ -2,10 +2,62 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-The current playable build is **v1.8.1: Refactor, Code Hygiene, and Architecture Prep**.
+The current playable build is **v1.9a: Exposure System and Bug Fixes**.
 
 New here? Read [ARCHITECTURE.md](ARCHITECTURE.md) — file map, state shape, event
 card schema, and the rules a change has to hold to.
+
+## What changed in v1.9a
+
+**Relationships stopped being progress bars.** Every NPC used to carry a flat
+integer — `mina.trust`, `curtis.attention`, `dre.trust` — with no shared meaning
+between them. Two players sitting at the same number by completely different
+routes unlocked exactly the same content.
+
+Now each NPC keeps a **ledger** of typed observations, reads it through a
+personality **lens**, and their disposition is derived rather than stored.
+
+- **Eleven observation categories.** Presence, honesty, violence, financial,
+  heat exposure, loyalty, betrayal, discretion, growth, submission, defiance.
+  Repeats merge into a count instead of piling up rows.
+- **Four archetypes, per-character overrides.** Mina reads consent and safety and
+  weighs what her network tells her twice as heavily as what she watches happen.
+  Dre reads follow-through. Yalonda reads whether rent landed. Curtis is
+  **inverted**: everything that makes you worth noticing makes him more of a
+  problem, which is why he reads Neutral as invisible and Hostile as the tax.
+- **Gossip travels.** Five channels decide who hears what and when. A robbery two
+  blocks from the Night Owl reaches Mina if she is behind the counter that
+  evening, and may never reach her at all if she is not. Curtis's network runs
+  through a filter: corner-level activity stays below his radar.
+- **Heat is public.** Above 8 it reaches the household, above 10 the
+  neighborhood, above 12 the network. This closes a connection the v1.8.1 audit
+  filed as absent.
+- **Grinding does not work.** Repeated behavior follows `min(4, log2(count + 1))`.
+  The clamp is the important half: `log2` alone never stops climbing, so without
+  it a patient player reaches the top band by doing one thing forever. Betrayal
+  never fades, and a missed obligation gets worse every time.
+- **Six shared bands** replace every per-character threshold: Hostile, Cold,
+  Neutral, Warm, Trusted, Bonded.
+
+**Two blockers fixed.** Neither was what the report described:
+
+- Starting without a name was never missing validation. The gate existed at both
+  layers, but the Start control uses `.edge-card` and the stylesheet had no
+  disabled rule for that class, so a blocked button looked live and taps did
+  nothing. It now dims, says why, and takes Enter.
+- Downtown was one-way because the destination list filtered out the *home*
+  district rather than the district you are standing in. The $5 ride home already
+  worked in the reducer; nothing but that one line stranded the player. The
+  outbound bus leg also debited cash without touching the dirty/clean split, so a
+  round trip left the two disagreeing.
+
+**Saves are v6.** v3, v4, and v5 all migrate, and pre-Exposure relationships
+convert into ledger entries rather than being thrown away.
+
+**Gameplay changed on purpose,** so the simulation hash moved. The new 2,000-run
+baseline is `3e0b84f6d2856ddf292eed0aadeb5a5e8d46540ef215d8ac3d8efb30590453f1`.
+Overall economy sits within 3.3% of v1.8.1 and 2,000 seeded runs finish with zero
+dead ends.
 
 ## What changed in v1.8.1
 

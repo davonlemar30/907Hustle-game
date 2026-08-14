@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.8.1**.
+How 907Hustle: One Good Run is put together, current as of **v1.9a**.
 
 This file is meant to be the only thing you need to read before changing code.
 For *why* the game is designed the way it is, see the ClickUp docs at the bottom.
@@ -37,16 +37,26 @@ src/data/             Static definitions. No logic, no state.
   items.js            GEAR, BASE_UPGRADES, LISTING_ITEMS + lookups
   jobs.js             SPENARD_JOBS, JOB_APPROACHES, JOB_RANK_THRESHOLDS, STARTER_JOB_IDS
   npcs.js             CREW, DEALERS, PLUGS, HOUSEHOLD_NPCS, NIGHT_OWL_REGULARS + lookups
+  observations.js     OBSERVATION_CATEGORIES, createObservation(), addObservation(), effectiveCount()
+  npc-lenses.js       ARCHETYPES, SHARED_EVENT_WEIGHTS, NPC_LENSES, resolveLens()
+  propagation.js      CHANNELS, NPC_CHANNELS, Curtis's filter, heat thresholds, presence tables
+  disposition-bands.js  BANDS, bandFor()
 
 src/events/
   registry.js         ENTITY_REGISTRY, ENTITY_MATCH_ORDER, EVENT_FLAVOR, EVENT_CONTEXT, AMBIENT_FLAVOR
   cards.js            event(), effectPreview(), activeEvent() — every event card
   random.js           Seeded RNG + isEligible() / getWeight()
 
+src/exposure/
+  engine.js           The Exposure System: ledgers in, dispositions out, gossip
+                      in between. May require src/data and src/selectors and
+                      NOTHING else — never game-core.
+
 src/selectors.js      Tiny pure reads shared by game-core and src/events
 
 tests/                node --test, no runner config
   simulate-runs.js    Seeded whole-run simulator (not a test; a harness)
+  exposure-helpers.js putInBand() for tests that used to assign a trust integer
 ```
 
 **`game-core.js` is a barrel.** It requires from `src/` and re-exports through one
@@ -57,7 +67,10 @@ tests/                node --test, no runner config
 | Adding | Goes in |
 |---|---|
 | A story beat / character arc card | `src/events/cards.js` + a descriptor in `STORY_REGISTRY` |
-| A new NPC | `src/data/npcs.js`, plus state in `createNpcState()` |
+| A new NPC | `src/data/npcs.js`, state in `createNpcState()`, a lens in `NPC_LENSES`, channels in `NPC_CHANNELS` |
+| A new observation category | `OBSERVATION_CATEGORIES` in `src/data/observations.js` + a weight in all four archetypes |
+| A named letdown (something that costs standing) | `SHARED_EVENT_WEIGHTS` in `src/data/npc-lenses.js` |
+| A thing an action makes visible | `OBSERVED_ACTIONS` in `game-core.js` |
 | A new job | `src/data/jobs.js` |
 | A product, district, or gear item | the matching `src/data/` file |
 | Tooltip copy for a name | `ENTITY_REGISTRY` in `src/events/registry.js` |
@@ -100,7 +113,7 @@ module-scoped and `window.playSound` is `undefined`.
 
 ## State and saves
 
-`SAVE_KEY = "907ogr_v5"`, `VERSION = 5`, `LEGACY_SAVE_KEYS = ["907ogr_v4", "907ogr_v3"]`.
+`SAVE_KEY = "907ogr_v6"`, `VERSION = 6`, `LEGACY_SAVE_KEYS = ["907ogr_v5", "907ogr_v4", "907ogr_v3"]`.
 
 Top-level state sections:
 
@@ -115,17 +128,31 @@ home      flags      encounterLog          effects    stats      streetRead   lo
 Notable ones:
 
 - `run` — day, slot, seed, `rngState`, `phase` (`week_zero` | `pressure`),
-  `checkpointDay`, `pendingEvent`, `eventHistory`, `recentEvents`
+  `checkpointDay`, `pendingEvent`, `eventHistory`, `recentEvents`,
+  `pendingObservations` (gossip in transit)
 - `player` — `cash` / `dirtyCash` / `cleanCash` (money is split by provenance),
   `heat`, `health`, `energy`, `attributes`, `streetIdentity`
-- `npc` — `yalonda`, `juan`, `mina`, `curtis`, `dre`, `simone`
+- `npc` — `yalonda`, `juan`, `mina`, `curtis`, `dre`, `simone`. Each carries a
+  `ledger` (array of observations) and `channels` (what they hear on). The
+  surviving `trust` / `attention` / `respect` integers are **inert**: they exist
+  so a v5 save has somewhere to land during migration, and nothing gates on them
 - `people` — `household`, `crew`, `dealers`
 
 ### Migration rules
 
 - **Additive only.** Never remove or repurpose a field; add a new one.
-- `migrateSave(value)` accepts versions **3 and 4** and returns `null` for
-  anything older or malformed. `hydrateRun` fills defaults via `mergeDefaults`.
+- `migrateSave(value)` accepts versions **3, 4, and 5** and returns `null` for
+  anything older or malformed. It is one flat pass, not a v3→v4→v5 chain: every
+  accepted version takes the same code path. `hydrateRun` fills defaults via
+  `mergeDefaults`.
+- `hydrateRun` captures the version **before** calling `migrateSave`, because
+  `migrateSave` stamps the version to current and merges in default state. That
+  captured value is the only way to tell a pre-Exposure save from a converted
+  one, and it is what decides whether `seedExposureLedgers` runs.
+- `seedExposureLedgers` sits **after** `hydrateRun` on purpose:
+  `tests/v1-8-1.test.js` treats everything between `migrateSave` and
+  `hydrateRun` as the amnesty window where legacy character ids are allowed, and
+  nothing else belongs in it.
 - To bump the version: raise `VERSION`, push the old key onto
   `LEGACY_SAVE_KEYS`, and extend `migrateSave`.
 
@@ -182,6 +209,99 @@ top of `random.js`.
 
 ---
 
+## The Exposure System
+
+Added in v1.9a. It replaced every per-character relationship integer, so it is
+the thing to understand before touching any NPC.
+
+An NPC knows three things:
+
+1. a **ledger** of typed observations — concrete facts about what you did
+2. a **lens** — a personality weight table that decides what those facts mean
+3. a **disposition** — the sum, recomputed on every read and never stored
+
+Because the score is derived, *how* you earned it survives. Two players at the
+same number got there through different rows, and the rows are what later
+content and later gossip actually see.
+
+### Observations
+
+`{ type, event, location, value, day, count, source }`. `type` is one of eleven
+categories: `presence`, `honesty`, `violence`, `financial`, `heat_exposure`,
+`loyalty`, `betrayal`, `discretion`, `growth`, `submission`, `defiance`.
+
+Rows merge on category + event + location + source, incrementing `count`. Source
+is part of the key on purpose: watching a robbery and hearing about one are
+different facts.
+
+**Diminishing returns.** `min(4, log2(count + 1))`. The clamp matters as much as
+the curve: `log2` has no upper bound, so without it a patient player reaches the
+top band by doing one thing four hundred times. Two rules opt out —
+`betrayal` never fades, and `missed_obligation` escalates linearly because its
+weight is negative.
+
+### Lenses
+
+Four archetypes (CIVILIAN, STREET, ROMANTIC, THREAT) carry a full weight table;
+an NPC picks one and overrides three to five entries. Adding a character is a
+base plus a handful of numbers.
+
+**THREAT is inverted.** For a rival, a high score is not affection, it is being
+no problem to them. Everything that makes you worth noticing drives Curtis's
+number *down*, which is why he reads Neutral as invisible, Cold as watched, and
+Hostile as the tax and the confrontation. Use `curtisNoticed()` /
+`curtisHostile()`, never a bare `>=` against him.
+
+**Category sign is not reliable downward.** STREET scores `defiance` positively
+on purpose — Dre respects nerve. Anything meaning "you cost me something" is
+priced explicitly in `SHARED_EVENT_WEIGHTS` instead of inheriting its category.
+
+### Bands
+
+Hostile `< -5` · Cold `-5..-1` · Neutral `0..2` · Warm `3..5` · Trusted `6..8` ·
+Bonded `9+`. Ordered integers, so a gate is one comparison. Content asks
+`atLeastBand(state, "mina", BANDS.TRUSTED)`; the old per-character thresholds are
+gone.
+
+Mapping from the retired integers: trust 1 is Warm, trust 2 is Trusted, trust 3
+is Bonded. `knowsYou()` covers the checks that meant "any relationship at all".
+
+### Propagation
+
+Five channels decide who hears what and when: `direct` (now), `household` (that
+night), `neighborhood` (1-2 days, presence-checked), `network` (next day),
+`reputation` (weekly). An event card tags an observation with a channel; the
+engine routes it. Curtis's network runs through a sensitivity filter — only
+violence, territory claims, and high-volume days clear it. Heat above 8/10/12
+spreads on its own with no card involved.
+
+Delayed items queue in `run.pendingObservations` and drain in `advanceRun` and
+twice in `confirmDayEnd` (once before the day rolls, once after), following the
+`resolveJobApplications` pattern.
+
+**Determinism.** The 1-2 day neighborhood spread is resolved by
+`stringHash(seed:gossip:...)`, not the RNG stream. Drawing from `run.rngState`
+would make an observation's fate depend on whether an unrelated encounter
+consumed a draw earlier that day.
+
+### Where the writes happen
+
+`applyEventEffect` is the one seam. Sixty relationship effects are declared
+across the event cards (`minaTrust`, `lenderTrust`, `rivalRespect`,
+`rivalPressure`, `npcTrust`); they stay declared as they are and are translated
+into observations in `applyRelationshipEffects`. Do not rewrite the cards.
+
+`OBSERVED_ACTIONS`, keyed on the same `context.reason` as `STREET_READ_ACTIVITY`,
+covers everything that funnels through `advanceRun`.
+
+### Debugging
+
+`localStorage.setItem("907_exposure_debug", "1")` renders a dev-only inspector
+showing each NPC's rows, the weight applied, the effective count after
+diminishing returns, and the running total. It never appears for a player.
+
+---
+
 ## System connections
 
 Audited in v1.8.1. Line numbers are `game-core.js` unless noted, and drift.
@@ -193,12 +313,13 @@ Audited in v1.8.1. Line numbers are `game-core.js` unless noted, and drift.
 | Juan trust → lead quality | **Wired** | `juanWorkIntelKnown` (:1752) unlocks the `ship_creek` job (:1913); trust gates the Dre route (:2418) and two story cards (:3003, :3011) |
 | Consequence cards → phone / day log | **Wired** | `logEntry` (:452), `pushConsequence` (:456), `pushPhoneMessage` (:461) |
 | Heat → encounter frequency | **Wired, not via weightedPick** | ambient chance carries `+ heat * 0.01` (:3156); police/rival cards gate on heat (:3033 `heat >= 5`, :2933 `heat >= 10`); block raids scale with `RAID_HEAT_WEIGHT` (:2607). Heat is **not** a term in `getWeight` |
-| Reputation → vendor pricing | **Partial, under other names** | there is no `reputation` stat. `tradeUnitPrices` moves the sell price by charisma, district `influence`, Curtis friendship, Pherris tier, and territory control |
-| Heat → job consequences | **Absent** | there is no job-loss mechanic of any kind, and heat never reaches the jobs system. Note the spec's ">60" is unreachable: **heat is clamped 0–15** (`heatBand`: warm 4, high 8, critical 12, run ends at 15) |
+| Reputation → vendor pricing | **Partial, under other names** | there is still no `reputation` stat, but disposition is now the composite it was missing. `tradeUnitPrices` moves the sell price by charisma, district `influence`, Curtis friendship, Pherris tier, and territory control; the Goodie discount reads Mina's band |
+| Heat → the people around you | **Wired in v1.9a** | heat above 8 reaches the household, above 10 the neighborhood, above 12 the network (`propagateHeat`). There is still no job-*loss* mechanic; heat now has social consequences instead of only police ones. The spec's ">60" remains unreachable: **heat is clamped 0–15** (`heatBand`: warm 4, high 8, critical 12, run ends at 15) |
 | Bank interest → daily tick | **Absent** | there is no bank. `base.storedCash` / `home.storedCash` are storage only — deposit and withdraw, no accrual. The only compounding interest is debt (`lender.interestMultiplier`) |
 
-The last three are **design gaps, not broken wiring**. Building them is new
-gameplay and belongs in a build that expects balance to move.
+v1.9a was that build for the heat connection: it was a design gap rather than
+broken wiring, and closing it moved balance on purpose. **Bank interest is still
+absent**, and building it is still new gameplay.
 
 ---
 
@@ -241,7 +362,7 @@ Two invariants worth naming:
 ## Testing
 
 ```bash
-npm test                              # 345 tests
+npm test                              # 377 tests
 node tests/simulate-runs.js --total 200
 node tests/simulate-runs.js --total 2000   # slower, for balance work
 ```
@@ -255,6 +376,17 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 ```
 
 Compare after. A matching hash proves you changed nothing the player can see.
+
+**v1.9a baselines** (gameplay changed on purpose, so these replace the v1.8.1
+hash of `5890e37a…`):
+
+| Run | SHA-256 |
+|---|---|
+| `--total 200` | `c2f0e24d5e9355bf3a0372a978c2f226c1442342bf0c9c27bcecfe74332f1bc2` |
+| `--total 2000` | `3e0b84f6d2856ddf292eed0aadeb5a5e8d46540ef215d8ac3d8efb30590453f1` |
+
+Note the two forms differ: `--total 200` splits 200 runs across the eleven
+strategies, while a bare `200` runs 200 *per strategy*.
 Nothing in the run path may use `Math.random()` — only `makeRandom(seed)`.
 
 The simulator plays eleven strategies (cautious, balanced, aggressive, stickup,
@@ -283,7 +415,7 @@ copy and ambient lines:
 - **esbuild is the only dependency.** No runtime dependencies at all.
 - 44px minimum tap targets; no horizontal overflow at any viewport
 - `prefers-reduced-motion` fallbacks required for animation
-- Saves at v3 and v4 must keep loading
+- Saves at v3, v4, and v5 must keep loading
 - Mobile-first: the 320px shell is the design floor
 
 ---

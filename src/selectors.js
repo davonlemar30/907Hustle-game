@@ -5,7 +5,10 @@ function checkpointDay(state) { return state.run.checkpointDay || Infinity; }
 
 function controlled(state, areaId) { return state.world.territories[areaId]?.owner === "player"; }
 
+function slotNumber(day, slot) { return (day - 1) * 4 + slot; }
+
 module.exports = {
   checkpointDay,
   controlled,
+  slotNumber,
 };

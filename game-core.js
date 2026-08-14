@@ -5,9 +5,9 @@
   root.GameCore = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function (EncounterSystem) {
   "use strict";
-  const { normalizeSeed, stringHash, makeRandom, seededShuffle } = require("./src/events/random.js");
+  const { normalizeSeed, stringHash, makeRandom, seededShuffle, isEligible, getWeight } = require("./src/events/random.js");
   const { effectPreview, event, activeEvent } = require("./src/events/cards.js");
-  const { checkpointDay, controlled } = require("./src/selectors.js");
+  const { checkpointDay, controlled, slotNumber } = require("./src/selectors.js");
 
   const VERSION = 5;
   const RUN_DAYS = 7;
@@ -448,7 +448,6 @@
     if (state && typeof state === "object" && !streetReadIsHydrated(copy.streetRead)) copy.streetRead = deserializeStreetRead(copy.streetRead);
     return copy;
   }
-  function slotNumber(day, slot) { return (day - 1) * 4 + slot; }
 
   function logEntry(state, text, tone) {
     state.log.unshift({ text, tone: tone || "", stamp: `Day ${state.run.day} · ${SLOTS[state.run.slot]}` });
@@ -3070,22 +3069,10 @@
 
   function storyCandidates(state) {
     const absolute = slotNumber(state.run.day, state.run.slot);
-    const areaId = state.world.currentNeighborhoodId;
-    return STORY_REGISTRY.filter((item) => {
-      if (state.run.phase === "week_zero" && (item.chain === "dre_note" || item.chain === "curtis_pressure" || item.classification === "threat" || item.classification === "ending_setup")) return false;
-      if (item.once && eventResolved(state, item.id)) return false;
-      if (item.area && item.area !== areaId) return false;
-      if (absolute < slotNumber(item.earliest.day, item.earliest.slot || 0)) return false;
-      if (item.latest && state.run.day > item.latest.day) return false;
-      if (state.run.recentEvents.includes(item.id)) return false;
-      const last = state.run.eventHistory ? state.run.eventHistory[item.id] : undefined;
-      if (last !== undefined && absolute - last < item.cooldown) return false;
-      if (item.exit && item.exit(state)) return false;
-      return item.requires(state);
-    });
+    return STORY_REGISTRY.filter((item) => isEligible(item, state, { absolute, resolved: eventResolved }));
   }
   function weightedPick(candidates, state, random) {
-    const weights = candidates.map((item) => Math.max(0.01, item.weight) * streetReadWeightMultiplier(state, item));
+    const weights = candidates.map((item) => getWeight(item, state, streetReadWeightMultiplier));
     const total = weights.reduce((sum, value) => sum + value, 0);
     let roll = random.next() * total;
     for (let index = 0; index < candidates.length; index += 1) {

@@ -132,6 +132,48 @@ test("a card's declared district is a real one", () => {
   }
 });
 
+test("isEligible and getWeight are the single gate and the single weighting", () => {
+  const { isEligible, getWeight } = require("../src/events/random.js");
+  const base = {
+    id: "probe", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
+    area: null, earliest: { day: 1, slot: 0 }, latest: null, once: false, cooldown: 2, weight: 4,
+    requires: () => true, exit: null,
+  };
+  const state = {
+    run: { day: 3, slot: 1, phase: "pressure", recentEvents: [], eventHistory: {} },
+    world: { currentNeighborhoodId: "north_star_lot" },
+  };
+  const never = () => false;
+  const at = (day, slot) => (day - 1) * 4 + slot;
+  const check = (card, s = state) => isEligible(card, s, { absolute: at(s.run.day, s.run.slot), resolved: never });
+
+  assert.equal(check(base), true);
+  assert.equal(check({ ...base, area: "downtown" }), false, "district gate");
+  assert.equal(check({ ...base, earliest: { day: 6, slot: 0 } }), false, "earliest gate");
+  assert.equal(check({ ...base, latest: { day: 2 } }), false, "latest gate");
+  assert.equal(check({ ...base, exit: () => true }), false, "exit gate");
+  assert.equal(check({ ...base, requires: () => false }), false, "requires gate");
+  assert.equal(check({ ...base, once: true }, state), true, "once with nothing resolved yet");
+  assert.equal(isEligible({ ...base, once: true }, state, { absolute: at(3, 1), resolved: () => true }), false, "once gate");
+
+  const recent = { ...state, run: { ...state.run, recentEvents: ["probe"] } };
+  assert.equal(check(base, recent), false, "recentEvents gate");
+  const cooling = { ...state, run: { ...state.run, eventHistory: { probe: at(3, 0) } } };
+  assert.equal(check(base, cooling), false, "cooldown gate");
+
+  // Week Zero holds back the escalating arcs and the run-ending cards.
+  const weekZero = { ...state, run: { ...state.run, phase: "week_zero" } };
+  assert.equal(check({ ...base, classification: "threat" }, weekZero), false);
+  assert.equal(check({ ...base, classification: "ending_setup" }, weekZero), false);
+  assert.equal(check({ ...base, chain: "dre_note", stage: 1 }, weekZero), false);
+  assert.equal(check({ ...base, chain: "curtis_pressure", stage: 1 }, weekZero), false);
+  assert.equal(check({ ...base, classification: "threat" }), true, "allowed once Week Zero ends");
+
+  assert.equal(getWeight(base, state, () => 1), 4);
+  assert.equal(getWeight(base, state, () => 2), 8, "multiplier applies");
+  assert.ok(getWeight({ ...base, weight: 0 }, state, () => 1) > 0, "a zero-weight card keeps a floor rather than becoming unreachable");
+});
+
 test("game-core re-exports the extracted modules unchanged", () => {
   // game-core.js is a barrel over src/. If a module and the barrel ever
   // disagree, callers reading C.PRODUCTS get something different from the

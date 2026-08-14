@@ -596,9 +596,31 @@
     }
   });
 
+  // src/selectors.js
+  var require_selectors = __commonJS({
+    "src/selectors.js"(exports, module) {
+      function checkpointDay(state) {
+        return state.run.checkpointDay || Infinity;
+      }
+      function controlled(state, areaId) {
+        var _a;
+        return ((_a = state.world.territories[areaId]) == null ? void 0 : _a.owner) === "player";
+      }
+      function slotNumber(day, slot) {
+        return (day - 1) * 4 + slot;
+      }
+      module.exports = {
+        checkpointDay,
+        controlled,
+        slotNumber
+      };
+    }
+  });
+
   // src/events/random.js
   var require_random = __commonJS({
     "src/events/random.js"(exports, module) {
+      var { slotNumber } = require_selectors();
       function normalizeSeed(seed) {
         const numeric = Number(seed);
         const fallback = 151461926;
@@ -642,11 +664,30 @@
         }
         return out;
       }
+      var WEEK_ZERO_BLOCKED_CHAINS = ["dre_note", "curtis_pressure"];
+      var WEEK_ZERO_BLOCKED_CLASSIFICATIONS = ["threat", "ending_setup"];
+      function isEligible(card, state, { absolute, resolved }) {
+        if (state.run.phase === "week_zero" && (WEEK_ZERO_BLOCKED_CHAINS.includes(card.chain) || WEEK_ZERO_BLOCKED_CLASSIFICATIONS.includes(card.classification))) return false;
+        if (card.once && resolved(state, card.id)) return false;
+        if (card.area && card.area !== state.world.currentNeighborhoodId) return false;
+        if (absolute < slotNumber(card.earliest.day, card.earliest.slot || 0)) return false;
+        if (card.latest && state.run.day > card.latest.day) return false;
+        if (state.run.recentEvents.includes(card.id)) return false;
+        const last = state.run.eventHistory ? state.run.eventHistory[card.id] : void 0;
+        if (last !== void 0 && absolute - last < card.cooldown) return false;
+        if (card.exit && card.exit(state)) return false;
+        return card.requires(state);
+      }
+      function getWeight(card, state, weightMultiplier) {
+        return Math.max(0.01, card.weight) * weightMultiplier(state, card);
+      }
       module.exports = {
         normalizeSeed,
         stringHash,
         makeRandom,
-        seededShuffle
+        seededShuffle,
+        isEligible,
+        getWeight
       };
     }
   });
@@ -1116,23 +1157,6 @@
         SPENARD_BLOCKS,
         SPENARD_BLOCK_BY_ID,
         AREA_BY_ID
-      };
-    }
-  });
-
-  // src/selectors.js
-  var require_selectors = __commonJS({
-    "src/selectors.js"(exports, module) {
-      function checkpointDay(state) {
-        return state.run.checkpointDay || Infinity;
-      }
-      function controlled(state, areaId) {
-        var _a;
-        return ((_a = state.world.territories[areaId]) == null ? void 0 : _a.owner) === "player";
-      }
-      module.exports = {
-        checkpointDay,
-        controlled
       };
     }
   });
@@ -1806,9 +1830,9 @@
         root.GameCore = api;
       })(typeof globalThis !== "undefined" ? globalThis : exports, function(EncounterSystem) {
         "use strict";
-        const { normalizeSeed, stringHash, makeRandom, seededShuffle } = require_random();
+        const { normalizeSeed, stringHash, makeRandom, seededShuffle, isEligible, getWeight } = require_random();
         const { effectPreview, event, activeEvent } = require_cards();
-        const { checkpointDay, controlled } = require_selectors();
+        const { checkpointDay, controlled, slotNumber } = require_selectors();
         const VERSION = 5;
         const RUN_DAYS = 7;
         const PRESSURE_DAYS = 7;
@@ -2349,9 +2373,6 @@
           const copy = typeof structuredClone === "function" ? structuredClone(state) : JSON.parse(JSON.stringify(state));
           if (state && typeof state === "object" && !streetReadIsHydrated(copy.streetRead)) copy.streetRead = deserializeStreetRead(copy.streetRead);
           return copy;
-        }
-        function slotNumber(day, slot) {
-          return (day - 1) * 4 + slot;
         }
         function logEntry(state, text, tone) {
           state.log.unshift({ text, tone: tone || "", stamp: `Day ${state.run.day} \xB7 ${SLOTS[state.run.slot]}` });
@@ -5851,22 +5872,10 @@
         const STORY_BY_ID = Object.fromEntries(STORY_REGISTRY.map((item) => [item.id, item]));
         function storyCandidates(state) {
           const absolute = slotNumber(state.run.day, state.run.slot);
-          const areaId = state.world.currentNeighborhoodId;
-          return STORY_REGISTRY.filter((item) => {
-            if (state.run.phase === "week_zero" && (item.chain === "dre_note" || item.chain === "curtis_pressure" || item.classification === "threat" || item.classification === "ending_setup")) return false;
-            if (item.once && eventResolved(state, item.id)) return false;
-            if (item.area && item.area !== areaId) return false;
-            if (absolute < slotNumber(item.earliest.day, item.earliest.slot || 0)) return false;
-            if (item.latest && state.run.day > item.latest.day) return false;
-            if (state.run.recentEvents.includes(item.id)) return false;
-            const last = state.run.eventHistory ? state.run.eventHistory[item.id] : void 0;
-            if (last !== void 0 && absolute - last < item.cooldown) return false;
-            if (item.exit && item.exit(state)) return false;
-            return item.requires(state);
-          });
+          return STORY_REGISTRY.filter((item) => isEligible(item, state, { absolute, resolved: eventResolved }));
         }
         function weightedPick(candidates, state, random) {
-          const weights = candidates.map((item) => Math.max(0.01, item.weight) * streetReadWeightMultiplier(state, item));
+          const weights = candidates.map((item) => getWeight(item, state, streetReadWeightMultiplier));
           const total = weights.reduce((sum, value) => sum + value, 0);
           let roll = random.next() * total;
           for (let index = 0; index < candidates.length; index += 1) {

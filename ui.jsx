@@ -31,7 +31,14 @@ function TitleScreen({ saveInfo, onLoad, onNew }) {
   const preview = saveInfo.preview;
   return <div className="title-screen">
     <div className="title-backdrop" aria-hidden="true" />
-    <img className="title-art" src="./assets/907hustle-title.png" alt="907Hustle: One Good Run over a rain-dark Spenard street" />
+    {/* The PNG is 1.9MB, which is the single heaviest thing the game loads.
+        Phones take the 600px WebP (68KB), wider screens the full WebP (145KB),
+        and anything without WebP support falls back to the original PNG. */}
+    <picture>
+      <source type="image/webp" media="(max-width: 600px)" srcSet="./assets/907hustle-title-600.webp" />
+      <source type="image/webp" srcSet="./assets/907hustle-title.webp" />
+      <img className="title-art" src="./assets/907hustle-title.png" width="941" height="1672" alt="907Hustle: One Good Run over a rain-dark Spenard street" />
+    </picture>
     <div className="title-shade" />
     <div className="title-content">
       <div className="sr-only"><h1>907Hustle: One Good Run</h1><p>Find your footing. Face the week you create.</p></div>
@@ -136,7 +143,7 @@ function Header({ state, onMenu }) {
   // 50px row of branding above every page, so it is now a screen-reader
   // heading and the Menu button rides the HUD line instead.
   return <header className="top">
-    <h1 className="sr-only">907Hustle: One Good Run · v1.8</h1>
+    <h1 className="sr-only">907Hustle: One Good Run · v1.8.1</h1>
     <div className="hud primary-hud">
       <Hud label="Day / Time" value={<>{`${state.run.day}${state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""} · ${C.SLOTS[state.run.slot]} · ${area.name}`}<SlotPips slot={state.run.slot} /></>} good />
       <Hud label="Cash" value={money(state.player.cash)} good flash={cashFlash} />
@@ -1202,7 +1209,7 @@ function MenuModal({ state, dispatch, onClose, onTitle }) {
   return <><Modal title="Run menu" onClose={onClose}>
     <ExpandableMoreSection
       collapsedContent={<p className="popup-lead">Autosave is on. This run saves to your browser after every action.</p>}
-      expandedContent={<p className="popup-flavor">907Hustle v1.8 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
+      expandedContent={<p className="popup-flavor">907Hustle v1.8.1 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
       moreLabel="Save detail" lessLabel="Hide detail" />
     <button className="btn full primary" onClick={onTitle}>Return to Title</button>
     <button className="btn full secondary choice" onClick={() => setConfirmRestart(true)}>Restart Run<span>Creates a new seed and returns to Street Name entry.</span></button>
@@ -1318,7 +1325,13 @@ function GameShell({ state, dispatch, onTitle }) {
   function navigate(nextTab, more = "root", sub = null, street = "root") {
     const apply = () => { setNav((prev) => ({ tab: nextTab, more, sub, token: prev.token + 1 })); if (nextTab === "street") setStreetPage(street); if (nextTab === "hustle") setHustlePage(street); };
     if (typeof document === "undefined" || typeof document.startViewTransition !== "function") { apply(); return; }
-    document.startViewTransition(() => ReactDOM.flushSync(apply));
+    // Switching tabs faster than a transition can finish makes the browser
+    // abort the in-flight one and reject its promises with InvalidStateError.
+    // The navigation itself still lands, so the rejection is noise; left
+    // unhandled it surfaces as an uncaught console error.
+    const transition = document.startViewTransition(() => ReactDOM.flushSync(apply));
+    const ignore = () => {};
+    if (transition) { transition.ready?.catch(ignore); transition.finished?.catch(ignore); transition.updateCallbackDone?.catch(ignore); }
   }
   const setTab = (nextTab) => navigate(nextTab);
   const setMorePage = (page) => setNav((prev) => ({ ...prev, more: page, sub: null }));

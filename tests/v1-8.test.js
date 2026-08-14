@@ -354,7 +354,15 @@ test("the v1.8 shell is five-destination, Phone is unconditional, and Hustle is 
 
 test("v1.8 runtime copy contains new identities and no retired identity strings", () => {
   const root = path.join(__dirname, "..");
-  const copy = ["game-core.js", "ui.jsx", "encounters.js"].map((file) => fs.readFileSync(path.join(root, file), "utf8")).join("\n");
+  // src/ holds the extracted data and event registries, so the copy sweep has
+  // to walk it too or most player-facing strings go unchecked.
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return walk(full);
+    return /\.(js|jsx)$/.test(entry.name) ? [full] : [];
+  });
+  const files = [...["game-core.js", "ui.jsx", "encounters.js"].map((file) => path.join(root, file)), ...walk(path.join(root, "src"))];
+  const copy = files.map((file) => fs.readFileSync(file, "utf8")).join("\n");
   for (const name of ["Mina Vale", "Curtis Foyer", "Dre Smooth", "Goodie", "Pherris Dickens", "Simone Hart"]) assert.match(copy, new RegExp(name));
   const playerFacing = copy.split("\n").filter((line) => !line.includes("replaceAll(")).join("\n");
   assert.doesNotMatch(playerFacing, /Mara Velez|Rook Mercer|Kip Sallis|Dre Holloway/);

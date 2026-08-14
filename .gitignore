@@ -1,0 +1,5 @@
+node_modules/
+.DS_Store
+
+# ui.built.js is deliberately NOT ignored — GitHub Pages serves this repo
+# directly with no CI step, so the bundle has to be committed.

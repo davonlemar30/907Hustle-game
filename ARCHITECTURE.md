@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.9a**.
+How 907Hustle: One Good Run is put together, current as of **v1.10**.
 
 This file is meant to be the only thing you need to read before changing code.
 For *why* the game is designed the way it is, see the ClickUp docs at the bottom.
@@ -119,7 +119,7 @@ module-scoped and `window.playSound` is `undefined`.
 
 ## State and saves
 
-`SAVE_KEY = "907ogr_v7"`, `VERSION = 7`, `LEGACY_SAVE_KEYS = ["907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"]`.
+`SAVE_KEY = "907ogr_v8"`, `VERSION = 8`, `LEGACY_SAVE_KEYS = ["907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"]`.
 
 Top-level state sections:
 
@@ -154,7 +154,7 @@ Notable ones:
 ### Migration rules
 
 - **Additive only.** Never remove or repurpose a field; add a new one.
-- `migrateSave(value)` accepts versions **3, 4, 5, and 6** and returns `null` for
+- `migrateSave(value)` accepts versions **3 through 7** and returns `null` for
   anything older or malformed. It is one flat pass, not a v3→v4→v5→v6 chain: every
   accepted version takes the same code path. `hydrateRun` fills defaults via
   `mergeDefaults`.
@@ -315,6 +315,109 @@ diminishing returns, and the running total. It never appears for a player.
 
 ---
 
+## Attributes
+
+Added in v1.10. Three numbers - **Combat**, **Charisma**, **Intelligence** - and
+they are the invisible engine behind every outcome the player sees.
+
+Before v1.10 the player carried six attributes and three *derived* ratings
+computed from them. The six were half-dead (only the physical three could grow)
+and the ratings were the only thing anything read, so the middle layer was
+deleted: the ratings became the stored attributes. A v7 save folds the six into
+three by taking the highest of each merged group, documented in
+`src/data/attributes.js`.
+
+`combatRating()` / `charismaRating()` / `intelligenceRating()` survive as the
+**compatibility scale**. They clamp to 1-5, which is the range every formula
+written before v1.10 was tuned against, so crew power, takeover odds, and trade
+pricing did not silently move when an attribute became able to reach 8. Anything
+routed through `resolveWithAttribute` reads the raw value instead and carries no
+inline term.
+
+### Resolution is advantage, never a bonus
+
+`resolveWithAttribute(pool, value, key)` in `src/systems/attributes.js` is the
+**only** entry point for an attribute-modified roll.
+
+- **0-2** — one roll against the pool.
+- **3-5** — roll twice, take the better result.
+- **6+** — the `catastrophic` tier is removed from the pool, then one roll.
+
+No percentages anywhere. Being good gives you a second look and eventually takes
+the worst thing off the table; it never moves a number the player cannot see.
+
+**Pools are built, not authored.** Every wired action already computed a
+context-sensitive chance from heat, gear, health, disposition, and district.
+`buildOutcomePool(actionType, chance)` splits that chance across the tiers using
+the ratios in `OUTCOME_SHAPES`, so all of that context survives and quality is
+added on top. A flat weighted table would have thrown it away.
+
+Where an attribute term used to sit inside a chance formula it has been removed
+and the constant re-anchored to that formula's value at **attribute 1** — an
+untrained player faces exactly the odds they always did, and everything above
+that comes from advantage. Carrying both would pay the player twice.
+
+`stringHash`, never `run.rngState`. Same reason as the market and the gossip
+delay: a replay of the same day must resolve the same way regardless of what
+else happened first.
+
+### Quality decides the footprint
+
+This is the keystone. When an outcome resolves, its **tier** selects an entry in
+`OUTCOME_OBSERVATIONS`, and `broadcastOutcome` in `game-core.js` fans those
+observations out. A clean job still writes its row — being good at crime makes
+you quieter, not invisible — but it travels on `direct` instead of reaching the
+neighborhood and the network.
+
+Adding a new action is two data entries and no new code: a shape in
+`OUTCOME_SHAPES` and a map in `OUTCOME_OBSERVATIONS`.
+
+### Street Identity is derived
+
+`getStreetIdentity(state)` is pure: dominant attribute × dominant recent
+observation category, read off `IDENTITY_MATRIX`. The nightly assignment loop,
+its two-night hysteresis, and the stored `player.streetIdentity` are gone. An old
+save keeps its label as `player.historicalIdentity`, display-only.
+
+Identity is **cosmetic**. It never gates content, modifies a roll, or touches
+disposition. Balanced means no attribute leads by more than two.
+
+The `behavior` ledger survived the change: it no longer drives identity, but it
+still feeds the Character screen's recent-reputation list.
+
+### Growth
+
+The gym is the only growth source that ships in v1.10 (Charisma and Intelligence
+sources are a later build). `attributeGrowth` uses the same `log2` shape as the
+Exposure System's observation capping, for the same reason: sessions one through
+three move the needle, four through seven taper, and past that the gym alone
+cannot carry you. Getting past Solid takes confrontations, not another hour on
+the bag. Three consecutive gym **days** bank `player.gymStreak`, worth +1
+effective Combat on the next check that reads it, spent on use.
+
+---
+
+## Reputation is not a stat
+
+There is no global reputation stat and there will not be one. It was an open
+ticket from v1.8's system audit; v1.10 closes it as a design decision rather than
+a feature.
+
+What people mean by "reputation" is already three things the game models better
+separately:
+
+- **NPC dispositions** — what specific people think, derived from what they
+  actually saw. A single number would flatten Curtis reading you as no problem
+  and Mina reading you as safe into the same value, when they are opposite facts.
+- **Intelligence** — what you can read and price, which is a capability rather
+  than an opinion anyone holds about you.
+- **The existing pricing signals** — district influence, territory control, plug
+  standing, Broker verification.
+
+A global scalar on top of those would either duplicate them or contradict them.
+Do not add a `reputation` field to `state.player`, and do not write code comments
+that promise one.
+
 ## System connections
 
 Audited in v1.8.1. Line numbers are `game-core.js` unless noted, and drift.
@@ -326,7 +429,7 @@ Audited in v1.8.1. Line numbers are `game-core.js` unless noted, and drift.
 | Juan trust → lead quality | **Wired** | `juanWorkIntelKnown` (:1752) unlocks the `ship_creek` job (:1913); trust gates the Dre route (:2418) and two story cards (:3003, :3011) |
 | Consequence cards → phone / day log | **Wired** | `logEntry` (:452), `pushConsequence` (:456), `pushPhoneMessage` (:461) |
 | Heat → encounter frequency | **Wired, not via weightedPick** | ambient chance carries `+ heat * 0.01` (:3156); police/rival cards gate on heat (:3033 `heat >= 5`, :2933 `heat >= 10`); block raids scale with `RAID_HEAT_WEIGHT` (:2607). Heat is **not** a term in `getWeight` |
-| Reputation → vendor pricing | **Partial, under other names** | there is still no `reputation` stat, but disposition is now the composite it was missing. `tradeUnitPrices` moves the sell price by charisma, district `influence`, Curtis friendship, Pherris tier, and territory control; the Goodie discount reads Mina's band |
+| Reputation → vendor pricing | **Closed in v1.10** | settled as a design decision rather than a feature: see *Reputation is not a stat* below. `tradeUnitPrices` moves the sell price by charisma, district `influence`, Curtis friendship, Pherris tier, and territory control; the Goodie discount reads Mina's band; and Intelligence now narrows the 907List sell swing |
 | Heat → the people around you | **Wired in v1.9a** | heat above 8 reaches the household, above 10 the neighborhood, above 12 the network (`propagateHeat`). There is still no job-*loss* mechanic; heat now has social consequences instead of only police ones. The spec's ">60" remains unreachable: **heat is clamped 0–15** (`heatBand`: warm 4, high 8, critical 12, run ends at 15) |
 | Bank interest → daily tick | **Absent** | there is no bank. `base.storedCash` / `home.storedCash` are storage only — deposit and withdraw, no accrual. The only compounding interest is debt (`lender.interestMultiplier`) |
 
@@ -375,7 +478,7 @@ Two invariants worth naming:
 ## Testing
 
 ```bash
-npm test                              # 401 tests
+npm test                              # 437 tests
 node tests/simulate-runs.js --total 200
 node tests/simulate-runs.js --total 2000   # slower, for balance work
 ```
@@ -390,13 +493,16 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 Compare after. A matching hash proves you changed nothing the player can see.
 
-**v1.9b baselines** (907List gameplay changed on purpose and two strategies were
-added, so these replace the v1.9a hashes of `c2f0e24d…` / `3e0b84f6…`):
+**v1.10 baselines.** Attribute checks moved every wired roll off `run.rngState`
+and onto seed hashes, which reorders the shared stream for every strategy, so the
+hash necessarily changed and proves nothing on its own. Check the per-strategy
+metric blocks instead. These replace the v1.9b hashes of `d4474787…` /
+`ddd76695…`:
 
 | Run | SHA-256 |
 |---|---|
-| `--total 200` | `d4474787bd02ce5b08c3a24bb10c3e738616c5367843bbc641e9b8026a0a8a25` |
-| `--total 2000` | `ddd7669506d2e85cbcb1c5a1c9a7617211af928fcb2fbf09033a75c8c8af1d8f` |
+| `--total 200` | `77b09d7bb1ea9be7440bccac517175679fce3008e83f02923e3cb0a3f4c573ac` |
+| `--total 2000` | `8f68db014f0fe466f38edad05454f632fb90ca2eef0c9c8af4707bb30714990b` |
 
 Note the two forms differ: `--total 200` splits 200 runs across the thirteen
 strategies, while a bare `200` runs 200 *per strategy*.

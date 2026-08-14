@@ -2,7 +2,60 @@
 
 Last updated: 2026-08-14 (America/Anchorage)
 
-## v1.9b 907List Tiered Broker System — branch in progress
+## v1.10 Unified Stat Architecture — branch in progress
+
+- Branch: `codex/v1-10-stat-architecture`, based on `origin/main` commit `b7cf392`
+  containing merged PR #68 (v1.9b).
+- **Three attributes, stored.** `strength/endurance/reflexes/presence/insight/
+  discipline` collapsed into `combat/charisma/intelligence`. The three already
+  existed as *derived* ratings computed from the six; v1.10 deleted the middle
+  layer and made the ratings the stored values. A fresh run starts 1/1/1 and the
+  player only ever sees a label (Green, Capable, Solid, Dangerous, Elite).
+- **Advantage instead of bonuses.** `resolveWithAttribute` in
+  `src/systems/attributes.js` is the one entry point. Pools are *built* from each
+  action's existing context-sensitive chance rather than authored flat, so heat,
+  gear, health, disposition, and district all still count.
+- **Quality decides the footprint.** `OUTCOME_OBSERVATIONS` maps each tier to what
+  the neighborhood ends up knowing. A clean robbery writes one row on `direct`; a
+  catastrophe writes two and one of them reaches the network. Measured over 200
+  seeded robberies, a Dangerous player's catastrophic rate is 0% against Green's
+  10.5%, and the average observation reach falls from 1.42 to 1.15.
+- **Gym growth** on `log2` diminishing returns with three activities. Committing
+  every available slot reaches Combat 3 around Day 7; thirty sessions of bag work
+  alone cannot reach Combat 6, which is the intended ceiling on training as a
+  substitute for experience.
+- **Heat → employment ladder** at 8/10/12, day labor exempt, Night Owl restricted
+  rather than fired. **Street Identity derived** from a 4×4 matrix, pure read.
+  **Reputation** settled as a non-feature and documented in `ARCHITECTURE.md`.
+- Save schema v8 (`907ogr_v8`); v3 through v7 migrate. The six attributes fold in
+  by highest-of-group; the stored identity is dropped and kept as
+  `player.historicalIdentity` for display.
+- New files: `src/data/attributes.js`, `src/systems/attributes.js`,
+  `tests/v1-10.test.js`, `tests/attribute-balance.js`.
+- Verification: 437 tests passed (up from 401); 2,000/2,000 seeded runs completed
+  with zero dead ends; success curves monotonic across all nine attribute levels
+  for all nine tiered actions; zero console errors. New baselines `77b09d7b…`
+  (`--total 200`) and `8f68db01…` (`--total 2000`).
+- **Balance, measured rather than asserted.** The economy is down **15.5%**
+  against v1.9b. Three intended changes account for it: standing gains brake as
+  they climb (`trader` -21%), gambling pays the full pot only on a clean read
+  (`gambler` -21%), and a gym session buys less than the old flat progress did
+  (`trainer` -49%). `stickup` is **+24%** because a clean robbery draws a third of
+  the heat a messy one does, so violent runs survive longer. Story pacing is
+  unmoved at 9.5 beats a run against 9.7, and the 907List tier ladder is where
+  v1.9b left it: tier 1 $38.3/day and tier 2 $73.2/day in band, tier 3 $30.5/day
+  still short for the run-length reason already documented.
+- **Two anchoring bugs the simulator caught and that are worth remembering.**
+  Formulas written before v1.10 were tuned against attributes that ran 1-5 and
+  *started at 2*; the new ones run 0-8 and start at 1. Reading them directly, and
+  separately re-anchoring the stripped chance constants at attribute 1 rather than
+  at the old starting value of 2, each cost roughly a third of the run economy.
+  `compatibilityRating` exists to hold that line.
+- **Known gap carried forward:** the gym only trains Combat, so Charisma and
+  Intelligence have no growth source in this build. That was explicitly out of
+  scope and is the first thing the next build should close.
+
+## v1.9b 907List Tiered Broker System — shipped (PR #68)
 
 - Branch: `codex/v1-9b-907list-broker`, based on `origin/main` commit `b63241f`
   containing merged PR #67 (v1.9a).

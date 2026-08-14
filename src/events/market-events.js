@@ -26,6 +26,7 @@ const {
   FLAKE_CHANCE,
   SNIPE_CHANCE,
   PRICE_VOLATILITY,
+  INTELLIGENCE_VOLATILITY,
   BULK_DEAL,
   BUYER_NPCS,
   BUYER_REQUEST_TEMPLATES,
@@ -138,13 +139,20 @@ function reliabilityFor(state, itemId, day) {
 // moves it +/-20% around that point. The estimate the board shows is the band
 // midpoint, so "estimated profit" is honest without being a promise — which is
 // the uncertainty Task 2 asks for.
+// How wide the swing is. Intelligence tightens it; nothing else touches it.
+function priceVolatility(state) {
+  const intelligence = Number(state?.player?.attributes?.intelligence) || 0;
+  const band = INTELLIGENCE_VOLATILITY.find((entry) => intelligence >= entry.floor);
+  return band ? band.volatility : PRICE_VOLATILITY;
+}
+
 function salePrice(state, item, { condition, nonce = 0, district, quickSell = false, request = false } = {}) {
   const listing = typeof item === "string" ? LISTING_ITEM_BY_ID[item] : item;
   if (!listing) return 0;
   const band = CONDITIONS[condition || listing.condition] || CONDITIONS.good;
   const [low, high] = listing.trueValue;
   const anchor = low + (high - low) * band.position;
-  const swing = (roll(state.run.seed, `volatility:${state.run.day}:${state.run.slot}:${listing.id}:${nonce}`) * 2 - 1) * PRICE_VOLATILITY;
+  const swing = (roll(state.run.seed, `volatility:${state.run.day}:${state.run.slot}:${listing.id}:${nonce}`) * 2 - 1) * priceVolatility(state);
   let price = anchor * (1 + swing);
   // Downtown pays a better margin, not a better price: the bonus applies to the
   // spread so a thin flip stays thin and the exposure still has to be earned.
@@ -223,6 +231,7 @@ function generateBulkDeal(state, { tier, day } = {}) {
 }
 
 module.exports = {
+  priceVolatility,
   roll,
   rollRange,
   robberyRisk,

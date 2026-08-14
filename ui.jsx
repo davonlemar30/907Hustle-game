@@ -19,9 +19,11 @@ function readSave() {
   try {
     const current = C.inspectSave(localStorage.getItem(C.SAVE_KEY));
     if (current.valid) return current;
-    const v4 = C.inspectSave(localStorage.getItem("907ogr_v4"));
-    if (v4.valid) return v4;
-    return C.inspectSave(localStorage.getItem("907ogr_v3"));
+    for (const key of C.LEGACY_SAVE_KEYS) {
+      const legacy = C.inspectSave(localStorage.getItem(key));
+      if (legacy.valid) return legacy;
+    }
+    return C.inspectSave(localStorage.getItem(C.LEGACY_SAVE_KEYS[C.LEGACY_SAVE_KEYS.length - 1]));
   }
   catch { return { exists: false, valid: false, state: null, preview: null, error: "Local saves are unavailable in this browser." }; }
 }
@@ -143,7 +145,7 @@ function Header({ state, onMenu }) {
   // 50px row of branding above every page, so it is now a screen-reader
   // heading and the Menu button rides the HUD line instead.
   return <header className="top">
-    <h1 className="sr-only">907Hustle: One Good Run · v1.9b</h1>
+    <h1 className="sr-only">907Hustle: One Good Run · v1.10</h1>
     <div className="hud primary-hud">
       <Hud label="Day / Time" value={<>{`${state.run.day}${state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""} · ${C.SLOTS[state.run.slot]} · ${area.name}`}<SlotPips slot={state.run.slot} /></>} good />
       <Hud label="Cash" value={money(state.player.cash)} good flash={cashFlash} />
@@ -423,7 +425,7 @@ function SocialContacts({ state, dispatch, navigateMore }) {
 
 function GymCard({ state, dispatch }) {
   const gym = C.selectors.activityAvailability(state).gym;
-  return <div className="card"><div className="card-title">Spenard Community Gym<small>{money(gym.cost)} · +{gym.progress} progress</small></div><p className="compact">{state.memberships.gym ? "Membership active." : "$30 first membership plus today's session."} Training uses one part of day.</p><div className="btn-row">{[["strength", "Strength"], ["endurance", "Endurance"], ["reflexes", "Reflexes"]].map(([id, label]) => <button className="btn secondary" key={id} disabled={!gym.available || state.player.attributes[id] >= 5} onClick={() => dispatch({ type: "TRAIN_ATTRIBUTE", attribute: id })}>{label} {state.player.attributes[id]}</button>)}</div><p className="muted compact">Session {gym.sessionsToday + 1} today · cost {money(gym.cost)} · one part of day</p></div>;
+  return <div className="card"><div className="card-title">Spenard Community Gym<small>{money(gym.cost)}</small></div><p className="compact">{state.memberships.gym ? "Membership active." : "$30 first membership plus today's session."} Training uses one part of day.</p><div className="btn-row">{gym.activities.map((activity) => <button className="btn secondary" key={activity.id} disabled={!gym.available || !activity.unlocked} onClick={() => dispatch({ type: "TRAIN_ATTRIBUTE", activity: activity.id })}>{activity.label}</button>)}</div><p className="muted compact">{gym.activities.find((activity) => !activity.unlocked)?.reason || "Sparring moves fastest and can leave a mark."}</p><p className="muted compact">Session {gym.sessionsToday + 1} today · cost {money(gym.cost)} · one part of day{gym.streak >= 3 ? " · the routine is showing" : ""}</p></div>;
 }
 
 function ExploreSpenard({ state, dispatch, page, setPage, onBack }) {
@@ -502,7 +504,7 @@ function AroundHere({ state, dispatch, onBack, initialPage = "root" }) {
     <ReturnToSpenardActions state={state} dispatch={dispatch} />
     {actionOf("explore_spenard") && <MenuRow title="Explore Spenard" status={state.world.locations.explorationCount ? `${state.world.locations.explorationCount} walks` : "New arrival"} description="Jobs, wandering, and people you meet through work." onClick={() => setPage("explore")} />}
     {actionOf("local_intel") && <MenuRow title="Local Intel" status={`${state.world.locations.explorationCount} walks`} description="Routes, discoveries, and word collected around Spenard." onClick={() => setPage("intel")} />}
-    {actionOf("spenard_gambling") && <div className={`card${available.gambling.available ? "" : " locked"}`}><div className="card-title">Informal Game<small>EVENING / NIGHT</small></div><p className="compact">Choose an approach, then risk $20, $50, or $100. Attributes inform the seeded result but never guarantee profit. No debt is offered.</p><select aria-label="Gambling approach" value={gambleApproach} onChange={(event) => setGambleApproach(event.target.value)}><option value="read">Read the room · Insight</option><option value="steady">Play disciplined · Discipline</option><option value="press">Work the table · Presence</option></select><div className="btn-row">{[20, 50, 100].map((stake) => <button className="btn secondary" key={stake} disabled={!available.gambling.available || state.player.cash < stake} onClick={() => dispatch({ type: "GAMBLE", stake, approach: gambleApproach })}>Risk ${stake}</button>)}</div><p className="muted compact">{available.gambling.reason}</p></div>}
+    {actionOf("spenard_gambling") && <div className={`card${available.gambling.available ? "" : " locked"}`}><div className="card-title">Informal Game<small>EVENING / NIGHT</small></div><p className="compact">Choose an approach, then risk $20, $50, or $100. Attributes inform the seeded result but never guarantee profit. No debt is offered.</p><select aria-label="Gambling approach" value={gambleApproach} onChange={(event) => setGambleApproach(event.target.value)}><option value="read">Read the room</option><option value="steady">Play disciplined</option><option value="press">Work the table</option></select><div className="btn-row">{[20, 50, 100].map((stake) => <button className="btn secondary" key={stake} disabled={!available.gambling.available || state.player.cash < stake} onClick={() => dispatch({ type: "GAMBLE", stake, approach: gambleApproach })}>Risk ${stake}</button>)}</div><p className="muted compact">{available.gambling.reason}</p></div>}
     {area.id === "downtown" && <div className="card"><div className="card-title">Downtown<small>EARLY SCAFFOLD</small></div><p className="compact muted">No local jobs, people, or activities are available here yet.</p></div>}
     {!localActions.length && area.id !== "downtown" && <div className="card locked"><div className="card-title">No local actions</div><p className="compact muted">Only the route back to Spenard is available here.</p></div>}
   </div></>;
@@ -1039,20 +1041,18 @@ function Recovery({ state, dispatch, onBack }) {
 function Help({ onBack, marketVisible }) { return <><PageHead title="How to Play" sub="The four-part rhythm of One Good Run" onBack={onBack} /><div className="scroll"><div className="card"><h2>Your run</h2><p>Each day contains Morning, Afternoon, Evening, and Night. Week Zero establishes your life in Spenard. A later approach sets the checkpoint.</p></div>{marketVisible && <div className="card"><h2>Market visits</h2><p>Buy and sell several times at locked prices. Trading does not advance time until you close the visit.</p></div>}<div className="card"><h2>Major actions</h2><p>Travel, recovery, meetings, debt payments, and operations advance to the next part of day. Resolve an event choice without paying a second time cost.</p></div><div className="card"><h2>The pressure phase</h2><p>Protect working capital, manage Heat and Health, build relationships, and decide whether territory or a clean exit is worth the risk.</p></div></div></>; }
 
 function Character({ state, onBack }) {
-  const identity = C.STREET_IDENTITIES[state.player.streetIdentity] || C.STREET_IDENTITIES.unproven;
-  const ratings = C.selectors.derivedRatings(state);
-  const attributes = [
-    ["strength", "Strength", "Close combat, carrying, and hard physical actions."], ["endurance", "Endurance", "Health, recovery, and repeated physical stress."],
-    ["reflexes", "Reflexes", "Escaping, firearm handling, and avoiding searches."], ["presence", "Presence", "Negotiation, recruitment, and relationships."],
-    ["insight", "Insight", "Trading reads, scouting, and detecting setups."], ["discipline", "Discipline", "Reliability, planning, and crew leadership."],
-  ];
+  const identity = C.selectors.streetIdentityView(state);
+  // Labels, never numbers. The exact values live behind the debug flag, because
+  // a visible integer turns every choice into arithmetic instead of a read.
+  const labels = C.selectors.attributeLabels(state);
   const legacy = C.BACKGROUNDS.find((item) => item.id === state.player.legacyBackground);
   const recent = (state.player.behavior?.history || []).slice(-5).reverse();
   return <><PageHead title="Character" sub="What you brought in, and what the neighborhood currently sees" onBack={onBack} /><div className="scroll">
     <div className="card"><div className="card-title">{state.player.streetName}<small>{identity.label}</small></div><p>{identity.description}</p></div>
-    <div className="section-label">Attributes</div>{attributes.map(([id, label, purpose]) => <div className="card compact" key={id}><div className="card-title">{label}<small>{state.player.attributes[id]}</small></div><p className="muted compact">{purpose}</p></div>)}
-    <div className="section-label">Derived ratings</div><div className="outcome-grid"><Outcome label="Combat" value={ratings.combat} /><Outcome label="Charisma" value={ratings.charisma} /><Outcome label="Intelligence" value={ratings.intelligence} /></div><p className="muted">Each rating combines multiple attributes; no single number defines what you can do.</p>
+    <div className="section-label">Attributes</div>{C.ATTRIBUTES.ATTRIBUTES.map((attribute) => <div className="card compact" key={attribute.id}><div className="card-title">{attribute.label}<small>{labels[attribute.id]}</small></div><p className="muted compact">{attribute.purpose}</p></div>)}
+    <p className="muted">Nobody in Spenard reads you as a number. Training, work, and the nights you survive move these on their own.</p>
     <div className="section-label">Recent reputation</div>{recent.length ? recent.map((entry, index) => <div className="card compact" key={`${entry.sourceId}:${index}`}>{entry.summary}</div>) : <div className="card compact muted">No choice has traveled far enough to become a story yet.</div>}
+    {state.player.historicalIdentity && <div className="card compact"><div className="card-title">Formerly<small>Save history</small></div><p className="muted compact">The block used to call you {state.player.historicalIdentity}.</p></div>}
     {legacy && <div className="card"><div className="card-title">Save history<small>Compatibility</small></div><p>This run began with the {legacy.name} edge before the neighborhood identity system was introduced.</p></div>}
   </div></>;
 }
@@ -1084,7 +1084,7 @@ function More({ state, dispatch, features, page, setPage, sub, subToken }) {
   if (page === "phone") return <PhoneScreen state={state} dispatch={dispatch} onBack={() => setPage("root")} openList={() => setPage("907list")} />;
   if (page === "907list") return <NineOhSevenList state={state} dispatch={dispatch} surface={sub === "home" ? "home" : "phone"} onBack={() => setPage("root")} />;
   if (page === "help") return <Help marketVisible={state.market.visible} onBack={() => setPage("root")} />;
-  const identity = (C.STREET_IDENTITIES[state.player.streetIdentity] || C.STREET_IDENTITIES.unproven).label;
+  const identity = C.selectors.streetIdentity(state);
   const opsSummary = features.operations.available ? `${C.selectors.controlledBlockCount(state)} blocks · ${C.selectors.activeSoldierCount(state)} soldiers` : "Locked";
   const hasDreDebt = state.lender.status === "active" || state.lender.status === "cleared";
   const daysLeft = hasDreDebt ? state.lender.dueDay - state.run.day : null;
@@ -1094,7 +1094,7 @@ function More({ state, dispatch, features, page, setPage, sub, subToken }) {
     {state.knowledge.knows907List && <MenuRow title="907List" status={`${state.nineZeroSevenList.inventory.length}/${C.selectors.marketCapacity(state)} held`} description={`${C.selectors.marketOverview(state).name} tier. Buy low, read the listing, find the next buyer.`} disabled={!C.selectors.nineZeroSevenListAccess(state, "phone").available && !C.selectors.nineZeroSevenListAccess(state, "home").available} onClick={() => setPage("907list")} />}
     <MenuRow title="Operations" status={opsSummary} description={features.operations.available ? "Safehouse, territory, soldiers, gear, and Rob." : features.operations.hint} disabled={!features.operations.available} onClick={() => setPage("operations")} />
     {features.recovery.available && <MenuRow title="Recovery" status={`Health ${state.player.health}`} description="Treat injuries or lay low to reduce Heat." onClick={() => setPage("recovery")} />}
-    <MenuRow title="Character" status={`${identity} · Respect ${state.npc.curtis.respect}`} description="Street Identity, attributes, derived ratings, and reputation." onClick={() => setPage("character")} />
+    <MenuRow title="Character" status={identity} description="Street Identity, what you are good at, and what the block remembers." onClick={() => setPage("character")} />
     <MenuRow title="Help" status="Available" description="Time, trading, major actions, and the dynamic checkpoint." onClick={() => setPage("help")} />
   </div></>;
 }
@@ -1229,11 +1229,17 @@ function ExposureDebug({ state }) {
   if (!exposureDebugEnabled()) return null;
   const read = C.selectors.describeDisposition(state, who);
   if (!read) return null;
+  // The only place the raw attribute numbers are ever shown.
+  const attributes = C.selectors.attributes(state);
+  const labels = C.selectors.attributeLabels(state);
+  const profile = C.selectors.identityProfile(state);
   return <div className="exposure-debug">
     <button className="btn secondary" onClick={() => setOpen(!open)}>Ledger: {who} {read.bandLabel} ({read.score})</button>
     {open && <div className="exposure-debug-body">
       <div className="btn-row">{C.EXPOSURE_NPC_IDS.map((id) => <button key={id} className={`btn ${id === who ? "primary" : "secondary"}`} onClick={() => setWho(id)}>{id}</button>)}</div>
       <p className="compact">{read.archetype}{read.inverted ? " (inverted: lower is more hostile)" : ""} · score {read.score} · {read.bandLabel}</p>
+      <p className="compact">attributes: {C.ATTRIBUTES.ATTRIBUTE_IDS.map((id) => `${id} ${attributes[id]} (${labels[id]})`).join(" · ")} · progress {C.ATTRIBUTES.ATTRIBUTE_IDS.map((id) => (state.player.attributeProgress?.[id] || 0).toFixed(2)).join("/")} · gym streak {state.player.gymStreak || 0}</p>
+      <p className="compact">identity: {profile.label} (dominant {profile.dominant}, recent {profile.behavior})</p>
       <table className="exposure-debug-table"><thead><tr><th>category</th><th>event</th><th>src</th><th>n</th><th>eff</th><th>w</th><th>total</th></tr></thead><tbody>
         {read.rows.map((row, index) => <tr key={index}><td>{row.type}</td><td>{row.event}</td><td>{row.source}</td><td>{row.count}</td><td>{row.effectiveCount}</td><td>{row.baseWeight}</td><td>{row.contribution}</td></tr>)}
       </tbody></table>
@@ -1266,7 +1272,7 @@ function CharacterCreation({ dispatch }) {
       <small>Required. Letters, numbers, spaces, apostrophes, periods, and hyphens are accepted.</small>
       {rejected && <div className="save-error" id="street-name-error" role="alert">Nothing in that name survives. Use letters or numbers.</div>}
     </div>
-    <button className="edge-card" type="submit" disabled={!validName}><b>Start</b><span>$100 clean cash. No debt. Six equal attributes. The neighborhood decides what comes next.</span><small>Strength · Endurance · Reflexes · Presence · Insight · Discipline</small><span className="action-copy">{validName ? `The block will call you ${validName}.` : "Enter a Street Name to begin."}</span></button>
+    <button className="edge-card" type="submit" disabled={!validName}><b>Start</b><span>$100 clean cash. No debt. Nothing you are good at yet. The neighborhood decides what comes next.</span><small>Combat · Charisma · Intelligence</small><span className="action-copy">{validName ? `The block will call you ${validName}.` : "Enter a Street Name to begin."}</span></button>
   </form></div>;
 }
 // Collapsed layer is the description alone. Who, Where, Stakes, and the cut
@@ -1322,7 +1328,7 @@ function MenuModal({ state, dispatch, onClose, onTitle }) {
   return <><Modal title="Run menu" onClose={onClose}>
     <ExpandableMoreSection
       collapsedContent={<p className="popup-lead">Autosave is on. This run saves to your browser after every action.</p>}
-      expandedContent={<p className="popup-flavor">907Hustle v1.9b · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
+      expandedContent={<p className="popup-flavor">907Hustle v1.10 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
       moreLabel="Save detail" lessLabel="Hide detail" />
     <button className="btn full primary" onClick={onTitle}>Return to Title</button>
     <button className="btn full secondary choice" onClick={() => setConfirmRestart(true)}>Restart Run<span>Creates a new seed and returns to Street Name entry.</span></button>

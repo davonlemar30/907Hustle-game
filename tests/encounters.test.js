@@ -47,14 +47,14 @@ test("Day 2 Night guarantees the Mini-Mart encounter and resolution consumes no 
 
 test("preparation changes Mini-Mart choice eligibility without exposing odds", () => {
   const state = run();
-  state.player.attributes = { strength: 2, endurance: 2, reflexes: 2, presence: 2, insight: 2, discipline: 2 };
+  state.player.attributes = { combat: 1, charisma: 1, intelligence: 1 };
   state.player.gear.owned = []; state.player.gear.equipped.weapon = null;
   state.people.crew.tone.recruited = false;
   const encounter = E.buildAuthoredEncounter("mini_mart_parking_lot", state);
   let choices = E.getEligibleChoices(encounter, state);
   assert.equal(choices.some((item) => item.id === "fight"), false);
   assert.equal(choices.some((item) => /%|chance|probability/i.test(item.description)), false);
-  state.player.attributes.strength = 4;
+  state.player.attributes.combat = 3;
   choices = E.getEligibleChoices(encounter, state);
   assert.equal(choices.some((item) => item.id === "fight"), true);
   state.player.inventory.weed.qty = 2;
@@ -63,7 +63,7 @@ test("preparation changes Mini-Mart choice eligibility without exposing odds", (
 
 test("robbery always creates a random encounter and a won fight gives concrete loot", () => {
   const state = run();
-  state.player.attributes.strength = 4;
+  state.player.attributes.combat = 3;
   const encounter = E.checkEncounterTrigger(state, 1, 0, { activity: "robbery", areaId: "north_star_lot", rng: fixedRng(0) });
   assert.equal(encounter.type, "random");
   state.run.pendingEncounter = encounter;
@@ -89,7 +89,7 @@ test("running always preserves life while charging a visible cost", () => {
 
 test("same seed and choices reproduce the same Day 2 encounter outcome and RNG state", () => {
   function play() {
-    let state = run(4411); state.run.day = 2; state.run.slot = 3; state.player.attributes.strength = 4;
+    let state = run(4411); state.run.day = 2; state.run.slot = 3; state.player.attributes.combat = 3;
     state = C.reduceGame(state, { type: "END_MARKET" });
     state = C.reduceGame(state, { type: "RESOLVE_ENCOUNTER", choiceId: "fight" });
     return state;
@@ -108,7 +108,7 @@ test("active and resolved encounter state hydrates additively under the v3 save 
   assert.equal(hydrated.valid, true);
   assert.equal(hydrated.state.run.pendingEncounter.id, "mini_mart_parking_lot");
   assert.deepEqual(hydrated.state.encounterLog, { resolved: [], activeFlags: {}, randomKills: 0, randomFights: 0 });
-  assert.equal(C.SAVE_KEY, "907ogr_v7");
+  assert.equal(C.SAVE_KEY, "907ogr_v8");
 });
 
 test("authored serious violence closes the intact Mina escape ending", () => {

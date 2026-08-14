@@ -166,6 +166,16 @@ const SNIPE_CHANCE = 0.15;
 // What the board estimates versus what the buyer actually pays.
 const PRICE_VOLATILITY = 0.20;
 
+// Intelligence narrows that gap. It does not raise the price - a smarter
+// appraiser gets the same money with less argument about it, which is what
+// makes the attribute matter to the market without adding a system.
+// Checked highest floor first.
+const INTELLIGENCE_VOLATILITY = [
+  { floor: 6, volatility: 0.10 },
+  { floor: 3, volatility: 0.15 },
+  { floor: 0, volatility: PRICE_VOLATILITY },
+];
+
 // A distressed seller dumping three things at once. High capital lock, and
 // every dollar of it is carried value the next time you walk anywhere.
 const BULK_DEAL = { items: 3, discount: 0.30, chance: 0.22 };
@@ -221,6 +231,7 @@ module.exports = {
   FLAKE_CHANCE,
   SNIPE_CHANCE,
   PRICE_VOLATILITY,
+  INTELLIGENCE_VOLATILITY,
   BULK_DEAL,
   BUYER_NPCS,
   BUYER_REQUEST_TEMPLATES,

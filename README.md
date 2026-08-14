@@ -124,4 +124,4 @@ git diff --check
 
 The ClickUp v1.8 specification is the release source of truth: [v1.8 Character, Relationship, and Hustle Rework](https://app.clickup.com/90141007990/v/dc/2kyd583p-4054/2kyd583p-15114).
 
-The draft pull request link will be added here after publication.
+Implementation: [draft PR #65](https://github.com/davonlemar30/907Hustle-game/pull/65).

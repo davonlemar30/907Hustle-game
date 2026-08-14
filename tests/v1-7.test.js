@@ -71,11 +71,13 @@ test("household talk is free, once daily, and writes to the NPC source of truth"
       found = C.selectors.householdPresence(state) === "juan";
     }
   }
-  const beforeTrust = state.npc.juan.trust;
+  const beforeScore = C.selectors.disposition(state, "juan");
   const beforeSlot = state.run.slot;
   const talked = C.reduceGame(state, { type: "TALK_HOUSEHOLD", npcId: "juan" });
   assert.equal(talked.run.slot, beforeSlot);
-  assert.equal(talked.npc.juan.trust, beforeTrust + 1);
+  // Sitting down with him is a loyalty observation now, not a counter tick.
+  assert.ok(C.selectors.disposition(talked, "juan") > beforeScore, "talking should move Juan's read of you");
+  assert.ok(talked.npc.juan.ledger.some((row) => row.event === "sat_and_talked"), "the talk should be in his ledger");
   assert.equal(C.selectors.juanWorkIntelKnown(talked), true);
   assert.equal(talked.run.consequenceQueue.length, 1);
   assert.equal(C.reduceGame(talked, { type: "TALK_HOUSEHOLD", npcId: "juan" }), talked);
@@ -197,10 +199,14 @@ test("phone shutoff blocks calls and texts, preserves visits, and blocks mobile 
 
 test("rent misses cool Yalonda's trust and a second missed week enters the warning path", () => {
   let state = fresh(1707);
-  const trust = state.npc.yalonda.trust;
+  const before = C.selectors.disposition(state, "yalonda");
   state = confirmNight(state, 7);
   assert.equal(state.npc.yalonda.rentMissed, 1);
-  assert.equal(state.npc.yalonda.trust, trust - 1);
+  // A missed obligation is the one observation that escalates rather than
+  // fading, so the first miss must already cost her.
+  assert.ok(C.selectors.disposition(state, "yalonda") < before, "a missed week should cool her");
+  const missRow = state.npc.yalonda.ledger.find((row) => row.event === "missed_obligation");
+  assert.ok(missRow, "the miss should be in her ledger");
   state = confirmNight(state, 14);
   assert.equal(state.npc.yalonda.rentMissed, 2);
   assert.equal(state.people.household.warnings, 1);
@@ -279,7 +285,10 @@ test("Yalonda's personal gate needs trust, a paid week, and a clean route home",
   const descriptor = C.STORY_REGISTRY.find((event) => event.id === "yalonda_flirt");
   const state = fresh(1715);
   state.run.day = 8;
-  state.npc.yalonda.trust = 3;
+  // Bonded is what the old trust 3 gate maps to, and this is what reaching it
+  // looks like: weeks of sitting down with her plus rent that actually landed.
+  state.npc.yalonda.ledger.push({ type: "loyalty", event: "steady_household", location: null, value: null, day: 1, count: 12, source: "household" });
+  state.npc.yalonda.ledger.push({ type: "financial", event: "rent_paid", location: null, value: null, day: 1, count: 2, source: "household" });
   state.npc.yalonda.rentPaidWeeks = 1;
   state.player.heat = 0;
   let present = false;
@@ -327,7 +336,7 @@ test("v3 saves migrate jobs, household trust, listing knowledge, and terminal st
     delete raw.memberships;
     delete raw.obligations;
     const loaded = C.hydrateRun(raw);
-    assert.equal(loaded.version, 5);
+    assert.equal(loaded.version, 6);
     assert.equal(loaded.run.status, status);
     assert.equal(loaded.npc.yalonda.trust, 4);
     assert.equal(loaded.knowledge.knows907List, true);

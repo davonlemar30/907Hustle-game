@@ -314,30 +314,32 @@ function PlaceAction({ title, status, purpose, cost, time, disabled, reason, onC
 // Where do I want to go? Nothing else. Unknown districts stay unknown: the
 // page never leaks risk or market numbers for somewhere the player has not
 // reached.
-function Destinations({ state, dispatch, setTab, onBack }) {
+// This list used to filter out the home district by constant rather than the
+// district the player is standing in, so Spenard was never offered as a card and
+// Downtown rendered only its own YOU ARE HERE. The reducer and DISTRICT_ACTIONS
+// always supported the $5 ride home; nothing but this line stranded the player.
+function Destinations({ state, dispatch, onBack }) {
   const here = state.world.currentNeighborhoodId;
   const knownOf = { north_star_lot: true, downtown: state.world.transport.downtownKnown, airport_industrial: state.world.transport.industrialRouteKnown };
   function go(area) {
     dispatch({ type: area.travelAction || "TRAVEL", neighborhoodId: area.id });
-    setTab(area.id === "downtown" ? "travel" : state.market.visible ? "market" : "travel");
   }
-  return <><PageHead title="Leave Spenard" sub="Known destinations and People Mover passes" onBack={onBack} /><div className="scroll">
+  return <><PageHead title={`Leave ${areaOf(state).name}`} sub="Known destinations and People Mover passes" onBack={onBack} /><div className="scroll">
     <Transit state={state} dispatch={dispatch} />
-    {C.NEIGHBORHOODS.filter((area) => area.id !== C.HOME_DISTRICT_ID).map((area) => {
-      const current = area.id === here;
-      const known = knownOf[area.id] || current;
+    {C.NEIGHBORHOODS.filter((area) => area.id !== here).map((area) => {
+      const known = knownOf[area.id];
       const access = C.selectors.travelAvailability(state, area.id);
       const fare = access.cashCost ? "$5" : "Pass covers it";
-      return <div className={`card destination-card${current ? " cleared-card" : ""}${!current && !access.available ? " locked" : ""}`} key={area.id}>
-        <div className="card-title">{area.name}<small>{current ? "YOU ARE HERE" : known ? area.role.toUpperCase() : "UNVISITED"}</small></div>
+      return <div className={`card destination-card${!access.available ? " locked" : ""}`} key={area.id}>
+        <div className="card-title">{area.name}<small>{known ? area.role.toUpperCase() : "UNVISITED"}</small></div>
         <p className="compact">{known ? area.blurb : "You have not been out here yet. What sells, what it costs you, and who works the block are all unknown until you go."}</p>
         <div className="destination-meta">
           <span>Fare {fare}</span>
-          <span>{current ? "You are already here" : "One part of day"}</span>
+          <span>One part of day</span>
           <span>{known ? `Risk ${area.risk}/5` : "Risk unknown"}</span>
           <span>{known ? `Rival presence ${area.rival}/5` : "Rival presence unknown"}</span>
         </div>
-        {!current && <button className="btn full primary" disabled={!access.available} onClick={() => go(area)}>Go to {area.name}<span className="action-copy">{access.available ? `${access.reason} Uses one part of day.` : access.reason}</span></button>}
+        <button className="btn full primary" disabled={!access.available} onClick={() => go(area)}>Go to {area.name}<span className="action-copy">{access.available ? `${access.reason} Uses one part of day.` : access.reason}</span></button>
       </div>;
     })}
   </div></>;
@@ -571,8 +573,8 @@ function NineOhSevenList({ state, dispatch, onBack, surface = "phone" }) {
   </div></>;
 }
 
-function Travel({ state, dispatch, setTab, page, setPage }) {
-  if (page === "destinations") return <Destinations state={state} dispatch={dispatch} setTab={setTab} onBack={() => setPage("root")} />;
+function Travel({ state, dispatch, page, setPage }) {
+  if (page === "destinations") return <Destinations state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   if (page === "around" || page.startsWith("around:")) return <AroundHere state={state} dispatch={dispatch} onBack={() => setPage("root")} initialPage={page.startsWith("around:") ? page.slice("around:".length) : "root"} />;
   if (page === "household") return <Household state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   const covered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
@@ -592,7 +594,7 @@ function Travel({ state, dispatch, setTab, page, setPage }) {
 function StreetScreen({ state, dispatch, page, setPage, onTrade }) {
   if (page === "people") return <People state={state} dispatch={dispatch} navigateMore={() => setPage("root")} />;
   if (page === "market") return <Market state={state} onTrade={onTrade} />;
-  if (page.startsWith("travel:")) return <Travel state={state} dispatch={dispatch} setTab={() => {}} page={page.slice(7)} setPage={(next) => setPage(`travel:${next}`)} />;
+  if (page.startsWith("travel:")) return <Travel state={state} dispatch={dispatch} page={page.slice(7)} setPage={(next) => setPage(`travel:${next}`)} />;
   const area = areaOf(state);
   return <><PageHead title="Street" sub="Destinations, local places, activities, and people" /><div className="scroll">
     <MenuRow title={`Around ${area.name}`} status="Places & activities" description="Travel, explore, work, train, and handle local business." onClick={() => setPage("travel:root")} />
@@ -1141,20 +1143,60 @@ function TradeModal({ state, productId, dispatch, onClose }) {
   return <Modal title={`${product.name} trade`}><p>Prices stay locked until you end this market visit.</p><div className="btn-row"><button className={`btn ${mode === "buy" ? "good-btn" : "secondary"}`} onClick={() => { setMode("buy"); setQty(1); }}>Buy</button><button className={`btn ${mode === "sell" ? "primary" : "secondary"}`} onClick={() => { setMode("sell"); setQty(1); }}>Sell</button></div><div className="trade-stats"><div className="trade-stat"><small>Unit price</small><b>{money(projection.unitPrice)}</b></div><div className="trade-stat"><small>Maximum</small><b>{max}</b></div></div><div className="trade-projection" aria-live="polite">{mode === "buy" ? <><Outcome label="Total cost" value={money(projection.purchaseCost)} /><Outcome label="Cash after" value={money(projection.cashAfter)} /><Outcome label="Cargo after" value={`${projection.cargoAfter}/${projection.cargoCapacity}`} />{projection.localContext.available && <div className="trade-context"><span>Recent local context</span><b>{projection.localContext.label}</b></div>}</> : <><Outcome label="Revenue" value={money(projection.revenue)} /><Outcome label="Cost basis" value={money(projection.costBasis)} /><div className={`trade-result ${resultIsProfit ? "profit" : "loss"}`}><span>{resultIsProfit ? "Profit" : "Loss"}</span><b>{signedMoney(projection.profitLoss)}</b></div><Outcome label="Cash after" value={money(projection.cashAfter)} /></>}</div><div className="qty"><button className="btn secondary qty-wide" onClick={() => setQty(Math.max(1, selected - 5))}>−5</button><button className="btn secondary" onClick={() => setQty(Math.max(1, selected - 1))}>−</button><input aria-label="Trade quantity" type="number" min="1" max={max} value={selected} onChange={(event) => setQty(Number(event.target.value))} /><button className="btn secondary" onClick={() => setQty(Math.min(max, selected + 1))}>+</button><button className="btn secondary" onClick={() => setQty(Math.min(max, selected + 5))}>+5</button><button className="btn secondary" onClick={() => setQty(max)}>MAX</button></div><div className="btn-row trade-confirm"><button className="btn secondary" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!selected} onClick={() => { dispatch({ type: mode === "buy" ? "BUY" : "SELL", productId, qty: selected }); onClose(); }}>{mode} {selected}</button></div></Modal>;
 }
 
+// Dev-only ledger inspector.
+//
+// Disposition is derived from a ledger through a lens, so "why did Mina go
+// Cold" has no single field to read. Without this the answer is unreachable
+// without hand-tracing observations. Enabled only by setting
+// localStorage 907_exposure_debug to "1", so players never see it.
+function exposureDebugEnabled() {
+  try { return localStorage.getItem("907_exposure_debug") === "1"; } catch { return false; }
+}
+function ExposureDebug({ state }) {
+  const [open, setOpen] = useState(false);
+  const [who, setWho] = useState(C.EXPOSURE_NPC_IDS[0]);
+  if (!exposureDebugEnabled()) return null;
+  const read = C.selectors.describeDisposition(state, who);
+  if (!read) return null;
+  return <div className="exposure-debug">
+    <button className="btn secondary" onClick={() => setOpen(!open)}>Ledger: {who} {read.bandLabel} ({read.score})</button>
+    {open && <div className="exposure-debug-body">
+      <div className="btn-row">{C.EXPOSURE_NPC_IDS.map((id) => <button key={id} className={`btn ${id === who ? "primary" : "secondary"}`} onClick={() => setWho(id)}>{id}</button>)}</div>
+      <p className="compact">{read.archetype}{read.inverted ? " (inverted: lower is more hostile)" : ""} · score {read.score} · {read.bandLabel}</p>
+      <table className="exposure-debug-table"><thead><tr><th>category</th><th>event</th><th>src</th><th>n</th><th>eff</th><th>w</th><th>total</th></tr></thead><tbody>
+        {read.rows.map((row, index) => <tr key={index}><td>{row.type}</td><td>{row.event}</td><td>{row.source}</td><td>{row.count}</td><td>{row.effectiveCount}</td><td>{row.baseWeight}</td><td>{row.contribution}</td></tr>)}
+      </tbody></table>
+      {read.pending.length > 0 && <p className="compact">pending: {read.pending.map((entry) => `${entry.type}/${entry.event}@${entry.deliverAtSlot}`).join(", ")}</p>}
+    </div>}
+  </div>;
+}
+
+// The Start control was already gated on a sanitized name at both layers, but it
+// carries .edge-card rather than .btn and the stylesheet had no disabled rule for
+// that class. An empty field left the card looking live, taps did nothing, and no
+// copy said why, which reads as a frozen opening. The gate below is unchanged; the
+// disabled state, the reason, and Enter-to-start are what was missing.
 function CharacterCreation({ dispatch }) {
   const [streetName, setStreetName] = useState("");
   const validName = C.sanitizeStreetName(streetName);
-  return <div className="edge-screen"><div className="edge-panel">
+  const rejected = streetName.trim().length > 0 && !validName;
+  function start(event) {
+    if (event) event.preventDefault();
+    if (!validName) return;
+    dispatch({ type: "START_RUN", streetName });
+  }
+  return <div className="edge-screen"><form className="edge-panel" onSubmit={start}>
     <div className="eyebrow">New run</div>
     <h1>Start from the Bottom</h1>
     <p>Bring a Street Name. The neighborhood decides what it means.</p>
     <div className="street-name">
       <label htmlFor="street-name-input">Street Name</label>
-      <input id="street-name-input" className="street-name-field" type="text" autoComplete="off" maxLength={C.STREET_NAME_MAX} placeholder="What do they call you?" value={streetName} onChange={(event) => setStreetName(event.target.value)} />
+      <input id="street-name-input" className="street-name-field" type="text" autoComplete="off" maxLength={C.STREET_NAME_MAX} placeholder="What do they call you?" value={streetName} onChange={(event) => setStreetName(event.target.value)} aria-invalid={rejected || undefined} aria-describedby={rejected ? "street-name-error" : undefined} />
       <small>Required. Letters, numbers, spaces, apostrophes, periods, and hyphens are accepted.</small>
+      {rejected && <div className="save-error" id="street-name-error" role="alert">Nothing in that name survives. Use letters or numbers.</div>}
     </div>
-    <button className="edge-card" disabled={!validName} onClick={() => dispatch({ type: "START_RUN", streetName })}><b>Start</b><span>$100 clean cash. No debt. Six equal attributes. The neighborhood decides what comes next.</span><small>Strength · Endurance · Reflexes · Presence · Insight · Discipline</small></button>
-  </div></div>;
+    <button className="edge-card" type="submit" disabled={!validName}><b>Start</b><span>$100 clean cash. No debt. Six equal attributes. The neighborhood decides what comes next.</span><small>Strength · Endurance · Reflexes · Presence · Insight · Discipline</small><span className="action-copy">{validName ? `The block will call you ${validName}.` : "Enter a Street Name to begin."}</span></button>
+  </form></div>;
 }
 // Collapsed layer is the description alone. Who, Where, Stakes, and the cut
 // backstory all sit behind "More" so the default view stays under 40 words and
@@ -1367,6 +1409,7 @@ function GameShell({ state, dispatch, onTitle }) {
       {state.run.overtimeArmed && <div className="action-bar one"><button className="btn secondary" onClick={() => act({ type: "CONFIRM_END_DAY" })}>End Day Now<small>Cancel the armed extension and process tonight</small></button></div>}
       <Navigation tab={tab} setTab={setTab} hustleVisible={state.hustle.visible} />
     </div>
+    <ExposureDebug state={state} />
     {trade && <TradeModal state={state} productId={trade} dispatch={act} onClose={() => setTrade(null)} />}
     {menu && <MenuModal state={state} dispatch={dispatch} onClose={() => setMenu(false)} onTitle={onTitle} />}
     {state.run.openingPending && <OpeningModal dispatch={act} />}

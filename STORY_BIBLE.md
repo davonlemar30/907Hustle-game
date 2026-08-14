@@ -27,6 +27,8 @@ Avoid abstract openings, exposed score math, false binary morality, and choices 
 
 Street Identity changes interpretation, not personality or relationship truth. Mina notices consent and safety; Eli notices routes; Dre notices follow-through; Curtis notices exposure and posture; Goodie notices business and threat; Pherris notices ownership of information. Never treat identity as a permanent class.
 
+As of v1.9a that paragraph is no longer only prose. Each of those noticing axes is a weight table in `src/data/npc-lenses.js`, applied to a ledger of what the character actually observed. Write to the axis: a scene where Mina learns you were careful with someone should produce a discretion observation, not a generic point of trust. See the Exposure System section of `ARCHITECTURE.md` for what a scene may record and who else hears about it.
+
 ## Character voices
 
 ### Mina Vale

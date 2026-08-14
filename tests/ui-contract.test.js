@@ -67,6 +67,18 @@ test("the required Street Name is offered before classless confirmation and show
   assert.match(ui, /What do they call you\?/); assert.match(ui, /disabled=\{!validName\}/);
   assert.match(ui, /\{preview\.name\}/); assert.match(ui, /\{summary\.streetName\} reached the Day/);
 });
+// The gate was never the bug. The Start control carries .edge-card, and the
+// stylesheet had a disabled rule for .btn, .nav button, .menu-row, and
+// .quick-shift but not for that class, so a blocked Start looked live and the
+// opening read as frozen. Pin the affordance, not just the guard.
+test("a blocked Start says it is blocked, says why, and looks disabled", () => {
+  assert.match(css, /\.edge-card:disabled\{[^}]*opacity/);
+  assert.match(css, /\.edge-card:disabled\{[^}]*cursor:not-allowed/);
+  assert.match(ui, /Enter a Street Name to begin/);
+  assert.match(ui, /id="street-name-error" role="alert"/);
+  assert.match(ui, /aria-invalid=\{rejected/);
+  assert.match(ui, /<form className="edge-panel" onSubmit=\{start\}>/);
+});
 test("registry metadata never reaches the presentation layer", () => {
   for (const leak of [/event\.stage/, /event\.cooldown/, /event\.weight/, /event\.requires/, /event\.chain/, /chainStage/]) {
     assert.doesNotMatch(ui, leak, String(leak));
@@ -173,7 +185,11 @@ test("primary navigation is a progressive bottom bar with icons and 44px targets
 
 test("Leave Spenard combines known destinations, automatic fares, and passes", () => {
   assert.match(ui, /sub="Known destinations and People Mover passes"/);
-  assert.match(ui, /C\.NEIGHBORHOODS\.filter\(\(area\) => area\.id !== C\.HOME_DISTRICT_ID\)/);
+  // Filtering by the home constant instead of the current district is what
+  // stranded the player in Downtown. The list is relative to where you stand.
+  assert.match(ui, /C\.NEIGHBORHOODS\.filter\(\(area\) => area\.id !== here\)/);
+  assert.doesNotMatch(ui, /C\.NEIGHBORHOODS\.filter\(\(area\) => area\.id !== C\.HOME_DISTRICT_ID\)/);
+  assert.match(ui, /title=\{`Leave \$\{areaOf\(state\)\.name\}`\}/);
   assert.match(ui, /const access = C\.selectors\.travelAvailability\(state, area\.id\)/);
   assert.match(ui, /const fare = access\.cashCost \? "\$5" : "Pass covers it"/);
   assert.match(ui, /dispatch\(\{ type: area\.travelAction \|\| "TRAVEL", neighborhoodId: area\.id \}\)/);

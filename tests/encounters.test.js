@@ -108,14 +108,16 @@ test("active and resolved encounter state hydrates additively under the v3 save 
   assert.equal(hydrated.valid, true);
   assert.equal(hydrated.state.run.pendingEncounter.id, "mini_mart_parking_lot");
   assert.deepEqual(hydrated.state.encounterLog, { resolved: [], activeFlags: {}, randomKills: 0, randomFights: 0 });
-  assert.equal(C.SAVE_KEY, "907ogr_v5");
+  assert.equal(C.SAVE_KEY, "907ogr_v6");
 });
 
 test("authored serious violence closes the intact Mina escape ending", () => {
   function ending(serious) {
     let state = run();
     state.run.day = 7; state.run.slot = 3; state.run.finalPlan = "escape";
-    state.npc.mina.trust = 4; state.npc.mina.available = true; state.npc.mina.usedWithoutConsent = false;
+    // Bonded is what the old trust 3+ intact-ending gate maps to.
+    state.npc.mina.ledger.push({ type: "honesty", event: "test_history", location: null, value: null, day: 1, count: 20, source: "witnessed" });
+    state.npc.mina.available = true; state.npc.mina.usedWithoutConsent = false;
     state.flags.seriousViolence = serious;
     state = C.reduceGame(state, { type: "END_MARKET" });
     state.run.pendingEvent = null; state.run.pendingEncounter = null;

@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const C = require("../game-core.js");
+const { putInBand } = require("./exposure-helpers.js");
 
 function run(seed = 907) {
   const state = C.reduceGame(C.createRun({ seed }), { type: "CHOOSE_BACKGROUND", backgroundId: "shooter" });
@@ -54,7 +55,7 @@ function driveTo(state, id, limit = 90) {
 }
 
 test("v3 run keeps legacy migration data without exposing a starting class", () => {
-  assert.equal(C.VERSION, 5); assert.equal(C.SAVE_KEY, "907ogr_v5");
+  assert.equal(C.VERSION, 6); assert.equal(C.SAVE_KEY, "907ogr_v6");
   assert.equal(C.BACKGROUNDS.length, 3);
   assert.deepEqual(C.BACKGROUNDS.map((item) => item.name), ["Steady-Hand Shooter", "Silver-Tongued Hustler", "Strategist"]);
   assert.deepEqual(C.STARTING_EDGES.map((item) => item.id), ["shooter", "hustler"]);
@@ -304,7 +305,9 @@ test("District Control tier for Spenard progresses with block count and requires
   assert.equal(C.selectors.districtControlTier(state, "north_star_lot").label, "Dominant");
   for (const block of C.SPENARD_BLOCKS) state.world.territoryBlocks[block.id].owner = "player";
   assert.equal(C.selectors.districtControlTier(state, "north_star_lot").label, "Dominant", "all six blocks without Respect is not yet the capstone");
-  state.npc.curtis.respect = C.RESPECT_STAGE_THRESHOLDS.mid;
+  // The capstone now asks that Curtis reads you as Trusted rather than that a
+  // respect integer crossed 6.
+  putInBand(state, "curtis", C.BANDS.TRUSTED);
   const capstone = C.selectors.districtControlTier(state, "north_star_lot");
   assert.equal(capstone.label, "District Control");
   assert.equal(capstone.capstone, true);
@@ -386,7 +389,7 @@ test("the Mina sedan encounter is unreachable before her boundary scene", () => 
   state.npc.mina.met = true; state.npc.mina.introChoice = "flirt"; state.npc.mina.chainStage = 2;
   state.run.day = 6; state.run.slot = 2;
   assert.equal(C.selectors.minaThreatEligible(state), false);
-  state.flags.minaBoundaryResolved = true; state.npc.curtis.pressure = 4;
+  state.flags.minaBoundaryResolved = true; putInBand(state, "curtis", C.BANDS.HOSTILE);
   assert.equal(C.selectors.minaThreatEligible(state), true);
 });
 
@@ -445,9 +448,9 @@ test("a pre-v0.7 save migrates to v5 and gains the new fields", () => {
 
   const inspection = C.inspectSave(JSON.stringify(legacy));
   assert.equal(inspection.valid, true, inspection.error || "legacy save rejected");
-  assert.equal(C.VERSION, 5); assert.equal(C.SAVE_KEY, "907ogr_v5");
+  assert.equal(C.VERSION, 6); assert.equal(C.SAVE_KEY, "907ogr_v6");
   const hydrated = inspection.state;
-  assert.equal(hydrated.version, 5);
+  assert.equal(hydrated.version, 6);
   assert.deepEqual(hydrated.run.eventHistory, {});
   assert.equal(hydrated.run.chainStreak, 0);
   assert.equal(hydrated.npc.mina.chainStage, 0);
@@ -508,7 +511,7 @@ test("betraying Mina removes her from the run and names the ending for it", () =
 test("all three Day 7 Mina outcomes are reachable and distinct", () => {
   function endingFor(mutate) {
     let state = run();
-    state.npc.mina.met = true; state.npc.mina.trust = 4; state.npc.mina.chainStage = 6;
+    state.npc.mina.met = true; putInBand(state, "mina", C.BANDS.BONDED); state.npc.mina.chainStage = 6;
     state.flags.minaBoundaryResolved = true; state.flags.minaAfterResolved = true;
     state.lender.balance = 0; state.run.day = 7; state.run.slot = 3;
     mutate(state);
@@ -659,12 +662,17 @@ test("Mina hears about a robbery two blocks from her counter", () => {
   let found = null;
   for (let seed = 1; seed <= 60 && !found; seed += 1) {
     const state = metGoodie(seed);
-    state.npc.mina.met = true; state.npc.mina.chainStage = 2; state.npc.mina.trust = 3;
+    state.npc.mina.met = true; state.npc.mina.chainStage = 2; putInBand(state, "mina", C.BANDS.TRUSTED);
+    state.run.slot = 2; // she is behind the counter, so the block can carry it to her
     const attempt = C.reduceGame(state, { type: "ROB_DEALER", dealerId: "goodie" });
     if (attempt.run.pendingOperationResult) found = attempt;
   }
   assert.ok(found);
-  assert.equal(found.npc.mina.trust, 2, "robbing his corner costs a point with her");
+  // The neighborhood carries it rather than a counter ticking down: the
+  // observation is queued for her, and it is violence, which her lens reads
+  // harder than anything else she could have heard that day.
+  const carried = [...(found.npc.mina.ledger || []), ...found.run.pendingObservations.filter((entry) => entry.npcId === "mina").map((entry) => entry.observation)];
+  assert.ok(carried.some((row) => row.type === "violence"), "robbing his corner should reach her as violence");
 });
 
 test("a pre-v0.7.1 save hydrates and gains the dealer record", () => {
@@ -673,7 +681,7 @@ test("a pre-v0.7.1 save hydrates and gains the dealer record", () => {
   delete legacy.people.dealers;
   const inspection = C.inspectSave(JSON.stringify(legacy));
   assert.equal(inspection.valid, true, inspection.error || "rejected");
-  assert.equal(inspection.state.version, 5);
+  assert.equal(inspection.state.version, 6);
   assert.equal(inspection.state.people.dealers.goodie.known, false);
   assert.equal(inspection.state.people.dealers.goodie.robbedCount, 0);
   assert.equal(C.selectors.dealerSupplyFactor(inspection.state, "north_star_lot", "weed"), 1);
@@ -809,7 +817,7 @@ test("territory blocks cannot be claimed before garage + lieutenant + soldier pr
   state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state);
   const claimed = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "spenard_rec_lot" });
   assert.equal(claimed.world.territoryBlocks.spenard_rec_lot.owner, "player");
-  assert.equal(claimed.npc.curtis.respect, state.npc.curtis.respect + 1, "claiming a block raises Respect");
+  assert.ok(claimed.npc.curtis.ledger.some((row) => row.event === "claimed_block"), "claiming a block is something Curtis notices");
 });
 
 test("Spenard blocks vary in earning potential and risk instead of being mechanically identical", () => {
@@ -1009,35 +1017,37 @@ test("collector tier stays at 0 with a 1.0 fee multiplier when no days are misse
 });
 
 test("Curtis's curtis_cut beat is reachable through Respect alone, and pressure alone cannot advance Curtis after the migration", () => {
-  const respectOnly = fresh(80001);
-  respectOnly.flags.curtisTaxResolved = true;
-  respectOnly.npc.curtis.pressure = 0;
-  respectOnly.npc.curtis.respect = C.RESPECT_STAGE_THRESHOLDS.cut;
-  respectOnly.world.currentNeighborhoodId = "north_star_lot";
+  // Curtis reads on one inverted axis now. Standing that he respects opens the
+  // cut; exposure that makes him watch you does the opposite, and no amount of
+  // it substitutes for the standing.
+  const standing = fresh(80001);
+  standing.flags.curtisTaxResolved = true;
+  putInBand(standing, "curtis", C.BANDS.WARM);
+  standing.world.currentNeighborhoodId = "north_star_lot";
   const descriptor = C.STORY_REGISTRY.find((item) => item.id === "curtis_cut");
-  assert.equal(descriptor.requires(respectOnly), true, "Respect alone unlocks curtis_cut");
+  assert.equal(descriptor.requires(standing), true, "standing he respects unlocks curtis_cut");
 
-  const pressureOnly = fresh(80002);
-  pressureOnly.flags.curtisTaxResolved = true;
-  pressureOnly.npc.curtis.pressure = 15;
-  pressureOnly.npc.curtis.respect = 0;
-  pressureOnly.world.currentNeighborhoodId = "airport_industrial"; // highest area.rival rating
-  assert.equal(descriptor.requires(pressureOnly), false, "pressure alone, even at its cap, can no longer advance a Curtis stage");
+  const exposureOnly = fresh(80002);
+  exposureOnly.flags.curtisTaxResolved = true;
+  putInBand(exposureOnly, "curtis", C.BANDS.HOSTILE);
+  exposureOnly.world.currentNeighborhoodId = "airport_industrial";
+  assert.equal(descriptor.requires(exposureOnly), false, "being a problem to him is not the same as being someone he cuts in");
 
   const belowThreshold = fresh(80003);
   belowThreshold.flags.curtisTaxResolved = true;
-  belowThreshold.npc.curtis.pressure = 15;
-  belowThreshold.npc.curtis.respect = C.RESPECT_STAGE_THRESHOLDS.cut - 1;
-  assert.equal(descriptor.requires(belowThreshold), false, "Respect just under the threshold does not unlock the stage regardless of pressure");
+  putInBand(belowThreshold, "curtis", C.BANDS.NEUTRAL);
+  assert.equal(descriptor.requires(belowThreshold), false, "invisible is not enough either");
 });
 
 test("Curtis's opening beat requires concrete attention exposure", () => {
   const descriptor = C.STORY_REGISTRY.find((item) => item.id === "curtis_mark");
   const state = fresh(80004);
-  state.npc.curtis.pressure = 0; state.npc.curtis.attention = 0; state.npc.curtis.respect = 0; state.player.heat = 0;
+  state.player.heat = 0;
   state.stats.robbery.attempts = 0;
   assert.equal(descriptor.requires(state), false, "minor dealing below a milestone stays invisible");
-  state.npc.curtis.attention = 1; state.npc.curtis.pressure = 1;
+  // One concrete milestone is enough to drop him out of Neutral, and Neutral is
+  // exactly what "he has no reason to look at you" means on his inverted read.
+  putInBand(state, "curtis", C.BANDS.COLD);
   assert.equal(descriptor.requires(state), true, "concrete exposure earns Curtis's attention");
 });
 
@@ -1045,22 +1055,25 @@ test("a save that already reached curtis_cut through the old pressure gate keeps
   const legacy = run(80005);
   const raw = JSON.parse(JSON.stringify(legacy));
   raw.flags = { ...raw.flags, curtisTaxResolved: true, curtisCutResolved: true };
-  raw.npc.curtis.pressure = 5; raw.npc.curtis.respect = 0; // the old pressure-only path that used to unlock this beat
+  raw.version = 5; // arriving from the pre-Exposure schema
+  raw.npc.curtis.pressure = 5; raw.npc.curtis.respect = 5; // the old path that unlocked this beat
+  for (const id of C.EXPOSURE_NPC_IDS) delete raw.npc[id].ledger;
   const hydrated = C.hydrateRun(raw);
-  assert.ok(hydrated.npc.curtis.respect >= C.RESPECT_STAGE_THRESHOLDS.cut, "Respect is raised to the stage's minimum so it reads consistently going forward");
+  assert.ok(hydrated.npc.curtis.ledger.some((row) => row.event === "legacy_respect"), "the standing he already gave the player survives as evidence");
   assert.equal(hydrated.flags.curtisCutResolved, true, "the already-earned story progress itself is preserved, not replayed");
 });
 
 test("attention remains the driver of Curtis's aggressive relationship label", () => {
   let state = fresh(80003);
-  state.npc.curtis.pressure = 8; state.npc.curtis.attention = 8; state.npc.curtis.respect = 0;
+  putInBand(state, "curtis", C.BANDS.HOSTILE);
+  state.npc.curtis.ledger.push({ type: "violence", event: "test_escalation", location: null, value: null, day: 1, count: 6, source: "network" });
   state = quietAdvance(state);
-  assert.equal(state.npc.curtis.relationship, "aggressive", "high pressure alone still reads as aggressive");
+  assert.equal(state.npc.curtis.relationship, "aggressive", "deep exposure still reads as aggressive");
 
   let calmState = fresh(80004);
-  calmState.npc.curtis.pressure = 0; calmState.npc.curtis.attention = 0; calmState.npc.curtis.respect = 6;
+  putInBand(calmState, "curtis", C.BANDS.TRUSTED);
   calmState = quietAdvance(calmState);
-  assert.notEqual(calmState.npc.curtis.relationship, "aggressive", "high Respect with zero pressure never reads as aggressive");
+  assert.notEqual(calmState.npc.curtis.relationship, "aggressive", "standing he respects never reads as aggressive");
 });
 
 test("new ambient organization beats only become eligible once their underlying system is active", () => {

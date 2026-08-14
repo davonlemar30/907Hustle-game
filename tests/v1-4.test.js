@@ -23,11 +23,14 @@ function readyForDre(day = 4) {
   state.run.slot = 0;
   state.jobs.discovered = ["wash_go"];
   state.jobs.hired = ["wash_go", "day_labor"];
+  state.jobs.activeJobId = "wash_go";
+  state.npc.juan.trust = 1;
+  state.player.cash = 60; state.player.cleanCash = 60; state.player.dirtyCash = 0;
   state.onboarding.shiftsWorked = 3;
   state.onboarding.visitedLocations = ["home", "spenard_streets", "night_owl", "spenard_gym"];
-  state.onboarding.metNpcs = ["mara", "cal"];
+  state.onboarding.metNpcs = ["mina", "cal"];
   state.onboarding.dreEligible = true;
-  return C.reduceGame(state, { type: "WORK_JOB", jobId: "wash_go", approach: "work_hard" });
+  return C.advanceRun(state, { reason: "END_MARKET", suppressStory: false });
 }
 
 test("fresh characters require a valid Street Name and start with only $100 clean cash", () => {
@@ -53,12 +56,12 @@ test("Week Zero progress deduplicates locations and eligible NPCs", () => {
   assert.equal(state.onboarding.visitedLocations.filter((id) => id === "night_owl").length, 1);
   state.onboarding.shiftsWorked = 3;
   state.onboarding.visitedLocations = ["home", "night_owl", "spenard_streets", "job:wash_go"];
-  state.onboarding.metNpcs = ["mara", "lena"];
+  state.onboarding.metNpcs = ["mina", "lena"];
   assert.deepEqual(C.selectors.weekZeroProgress(state), { shifts: 3, locations: 4, npcs: 2, ready: true });
   assert.equal(state.onboarding.metNpcs.includes("john"), false);
 });
 
-test("Dre approaches on the shift after Week Zero, and Day 4 sets a Day 11 checkpoint", () => {
+test("Dre approaches after Week Zero when Juan's route and cash gate are satisfied", () => {
   const offered = readyForDre(4);
   assert.equal(offered.run.phase, "pressure");
   assert.equal(offered.run.pressureStartedDay, 4);
@@ -81,7 +84,7 @@ test("declining Dre is final, starts pressure, and creates no debt", () => {
   assert.equal(declined.lender.dueDay, null);
 });
 
-test("Week Zero suppresses automatic Dre, Rook, collector, and ending beats", () => {
+test("Week Zero suppresses automatic Dre, Curtis, collector, and ending beats", () => {
   const state = fresh(5);
   state.run.day = 9;
   state.lender.status = "active";
@@ -89,7 +92,7 @@ test("Week Zero suppresses automatic Dre, Rook, collector, and ending beats", ()
   state.lender.principal = 1000;
   state.lender.dueDay = 2;
   const ids = C.storyCandidatesForTest(state, { reason: "END_DAY" }).map((item) => item.id);
-  assert.equal(ids.some((id) => id.startsWith("dre_") || id.startsWith("rook_") || id === "dre_collector"), false);
+  assert.equal(ids.some((id) => id.startsWith("dre_") || id.startsWith("curtis_") || id === "dre_collector"), false);
   state.run.slot = 2;
   const next = C.advanceRun(state, { reason: "END_MARKET", suppressStory: false });
   assert.equal(next.lender.balance, 900);
@@ -101,12 +104,12 @@ test("Night actions defer nightly processing until one confirmed rollover", () =
   state.run.slot = 3;
   state.player.energy = 2;
   const marketUpdates = state.stats.marketUpdates;
-  state = C.reduceGame(state, { type: "BUY_COFFEE" });
+  state = C.reduceGame(state, { type: "SLEEP_HOME" });
   assert.equal(state.run.day, 1);
   assert.equal(state.run.slot, 3);
   assert.equal(state.run.dayEndPending, true);
   assert.equal(state.stats.marketUpdates, marketUpdates);
-  assert.equal(state.run.dailyActions.at(-1).label, "Coffee at Night Owl (-$4)");
+  assert.match(state.run.dailyActions.at(-1).label, /Slept|Rested/);
   const next = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
   assert.equal(next.run.day, 2);
   assert.equal(next.run.slot, 0);
@@ -120,7 +123,7 @@ test("One More Thing arms once, costs two Energy, and reopens the gate", () => {
   let state = fresh(7);
   state.run.slot = 3;
   state.player.energy = 3;
-  state = C.reduceGame(state, { type: "BUY_COFFEE" });
+  state = C.reduceGame(state, { type: "SLEEP_HOME" });
   state = C.reduceGame(state, { type: "ONE_MORE_THING" });
   assert.equal(state.run.overtimeArmed, true);
   assert.equal(state.run.dayEndPending, false);
@@ -139,7 +142,7 @@ test("the dynamic checkpoint ends only after confirmation without exposing anoth
   state.run.day = 3;
   state.run.slot = 3;
   state.player.energy = 4;
-  state = C.reduceGame(state, { type: "BUY_COFFEE" });
+  state = C.reduceGame(state, { type: "SLEEP_HOME" });
   assert.equal(state.run.status, "playing");
   state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
   assert.equal(state.run.status, "ended");
@@ -161,7 +164,7 @@ test("legacy v3 saves hydrate directly into pressure with inferred lender state"
   assert.equal(loaded.run.checkpointDay, 7);
   assert.equal(loaded.lender.status, "active");
   assert.ok(loaded.onboarding);
-  assert.equal(C.SAVE_KEY, "907ogr_v4");
+  assert.equal(C.SAVE_KEY, "907ogr_v5");
 });
 
 test("Night Owl postings rotate deterministically and regulars keep separate relationships", () => {
@@ -191,6 +194,7 @@ test("Cal Level 2 and Lena's third shift both unlock gambling through a scene", 
   let lena = fresh(12);
   lena.jobs.discovered = ["wash_go"];
   lena.jobs.hired = ["wash_go", "day_labor"];
+  lena.jobs.activeJobId = "wash_go";
   lena.jobs.records.wash_go.shifts = 2;
   lena.run.slot = 0;
   lena = C.reduceGame(lena, { type: "WORK_JOB", jobId: "wash_go", approach: "socialize" });
@@ -238,12 +242,11 @@ test("travel applies a $5 fare unless a pass covers it", () => {
   assert.equal(state.player.cash, coveredCash);
 });
 
-test("UI exposes the three Travel roots, Night Owl hub, 907List, and hidden debt gates", () => {
+test("UI exposes Street, Night Owl, 907List, and the five destination shell", () => {
   const ui = fs.readFileSync(path.join(__dirname, "..", "ui.jsx"), "utf8");
-  const travel = ui.slice(ui.indexOf("function Travel("), ui.indexOf("function SpenardBlockCard"));
-  assert.equal((travel.match(/<MenuRow title=/g) || []).length, 3);
-  for (const label of ["Home", "Leave Spenard"]) assert.match(travel, new RegExp(`title=\\"${label}\\"`));
-  assert.match(travel, /title=\{`Around \$\{area\.name\}`\}/);
+  assert.match(ui, /function StreetScreen/);
+  assert.match(ui, /function HustleScreen/);
+  for (const label of ["Home", "Street", "Hustle", "Phone", "More"]) assert.match(ui, new RegExp(`"${label}"`));
   assert.match(ui, /function NightOwlHub/);
   assert.match(ui, /nightOwlRegularFor/);
   assert.match(ui, /title="907List"/);

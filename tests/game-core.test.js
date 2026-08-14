@@ -5,7 +5,7 @@ const C = require("../game-core.js");
 function run(seed = 907) {
   const state = C.reduceGame(C.createRun({ seed }), { type: "CHOOSE_BACKGROUND", backgroundId: "shooter" });
   // Legacy-established fixtures predate the fresh-arrival plug encounter.
-  state.market.visible = true; state.plugs.unlocked = ["kip"]; state.world.productAccess.weed = true;
+  state.market.visible = true; state.plugs.unlocked = ["goodie"]; state.world.productAccess.weed = true;
   return state;
 }
 function fresh(seed = 907) {
@@ -13,7 +13,8 @@ function fresh(seed = 907) {
 }
 function discoverJob(state, jobId) {
   if (!state.jobs.discovered.includes(jobId)) state.jobs.discovered.push(jobId);
-  if (!state.jobs.hired.includes(jobId)) state.jobs.hired.push(jobId);
+  state.jobs.activeJobId = jobId;
+  state.jobs.hired = ["day_labor", jobId];
   return state;
 }
 function quietAdvance(state, reason = "END_MARKET") {
@@ -53,7 +54,7 @@ function driveTo(state, id, limit = 90) {
 }
 
 test("v3 run keeps legacy migration data without exposing a starting class", () => {
-  assert.equal(C.VERSION, 4); assert.equal(C.SAVE_KEY, "907ogr_v4");
+  assert.equal(C.VERSION, 5); assert.equal(C.SAVE_KEY, "907ogr_v5");
   assert.equal(C.BACKGROUNDS.length, 3);
   assert.deepEqual(C.BACKGROUNDS.map((item) => item.name), ["Steady-Hand Shooter", "Silver-Tongued Hustler", "Strategist"]);
   assert.deepEqual(C.STARTING_EDGES.map((item) => item.id), ["shooter", "hustler"]);
@@ -229,10 +230,11 @@ test("safe debt payment leaves the approved $150 reserve", () => {
   state.player.cash = 100; assert.equal(C.selectors.safeDebtPayment(state), 0);
 });
 
-test("debt payment advances once and full payoff unlocks Dre's offer", () => {
+test("debt payment is free and full payoff unlocks Dre's offer", () => {
   let state = run(); state.player.cash = 1000; state.run.pendingEvent = null;
+  const before = state.stats.pipelineAdvances;
   state = C.reduceGame(state, { type: "PAY_DEBT", amount: 620 });
-  assert.equal(state.lender.balance, 0); assert.equal(state.lender.afterPayoffOffer, "available"); assert.equal(state.stats.pipelineAdvances, 1);
+  assert.equal(state.lender.balance, 0); assert.equal(state.lender.afterPayoffOffer, "available"); assert.equal(state.stats.pipelineAdvances, before);
 });
 
 test("Rob is available once per day and returns on a later day", () => {
@@ -251,10 +253,10 @@ test("Rob is available once per day and returns on a later day", () => {
   }
 });
 
-test("all three territories start under Rook with exact approved values", () => {
+test("all three territories start under Curtis with exact approved values", () => {
   const state = run();
   assert.deepEqual(C.TERRITORIES.map((item) => [item.power, item.attackCost, item.dailyIncome]), [[12, 100, 45], [18, 150, 75], [24, 200, 110]]);
-  assert.ok(C.TERRITORIES.every((item) => state.world.territories[item.areaId].owner === "rook"));
+  assert.ok(C.TERRITORIES.every((item) => state.world.territories[item.areaId].owner === "curtis"));
 });
 
 test("Intelligence controls territory estimate precision", () => {
@@ -275,9 +277,9 @@ test("controlled territory improves trade and pays once after Night", () => {
   // Control income the way every neighborhood used to before v1.0.
   let state = run(); state.world.territories.downtown.owner = "player";
   const controlledPrice = C.selectors.tradeUnitPrices({ ...state, world: { ...state.world, currentNeighborhoodId: "downtown" } }, "weed");
-  state.world.territories.downtown.owner = "rook";
-  const rookPrice = C.selectors.tradeUnitPrices({ ...state, world: { ...state.world, currentNeighborhoodId: "downtown" } }, "weed");
-  assert.ok(controlledPrice.buy < rookPrice.buy); assert.ok(controlledPrice.sell > rookPrice.sell);
+  state.world.territories.downtown.owner = "curtis";
+  const curtisPrice = C.selectors.tradeUnitPrices({ ...state, world: { ...state.world, currentNeighborhoodId: "downtown" } }, "weed");
+  assert.ok(controlledPrice.buy < curtisPrice.buy); assert.ok(controlledPrice.sell > curtisPrice.sell);
   state.world.territories.downtown.owner = "player"; state.run.slot = 3; const cash = state.player.cash; state = quietAdvance(state);
   assert.equal(state.player.cash, cash + 75); assert.equal(state.stats.takeovers.income, 75);
 });
@@ -302,7 +304,7 @@ test("District Control tier for Spenard progresses with block count and requires
   assert.equal(C.selectors.districtControlTier(state, "north_star_lot").label, "Dominant");
   for (const block of C.SPENARD_BLOCKS) state.world.territoryBlocks[block.id].owner = "player";
   assert.equal(C.selectors.districtControlTier(state, "north_star_lot").label, "Dominant", "all six blocks without Respect is not yet the capstone");
-  state.rival.respect = C.RESPECT_STAGE_THRESHOLDS.mid;
+  state.npc.curtis.respect = C.RESPECT_STAGE_THRESHOLDS.mid;
   const capstone = C.selectors.districtControlTier(state, "north_star_lot");
   assert.equal(capstone.label, "District Control");
   assert.equal(capstone.capstone, true);
@@ -335,11 +337,11 @@ test("title save inspection distinguishes missing, valid, and invalid saves", ()
 
 test("v3 hydration preserves Strategist capability as legacy history", () => {
   const old = run(88); old.player.background = "strategist"; delete old.player.attributes; delete old.player.legacyBackground; old.player.stats = { combat: 2, charisma: 1, intelligence: 3 };
-  old.people.mara = { met: true, trust: 2, status: "cautious", outcomes: [] };
+  old.npc.mina = { met: true, trust: 2, status: "cautious", outcomes: [] };
   old.people.crew.eli.introduced = true; delete old.people.crew.eli.contactStage;
   old.stats.robbery = { attempted: true, success: false, payout: 0 };
   const hydrated = C.hydrateRun(JSON.parse(JSON.stringify(old)));
-  assert.equal(hydrated.player.background, null); assert.equal(hydrated.player.legacyBackground, "strategist"); assert.equal(hydrated.people.mara.available, true);
+  assert.equal(hydrated.player.background, null); assert.equal(hydrated.player.legacyBackground, "strategist"); assert.equal(hydrated.npc.mina.available, true);
   assert.deepEqual(C.selectors.derivedRatings(hydrated), { combat: 2, charisma: 1, intelligence: 3 });
   assert.equal(hydrated.people.crew.eli.contactStage, "recruitable");
   assert.deepEqual(hydrated.stats.robbery, { attempts: 1, successes: 0, failures: 1, totalPayout: 0, lastAttemptedDay: 1, attempted: true, success: false, payout: 0 });
@@ -353,18 +355,18 @@ test("fresh runs expose Places and People while garage operations remain earned"
   assert.equal(features.operations.available, true); assert.equal(state.base.controlled, true);
 });
 
-test("Mara introduction resolves once and does not by itself arm her threat", () => {
-  let state = run(); assert.equal(C.selectors.maraThreatEligible(state), false);
+test("Mina introduction resolves once and does not by itself arm her threat", () => {
+  let state = run(); assert.equal(C.selectors.minaThreatEligible(state), false);
   state.run.slot = 2;
-  state = C.reduceGame(state, { type: "VISIT_NIGHT_OWL" }); assert.equal(state.run.pendingEvent.id, "mara_intro");
+  state = C.reduceGame(state, { type: "VISIT_NIGHT_OWL" }); assert.equal(state.run.pendingEvent.id, "mina_intro");
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
-  assert.equal(state.people.mara.met, true); assert.equal(state.people.mara.introChoice, "friendly");
-  assert.equal(state.flags.maraIntroResolved, true); assert.equal(state.people.mara.chainStage, 1);
+  assert.equal(state.npc.mina.met, true); assert.equal(state.npc.mina.introChoice, "friendly");
+  assert.equal(state.flags.minaIntroResolved, true); assert.equal(state.npc.mina.chainStage, 1);
   // Alpha v0.7: the sedan is a stage-5 beat. An introduction alone must not arm it.
-  assert.equal(C.selectors.maraThreatEligible(state), false);
+  assert.equal(C.selectors.minaThreatEligible(state), false);
 });
 
-test("the Day 2 threat remains Mara-free", () => {
+test("the Day 2 threat remains Mina-free", () => {
   for (let seed = 300; seed < 325; seed += 1) {
     let state = C.reduceGame(C.createRun({ seed }), { type: "CHOOSE_BACKGROUND", backgroundId: "shooter" });
     let guard = 0, found = null;
@@ -378,14 +380,14 @@ test("the Day 2 threat remains Mara-free", () => {
   }
 });
 
-test("the Mara sedan encounter is unreachable before her boundary scene", () => {
+test("the Mina sedan encounter is unreachable before her boundary scene", () => {
   let state = run();
-  state.flags.maraIntroResolved = true; state.flags.maraShiftChangeResolved = true;
-  state.people.mara.met = true; state.people.mara.introChoice = "flirt"; state.people.mara.chainStage = 2;
+  state.flags.minaIntroResolved = true; state.flags.minaShiftChangeResolved = true;
+  state.npc.mina.met = true; state.npc.mina.introChoice = "flirt"; state.npc.mina.chainStage = 2;
   state.run.day = 6; state.run.slot = 2;
-  assert.equal(C.selectors.maraThreatEligible(state), false);
-  state.flags.maraBoundaryResolved = true; state.rival.pressure = 4;
-  assert.equal(C.selectors.maraThreatEligible(state), true);
+  assert.equal(C.selectors.minaThreatEligible(state), false);
+  state.flags.minaBoundaryResolved = true; state.npc.curtis.pressure = 4;
+  assert.equal(C.selectors.minaThreatEligible(state), true);
 });
 
 test("Eli progresses from introduction through a time-consuming test route", () => {
@@ -407,7 +409,7 @@ test("finance payment preview clamps controls and preserves Safe Maximum", () =>
   assert.equal(safe.cashAfter, 150); assert.equal(safe.breaksReserve, false);
 });
 
-// --- Alpha v0.7: identity, save compatibility, and the Mara arc ---------------
+// --- Alpha v0.7: identity, save compatibility, and the Mina arc ---------------
 
 test("street names are sanitized to a safe character set and length", () => {
   assert.equal(C.sanitizeStreetName("  Ice   Box  "), "Ice Box");
@@ -433,23 +435,23 @@ test("the street name is required before a fresh run can start", () => {
   assert.equal(blanked.player.streetNameChosen, false);
 });
 
-test("a pre-v0.7 save migrates to v4 and gains the new fields", () => {
+test("a pre-v0.7 save migrates to v5 and gains the new fields", () => {
   const state = C.reduceGame(C.createRun({ seed: 77 }), { type: "CHOOSE_BACKGROUND", backgroundId: "shooter" });
   const legacy = JSON.parse(JSON.stringify(state));
   delete legacy.player.streetName; delete legacy.player.streetNameChosen;
   delete legacy.run.eventHistory; delete legacy.run.lastChainFired; delete legacy.run.chainStreak;
   delete legacy.run.lastChainSlot; delete legacy.run.chainBeatsToday; delete legacy.run.chainBeatsDay;
-  delete legacy.people.mara.chainStage; delete legacy.people.mara.jobAtRisk;
+  delete legacy.npc.mina.chainStage; delete legacy.npc.mina.cleanLifeAtRisk;
 
   const inspection = C.inspectSave(JSON.stringify(legacy));
   assert.equal(inspection.valid, true, inspection.error || "legacy save rejected");
-  assert.equal(C.VERSION, 4); assert.equal(C.SAVE_KEY, "907ogr_v4");
+  assert.equal(C.VERSION, 5); assert.equal(C.SAVE_KEY, "907ogr_v5");
   const hydrated = inspection.state;
-  assert.equal(hydrated.version, 4);
+  assert.equal(hydrated.version, 5);
   assert.deepEqual(hydrated.run.eventHistory, {});
   assert.equal(hydrated.run.chainStreak, 0);
-  assert.equal(hydrated.people.mara.chainStage, 0);
-  assert.equal(hydrated.people.mara.jobAtRisk, false);
+  assert.equal(hydrated.npc.mina.chainStage, 0);
+  assert.equal(hydrated.npc.mina.cleanLifeAtRisk, false);
   assert.equal(inspection.preview.name, "Unnamed run");
   // and it still plays
   const advanced = C.reduceGame(hydrated, { type: "END_MARKET" });
@@ -463,19 +465,19 @@ test("the saved-run preview carries the name alongside the run position", () => 
   assert.equal(preview.day, 1); assert.equal(preview.district, "Spenard");
 });
 
-test("Mara's stages record chain progress without exposing it to the player", () => {
+test("Mina's stages record chain progress without exposing it to the player", () => {
   let state = run();
   state.run.slot = 2;
   state = C.reduceGame(state, { type: "VISIT_NIGHT_OWL" });
   const built = state.run.pendingEvent;
   assert.equal(built.chain, undefined); assert.equal(built.stage, undefined); assert.equal(built.weight, undefined);
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
-  assert.equal(state.people.mara.chainStage, 1);
-  assert.equal(state.people.mara.outcomes.length, 1);
-  assert.equal(state.people.mara.outcomes[0].stage, 1);
+  assert.equal(state.npc.mina.chainStage, 1);
+  assert.equal(state.npc.mina.outcomes.length, 1);
+  assert.equal(state.npc.mina.outcomes[0].stage, 1);
 });
 
-test("resolving a Mara scene never consumes a second part of day", () => {
+test("resolving a Mina scene never consumes a second part of day", () => {
   let state = run();
   state = C.reduceGame(state, { type: "VISIT_NIGHT_OWL" });
   const before = state.stats.pipelineAdvances, day = state.run.day, slot = state.run.slot;
@@ -484,43 +486,43 @@ test("resolving a Mara scene never consumes a second part of day", () => {
   assert.equal(state.run.day, day); assert.equal(state.run.slot, slot);
 });
 
-test("betraying Mara removes her from the run and names the ending for it", () => {
+test("betraying Mina removes her from the run and names the ending for it", () => {
   let state = run();
-  state.people.mara.met = true; state.people.mara.trust = 3; state.people.mara.chainStage = 4;
-  state.flags.maraBoundaryResolved = true; state.people.mara.usedWithoutConsent = true;
+  state.npc.mina.met = true; state.npc.mina.trust = 3; state.npc.mina.chainStage = 4;
+  state.flags.minaBoundaryResolved = true; state.npc.mina.usedWithoutConsent = true;
   state.run.day = 6; state.run.slot = 0;
   // Drive the branch directly: scheduling is covered in tests/story-chains.test.js.
-  state.run.pendingEvent = C.buildEventForTest("mara_after", state);
-  assert.equal(state.run.pendingEvent.id, "mara_after");
+  state.run.pendingEvent = C.buildEventForTest("mina_after", state);
+  assert.equal(state.run.pendingEvent.id, "mina_after");
   assert.match(state.run.pendingEvent.title, /Lights Off/);
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
-  assert.equal(state.people.mara.available, false);
-  assert.equal(state.people.mara.status, "gone");
-  assert.equal(state.people.mara.chainStage, 6);
+  assert.equal(state.npc.mina.available, false);
+  assert.equal(state.npc.mina.status, "gone");
+  assert.equal(state.npc.mina.chainStage, 6);
   state.run.day = 7; state.run.slot = 3;
   const ended = quietAdvance(state);
-  assert.equal(ended.run.ending, "mara_gone");
-  assert.equal(C.selectors.endingLabel("mara_gone"), "Gone Before You Were");
+  assert.equal(ended.run.ending, "mina_gone");
+  assert.equal(C.selectors.endingLabel("mina_gone"), "Gone Before You Were");
 });
 
-test("all three Day 7 Mara outcomes are reachable and distinct", () => {
+test("all three Day 7 Mina outcomes are reachable and distinct", () => {
   function endingFor(mutate) {
     let state = run();
-    state.people.mara.met = true; state.people.mara.trust = 4; state.people.mara.chainStage = 6;
-    state.flags.maraBoundaryResolved = true; state.flags.maraAfterResolved = true;
+    state.npc.mina.met = true; state.npc.mina.trust = 4; state.npc.mina.chainStage = 6;
+    state.flags.minaBoundaryResolved = true; state.flags.minaAfterResolved = true;
     state.lender.balance = 0; state.run.day = 7; state.run.slot = 3;
     mutate(state);
     return quietAdvance(state).run.ending;
   }
-  assert.equal(endingFor((s) => { s.run.finalPlan = "escape"; }), "mara_escape");
+  assert.equal(endingFor((s) => { s.run.finalPlan = "escape"; }), "mina_escape");
   // A separation is an outcome, not a failure: she takes the Monday interview.
-  assert.equal(endingFor((s) => { s.run.finalPlan = "defend"; s.people.mara.jobAtRisk = false; }), "mara_clear");
-  assert.equal(endingFor((s) => { s.people.mara.available = false; }), "mara_gone");
-  const labels = ["mara_escape", "mara_clear", "mara_gone"].map((id) => C.selectors.endingLabel(id));
+  assert.equal(endingFor((s) => { s.run.finalPlan = "defend"; s.npc.mina.jobAtRisk = false; }), "mina_clear");
+  assert.equal(endingFor((s) => { s.npc.mina.available = false; }), "mina_gone");
+  const labels = ["mina_escape", "mina_clear", "mina_gone"].map((id) => C.selectors.endingLabel(id));
   assert.equal(new Set(labels).size, 3);
 });
 
-test("a full seeded run reaches an ending with a coherent Mara record", () => {
+test("a full seeded run reaches an ending with a coherent Mina record", () => {
   let state = C.reduceGame(C.createRun({ seed: 2024 }), { type: "CHOOSE_BACKGROUND", backgroundId: "hustler", streetName: "Berm" });
   let guard = 0;
   while (state.run.status === "playing" && guard++ < 220) {
@@ -534,15 +536,15 @@ test("a full seeded run reaches an ending with a coherent Mara record", () => {
   const summary = C.selectRunSummary(state);
   assert.equal(summary.streetName, "Berm");
   assert.ok(summary.endingLabel.length > 0);
-  const stages = state.people.mara.outcomes.map((entry) => entry.stage);
-  assert.deepEqual(stages, [...stages].sort((a, b) => a - b), "Mara scenes played out of order");
+  const stages = state.npc.mina.outcomes.map((entry) => entry.stage);
+  assert.deepEqual(stages, [...stages].sort((a, b) => a - b), "Mina scenes played out of order");
 });
 
-// --- Alpha v0.7.1: Kip Sallis and the dealer prototype -----------------------
+// --- Alpha v0.7.1: Goodie and the dealer prototype -----------------------
 
-function metKip(seed = 21) {
+function metGoodie(seed = 21) {
   const state = run(seed);
-  state.people.dealers.kip.known = true;
+  state.people.dealers.goodie.known = true;
   state.run.day = 3; state.player.cash = 1500;
   return state;
 }
@@ -553,64 +555,64 @@ function clearPending(state) {
 }
 
 test("a dealer is gated to his own corner and his own hours", () => {
-  const state = metKip();
-  assert.equal(C.selectors.dealerActions(state, "kip").buy.available, true);
+  const state = metGoodie();
+  assert.equal(C.selectors.dealerActions(state, "goodie").buy.available, true);
   const away = clearPending(C.reduceGame(state, { type: "TRAVEL", neighborhoodId: "downtown" }));
-  const actions = C.selectors.dealerActions(away, "kip");
+  const actions = C.selectors.dealerActions(away, "goodie");
   assert.equal(actions.buy.available, false);
   assert.match(actions.buy.reason, /Spenard/);
   const unmet = run(); unmet.run.day = 3;
-  assert.equal(C.selectors.dealerActions(unmet, "kip").rob.available, false);
+  assert.equal(C.selectors.dealerActions(unmet, "goodie").rob.available, false);
 });
 
-test("buying off the dealer costs one part of day and builds standing", () => {
-  let state = metKip();
+test("buying from Goodie is free and builds standing", () => {
+  let state = metGoodie();
   const before = state.stats.pipelineAdvances, cash = state.player.cash;
-  state = C.reduceGame(state, { type: "BUY_FROM_DEALER", dealerId: "kip" });
-  assert.equal(state.stats.pipelineAdvances, before + 1, "must advance exactly once");
-  assert.equal(state.people.dealers.kip.standing, 1);
+  state = C.reduceGame(state, { type: "BUY_FROM_DEALER", dealerId: "goodie" });
+  assert.equal(state.stats.pipelineAdvances, before, "buying at the current corner is free");
+  assert.equal(state.people.dealers.goodie.standing, 1);
   assert.ok(state.player.cash < cash, "the purchase costs money");
   assert.ok(C.selectors.cargoUsed(state) > 0, "the purchase arrives in cargo");
   // once per day
-  assert.equal(C.selectors.dealerActions(clearPending(state), "kip").buy.available, false);
+  assert.equal(C.selectors.dealerActions(clearPending(state), "goodie").buy.available, false);
 });
 
 test("asking the dealer needs standing and yields a reliable lead in his own product", () => {
-  let state = metKip();
-  assert.equal(C.selectors.dealerActions(state, "kip").ask.available, false, "no standing, no conversation");
-  state.people.dealers.kip.standing = 3;
+  let state = metGoodie();
+  assert.equal(C.selectors.dealerActions(state, "goodie").ask.available, false, "no standing, no conversation");
+  state.people.dealers.goodie.standing = 3;
   const before = state.stats.pipelineAdvances;
-  state = C.reduceGame(state, { type: "ASK_DEALER", dealerId: "kip" });
-  assert.equal(state.stats.pipelineAdvances, before + 1);
+  state = C.reduceGame(state, { type: "ASK_DEALER", dealerId: "goodie" });
+  assert.equal(state.stats.pipelineAdvances, before);
   const rumor = state.effects.rumors[state.effects.rumors.length - 1];
   assert.equal(rumor.reliable, true);
   assert.ok(["weed", "shrooms"].includes(rumor.productId), `he tipped ${rumor.productId}`);
 });
 
 test("standing raises the dealer discount", () => {
-  const cold = metKip(); const warm = metKip();
-  warm.people.dealers.kip.standing = 3;
-  assert.ok(C.selectors.dealerActions(warm, "kip").buy.discount > C.selectors.dealerActions(cold, "kip").buy.discount);
+  const cold = metGoodie(); const warm = metGoodie();
+  warm.people.dealers.goodie.standing = 3;
+  assert.ok(C.selectors.dealerActions(warm, "goodie").buy.discount > C.selectors.dealerActions(cold, "goodie").buy.discount);
 });
 
 test("robbing the dealer is not gated behind the Rob comeback threshold", () => {
-  const state = metKip();
+  const state = metGoodie();
   state.player.cash = 5000; // far above the working-capital reserve
   assert.equal(C.selectors.robAvailability(state).available, false, "Rob stays a comeback lever");
-  assert.equal(C.selectors.dealerActions(state, "kip").rob.available, true, "the stickup is a playstyle, not a comeback");
+  assert.equal(C.selectors.dealerActions(state, "goodie").rob.available, true, "the stickup is a playstyle, not a comeback");
 });
 
 test("a successful dealer robbery pays out and chokes the block's supply", () => {
   let found = null;
   for (let seed = 1; seed <= 60 && !found; seed += 1) {
-    const attempt = C.reduceGame(metKip(seed), { type: "ROB_DEALER", dealerId: "kip" });
+    const attempt = C.reduceGame(metGoodie(seed), { type: "ROB_DEALER", dealerId: "goodie" });
     if (attempt.run.pendingOperationResult.tone === "good") found = attempt;
   }
   assert.ok(found, "no successful robbery across 60 seeds");
-  const kip = found.people.dealers.kip;
-  assert.equal(kip.robbedCount, 1);
-  assert.equal(kip.supplyChoked, 2);
-  assert.ok(kip.standing < 0, "standing is spent");
+  const goodie = found.people.dealers.goodie;
+  assert.equal(goodie.robbedCount, 1);
+  assert.equal(goodie.supplyChoked, 2);
+  assert.ok(goodie.standing < 0, "standing is spent");
   assert.ok(found.player.heat >= 3, "the robbery is visible");
   assert.equal(C.selectors.dealerSupplyFactor(found, "north_star_lot", "weed"), 0.6);
   assert.equal(C.selectors.dealerSupplyFactor(found, "downtown", "weed"), 1, "only his own block is affected");
@@ -619,61 +621,61 @@ test("a successful dealer robbery pays out and chokes the block's supply", () =>
 test("a failed dealer robbery costs health and arms him for next time", () => {
   let found = null;
   for (let seed = 1; seed <= 60 && !found; seed += 1) {
-    const attempt = C.reduceGame(metKip(seed), { type: "ROB_DEALER", dealerId: "kip" });
+    const attempt = C.reduceGame(metGoodie(seed), { type: "ROB_DEALER", dealerId: "goodie" });
     if (attempt.run.pendingOperationResult.tone === "bad") found = attempt;
   }
   assert.ok(found, "no failed robbery across 60 seeds");
-  assert.equal(found.people.dealers.kip.retaliated, true);
+  assert.equal(found.people.dealers.goodie.retaliated, true);
   assert.ok(found.player.health < 100, "failure hurts");
-  assert.equal(found.people.dealers.kip.robbedCount, 0, "a failure is not a success");
+  assert.equal(found.people.dealers.goodie.robbedCount, 0, "a failure is not a success");
 });
 
 test("the dealer can only be taken twice before he is off the block", () => {
-  const state = metKip();
-  state.people.dealers.kip.robbedCount = 2;
-  const actions = C.selectors.dealerActions(state, "kip");
+  const state = metGoodie();
+  state.people.dealers.goodie.robbedCount = 2;
+  const actions = C.selectors.dealerActions(state, "goodie");
   assert.equal(actions.rob.available, false);
   assert.match(actions.rob.reason, /nothing left/i);
-  state.people.dealers.kip.gone = true;
-  const gone = C.selectors.dealerActions(state, "kip");
+  state.people.dealers.goodie.gone = true;
+  const gone = C.selectors.dealerActions(state, "goodie");
   assert.equal(gone.buy.available, false);
   assert.equal(gone.ask.available, false);
   assert.equal(C.selectors.dealerSupplyFactor(state, "north_star_lot", "shrooms"), 0.75, "his absence leaves a smaller permanent dent");
 });
 
 test("the choked supply expires on the daily tick", () => {
-  let state = metKip();
-  state.people.dealers.kip.supplyChoked = 2;
+  let state = metGoodie();
+  state.people.dealers.goodie.supplyChoked = 2;
   state.run.day = 3; state.run.slot = 3;
   state = quietAdvance(state);
-  assert.equal(state.people.dealers.kip.supplyChoked, 1, "one day burned off");
+  assert.equal(state.people.dealers.goodie.supplyChoked, 1, "one day burned off");
   state.run.slot = 3;
   state = quietAdvance(state);
-  assert.equal(state.people.dealers.kip.supplyChoked, 0);
+  assert.equal(state.people.dealers.goodie.supplyChoked, 0);
   assert.equal(C.selectors.dealerSupplyFactor(state, "north_star_lot", "weed"), 1);
 });
 
-test("Mara hears about a robbery two blocks from her counter", () => {
+test("Mina hears about a robbery two blocks from her counter", () => {
   let found = null;
   for (let seed = 1; seed <= 60 && !found; seed += 1) {
-    const state = metKip(seed);
-    state.people.mara.met = true; state.people.mara.chainStage = 2; state.people.mara.trust = 3;
-    const attempt = C.reduceGame(state, { type: "ROB_DEALER", dealerId: "kip" });
+    const state = metGoodie(seed);
+    state.npc.mina.met = true; state.npc.mina.chainStage = 2; state.npc.mina.trust = 3;
+    const attempt = C.reduceGame(state, { type: "ROB_DEALER", dealerId: "goodie" });
     if (attempt.run.pendingOperationResult) found = attempt;
   }
   assert.ok(found);
-  assert.equal(found.people.mara.trust, 2, "robbing his corner costs a point with her");
+  assert.equal(found.npc.mina.trust, 2, "robbing his corner costs a point with her");
 });
 
 test("a pre-v0.7.1 save hydrates and gains the dealer record", () => {
-  const state = metKip();
+  const state = metGoodie();
   const legacy = JSON.parse(JSON.stringify(state));
   delete legacy.people.dealers;
   const inspection = C.inspectSave(JSON.stringify(legacy));
   assert.equal(inspection.valid, true, inspection.error || "rejected");
-  assert.equal(inspection.state.version, 4);
-  assert.equal(inspection.state.people.dealers.kip.known, false);
-  assert.equal(inspection.state.people.dealers.kip.robbedCount, 0);
+  assert.equal(inspection.state.version, 5);
+  assert.equal(inspection.state.people.dealers.goodie.known, false);
+  assert.equal(inspection.state.people.dealers.goodie.robbedCount, 0);
   assert.equal(C.selectors.dealerSupplyFactor(inspection.state, "north_star_lot", "weed"), 1);
 });
 
@@ -683,10 +685,10 @@ test("fresh runs begin at the family home with $100 clean cash and no debt", () 
   const state = fresh(9001);
   assert.equal(state.run.premise, "fresh_arrival"); assert.equal(state.run.openingPending, true);
   assert.equal(state.player.cash, 100); assert.equal(state.player.cleanCash, 100); assert.equal(state.player.heat, 0); assert.equal(state.lender.principal, 0); assert.equal(state.lender.balance, 0); assert.equal(state.lender.dueDay, null);
-  assert.equal(state.base.controlled, false); assert.equal(state.rival.pressure, 0); assert.equal(state.rival.relationship, "unaware");
+  assert.equal(state.base.controlled, false); assert.equal(state.npc.curtis.pressure, 0); assert.equal(state.npc.curtis.relationship, "unaware");
   assert.ok(Object.values(state.player.inventory).every((item) => item.qty === 0));
   assert.deepEqual([state.npc.yalonda.trust, state.npc.juan.trust, state.people.household.warnings], [2, 0, 0]);
-  assert.equal(state.world.productAccess.weed, false); assert.equal(state.people.dealers.kip.known, false);
+  assert.equal(state.world.productAccess.weed, false); assert.equal(state.people.dealers.goodie.known, false);
 });
 
 test("household storage is limited and three warnings end as Nowhere to Go", () => {
@@ -718,11 +720,11 @@ test("gym membership is paid once, then session costs escalate and progress dimi
   assert.equal(state.player.attributes.strength, 3); assert.equal(state.player.attributeProgress.strength, 2);
 });
 
-test("Day 2 exploration guarantees Kip's transactional supplier encounter", () => {
+test("Day 2 exploration guarantees Goodie's transactional supplier encounter", () => {
   let state = fresh(9005); state.run.day = 2; state = C.reduceGame(state, { type: "EXPLORE_SPENARD" });
-  assert.equal(state.run.pendingEvent.id, "kip_corner_intro");
+  assert.equal(state.run.pendingEvent.id, "goodie_corner_intro");
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
-  assert.equal(state.people.dealers.kip.known, true); assert.equal(state.world.productAccess.weed, true); assert.ok(state.world.locations.discoveries.includes("kip_supplier"));
+  assert.equal(state.people.dealers.goodie.known, true); assert.equal(state.world.productAccess.weed, true); assert.ok(state.world.locations.discoveries.includes("goodie_supplier"));
   state.run.pendingEvent = null; state = C.reduceGame(state, { type: "EXPLORE_SPENARD" });
   assert.equal(state.world.locations.gamblingKnown, false, "wandering no longer reveals the game automatically");
 });
@@ -798,16 +800,16 @@ test("territory blocks cannot be claimed before garage + lieutenant + soldier pr
 
   let state = operatorSetup(42004); state.player.cash = 5000;
   const noLieutenant = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "spenard_rec_lot" });
-  assert.equal(noLieutenant.world.territoryBlocks.spenard_rec_lot.owner, "rook");
+  assert.equal(noLieutenant.world.territoryBlocks.spenard_rec_lot.owner, "curtis");
 
   state = promotedEliSetup(42004); state.player.cash = 5000;
   const noSoldiers = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "spenard_rec_lot" });
-  assert.equal(noSoldiers.world.territoryBlocks.spenard_rec_lot.owner, "rook", "claiming needs at least one soldier");
+  assert.equal(noSoldiers.world.territoryBlocks.spenard_rec_lot.owner, "curtis", "claiming needs at least one soldier");
 
   state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state);
   const claimed = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "spenard_rec_lot" });
   assert.equal(claimed.world.territoryBlocks.spenard_rec_lot.owner, "player");
-  assert.equal(claimed.rival.respect, state.rival.respect + 1, "claiming a block raises Respect");
+  assert.equal(claimed.npc.curtis.respect, state.npc.curtis.respect + 1, "claiming a block raises Respect");
 });
 
 test("Spenard blocks vary in earning potential and risk instead of being mechanically identical", () => {
@@ -820,7 +822,7 @@ test("block-level territory coexists with the existing neighborhood takeover wit
   let state = promotedEliSetup(42005); state.player.cash = 5000;
   state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state);
   state = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "spenard_rec_lot" });
-  assert.equal(state.world.territories.north_star_lot.owner, "rook", "the neighborhood-level takeover is untouched by a block claim");
+  assert.equal(state.world.territories.north_star_lot.owner, "curtis", "the neighborhood-level takeover is untouched by a block claim");
   assert.equal(state.world.territoryBlocks.spenard_rec_lot.owner, "player");
 });
 
@@ -890,48 +892,20 @@ test("controlled blocks and soldier state persist across save/load", () => {
   assert.equal(claimed.available, false, "sanity: a fresh run cannot claim without prerequisites");
 });
 
-test("a pre-v1.0 save shape backfills soldiers, blocks, dirty/clean cash, and Kip's crew record", () => {
+test("a pre-v1.0 save shape backfills soldiers, blocks, dirty/clean cash, and keeps Goodie dealer-only", () => {
   const legacy = run(42015);
   const raw = JSON.parse(JSON.stringify(legacy));
   raw.player.cash = 777;
   delete raw.player.dirtyCash; delete raw.player.cleanCash;
   delete raw.world.soldiers; delete raw.world.territoryBlocks;
-  delete raw.people.crew.kip;
   const hydrated = C.hydrateRun(raw);
   assert.equal(hydrated.player.dirtyCash, 777, "pre-existing wealth is classified as unlaundered dirty cash");
   assert.equal(hydrated.player.cleanCash, 0);
   assert.deepEqual(hydrated.world.soldiers, {});
   assert.equal(Object.keys(hydrated.world.territoryBlocks).length, C.SPENARD_BLOCKS.length);
-  assert.ok(hydrated.world.territoryBlocks.spenard_rec_lot.owner === "rook");
-  assert.ok(hydrated.people.crew.kip);
-  assert.equal(hydrated.people.crew.kip.recruited, false);
-});
-
-test("Kip's finance-lieutenant introduction stays gated until income, standing, and Eli are all satisfied", () => {
-  let state = promotedEliSetup(42016);
-  assert.equal(C.selectors.kipLieutenantAvailability(state).available, false, "no income yet");
-  state.people.dealers.kip.standing = 3;
-  assert.equal(C.selectors.kipLieutenantAvailability(state).available, false, "standing alone is not enough");
-  state.world.territoryBlocks.spenard_rec_lot.incomeCollected = 600;
-  assert.equal(C.selectors.kipLieutenantAvailability(state).available, true);
-  const noEli = promotedEliSetup(42016);
-  noEli.people.crew.eli.lieutenantStage = "none";
-  noEli.people.dealers.kip.standing = 3;
-  noEli.world.territoryBlocks.spenard_rec_lot.incomeCollected = 600;
-  assert.equal(C.selectors.kipLieutenantAvailability(noEli).available, false, "Eli must be active first");
-});
-
-test("Kip's dealer identity is untouched by his lieutenant introduction, resolved through the real event choice", () => {
-  let state = promotedEliSetup(42017);
-  state.people.dealers.kip.known = true; state.people.dealers.kip.standing = 2; state.people.dealers.kip.robbedCount = 1;
-  state.run.pendingEvent = C.buildEventForTest("kip_lieutenant_intro", state);
-  const acceptIndex = state.run.pendingEvent.choices.findIndex((choice) => choice.label.toLowerCase().includes("bring kip"));
-  state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: acceptIndex });
-  assert.equal(state.people.dealers.kip.robbedCount, 1, "the dealer record is untouched by the lieutenant introduction");
-  assert.equal(state.people.dealers.kip.standing, 2, "dealer standing is untouched");
-  assert.equal(state.people.crew.kip.recruited, true, "the crew record gets its own, separate lieutenant state");
-  assert.equal(state.people.crew.kip.introduced, true);
-  assert.equal(state.people.dealers.kip.lieutenantIntroduced, true);
+  assert.ok(hydrated.world.territoryBlocks.spenard_rec_lot.owner === "curtis");
+  assert.equal(hydrated.people.crew.goodie, undefined);
+  assert.ok(hydrated.people.dealers.goodie);
 });
 
 test("Eli defaults to a Balanced standing order on promotion, and changing it costs no player time", () => {
@@ -987,32 +961,6 @@ test("Eli's Maximize Income policy deterministically routes an unassigned soldie
   assert.ok(nextA.log.some((entry) => entry.text.includes(`soldier moved to ${expectedName}`)), "Maximize Income routes the spare soldier to the highest-earning open block before any nightly raid resolves");
 });
 
-test("Kip laundering charges exactly 15% and moves the amount from dirty to clean cash", () => {
-  let state = promotedEliSetup(42018);
-  state.people.crew.kip.introduced = true; state.people.crew.kip.recruited = true; state.people.crew.kip.status = "active";
-  state.people.dealers.kip.standing = 3;
-  state.player.dirtyCash = 1000; state.player.cleanCash = 0; state.player.cash = 1000;
-  const capacity = C.selectors.launderCapacity(state);
-  const amount = Math.min(400, capacity);
-  const result = C.reduceGame(state, { type: "LAUNDER_CASH", amount });
-  const fee = Math.round(amount * C.KIP_LAUNDER_FEE);
-  assert.equal(fee, Math.round(amount * 0.15));
-  assert.equal(result.player.dirtyCash, 1000 - amount);
-  assert.equal(result.player.cleanCash, amount - fee);
-  assert.equal(result.player.cash, 1000 - fee);
-});
-
-test("laundering resolves in the same slot as every other financial action, not a delayed queue", () => {
-  let state = promotedEliSetup(42019);
-  state.people.crew.kip.introduced = true; state.people.crew.kip.recruited = true; state.people.crew.kip.status = "active";
-  state.people.dealers.kip.standing = 3;
-  state.player.dirtyCash = 500; state.player.cash = 500;
-  const before = { day: state.run.day, slot: state.run.slot };
-  const after = C.reduceGame(state, { type: "LAUNDER_CASH", amount: 100 });
-  assert.equal(after.player.cleanCash, 85, "the clean cash lands immediately, not after a delay");
-  assert.ok(after.run.day > before.day || after.run.slot > before.slot, "laundering advances exactly one normal slot, same as any other action");
-});
-
 test("Ship Creek pays clean cash while trading and robbery stay dirty, and cash always equals dirty plus clean", () => {
   let state = fresh(60001);
   discoverJob(state, "ship_creek");
@@ -1060,70 +1008,68 @@ test("collector tier stays at 0 with a 1.0 fee multiplier when no days are misse
   assert.equal(state.lender.interestMultiplier, 1.0);
 });
 
-test("Rook's rook_cut beat is reachable through Respect alone, and pressure alone cannot advance Rook after the migration", () => {
+test("Curtis's curtis_cut beat is reachable through Respect alone, and pressure alone cannot advance Curtis after the migration", () => {
   const respectOnly = fresh(80001);
-  respectOnly.flags.rookTaxResolved = true;
-  respectOnly.rival.pressure = 0;
-  respectOnly.rival.respect = C.RESPECT_STAGE_THRESHOLDS.cut;
+  respectOnly.flags.curtisTaxResolved = true;
+  respectOnly.npc.curtis.pressure = 0;
+  respectOnly.npc.curtis.respect = C.RESPECT_STAGE_THRESHOLDS.cut;
   respectOnly.world.currentNeighborhoodId = "north_star_lot";
-  const descriptor = C.STORY_REGISTRY.find((item) => item.id === "rook_cut");
-  assert.equal(descriptor.requires(respectOnly), true, "Respect alone unlocks rook_cut");
+  const descriptor = C.STORY_REGISTRY.find((item) => item.id === "curtis_cut");
+  assert.equal(descriptor.requires(respectOnly), true, "Respect alone unlocks curtis_cut");
 
   const pressureOnly = fresh(80002);
-  pressureOnly.flags.rookTaxResolved = true;
-  pressureOnly.rival.pressure = 15;
-  pressureOnly.rival.respect = 0;
+  pressureOnly.flags.curtisTaxResolved = true;
+  pressureOnly.npc.curtis.pressure = 15;
+  pressureOnly.npc.curtis.respect = 0;
   pressureOnly.world.currentNeighborhoodId = "airport_industrial"; // highest area.rival rating
-  assert.equal(descriptor.requires(pressureOnly), false, "pressure alone, even at its cap, can no longer advance a Rook stage");
+  assert.equal(descriptor.requires(pressureOnly), false, "pressure alone, even at its cap, can no longer advance a Curtis stage");
 
   const belowThreshold = fresh(80003);
-  belowThreshold.flags.rookTaxResolved = true;
-  belowThreshold.rival.pressure = 15;
-  belowThreshold.rival.respect = C.RESPECT_STAGE_THRESHOLDS.cut - 1;
+  belowThreshold.flags.curtisTaxResolved = true;
+  belowThreshold.npc.curtis.pressure = 15;
+  belowThreshold.npc.curtis.respect = C.RESPECT_STAGE_THRESHOLDS.cut - 1;
   assert.equal(descriptor.requires(belowThreshold), false, "Respect just under the threshold does not unlock the stage regardless of pressure");
 });
 
-test("Rook's opening beat no longer requires pressure to become eligible", () => {
-  const descriptor = C.STORY_REGISTRY.find((item) => item.id === "rook_mark");
+test("Curtis's opening beat requires concrete attention exposure", () => {
+  const descriptor = C.STORY_REGISTRY.find((item) => item.id === "curtis_mark");
   const state = fresh(80004);
-  state.rival.pressure = 15; state.rival.respect = 0; state.player.heat = 0;
+  state.npc.curtis.pressure = 0; state.npc.curtis.attention = 0; state.npc.curtis.respect = 0; state.player.heat = 0;
   state.stats.robbery.attempts = 0;
-  assert.equal(descriptor.requires(state), false, "pressure alone does not earn Rook's attention");
-  state.rival.respect = 1;
-  assert.equal(descriptor.requires(state), true, "Respect earns Rook's attention instead");
+  assert.equal(descriptor.requires(state), false, "minor dealing below a milestone stays invisible");
+  state.npc.curtis.attention = 1; state.npc.curtis.pressure = 1;
+  assert.equal(descriptor.requires(state), true, "concrete exposure earns Curtis's attention");
 });
 
-test("a save that already reached rook_cut through the old pressure gate keeps that progress on load", () => {
+test("a save that already reached curtis_cut through the old pressure gate keeps that progress on load", () => {
   const legacy = run(80005);
   const raw = JSON.parse(JSON.stringify(legacy));
-  raw.flags = { ...raw.flags, rookTaxResolved: true, rookCutResolved: true };
-  raw.rival.pressure = 5; raw.rival.respect = 0; // the old pressure-only path that used to unlock this beat
+  raw.flags = { ...raw.flags, curtisTaxResolved: true, curtisCutResolved: true };
+  raw.npc.curtis.pressure = 5; raw.npc.curtis.respect = 0; // the old pressure-only path that used to unlock this beat
   const hydrated = C.hydrateRun(raw);
-  assert.ok(hydrated.rival.respect >= C.RESPECT_STAGE_THRESHOLDS.cut, "Respect is raised to the stage's minimum so it reads consistently going forward");
-  assert.equal(hydrated.flags.rookCutResolved, true, "the already-earned story progress itself is preserved, not replayed");
+  assert.ok(hydrated.npc.curtis.respect >= C.RESPECT_STAGE_THRESHOLDS.cut, "Respect is raised to the stage's minimum so it reads consistently going forward");
+  assert.equal(hydrated.flags.curtisCutResolved, true, "the already-earned story progress itself is preserved, not replayed");
 });
 
-test("pressure remains the driver of Rook's aggressive/competitive relationship labels, unaffected by Respect", () => {
+test("attention remains the driver of Curtis's aggressive relationship label", () => {
   let state = fresh(80003);
-  state.rival.pressure = 12; state.rival.respect = 0;
+  state.npc.curtis.pressure = 8; state.npc.curtis.attention = 8; state.npc.curtis.respect = 0;
   state = quietAdvance(state);
-  assert.equal(state.rival.relationship, "aggressive", "high pressure alone still reads as aggressive");
+  assert.equal(state.npc.curtis.relationship, "aggressive", "high pressure alone still reads as aggressive");
 
   let calmState = fresh(80004);
-  calmState.rival.pressure = 0; calmState.rival.respect = 6;
+  calmState.npc.curtis.pressure = 0; calmState.npc.curtis.attention = 0; calmState.npc.curtis.respect = 6;
   calmState = quietAdvance(calmState);
-  assert.notEqual(calmState.rival.relationship, "aggressive", "high Respect with zero pressure never reads as aggressive");
+  assert.notEqual(calmState.npc.curtis.relationship, "aggressive", "high Respect with zero pressure never reads as aggressive");
 });
 
 test("new ambient organization beats only become eligible once their underlying system is active", () => {
   const fresh1 = fresh(90001);
   const spenardScouted = C.STORY_REGISTRY.find((item) => item.id === "spenard_block_scouted");
-  const rookRespectNotice = C.STORY_REGISTRY.find((item) => item.id === "rook_respect_notice");
-  const kipIntro = C.STORY_REGISTRY.find((item) => item.id === "kip_lieutenant_intro");
+  const curtisRespectNotice = C.STORY_REGISTRY.find((item) => item.id === "curtis_respect_notice");
   const soldierAftermath = C.STORY_REGISTRY.find((item) => item.id === "soldier_raid_aftermath");
   assert.equal(spenardScouted.requires(fresh1), false, "no Eli lieutenant yet");
-  assert.equal(rookRespectNotice.requires(fresh1), false, "no controlled blocks yet");
-  assert.equal(kipIntro.requires(fresh1), false, "no organization income yet");
+  assert.equal(curtisRespectNotice.requires(fresh1), false, "no controlled blocks yet");
   assert.equal(soldierAftermath.requires(fresh1), false, "no raid has happened");
 
   const active = promotedEliSetup(90002);
@@ -1132,7 +1078,7 @@ test("new ambient organization beats only become eligible once their underlying 
 
 // --- PR #52 stabilization pass ----------------------------------------------
 
-test("cash equals dirty plus clean after purchases, debt payments, recruitment, laundering, legal work, territory income, and property spending", () => {
+test("cash equals dirty plus clean after purchases, debt payments, recruitment, legal work, territory income, and property spending", () => {
   function checkInvariant(state, label) {
     assert.equal(state.player.cash, state.player.dirtyCash + state.player.cleanCash, label);
   }
@@ -1153,60 +1099,9 @@ test("cash equals dirty plus clean after purchases, debt payments, recruitment, 
   let next = state;
   for (let i = 0; i < 4; i += 1) next = quietAdvance(next);
   checkInvariant(next, "after territory income resolves overnight");
-  state.people.crew.kip.introduced = true; state.people.crew.kip.recruited = true; state.people.crew.kip.status = "active";
-  state.people.dealers.kip.standing = 3;
-  const preview = C.selectors.launderAvailability(state, Math.min(100, state.player.dirtyCash));
-  if (preview.available) { state = C.reduceGame(state, { type: "LAUNDER_CASH", amount: Math.min(100, state.player.dirtyCash) }); checkInvariant(state, "after laundering"); }
   const raw = JSON.parse(JSON.stringify(state));
   const hydrated = C.hydrateRun(raw);
   checkInvariant(hydrated, "after save/load");
-});
-
-test("buying product then attempting to launder in the same visit cannot launder cash that was already spent", () => {
-  let state = promotedEliSetup(100002);
-  state.people.crew.kip.introduced = true; state.people.crew.kip.recruited = true; state.people.crew.kip.status = "active";
-  state.people.dealers.kip.standing = 3;
-  state.player.cash = 171; state.player.dirtyCash = 171; state.player.cleanCash = 0;
-  state.world.productAccess.weed = true;
-  state.world.markets[state.world.currentNeighborhoodId].availability.weed = 100;
-  const price = C.selectors.tradeUnitPrices(state, "weed").buy;
-  const qty = Math.min(C.selectors.plugMaxUnits(state, "weed"), Math.floor(161 / price));
-  state = C.reduceGame(state, { type: "BUY", productId: "weed", qty });
-  assert.equal(state.player.cash, state.player.dirtyCash + state.player.cleanCash, "invariant holds immediately after the purchase");
-  const stillReportedDirty = 171; // what dirtyCash would have shown under the old lazy-reconciliation bug
-  const rejected = C.reduceGame(state, { type: "LAUNDER_CASH", amount: stillReportedDirty });
-  assert.equal(rejected, state, "laundering more than the actual current cash is rejected outright");
-  assert.ok(rejected.player.cash >= 0, "cash never goes negative");
-});
-
-test("laundering can never create negative cash, even at the exact edge of the player's dirty balance", () => {
-  let state = promotedEliSetup(100003);
-  state.people.crew.kip.introduced = true; state.people.crew.kip.recruited = true; state.people.crew.kip.status = "active";
-  state.people.dealers.kip.standing = 3;
-  state.player.cash = 50; state.player.dirtyCash = 50; state.player.cleanCash = 0;
-  const capacity = C.selectors.launderCapacity(state);
-  const amount = Math.min(50, capacity);
-  const result = C.reduceGame(state, { type: "LAUNDER_CASH", amount });
-  assert.ok(result.player.cash >= 0, "cash never goes negative");
-  assert.equal(result.player.cash, result.player.dirtyCash + result.player.cleanCash);
-  const overdraw = C.reduceGame(state, { type: "LAUNDER_CASH", amount: 51 });
-  assert.equal(overdraw, state, "laundering more than the player has is rejected outright");
-});
-
-test("Kip never enters the field-assignment UI path and does not crash Safehouse-style rendering", () => {
-  let state = promotedEliSetup(100004);
-  state.people.crew.kip.introduced = true; state.people.crew.kip.recruited = true; state.people.crew.kip.status = "active";
-  const recruited = C.selectors.recruitedCrew(state);
-  const fieldAssignable = recruited.filter((person) => person.canFieldAssign);
-  const lieutenantOnly = recruited.filter((person) => !person.canFieldAssign);
-  assert.ok(fieldAssignable.every((person) => person.id !== "kip"), "Kip is never in the field-assignable list");
-  assert.ok(lieutenantOnly.some((person) => person.id === "kip"), "Kip is routed to the lieutenant-only list instead");
-  // Mirrors the exact lookup that used to crash: assignments[person.id] was
-  // undefined for Kip because the table only defines eli/miri/tone.
-  const assignments = { eli: ["north_run", "outer_run"], miri: ["source_cocaine", "source_meth"], tone: ["guard_base", "intimidate_buyer"] };
-  assert.doesNotThrow(() => { for (const person of fieldAssignable) assignments[person.id].length; });
-  const rejected = C.reduceGame(state, { type: "ASSIGN_CREW", crewId: "kip", assignment: "north_run" });
-  assert.equal(rejected, state, "the reducer itself also refuses to field-assign Kip, defense in depth");
 });
 
 test("losing a block clears every surviving soldier's assignment, not just the casualty", () => {
@@ -1228,7 +1123,7 @@ test("losing a block clears every surviving soldier's assignment, not just the c
     let next = state;
     for (let i = 0; i < 4 && !found; i += 1) {
       next = quietAdvance(next);
-      if (next.world.territoryBlocks.northern_lights_motels.owner === "rook") {
+      if (next.world.territoryBlocks.northern_lights_motels.owner === "curtis") {
         found = true;
         assert.deepEqual(next.world.territoryBlocks.northern_lights_motels.soldiersAssigned, [], "the block's assignment list is cleared");
         for (const soldier of Object.values(next.world.soldiers)) {
@@ -1268,7 +1163,7 @@ test("a single soldier cannot be used to claim six blocks — each claim consume
   assert.equal(firstClaim.world.territoryBlocks.spenard_rec_lot.owner, "player");
   clearModals(firstClaim);
   const secondAttempt = C.reduceGame(firstClaim, { type: "CLAIM_BLOCK", blockId: "fourth_ave_strip" });
-  assert.equal(secondAttempt.world.territoryBlocks.fourth_ave_strip.owner, "rook", "no soldier remains to occupy a second block");
+  assert.equal(secondAttempt.world.territoryBlocks.fourth_ave_strip.owner, "curtis", "no soldier remains to occupy a second block");
 });
 
 test("unpaid checkpoint debt triggers Dre Tier 1 (or higher) collector enforcement", () => {
@@ -1346,20 +1241,20 @@ test("Eli's automated soldier redistribution after promotion consumes zero addit
   assert.equal(next.run.day, expectedDay, "the automated redistribution inside this tick added no extra day/slot advancement");
 });
 
-test("save/load preserves soldiers, blocks, lieutenant state, Eli's policy, and Kip's laundering state", () => {
+test("save/load preserves soldiers, blocks, Eli's lieutenant state, and dealer-only Goodie", () => {
   let state = promotedEliSetup(100013); state.player.cash = 5000;
   state = C.reduceGame(state, { type: "SET_ELI_POLICY", policy: "hold_ground" });
   state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state);
   state = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "spenard_rec_lot" }); clearModals(state);
-  state.people.crew.kip.introduced = true; state.people.crew.kip.recruited = true; state.people.crew.kip.status = "active";
-  state.people.dealers.kip.standing = 3;
+  state.people.dealers.goodie.known = true; state.people.dealers.goodie.standing = 3;
   const raw = JSON.parse(JSON.stringify(state));
   const hydrated = C.hydrateRun(raw);
   assert.equal(hydrated.people.crew.eli.operationPolicy, "hold_ground");
   assert.deepEqual(hydrated.world.soldiers, state.world.soldiers);
   assert.deepEqual(hydrated.world.territoryBlocks, state.world.territoryBlocks);
   assert.equal(hydrated.people.crew.eli.lieutenantStage, "operations_lieutenant");
-  assert.equal(hydrated.people.crew.kip.recruited, true);
+  assert.equal(hydrated.people.crew.goodie, undefined);
+  assert.equal(hydrated.people.dealers.goodie.standing, 3);
   assert.equal(hydrated.lender.collectorTier, state.lender.collectorTier);
 });
 
@@ -1381,7 +1276,7 @@ test("homeSituation answers the Home questions from live state and hides locked 
   assert.ok(view.summary.length > 40, "the situation summary is authored prose, not a stat dump");
   assert.match(view.summary, /learning Spenard/);
   assert.match(view.summary, /Most of Spenard is still unfamiliar/);
-  for (const id of ["operations", "territory", "soldiers", "district", "laundering", "rival", "crew"]) {
+  for (const id of ["operations", "territory", "soldiers", "district", "rival", "crew"]) {
     assert.equal(view.unlocks[id], false, `${id} stays hidden on the first Morning`);
   }
 });
@@ -1393,14 +1288,11 @@ test("homeSituation reveals organization systems only as the run unlocks them", 
   assert.equal(view.unlocks.operations, true, "the garage unlocks Operations");
   assert.equal(view.unlocks.territory, true, "a promoted Eli unlocks Territory");
   assert.equal(view.unlocks.district, false, "District stays hidden with no blocks held");
-  assert.equal(view.unlocks.laundering, false, "Laundering stays hidden until Kip runs finance");
 
   state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state);
   state = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "spenard_rec_lot" }); clearModals(state);
-  state.people.crew.kip.introduced = true; state.people.crew.kip.recruited = true; state.people.crew.kip.status = "active";
   view = C.selectors.homeSituation(state);
   assert.equal(view.unlocks.district, true);
-  assert.equal(view.unlocks.laundering, true);
   assert.equal(view.organization.blocks, 1);
   assert.match(view.summary, /1 block producing/);
 });
@@ -1490,14 +1382,12 @@ test("actionResult stays silent for free actions, run lifecycle, and richer resu
   assert.equal(C.selectors.actionResult(state, ended, "END_MARKET"), null, "the ending screen owns the end of the run");
 });
 
-test("actionResult reports organization outcomes without touching the reducer", () => {
+test("free recruitment has no action receipt while a timed block claim does", () => {
   let state = promotedEliSetup(60011); state.player.cash = 6000;
   const beforeSnapshot = JSON.parse(JSON.stringify(state));
   state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" });
   const recruit = C.selectors.actionResult(beforeSnapshot, state, "RECRUIT_SOLDIER");
-  assert.equal(recruit.title, "Soldier Recruited");
-  assert.ok(recruit.lines.some((line) => line.label === "Soldiers"));
-  assert.match(recruit.time.label, /→/);
+  assert.equal(recruit, null);
   // The diff is a read: running it does not disturb either state.
   assert.deepEqual(JSON.parse(JSON.stringify(beforeSnapshot)), beforeSnapshot);
 

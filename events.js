@@ -167,12 +167,12 @@ const EVENTS = [
   {
     id: "ambush_alley",
     title: "Ambush in the Alley",
-    body: `Two silhouettes step out at the mouth of the alley. You recognize Rook's colors.`,
+    body: `Two silhouettes step out at the mouth of the alley. You recognize Curtis's colors.`,
     weight: 2,
     triggers: ["travel"],
     condition: (g) => currentArea().rivalPressure >= 2 || g.rook.attention >= 8,
     choices: [
-      { label: "Fight them off", run: () => startCombat("rival_crew", "Two of Rook's goons step up.") },
+      { label: "Fight them off", run: () => startCombat("rival_crew", "Two of Curtis's goons step up.") },
       { label: "Drop some cash and bolt", run: (g) => {
         const tax = Math.min(g.cash, rng(120, 280));
         g.cash -= tax;
@@ -391,9 +391,9 @@ const EVENTS = [
   },
 
   {
-    id: "rook_collector",
-    title: "Rook's Tax Man",
-    body: `Squat guy in a Carhartt steps in front of you. "Rook says it's collection day. Two bills."`,
+    id: "curtis_collector",
+    title: "Curtis's Tax Man",
+    body: `Squat guy in a Carhartt steps in front of you. "Curtis says it's collection day. Two bills."`,
     weight: 2,
     triggers: ["travel", "laylow"],
     condition: (g) => g.rook.attention >= 4,
@@ -402,13 +402,13 @@ const EVENTS = [
         if (g.cash < 200) return `You can't cover. He backhands you and walks.` + (function(){ g.health -= 8; return ""; })();
         g.cash -= 200;
         g.rook.attention = Math.max(0, g.rook.attention - 3);
-        return `Paid. He nods and walks off. Rook pressure eases.`;
+        return `Paid. He nods and walks off. Curtis pressure eases.`;
       }},
       { label: "Hide in the crowd", run: (g) => {
         if (Math.random() < 0.5) { g.rook.attention += 2; return `He spots you anyway. Pressure up.`; }
         return `You slip into the next block.`;
       }},
-      { label: "Fight him", run: () => startCombat("rook_goon", "You swing first.") },
+      { label: "Fight him", run: () => startCombat("curtis_goon", "You swing first.") },
     ],
   },
 
@@ -604,7 +604,7 @@ const EVENTS = [
     choices: [
       { label: "Run him off", run: () => startCombat("rival_dealer", "He squares up.") },
       { label: "Split the block", run: (g) => { g.rep = Math.max(0, g.rep - 1); return `Uneasy truce. Rep -1.`; }},
-      { label: "Call Rook to mediate", run: (g) => { g.rook.attention += 3; return `Rook hears about it. Attention +3.`; }},
+      { label: "Call Curtis to mediate", run: (g) => { g.rook.attention += 3; return `Curtis hears about it. Attention +3.`; }},
     ],
   },
 
@@ -782,7 +782,7 @@ const EVENTS = [
   {
     id: "mina_in_trouble",
     title: "Mina's in Trouble",
-    body: `Mina texts. All caps. "Rook's people at my door. Need $800 now."`,
+    body: `Mina texts. All caps. "Curtis's people at my door. Need $800 now."`,
     weight: 1,
     triggers: ["laylow"],
     condition: (g) => g.mina.trust >= 3 && g.cash >= 800,
@@ -829,7 +829,7 @@ const EVENTS = [
         g.rook.attention = Math.max(0, g.rook.attention - 5);
         pushModifier("*", 1, 5, "Kingpin meeting aftermath");
         g.maxCarry += 10;
-        return `You sit with him. Walk out with +10 bag, -5 Rook pressure, +8 rep.`;
+        return `You sit with him. Walk out with +10 bag, -5 Curtis pressure, +8 rep.`;
       }},
       { label: "Walk away", run: (g) => { g.rep = Math.max(0, g.rep - 3); return `Rep -3. Word travels.`; }},
     ],

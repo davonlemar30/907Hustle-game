@@ -37,7 +37,7 @@ test("Day 2 Night guarantees the Mini-Mart encounter and resolution consumes no 
   const day = state.run.day, slot = state.run.slot;
   state = C.reduceGame(state, { type: "RESOLVE_ENCOUNTER", choiceId: "pay" });
   assert.equal(state.run.pendingEncounter.resolved, true);
-  assert.equal(state.flags.paidRookPassage, true);
+  assert.equal(state.flags.paidCurtisPassage, true);
   assert.equal(state.stats.pipelineAdvances, before + 1);
   assert.deepEqual([state.run.day, state.run.slot], [day, slot]);
   state = C.reduceGame(state, { type: "ACKNOWLEDGE_ENCOUNTER" });
@@ -108,20 +108,20 @@ test("active and resolved encounter state hydrates additively under the v3 save 
   assert.equal(hydrated.valid, true);
   assert.equal(hydrated.state.run.pendingEncounter.id, "mini_mart_parking_lot");
   assert.deepEqual(hydrated.state.encounterLog, { resolved: [], activeFlags: {}, randomKills: 0, randomFights: 0 });
-  assert.equal(C.SAVE_KEY, "907ogr_v4");
+  assert.equal(C.SAVE_KEY, "907ogr_v5");
 });
 
-test("authored serious violence closes the intact Mara escape ending", () => {
+test("authored serious violence closes the intact Mina escape ending", () => {
   function ending(serious) {
     let state = run();
     state.run.day = 7; state.run.slot = 3; state.run.finalPlan = "escape";
-    state.people.mara.trust = 4; state.people.mara.available = true; state.people.mara.usedWithoutConsent = false;
+    state.npc.mina.trust = 4; state.npc.mina.available = true; state.npc.mina.usedWithoutConsent = false;
     state.flags.seriousViolence = serious;
     state = C.reduceGame(state, { type: "END_MARKET" });
     state.run.pendingEvent = null; state.run.pendingEncounter = null;
     state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
     return state.run.ending;
   }
-  assert.equal(ending(false), "mara_escape");
+  assert.equal(ending(false), "mina_escape");
   assert.equal(ending(true), "clean_exit");
 });

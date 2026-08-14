@@ -11,15 +11,15 @@ function storyMetrics(state,beats){
   for(const b of beats){stall=Math.max(stall,b.slot-prev);prev=b.slot;}
   stall=Math.max(stall,C.RUN_DAYS*4-prev);
   return {storyBeats:story,ambientBeats:beats.length-story,ambientVariety:ambient.size,
-    maraChainDepth:state.people.mara.chainStage||0,chainStall:stall>=8?1:0};
+    minaChainDepth:state.npc.mina.chainStage||0,chainStall:stall>=8?1:0};
 }
 const strategies={
   cautious:{products:['weed','shrooms'],areas:['north_star_lot','downtown'],profit:1.10,heatCap:4,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['intimidate','talk','run','pay','surrender'],mode:'trader'},
-  balanced:{products:['weed','shrooms','cocaine'],areas:['north_star_lot','downtown'],profit:1.15,heatCap:7,plan:'defend',track:'security',gear:'utility_knife',crew:'miri',encounter:['talk','run','fight','pay','surrender'],mode:'mixed',property:true},
+  balanced:{products:['weed','shrooms','cocaine'],areas:['north_star_lot','downtown'],profit:1.15,heatCap:7,plan:'defend',track:'security',gear:'utility_knife',crew:'pherris',encounter:['talk','run','fight','pay','surrender'],mode:'mixed',property:true},
   aggressive:{products:['shrooms','weed'],areas:['north_star_lot','downtown'],profit:1.18,heatCap:11,plan:'last_score',track:'operations',gear:'cheap_handgun',crew:'tone',encounter:['draw','fight','pay','run','surrender'],mode:'thief',property:true},
-  // Alpha v0.7.1: works Kip's corner rather than the market. Stays in Spenard,
+  // Alpha v0.7.1: works Goodie's corner rather than the market. Stays in Spenard,
   // buys off him to build standing, and takes the corner when it is available.
-  stickup:{products:['weed','shrooms'],areas:['north_star_lot'],profit:1.12,heatCap:12,plan:'defend',track:'security',gear:'utility_knife',crew:'tone',encounter:['fight','draw','intimidate','pay','run','surrender'],dealer:'kip',mode:'stickup',property:true},
+  stickup:{products:['weed','shrooms'],areas:['north_star_lot'],profit:1.12,heatCap:12,plan:'defend',track:'security',gear:'utility_knife',crew:'tone',encounter:['fight','draw','intimidate','pay','run','surrender'],dealer:'goodie',mode:'stickup',property:true},
   legal_worker:{products:[],areas:['north_star_lot'],profit:2,heatCap:2,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['talk','run','pay','surrender'],mode:'legal'},
   trader:{products:['weed','shrooms'],areas:['north_star_lot','downtown'],profit:1.10,heatCap:5,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['talk','run','pay','surrender'],mode:'trader'},
   thief:{products:[],areas:['north_star_lot'],profit:2,heatCap:8,plan:'last_score',track:'security',gear:'utility_knife',crew:'tone',encounter:['run','talk','fight','surrender'],mode:'thief'},
@@ -30,11 +30,11 @@ const strategies={
   // an active lieutenant, to soak-test the new passive-income/raid systems.
   operator:{products:['weed','shrooms'],areas:['north_star_lot','downtown'],profit:1.12,heatCap:8,plan:'defend',track:'operations',gear:'utility_knife',crew:'eli',encounter:['talk','run','fight','pay','surrender'],mode:'mixed',property:true,operator:true},
 };
-function settle(state,profile,beats){let s=state,guard=0;const note=(id)=>{if(beats&&(!beats.length||beats[beats.length-1].id!==id))beats.push({id,slot:(s.run.day-1)*4+s.run.slot})};while(guard++<20){if(s.run.openingPending){s=C.reduceGame(s,{type:'DISMISS_OPENING'});continue}if(s.run.daySummary){s=C.reduceGame(s,{type:'DISMISS_DAY_SUMMARY'});continue}if(s.run.pendingOperationResult){s=C.reduceGame(s,{type:'ACKNOWLEDGE_OPERATION_RESULT'});continue}if(s.run.pendingEvent){note(s.run.pendingEvent.id);const choices=s.run.pendingEvent.choices;let index=choices.findIndex(c=>(c.effect?.cash||0)>=0);if(index<0)index=choices.findIndex(c=>Math.abs(c.effect?.cash||0)<=s.player.cash);s=C.reduceGame(s,{type:'RESOLVE_EVENT',choiceIndex:index<0?choices.length-1:index});continue}if(s.run.pendingEncounter){note(s.run.pendingEncounter.id);const available=C.selectors.encounterChoices(s).map(c=>c.id);const choice=profile.encounter.find(id=>available.includes(id))||available[0];s=C.reduceGame(s,{type:'RESOLVE_ENCOUNTER',choiceId:choice});continue}if(s.run.dayEndPending){s=C.reduceGame(s,{type:'CONFIRM_END_DAY'});continue}break}return s}
+function settle(state,profile,beats){let s=state,guard=0;const note=(id)=>{if(beats&&(!beats.length||beats[beats.length-1].id!==id))beats.push({id,slot:(s.run.day-1)*4+s.run.slot})};while(guard++<20){if(s.run.openingPending){s=C.reduceGame(s,{type:'DISMISS_OPENING'});continue}if(s.run.daySummary){s=C.reduceGame(s,{type:'DISMISS_DAY_SUMMARY'});continue}if(s.run.pendingOperationResult){s=C.reduceGame(s,{type:'ACKNOWLEDGE_OPERATION_RESULT'});continue}if(s.run.pendingEncounter){note(s.run.pendingEncounter.id);const available=C.selectors.encounterChoices(s).map(c=>c.id);const choice=profile.encounter.find(id=>available.includes(id))||available[0];s=C.reduceGame(s,{type:'RESOLVE_ENCOUNTER',choiceId:choice});continue}if(s.run.pendingEvent){note(s.run.pendingEvent.id);const choices=s.run.pendingEvent.choices;let index=s.run.pendingEvent.id==='dre_terms'?choices.length-1:choices.findIndex(c=>(c.effect?.cash||0)>=0);if(index<0)index=choices.findIndex(c=>Math.abs(c.effect?.cash||0)<=s.player.cash);s=C.reduceGame(s,{type:'RESOLVE_EVENT',choiceIndex:index<0?choices.length-1:index});continue}if(s.run.dayEndPending){s=C.reduceGame(s,{type:'CONFIRM_END_DAY'});continue}break}return s}
 function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun({seed}),{type:'START_RUN',streetName:`Sim ${seed}`}),guard=0;const beats=[];while(s.run.status==='playing'&&guard++<500){s=settle(s,p,beats);if(s.run.status!=='playing')break;
     if(s.run.phase==='week_zero'){
       if(s.run.slot>=2&&!s.nightOwl.boardViewedDays.includes(s.run.day)){s=C.reduceGame(s,{type:'VIEW_NIGHT_OWL_BOARD'});continue}
-      if(s.run.slot>=2&&!s.people.mara.met){s=C.reduceGame(s,{type:'VISIT_NIGHT_OWL'});continue}
+      if(s.run.slot>=2&&!s.npc.mina.met){s=C.reduceGame(s,{type:'VISIT_NIGHT_OWL'});continue}
       const regular=C.selectors.nightOwlRegularFor(s),regularState=s.nightOwl.regulars[regular.id];
       if(s.run.slot>=2&&regularState.lastTalkDay!==s.run.day){s=C.reduceGame(s,{type:'TALK_NIGHT_OWL_REGULAR',regularId:regular.id});continue}
       const job=C.selectors.discoveredJobs(s).find(entry=>C.selectors.jobAvailability(s,entry.id).available);
@@ -66,15 +66,6 @@ function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun
       const ownedBlock=C.SPENARD_BLOCKS.find(b=>s.world.territoryBlocks[b.id].owner==='player'&&C.selectors.soldierAssignAvailability(s,unassigned?.id,b.id).available);
       if(unassigned&&ownedBlock){s=C.reduceGame(s,{type:'ASSIGN_SOLDIER',soldierId:unassigned.id,blockId:ownedBlock.id});continue}
     }
-    if(p.operator&&C.selectors.kipLieutenantAvailability(s).available){
-      s.run.pendingEvent=C.buildEventForTest('kip_lieutenant_intro',s);
-      const idx=s.run.pendingEvent.choices.findIndex(c=>c.label.toLowerCase().includes('bring kip'));
-      s=C.reduceGame(s,{type:'RESOLVE_EVENT',choiceIndex:idx<0?0:idx});continue;
-    }
-    if(p.operator&&s.people.crew.kip.recruited&&s.player.dirtyCash>=100){
-      const avail=C.selectors.launderAvailability(s,Math.min(200,s.player.dirtyCash));
-      if(avail.available){s=C.reduceGame(s,{type:'LAUNDER_CASH',amount:Math.min(200,s.player.dirtyCash)});continue}
-    }
     if(p.dealer){
       const actions=C.selectors.dealerActions(s,p.dealer);
       if(actions.rob.available){s=C.reduceGame(s,{type:'ROB_DEALER',dealerId:p.dealer});continue}
@@ -87,13 +78,13 @@ function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun
     if(s.lender.balance&&s.player.cash>=s.lender.balance+100&&s.run.day>=2){s=C.reduceGame(s,{type:'PAY_DEBT',amount:s.lender.balance});continue}
     if(s.player.heat>p.heatCap){s=C.reduceGame(s,{type:'LAY_LOW'});continue}
     const next=p.areas[(Math.max(0,p.areas.indexOf(area))+1)%p.areas.length],busCovered=s.world.transport.weekPass||s.world.transport.dayPassDay===s.run.day;s=next===area?C.reduceGame(s,{type:'END_MARKET'}):next==='north_star_lot'&&s.player.cash<5&&!busCovered?C.reduceGame(s,{type:'WALK_HOME'}):['downtown','north_star_lot'].includes(next)&&s.player.cash<5&&!busCovered?C.reduceGame(s,{type:'END_MARKET'}):['downtown','north_star_lot'].includes(next)?C.reduceGame(s,{type:'BUS_TRAVEL',neighborhoodId:next}):C.reduceGame(s,{type:'TRAVEL',neighborhoodId:next});
-  }s=settle(s,p,beats);const summary=C.selectRunSummary(s);summary.completed=s.run.status==='ended';summary.finalState={day:s.run.day,slot:s.run.slot,energy:s.player.energy,phase:s.run.phase,pending:s.run.pendingEvent?.id||s.run.pendingEncounter?.id||null,dayEnd:s.run.dayEndPending,overtime:s.run.overtimeArmed,baseVisiting:s.base.visiting};summary.decisions=s.stats.decisions;summary.encounters=s.run.encounterCount;summary.baseValue=C.selectors.baseValue(s);summary.crew=C.selectors.recruitedCrew(s).length;summary.dealer={...(s.people.dealers?.kip||{})};summary.identityAssignedDay=s.player.identityAssignedDay;summary.identityHistoryLength=s.player.identityHistory.length;summary.meaningfulActions=s.player.behavior.meaningfulActions;summary.derivedRatings=Object.values(C.selectors.derivedRatings(s)).join('/');summary.garageDay=s.base.acquiredDay||0;summary.evicted=s.people.household.evicted?1:0;summary.discoveries=s.world.locations.discoveries.length;summary.attributeGains=Object.values(s.player.attributes).reduce((n,v)=>n+Math.max(0,v-2),0);summary.streetReadTier=s.streetRead.tier;summary.streetReadScore=s.streetRead.score;summary.streetReadEntries=s.streetRead.totalLifetimeEntries;summary.employerStanding=s.world.locations.employer.standing;summary.gamblingNet=s.world.locations.gambling.net;Object.assign(summary,storyMetrics(s,beats));return summary}
+  }s=settle(s,p,beats);const summary=C.selectRunSummary(s);summary.completed=s.run.status==='ended';summary.finalState={day:s.run.day,slot:s.run.slot,energy:s.player.energy,phase:s.run.phase,pending:s.run.pendingEncounter?.id||s.run.pendingEvent?.id||null,dayEnd:s.run.dayEndPending,overtime:s.run.overtimeArmed,baseVisiting:s.base.visiting};summary.decisions=s.stats.decisions;summary.encounters=s.run.encounterCount;summary.baseValue=C.selectors.baseValue(s);summary.crew=C.selectors.recruitedCrew(s).length;summary.dealer={...(s.people.dealers?.goodie||{})};summary.identityAssignedDay=s.player.identityAssignedDay;summary.identityHistoryLength=s.player.identityHistory.length;summary.meaningfulActions=s.player.behavior.meaningfulActions;summary.derivedRatings=Object.values(C.selectors.derivedRatings(s)).join('/');summary.garageDay=s.base.acquiredDay||0;summary.evicted=s.people.household.evicted?1:0;summary.discoveries=s.world.locations.discoveries.length;summary.attributeGains=Object.values(s.player.attributes).reduce((n,v)=>n+Math.max(0,v-2),0);summary.streetReadTier=s.streetRead.tier;summary.streetReadScore=s.streetRead.score;summary.streetReadEntries=s.streetRead.totalLifetimeEntries;summary.employerStanding=s.world.locations.employer.standing;summary.gamblingNet=s.world.locations.gambling.net;Object.assign(summary,storyMetrics(s,beats));return summary}
 function summarize(name,count){const runs=Array.from({length:count},(_,i)=>play(1000+i,name)),endings={};for(const r of runs)endings[r.endingLabel]=(endings[r.endingLabel]||0)+1;const avg=k=>Math.round(runs.reduce((n,r)=>n+(r[k]||0),0)/count);const robbery=k=>runs.reduce((n,r)=>n+(r.robbery?.[k]||0),0);return{strategy:name,runs:count,completed:runs.filter(r=>r.completed).length,averageCash:avg('cash'),averageNetWorth:avg('netWorth'),averageOperationScore:avg('operationScore'),averageDebt:avg('debt'),averageHighestHeat:avg('highestHeat'),averageDecisions:avg('decisions'),averageEncounters:avg('encounters'),averageBaseValue:avg('baseValue'),averageCrew:avg('crew'),robAttempts:robbery('attempts'),robSuccesses:robbery('successes'),robFailures:robbery('failures'),robPayout:robbery('totalPayout'),territoryAttempts:runs.reduce((n,r)=>n+(r.takeovers?.attempts||0),0),deadEnds:runs.filter(r=>!r.completed).length,
   averageStoryBeats:Number((runs.reduce((n,r)=>n+r.storyBeats,0)/count).toFixed(1)),
   averageAmbientBeats:Number((runs.reduce((n,r)=>n+r.ambientBeats,0)/count).toFixed(1)),
   averageAmbientVariety:Number((runs.reduce((n,r)=>n+r.ambientVariety,0)/count).toFixed(1)),
-  maraReachedStage4:Number((100*runs.filter(r=>r.maraChainDepth>=4).length/count).toFixed(0)),
-  maraReachedStage6:Number((100*runs.filter(r=>r.maraChainDepth>=6).length/count).toFixed(0)),
+  minaReachedStage4:Number((100*runs.filter(r=>r.minaChainDepth>=4).length/count).toFixed(0)),
+  minaReachedStage6:Number((100*runs.filter(r=>r.minaChainDepth>=6).length/count).toFixed(0)),
   chainStallRuns:runs.reduce((n,r)=>n+r.chainStall,0),
   dealerRobberies:runs.reduce((n,r)=>n+(r.dealer?.robbedCount||0),0),
   dealerGone:runs.filter(r=>r.dealer?.gone).length,
@@ -108,5 +99,12 @@ function summarize(name,count){const runs=Array.from({length:count},(_,i)=>play(
   derivedRatingDistribution:runs.reduce((out,r)=>{const key=r.derivedRatings||'2/2/2';out[key]=(out[key]||0)+1;return out},{}),
   legacySaveSmoke:C.selectors.derivedRatings(C.hydrateRun({...C.reduceGame(C.createRun({seed:99}),{type:'START_RUN',streetName:'Legacy'}),player:{...C.reduceGame(C.createRun({seed:99}),{type:'START_RUN',streetName:'Legacy'}).player,background:'shooter',attributes:undefined}})),
   endings}}
-const count=Number(process.argv[2]||200);if(require.main===module)console.log(JSON.stringify(Object.keys(strategies).map(name=>summarize(name,count)),null,2));
+if(require.main===module){
+  const names=Object.keys(strategies),totalMode=process.argv[2]==='--total';
+  const requested=Math.max(1,Number(process.argv[totalMode?3:2]||200));
+  const results=totalMode
+    ? names.map((name,index)=>summarize(name,Math.floor(requested/names.length)+(index<requested%names.length?1:0)))
+    : names.map(name=>summarize(name,requested));
+  console.log(JSON.stringify(results,null,2));
+}
 module.exports={play,summarize,strategies};

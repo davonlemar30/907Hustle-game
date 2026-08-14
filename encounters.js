@@ -103,7 +103,7 @@
       downtown: ["intimidate_buyer", "source_cocaine"],
       airport_industrial: ["outer_run", "source_meth"],
     };
-    return Object.entries(crew).some(([id, record]) => record?.recruited && record.status === "active" && (assignments[areaId] || []).includes(record.assignment) && id !== "kip");
+    return Object.entries(crew).some(([id, record]) => record?.recruited && record.status === "active" && (assignments[areaId] || []).includes(record.assignment) && id !== "goodie");
   }
   function toneNearby(state, areaId) {
     const tone = state.people?.crew?.tone;
@@ -257,7 +257,7 @@
       if (weapon || (a.strength || 0) >= 4 || toneNearby(state, areaId)) choices.push(choice("fight", "Fight", "Combat, health, protection, and nearby backup shape the result."));
       if (weapon) choices.push(choice("draw", `Draw ${weapon.name}`, "Escalate first, then commit or find another exit."));
       if (hasNearbyCrew(state, areaId)) choices.push(choice("call_crew", "Call Crew", "Nearby crew can end this, but the response will be visible."));
-      if (encounter.type === "authored" && (state.flags?.rookArrangement || state.rival?.respect >= 3)) choices.push(choice("use_relationship", "Invoke Rook's Arrangement", "Spend relationship leverage instead of blood or money."));
+      if (encounter.type === "authored" && (state.flags?.curtisArrangement || state.npc.curtis?.respect >= 3)) choices.push(choice("use_relationship", "Invoke Curtis's Arrangement", "Spend relationship leverage instead of blood or money."));
       if (state.player.gear?.consumables?.medical_kit > 0 && state.player.health < 100) choices.push(choice("medical_kit", "Use Medical Kit", "Recover now, but the confrontation keeps moving."));
       if (state.player.gear?.equipped?.tool === "burner_phone") choices.push(choice("burner_phone", "Burn the Phone", "Create a fast distraction; the phone will be gone afterward."));
     } else {
@@ -329,10 +329,10 @@
         addHeat(state, killed ? 5 : 2);
         if (killed) {
           setFlag(state, "seriousViolence", true);
-          state.people.mara.trust -= 1;
+          state.npc.mina.trust -= 1;
         }
-        state.rival.respect += 1;
-        finish(state, encounter, killed ? "serious_violence" : "won", killed ? "The weapon makes the ending final. The lot empties, Heat climbs, and Mara will hear which boundary you crossed." : "You stay upright after the three of them decide the lot is no longer worth taking.");
+        state.npc.curtis.respect += 1;
+        finish(state, encounter, killed ? "serious_violence" : "won", killed ? "The weapon makes the ending final. The lot empties, Heat climbs, and Mina will hear which boundary you crossed." : "You stay upright after the three of them decide the lot is no longer worth taking.");
       }
     } else {
       const attack = encounter.type === "random" ? encounter.npc.attack : [10, 19];
@@ -353,16 +353,16 @@
       const attack = encounter.type === "random" ? encounter.npc.attack : [9, 17];
       damage = applyDamage(state, int(rng, attack[0], attack[1]), true);
     }
-    if (encounter.type === "authored") setFlag(state, "returningRookThreat", true);
+    if (encounter.type === "authored") setFlag(state, "returningCurtisThreat", true);
     finish(state, encounter, success ? "escaped" : "escaped_hurt", success ? `You find the open lane first. ${cost} stays behind, but you do not.` : `They catch you once before you clear the lot. You lose ${damage} health and ${cost}, but the escape does not take your life.`);
   }
   function resolveTalk(state, encounter, rng) {
     const a = attributes(state);
-    const arrangement = state.flags.rookArrangement ? 0.12 : 0;
+    const arrangement = state.flags.curtisArrangement ? 0.12 : 0;
     const aggression = encounter.type === "random" ? encounter.npc.aggression : 0.20;
     const chance = clamp(0.28 + (a.presence || 0) * 0.08 + (a.insight || 0) * 0.05 + arrangement + influence(state, encounter.areaId) * 0.025 - aggression, 0.12, 0.90);
     if (next(rng) < chance) {
-      if (encounter.type === "authored") { setFlag(state, "negotiatedRookPassage", true); state.rival.respect += 1; }
+      if (encounter.type === "authored") { setFlag(state, "negotiatedCurtisPassage", true); state.npc.curtis.respect += 1; }
       finish(state, encounter, "talked", "You name the people, the cameras, and the cost of making this messy. The red gloves disappear into a pocket and the lane opens.");
     } else {
       const loss = escapeCost(state, encounter, rng, false);
@@ -394,7 +394,7 @@
     } else if (choiceId === "pay") {
       const demand = encounter.type === "random" ? encounter.npc.demand : encounter.pay;
       spendCash(state, demand);
-      if (encounter.type === "authored") setFlag(state, "paidRookPassage", true);
+      if (encounter.type === "authored") setFlag(state, "paidCurtisPassage", true);
       finish(state, encounter, "paid", `You put $${demand} where everybody can see it. The lane opens without blood, and the price is remembered.`);
     } else if (choiceId.startsWith("surrender:")) {
       const productId = choiceId.split(":")[1];
@@ -404,9 +404,9 @@
     } else if (choiceId === "run") resolveRun(state, encounter, rng);
     else if (choiceId === "talk") resolveTalk(state, encounter, rng);
     else if (choiceId === "use_relationship") {
-      state.rival.respect = Math.max(0, state.rival.respect - 1);
-      setFlag(state, "rookArrangementUsed", true);
-      finish(state, encounter, "relationship", "You repeat the arrangement exactly as Rook gave it. The red gloves stop moving, and the three of them decide this collection belongs to somebody else.");
+      state.npc.curtis.respect = Math.max(0, state.npc.curtis.respect - 1);
+      setFlag(state, "curtisArrangementUsed", true);
+      finish(state, encounter, "relationship", "You repeat the arrangement exactly as Curtis gave it. The red gloves stop moving, and the three of them decide this collection belongs to somebody else.");
     } else if (choiceId === "call_crew") {
       const tone = state.people.crew?.tone;
       if (tone?.recruited && tone.loyalty > -2) tone.loyalty -= 1;

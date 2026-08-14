@@ -4,7 +4,7 @@ Date: 2026-08-05 (America/Anchorage)
 
 ## Outcome
 
-The fresh-arrival build is mechanically complete and automated verification is green. New players can spend Day 1 working, exploring, training, shoplifting, meeting Mara, riding Downtown, browsing property, or discovering gambling and suppliers. Trading is optional. Legacy v3 saves preserve the established garage-first premise and assets.
+The fresh-arrival build is mechanically complete and automated verification is green. New players can spend Day 1 working, exploring, training, shoplifting, meeting Mina, riding Downtown, browsing property, or discovering gambling and suppliers. Trading is optional. Legacy v3 saves preserve the established garage-first premise and assets.
 
 ## Automated results
 
@@ -35,7 +35,7 @@ Gambling averaged **−$157** per run. Trainer-only play averaged two attribute 
 | mara_shift_change | Compatible | Earned recurring contact |
 | mara_invitation | Eligibility change | Garage choice only after acquisition |
 | mara_boundary | Copy rewrite | No premature sedan; information boundary |
-| mara_sedan_night | Eligibility change | Boundary, continuity, and Rook pressure 4+ |
+| mara_sedan_night | Eligibility change | Boundary, continuity, and Curtis pressure 4+ |
 | mara_after | Compatible | Existing outcomes preserved |
 | eli_offer | Eligibility change | Garage-controlled introduction |
 | eli_callback | Compatible | Rejection continuity preserved |
@@ -49,12 +49,12 @@ Gambling averaged **−$157** per run. Trainer-only play averaged two attribute 
 | dre_after_payoff | Compatible | Payoff offer preserved |
 | dre_day7 | Compatible | Final accounting preserved |
 | rook_mark | Eligibility change | Requires player-created attention |
-| early_street | Compatible | Mara-free behavior-created threat |
+| early_street | Compatible | Mina-free behavior-created threat |
 | rook_tax | Compatible | Pressure chain preserved |
 | rook_cut | Compatible | Pressure chain preserved |
-| mid | Eligibility change | Garage and earned Rook continuity |
+| mid | Eligibility change | Garage and earned Curtis continuity |
 | rook_day7 | Compatible | Final outcome preserved |
-| kip_corner_intro | Eligibility change | Kip found through exploration |
+| kip_corner_intro | Eligibility change | Goodie found through exploration |
 | kip_retaliation | Compatible | Robbery history preserved |
 | kip_recognized | Compatible | Dealer continuity preserved |
 | miri_offer | Compatible | Existing contact route preserved |

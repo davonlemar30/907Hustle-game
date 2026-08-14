@@ -34,7 +34,7 @@ test("all four starter jobs lead the seeded order across 50 seeds and first Wand
 test("starter shifts prioritize unseen coworkers and any third shift can refer the gambling game", () => {
   for (const jobId of C.STARTER_JOB_IDS) {
     let state = fresh(1600 + C.STARTER_JOB_IDS.indexOf(jobId));
-    state.jobs.discovered = ["day_labor", jobId]; state.jobs.hired = ["day_labor", jobId];
+    state.jobs.discovered = ["day_labor", jobId]; state.jobs.hired = ["day_labor", jobId]; state.jobs.activeJobId = jobId;
     const seen = [];
     for (let shift = 1; shift <= 3; shift += 1) {
       clear(state);

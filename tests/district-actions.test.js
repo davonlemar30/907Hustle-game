@@ -121,8 +121,8 @@ test("wrong-district reducers reject Spenard actions while valid Spenard actions
   const state = place(fresh(91000), "downtown", { cash: 500, slot: 2 });
   state.world.locations.gamblingKnown = true;
   state.jobs.discovered = C.SPENARD_JOBS.map((job) => job.id);
-  state.people.mara.met = true;
-  state.people.mara.available = true;
+  state.npc.mina.met = true;
+  state.npc.mina.available = true;
   const rejected = [
     { type: "WANDER_SPENARD" },
     { type: "EXPLORE_SPENARD" },

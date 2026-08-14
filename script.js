@@ -809,17 +809,17 @@ function triggerRandomEvent(source) {
       run: () => {
         GAME.rook.warned = true;
         GAME.rook.attention += 3;
-        addFeed("Rival pressure rises. Rook's people are checking your route.", "bad");
+        addFeed("Rival pressure rises. Curtis's people are checking your route.", "bad");
       },
     });
     pool.push({
-      id: "rook_tax",
+      id: "curtis_tax",
       weight: pressure === "Active" ? 9 : 3,
       run: () => {
         const tax = Math.min(GAME.cash, rng(35, 130));
         GAME.cash -= tax;
         GAME.rook.taxActive = true;
-        addFeed(`Rook pressure tax hits for $${tax}.`, "bad");
+        addFeed(`Curtis pressure tax hits for $${tax}.`, "bad");
       },
     });
   }
@@ -1257,7 +1257,7 @@ function renderBankScreen() {
       <div class="row simple header"><span>Lender</span><span>Status</span></div>
       <div class="row simple"><span><strong>Dre</strong><br><small class="muted">Primary street credit line</small></span><span>${GAME.dre.loanOutstanding > 0 ? `$${GAME.dre.loanOutstanding.toLocaleString()} due Day ${GAME.dre.deadlineDay}` : "No active loan"}</span></div>
       <div class="row simple"><span><strong>Mina</strong><br><small class="muted">Insider discounts unlock with trust</small></span><span>${GAME.mina.trust >= 5 ? "Discounts active" : `Trust ${GAME.mina.trust}/5`}</span></div>
-      <div class="row simple"><span><strong>Rook</strong><br><small class="muted">Territory tax pressure</small></span><span>${GAME.rook.taxActive ? "Tax active" : "No current tax"}</span></div>
+      <div class="row simple"><span><strong>Curtis</strong><br><small class="muted">Territory tax pressure</small></span><span>${GAME.rook.taxActive ? "Tax active" : "No current tax"}</span></div>
     </div>
   `;
 }
@@ -1273,7 +1273,7 @@ function renderPhoneScreen() {
 
   const contactsHtml = `
     <button class="row simple ${selectedId === "dre" ? "active-contact" : ""}" data-select-contact="dre" type="button">
-      <span><strong>Dre Holloway</strong><br><small class="muted">${unlocked ? "Street Intel" : "Locked"}</small></span>
+      <span><strong>Dre Smooth</strong><br><small class="muted">${unlocked ? "Street Intel" : "Locked"}</small></span>
       <span>${unread > 0 ? `${unread} new` : "—"}</span>
     </button>
     <div class="row simple locked-contact"><span><strong>Plug</strong><br><small class="muted">Category unlocks</small></span><span>Locked</span></div>

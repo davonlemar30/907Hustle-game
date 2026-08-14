@@ -142,7 +142,7 @@ test("phone bill grace lasts through Day 9 and service shuts off entering Day 10
   assert.equal(state.phone.active, false);
 });
 
-test("walk-in payment restores a dead phone on its next part-of-day advance", () => {
+test("walk-in payment restores a dead phone immediately without spending time", () => {
   let state = fresh(1705);
   state.run.day = 10;
   state.run.slot = 0;
@@ -152,11 +152,14 @@ test("walk-in payment restores a dead phone on its next part-of-day advance", ()
   state.player.cash = 200;
   state.player.cleanCash = 200;
   state = C.reduceGame(state, { type: "PAY_PHONE_BILL", surface: "store" });
-  assert.equal(state.run.slot, 1);
+  assert.equal(state.run.slot, 0);
+  assert.equal(state.phone.active, false);
+  assert.equal(state.phone.reactivateAtSlot != null, true);
+  state.run.consequenceQueue = [];
+  state = C.advanceRun(state, { reason: "END_MARKET", suppressStory: true });
   assert.equal(state.phone.active, true);
   assert.equal(state.phone.heldInbox.length, 0);
   assert.equal(state.phone.inbox.some((message) => message.id === "held"), true);
-  assert.equal(state.run.consequenceQueue.length, 0);
 });
 
 test("907List online payment is free and requires both laptop and live service", () => {
@@ -227,7 +230,7 @@ test("Day 1 yields one discovered employer and Day Labor remains an always-hired
   assert.equal(state.jobs.discovered.filter((id) => id !== "day_labor").length, 1);
 });
 
-test("applications consume one part and resolve after two elapsed parts", () => {
+test("applications consume one part and mature into explicit offers", () => {
   let state = fresh(1710);
   state.jobs.discovered.push("wash_go");
   state = C.reduceGame(state, { type: "APPLY_JOB", jobId: "wash_go" });
@@ -236,8 +239,11 @@ test("applications consume one part and resolve after two elapsed parts", () => 
   assert.equal(state.jobs.hired.includes("wash_go"), false);
   clearSurfaces(state);
   state = C.advanceRun(state, { reason: "END_MARKET", suppressStory: true });
+  clearSurfaces(state);
+  state = C.advanceRun(state, { reason: "END_MARKET", suppressStory: true });
   assert.equal(state.jobs.applications.length, 0);
-  assert.equal(state.jobs.hired.includes("wash_go"), true);
+  assert.equal(state.jobs.offers.includes("wash_go"), true);
+  assert.equal(state.jobs.hired.includes("wash_go"), false);
   assert.equal(state.phone.inbox.some((message) => message.from === "Wash & Go Attendant"), true);
 });
 
@@ -248,19 +254,23 @@ test("a dead phone holds an application callback until service returns", () => {
   clearSurfaces(state);
   state.phone.active = false;
   state = C.advanceRun(state, { reason: "END_MARKET", suppressStory: true });
+  state = C.advanceRun(clearSurfaces(state), { reason: "END_MARKET", suppressStory: true });
   assert.equal(state.jobs.hired.includes("wash_go"), false);
   assert.equal(state.jobs.applications.length, 1);
-  state.phone.reactivateAtSlot = (state.run.day - 1) * C.SLOTS.length + state.run.slot;
+  state.phone.active = true;
+  state.phone.reactivateAtSlot = null;
+  state.phone.heldInbox = [];
   state = C.advanceRun(clearSurfaces(state), { reason: "END_MARKET", suppressStory: true });
   assert.equal(state.phone.active, true);
-  assert.equal(state.jobs.hired.includes("wash_go"), true);
+  assert.equal(state.jobs.offers.includes("wash_go"), true);
 });
 
-test("Juan's referral skips the callback delay", () => {
+test("Juan's referral skips the callback delay and creates an explicit offer", () => {
   let state = fresh(1712);
   state.run.pendingEvent = C.buildEventForTest("juan_referral", state);
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
-  assert.equal(state.jobs.hired.includes("juan_warehouse"), true);
+  assert.equal(state.jobs.offers.includes("juan_warehouse"), true);
+  assert.equal(state.jobs.hired.includes("juan_warehouse"), false);
   assert.equal(state.jobs.discovered.includes("juan_warehouse"), true);
   assert.equal(state.jobs.applications.length, 0);
 });
@@ -297,7 +307,7 @@ test("PHONE_INTEL supplies at least six unique lines for every district and part
   }
 });
 
-test("v3 saves migrate jobs, household trust, listing knowledge, and terminal states to v4", () => {
+test("v3 saves migrate jobs, household trust, listing knowledge, and terminal states to v5", () => {
   for (const [status, phase] of [["playing", "week_zero"], ["playing", "pressure"], ["ended", "pressure"]]) {
     const raw = JSON.parse(C.serializeRun(fresh(1713)));
     raw.version = 3;
@@ -317,11 +327,11 @@ test("v3 saves migrate jobs, household trust, listing knowledge, and terminal st
     delete raw.memberships;
     delete raw.obligations;
     const loaded = C.hydrateRun(raw);
-    assert.equal(loaded.version, 4);
+    assert.equal(loaded.version, 5);
     assert.equal(loaded.run.status, status);
     assert.equal(loaded.npc.yalonda.trust, 4);
     assert.equal(loaded.knowledge.knows907List, true);
-    assert.equal(loaded.jobs.hired.includes("wash_go"), true);
+    assert.equal(loaded.jobs.offers.includes("wash_go"), false);
     assert.equal(loaded.jobs.hired.includes("day_labor"), true);
     assert.equal(loaded.phone.billDueDay, raw.run.day + 7);
   }

@@ -31,7 +31,7 @@ Last updated: 2026-08-12 (America/Anchorage)
 - Places combines daily life and travel. Work, exploration, gym, gambling, shoplifting, buses, home storage, and garage listing are playable.
 - North Star Garage is optional at a $650 deposit; all garage-dependent systems and beats are ownership-gated.
 - Street Read and hidden attribute progress are implemented separately from Street Identity and Operation Score.
-- Mara starts as a stranger; Rook starts unaware; Kip is discovered through play. The 43-beat registry is audited in `EIGHTH_PLAYTEST_AUDIT.md`.
+- Mina starts as a stranger; Curtis starts unaware; Goodie is discovered through play. The 43-beat registry is audited in `EIGHTH_PLAYTEST_AUDIT.md`.
 - Save schema/key remain version 3 / `907ogr_v3`; legacy v3 saves retain established state.
 - Verification: 97 tests passed; 2,000/2,000 simulations completed with zero dead ends; ten responsive viewports passed. Three full human-style runs remain open.
 
@@ -56,11 +56,11 @@ Last updated: 2026-08-12 (America/Anchorage)
 
 ## Alpha v0.7.1 implementation
 
-1. Kip Sallis is the dealer prototype: one persistent named NPC supporting Buy, Ask, and Rob, so the Hustle and Stickup tracks are legible against the same person. Robbing him pays cash and free product but chokes Spenard supply for two days; two successes put him off the block permanently.
+1. Goodie is the dealer prototype: one persistent named NPC supporting Buy, Ask, and Rob, so the Hustle and Stickup tracks are legible against the same person. Robbing him pays cash and free product but chokes Spenard supply for two days; two successes put him off the block permanently.
 2. `executeDealerRobbery` mirrors `executeRob`, including the `suppressStory` tail. The stickup is deliberately not gated by the Rob working-capital threshold.
-3. Eli, Dre, and Rook chains completed — ten new authored beats. The registry now carries 43 beats across five chains.
+3. Eli, Dre, and Curtis chains completed — ten new authored beats. The registry now carries 43 beats across five chains.
 4. The registry supports branch stages, so a chain can offer alternative beats at the same point.
-5. Place-rooted beats outrank anywhere-beats when the player is standing in that place. This fixed Mara collapsing to 9% once three area-agnostic chains were added.
+5. Place-rooted beats outrank anywhere-beats when the player is standing in that place. This fixed Mina collapsing to 9% once three area-agnostic chains were added.
 6. Reactive beats no longer count toward the anti-monopoly streak.
 
 ## Alpha v0.7 implementation
@@ -68,9 +68,9 @@ Last updated: 2026-08-12 (America/Anchorage)
 1. The linear `scheduleStory` ladder is replaced by `STORY_REGISTRY`: 30 declarative descriptors carrying chain, stage, classification, trigger tier, gating, cooldown, weight, and an exit condition.
 2. Selection runs in three tiers. `reactive` beats fire on their cause; `chain` beats roll at 0.30 with a +0.16 pity bonus; `ambient` beats use the existing risk formula plus a +0.16 quiet-week bonus. Opening variance measures 26 of 30 distinct sequences across seeds, against exactly one under v0.6.
 3. An anti-monopoly filter drops a chain from the pool after two consecutive beats whenever anything else is eligible, and `STORY_BEATS_PER_DAY` caps the week at two story beats per day.
-4. Mara has a six-stage arc with a want independent of the player (a Ship Creek dispatch job that public association with the operation would cost her), an optional evening, a boundary scene gated on trust, a threat, and an aftermath that branches on treatment.
-5. The Day 2 threat is now always the Mara-free `early_street`. Her sedan encounter moved to stage 5, Day 5 onward, so the run no longer endangers her before the player has context.
-6. Three Day 7 Mara outcomes: `mara_escape`, the new `mara_clear` (she takes the Monday interview and you go your own way — a separation, not a failure), and the new `mara_gone`.
+4. Mina has a six-stage arc with a want independent of the player (a Ship Creek dispatch job that public association with the operation would cost her), an optional evening, a boundary scene gated on trust, a threat, and an aftermath that branches on treatment.
+5. The Day 2 threat is now always the Mina-free `early_street`. Her sedan encounter moved to stage 5, Day 5 onward, so the run no longer endangers her before the player has context.
+6. Three Day 7 Mina outcomes: `mara_escape`, the new `mara_clear` (she takes the Monday interview and you go your own way — a separation, not a failure), and the new `mara_gone`.
 7. Nine repeatable one-off street events were added, five of which involve no criminal transaction.
 8. A copy audit scored all 20 active beats against the Task 7A standard; all 14 inherited v0.6 events failed on description and result length and were rewritten. Effects, flags, and gating are unchanged.
 9. An optional Street Name is offered before edge selection: 16 characters, sanitized to `[A-Za-z0-9 '-.]`, with an edge-derived default when skipped and exactly six approved usage sites.
@@ -89,7 +89,7 @@ All time-consuming actions still route through `advanceRun` exactly once. Story 
 
 - No version bump. `people.dealers`, `run.eventHistory`, `run.lastChainFired`, `run.chainStreak`, `run.lastChainSlot`, `run.lastBeatSlot`, `run.chainBeatsToday`, `run.chainBeatsDay`, `player.streetName`, `player.streetNameChosen`, `people.mara.chainStage`, and `people.mara.jobAtRisk` are additive and fill through `mergeDefaults`.
 - Pre-v0.7 and pre-v0.7.1 saves are both constructed and hydrated in `tests/game-core.test.js`. The older one reports `Unnamed run`; the newer one gains an unmet dealer record and a supply factor of 1.
-- Existing Mara flag names (`toldMaraTruth`, `usedMaraWithoutConsent`, `maraIntroChoice`) are preserved so v0.6 saves keep their history.
+- Existing Mina flag names (`toldMaraTruth`, `usedMaraWithoutConsent`, `maraIntroChoice`) are preserved so v0.6 saves keep their history.
 
 ## Verification
 
@@ -105,20 +105,20 @@ Command: `node --test tests/*.test.js`
 Command: `node tests/simulate-runs.js 200`
 
 - 800/800 runs terminated across four profiles; 0 dead ends.
-- cautious: 8.5 story / 5.0 ambient beats, Mara stage 4+ in 48%, quiet runs 7/200.
-- balanced: 8.8 story / 5.9 ambient beats, Mara stage 4+ in 17%, quiet runs 2/200.
-- aggressive: 5.6 story / 3.6 ambient beats, Mara stage 4+ in 0%, quiet runs 145/200.
-- stickup: 7.7 story / 4.3 ambient beats, Mara stage 4+ in 54% and 6 in 37%, 332 dealer robberies across 200 runs.
+- cautious: 8.5 story / 5.0 ambient beats, Mina stage 4+ in 48%, quiet runs 7/200.
+- balanced: 8.8 story / 5.9 ambient beats, Mina stage 4+ in 17%, quiet runs 2/200.
+- aggressive: 5.6 story / 3.6 ambient beats, Mina stage 4+ in 0%, quiet runs 145/200.
+- stickup: 7.7 story / 4.3 ambient beats, Mina stage 4+ in 54% and 6 in 37%, 332 dealer robberies across 200 runs.
 
-The aggressive profile never returns to Spenard, so Mara is structurally unreachable for it — the district gate working as intended. Its quiet count is largely an artifact of the bot spamming Rob, which passes `suppressStory: true` and therefore rolls no beat. See `SIXTH_PLAYTEST_AUDIT.md` for the full reading and for two measurement errors corrected during the pass.
+The aggressive profile never returns to Spenard, so Mina is structurally unreachable for it — the district gate working as intended. Its quiet count is largely an artifact of the bot spamming Rob, which passes `suppressStory: true` and therefore rolls no beat. See `SIXTH_PLAYTEST_AUDIT.md` for the full reading and for two measurement errors corrected during the pass.
 
 ## Known limitations
 
 - **Browser and mobile QA has not been run.** The three title tiers are asserted by contract test, not by rendering. A ready-to-run checklist covering ten viewports from 320×568 to 2560×1080, the Tier C fix, and the 390×844 parity check is in `SIXTH_PLAYTEST_AUDIT.md`. It has to be run somewhere with normal internet access: `index.html` loads React, ReactDOM, and Babel from `unpkg.com`, which is blocked in the build environment, so the app cannot boot there at all.
-- Mara's true completion rate is unsettled. Simulated bots bracket it between 0% and 64% depending on travel behavior; only human play will settle it.
+- Mina's true completion rate is unsettled. Simulated bots bracket it between 0% and 64% depending on travel behavior; only human play will settle it.
 - React, ReactDOM, Babel, and fonts remain CDN-loaded; runtime Babel is not a production build.
 - The packaged title image is still 1.9 MB and should become WebP when an asset pipeline exists.
-- Mara is reachable only from Spenard by design. Profiles that never return there reach her 0% of the time; that is the district gate working, but human play should confirm it reads as a choice rather than missing content.
+- Mina is reachable only from Spenard by design. Profiles that never return there reach her 0% of the time; that is the district gate working, but human play should confirm it reads as a choice rather than missing content.
 
 ## Next recommended single task
 

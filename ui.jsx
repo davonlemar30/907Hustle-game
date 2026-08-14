@@ -143,7 +143,7 @@ function Header({ state, onMenu }) {
   // 50px row of branding above every page, so it is now a screen-reader
   // heading and the Menu button rides the HUD line instead.
   return <header className="top">
-    <h1 className="sr-only">907Hustle: One Good Run · v1.8</h1>
+    <h1 className="sr-only">907Hustle: One Good Run · v1.8.1</h1>
     <div className="hud primary-hud">
       <Hud label="Day / Time" value={<>{`${state.run.day}${state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""} · ${C.SLOTS[state.run.slot]} · ${area.name}`}<SlotPips slot={state.run.slot} /></>} good />
       <Hud label="Cash" value={money(state.player.cash)} good flash={cashFlash} />
@@ -1209,7 +1209,7 @@ function MenuModal({ state, dispatch, onClose, onTitle }) {
   return <><Modal title="Run menu" onClose={onClose}>
     <ExpandableMoreSection
       collapsedContent={<p className="popup-lead">Autosave is on. This run saves to your browser after every action.</p>}
-      expandedContent={<p className="popup-flavor">907Hustle v1.8 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
+      expandedContent={<p className="popup-flavor">907Hustle v1.8.1 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
       moreLabel="Save detail" lessLabel="Hide detail" />
     <button className="btn full primary" onClick={onTitle}>Return to Title</button>
     <button className="btn full secondary choice" onClick={() => setConfirmRestart(true)}>Restart Run<span>Creates a new seed and returns to Street Name entry.</span></button>

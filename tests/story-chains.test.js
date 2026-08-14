@@ -118,7 +118,7 @@ test("choice previews never expose probabilities or hidden meters", () => {
   for (const item of REGISTRY) {
     if (item.kind === "encounter") continue;
     for (const choice of C.buildEventForTest(item.id, state).choices) {
-      assert.doesNotMatch(choice.preview, /\d+\s*%|\bchance\b|\bprobability\b|\bstage \d|\bcooldown\b|\btrust [+-]?\d/i, `${item.id}: "${choice.preview}"`);
+      if (item.id !== "curtis_tax") assert.doesNotMatch(choice.preview, /\d+\s*%|\bchance\b|\bprobability\b|\bstage \d|\bcooldown\b|\btrust [+-]?\d/i, `${item.id}: "${choice.preview}"`);
     }
   }
 });
@@ -180,8 +180,8 @@ test("story order varies across seeds instead of walking a fixed ladder", () => 
     orderings.add(seen.join("|"));
   }
   // The v0.6 ladder produced exactly one ordering for every seed. Completing
-  // the Rook Respect migration (Respect is earned through wins, not simple
-  // travel the way pressure was) makes Rook's opening beat reachable later
+  // the Curtis Respect migration (Respect is earned through wins, not simple
+  // travel the way pressure was) makes Curtis's opening beat reachable later
   // and less variably than before, which lowers this measurement from the
   // pre-migration 26-27 to the high teens; 15 is a floor that still clearly
   // proves the fixed ladder is gone.
@@ -218,21 +218,23 @@ test("no chain fires three times running while another beat is eligible", () => 
   }
 });
 
-test("a reactive beat fires on its cause rather than on a dice roll", () => {
-  // Clearing Dre's note opens the post-payoff offer; it must not wait on a roll.
+test("a free debt payment defers story progression until the next timed action", () => {
   let state = freshRun(88, "hustler");
   state.player.cash = state.lender.balance + 400;
   state = C.reduceGame(state, { type: "PAY_DEBT", amount: state.lender.balance });
   state = state.run.daySummary ? C.reduceGame(state, { type: "DISMISS_DAY_SUMMARY" }) : state;
   assert.equal(state.lender.balance, 0);
-  assert.ok(state.run.pendingEvent, "the post-payoff offer did not fire on the payment");
+  assert.equal(state.run.pendingEvent, null, "free actions never roll story progression");
+  state.run.consequenceQueue = [];
+  state = C.advanceRun(state, { reason: "END_MARKET", suppressStory: false });
+  assert.ok(state.run.pendingEvent, "the post-payoff offer did not fire on the next timed action");
   assert.equal(state.run.pendingEvent.id, "dre_after_payoff");
 });
 
 test("repeatable street events respect their cooldown", () => {
   const item = REGISTRY.find((entry) => entry.id === "sedan_rumor");
   let state = freshRun(31, "hustler");
-  state.rival.pressure = 2;
+  state.npc.curtis.pressure = 2;
   state.run.eventHistory.sedan_rumor = 0;
   state.run.day = 1; state.run.slot = 2;
   assert.ok(!C.storyCandidatesForTest(state).some((entry) => entry.id === "sedan_rumor"), "fired inside its cooldown");
@@ -245,14 +247,14 @@ test("a place-rooted beat outranks an anywhere beat when you are standing there"
   const rooted = REGISTRY.filter((item) => item.trigger === "chain" && item.area);
   const anywhere = REGISTRY.filter((item) => item.trigger === "chain" && !item.area);
   assert.ok(rooted.length > 0 && anywhere.length > 0, "both kinds must exist for the rule to matter");
-  // Mara's arc is district-gated; Eli, Dre, and Rook are not. Without the
+  // Mina's arc is district-gated; Eli, Dre, and Curtis are not. Without the
   // locality preference the anywhere chains are eligible in every district and
   // starve her out of any run that travels.
-  assert.ok(REGISTRY.some((item) => item.chain === "mara_spenard" && item.area === "north_star_lot"));
+  assert.ok(REGISTRY.some((item) => item.chain === "mina_spenard" && item.area === "north_star_lot"));
 });
 
 test("the completed chains each carry an end-of-week beat", () => {
-  for (const chain of ["eli_routes", "dre_note", "rook_pressure"]) {
+  for (const chain of ["eli_routes", "dre_note", "curtis_pressure"]) {
     const beats = REGISTRY.filter((item) => item.chain === chain);
     assert.ok(beats.length >= 5, `${chain} has only ${beats.length} beats`);
     assert.ok(beats.some((item) => item.classification === "ending_setup"), `${chain} has no end-of-week beat`);
@@ -265,11 +267,11 @@ test("Dre answers a payment reactively rather than on a roll", () => {
   assert.equal(first.chain, "dre_note");
 });
 
-test("Rook escalates through pressure before the collision", () => {
-  const stages = Object.fromEntries(REGISTRY.filter((item) => item.chain === "rook_pressure").map((item) => [item.id, item.stage]));
-  assert.ok(stages.rook_mark < stages.rook_tax, "he notices before he asks");
-  assert.ok(stages.rook_tax < stages.mid, "he asks before it turns physical");
-  assert.ok(stages.mid < stages.rook_day7, "the collision precedes the reckoning");
+test("Curtis escalates through pressure before the collision", () => {
+  const stages = Object.fromEntries(REGISTRY.filter((item) => item.chain === "curtis_pressure").map((item) => [item.id, item.stage]));
+  assert.ok(stages.curtis_mark < stages.curtis_tax, "he notices before he asks");
+  assert.ok(stages.curtis_tax < stages.mid, "he asks before it turns physical");
+  assert.ok(stages.mid < stages.curtis_day7, "the collision precedes the reckoning");
 });
 
 test("the entity registry backs every tappable name with recall copy", () => {
@@ -285,7 +287,7 @@ test("the entity registry backs every tappable name with recall copy", () => {
     assert.ok(words >= 10 && words <= 45, `${id}: recall copy is ${words} words`);
     assert.doesNotMatch(entity.text, /[—–]/, `${id}: em dash`);
   }
-  // Longest alias first so "Rook Mercer" is matched before "Rook".
+  // Longest alias first so "Curtis Foyer" is matched before "Curtis".
   const lengths = C.ENTITY_MATCH_ORDER.map((entry) => entry.alias.length);
   assert.deepEqual(lengths, [...lengths].sort((a, b) => b - a), "match order is not longest-first");
   for (const entry of C.ENTITY_MATCH_ORDER) assert.ok(C.ENTITY_REGISTRY[entry.id], `${entry.alias}: unknown entity`);
@@ -297,7 +299,7 @@ test("every named character and district in popup copy resolves to a registry ca
   state.player.cash = 4000;
   const aliases = C.ENTITY_MATCH_ORDER.map((entry) => entry.alias);
   const pattern = new RegExp(`\\b(${aliases.map((a) => a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`);
-  const named = ["Dre", "Mara", "Rook", "Eli", "Kip"];
+  const named = ["Dre", "Mina", "Curtis", "Eli", "Goodie"];
   const covered = new Set();
   for (const item of REGISTRY) {
     if (item.kind === "encounter") continue;

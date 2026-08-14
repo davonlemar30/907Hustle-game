@@ -13,7 +13,7 @@ function fresh(seed = 907) {
 // plug, so a Street Read trading test has to get past that gate first.
 function openMarket(state) {
   state.market.visible = true;
-  state.plugs.unlocked = ["kip"];
+  state.plugs.unlocked = ["goodie"];
   state.world.productAccess.weed = true;
   state.world.markets[state.world.currentNeighborhoodId].availability.weed = 10;
   return state;
@@ -263,14 +263,16 @@ test("tier 3 lowers Eli's promotion bar by one without changing what the player 
   assert.equal(C.selectors.eliPromotionAvailability(state).available, true);
 });
 
-test("the third crew slot and the recovery discount are tier 3 payoffs", () => {
+test("street knowledge no longer changes field capacity but keeps its recovery discount", () => {
   const state = fresh(2009);
   assert.equal(C.selectors.crewCapacityFor(state), 2);
   assert.equal(C.selectors.treatmentCost(state, 200), 200);
   assert.equal(C.selectors.debtGuidanceAvailable(state), false);
 
   state.streetRead.tier = 3;
-  assert.equal(C.selectors.crewCapacityFor(state), 3);
+  assert.equal(C.selectors.crewCapacityFor(state), 2);
+  state.base.tracks.operations = 2;
+  assert.equal(C.selectors.crewCapacityFor(state), 4);
   assert.equal(C.selectors.treatmentCost(state, 200), 180);
   assert.equal(C.selectors.debtGuidanceAvailable(state), false, "Week Zero has no Dre debt guidance");
   state.phase = "pressure";
@@ -302,12 +304,12 @@ test("tier 2 puts one rotating bonus item on the shelf at a discount", () => {
 test("tier 1 recall lines only appear for contacts the run has actually dealt with", () => {
   const state = fresh(2011);
   state.streetRead.categories.social.add("mina:conversation");
-  state.streetRead.categories.social.add("kip:business");
-  assert.equal(SR.streetReadRecall(state, "kip"), null, "tier 0 surfaces nothing");
+  state.streetRead.categories.social.add("goodie:business");
+  assert.equal(SR.streetReadRecall(state, "goodie"), null, "tier 0 surfaces nothing");
 
   state.streetRead.tier = 1;
-  assert.ok(SR.streetReadRecall(state, "kip"), "a known contact gains a line");
-  assert.equal(SR.streetReadRecall(state, "rook"), null, "an unmet contact does not");
+  assert.ok(SR.streetReadRecall(state, "goodie"), "a known contact gains a line");
+  assert.equal(SR.streetReadRecall(state, "curtis"), null, "an unmet contact does not");
   assert.equal(SR.streetReadRecall(state, "nobody"), null);
 });
 
@@ -429,14 +431,14 @@ test("street read survives a mid-run continuation rather than resetting on it", 
   // preserves accumulated variety instead of clearing it.
   let state = fresh(3104);
   SR.addStreetReadEntry(state, "trading", "spenard:weed");
-  SR.addStreetReadEntry(state, "social", "kip:business");
+  SR.addStreetReadEntry(state, "social", "goodie:business");
   const before = state.streetRead.totalLifetimeEntries;
 
   for (let tick = 0; tick < 5; tick += 1) state = quietAdvance(state);
   assert.ok(state.run.day > 1, "the run crossed at least one day boundary");
   assert.ok(state.streetRead.totalLifetimeEntries >= before, "entries are never cleared by the clock");
   assert.ok(state.streetRead.categories.trading.has("spenard:weed"));
-  assert.ok(state.streetRead.categories.social.has("kip:business"));
+  assert.ok(state.streetRead.categories.social.has("goodie:business"));
 });
 
 // ---------------------------------------------------------------------------
@@ -580,7 +582,7 @@ test("routine entries are stamped with the day the slot was actually spent", () 
 test("tier 2 contact intel fires at most once per day", () => {
   let state = fresh(3401);
   state.streetRead.tier = 2;
-  SR.addStreetReadEntry(state, "social", "kip:business");
+  SR.addStreetReadEntry(state, "social", "goodie:business");
   const intelLines = new Set(Object.values(SR.INTEL).flat());
   const countIntel = (value) => value.log.filter((entry) => intelLines.has(entry.text)).length;
 
@@ -594,7 +596,7 @@ test("tier 2 contact intel fires at most once per day", () => {
 test("the once-per-day intel flag resets when the day does", () => {
   let state = fresh(3402);
   state.streetRead.tier = 2;
-  SR.addStreetReadEntry(state, "social", "kip:business");
+  SR.addStreetReadEntry(state, "social", "goodie:business");
   const random = { int: () => 0, next: () => 0 };
 
   SR.maybeStreetReadIntel(state, random);
@@ -613,7 +615,7 @@ test("the once-per-day intel flag resets when the day does", () => {
 test("intel stays silent below tier 2 and for a run that knows nobody", () => {
   const lowTier = fresh(3403);
   lowTier.streetRead.tier = 1;
-  SR.addStreetReadEntry(lowTier, "social", "kip:business");
+  SR.addStreetReadEntry(lowTier, "social", "goodie:business");
   const before = lowTier.log.length;
   SR.maybeStreetReadIntel(lowTier, { int: () => 0, next: () => 0 });
   assert.equal(lowTier.log.length, before, "tier 1 volunteers nothing");
@@ -682,7 +684,7 @@ test("no player-facing reason string explains a gate by naming the system", () =
 test("nothing the system writes to the feed names the system", () => {
   let state = fresh(3502);
   state.streetRead.tier = 3;
-  SR.addStreetReadEntry(state, "social", "kip:business");
+  SR.addStreetReadEntry(state, "social", "goodie:business");
   for (let tick = 0; tick < 12 && state.run.status === "playing"; tick += 1) state = quietAdvance(state);
   for (const entry of state.log) {
     for (const pattern of [/street\s*read/i, /\bvariety\b/i, /hidden score/i]) {

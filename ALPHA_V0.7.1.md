@@ -2,7 +2,7 @@
 
 Alpha v0.7.1 is the current playable build of **907Hustle: One Good Run**.
 
-It completes the story and playstyle foundation introduced in Alpha v0.7 by adding Kip Sallis as a persistent dealer, turning the Stickup route into a playable option, and completing the Eli, Dre, and Rook story chains.
+It completes the story and playstyle foundation introduced in Alpha v0.7 by adding Goodie as a persistent dealer, turning the Stickup route into a playable option, and completing the Eli, Dre, and Curtis story chains.
 
 ## Build identity
 
@@ -21,16 +21,16 @@ During a seven-day run, the player can:
 - Track cost basis and projected profit or loss
 - Pay Dre, preserve working capital, and deal with missed terms
 - Manage Health, Heat, cargo, equipment, protected storage, and the North Star Garage
-- Recruit crew and prepare territory operations against Rook
+- Recruit crew and prepare territory operations against Curtis
 - Build or damage relationships through event choices and recurring callbacks
 - Use Rob as an emergency recovery action
-- Meet Kip Sallis and choose between fair business, information, and robbery
+- Meet Goodie and choose between fair business, information, and robbery
 
-## Kip Sallis
+## Goodie
 
-Kip is a named Spenard dealer working from the Wash & Go lot. He exists to make the Hustle and Stickup routes readable through the same relationship.
+Goodie is a named Spenard dealer working from the Wash & Go lot. He exists to make the Hustle and Stickup routes readable through the same relationship.
 
-### Buy off Kip
+### Buy off Goodie
 
 - Available in Spenard after his introduction
 - Purchases weed or shrooms below the current local price
@@ -43,7 +43,7 @@ Kip is a named Spenard dealer working from the Wash & Go lot. He exists to make 
 - Provides a reliable product lead
 - Uses one part of day
 
-### Rob Kip
+### Rob Goodie
 
 - Available as a deliberate playstyle choice
 - Independent of the Rob working-capital gate
@@ -58,18 +58,18 @@ Possible consequences:
 
 - Injury
 - Increased Heat
-- Rook pressure
+- Curtis pressure
 - Damaged dealer standing
 - Retaliation
 - Reduced Spenard weed and shrooms supply
-- Mara trust loss
-- Permanent loss of Kip after two successful robberies
+- Mina trust loss
+- Permanent loss of Goodie after two successful robberies
 
 ## Completed story chains
 
-### Mara Velez
+### Mina Vale
 
-Mara's six-stage arc remains the primary relationship spine. Her story tracks how the player handles trust, public association, boundaries, danger, and her independent goal of getting a Ship Creek dispatch job.
+Mina's six-stage arc remains the primary relationship spine. Her story tracks how the player handles trust, public association, boundaries, danger, and her independent goal of getting a Ship Creek dispatch job.
 
 ### Eli “Shortcut” Ward
 
@@ -81,7 +81,7 @@ Eli now has five connected beats covering:
 - A private service-road map
 - A late-week decision about his place in the operation
 
-### Dre Holloway
+### Dre Smooth
 
 Dre now reacts to:
 
@@ -92,9 +92,9 @@ Dre now reacts to:
 - Post-payoff choices
 - The player's final payment reliability
 
-### Rook Mercer
+### Curtis Foyer
 
-Rook now escalates through:
+Curtis now escalates through:
 
 - Private information reaching his people
 - Surveillance and pressure
@@ -103,17 +103,17 @@ Rook now escalates through:
 - Confrontation
 - A final position based on territory, respect, resistance, and prior choices
 
-### Kip Sallis
+### Goodie
 
-Kip's chain includes:
+Goodie's chain includes:
 
 - Introduction
 - Retaliation after robbery
-- A branch involving Deshawn when the player built trust before betraying Kip
+- A branch involving Deshawn when the player built trust before betraying Goodie
 
 ## Event selection changes
 
-The story system now favors beats rooted in the district where the player is standing. This prevents area-independent storylines from crowding out Spenard-specific characters such as Mara and Kip.
+The story system now favors beats rooted in the district where the player is standing. This prevents area-independent storylines from crowding out Spenard-specific characters such as Mina and Goodie.
 
 Reactive events, such as Dre answering a payment, no longer count toward the anti-monopoly streak. The game can respond to player actions without delaying unrelated storylines.
 
@@ -131,8 +131,8 @@ Recorded results:
 - 800 of 800 runs terminated
 - 0 dead ends
 - 332 dealer robberies across 200 Stickup runs
-- Mara reached stage 4 in 48% of cautious runs and 54% of Stickup runs
-- Aggressive travel-heavy agents reached Mara 0% because they did not return to Spenard
+- Mina reached stage 4 in 48% of cautious runs and 54% of Stickup runs
+- Aggressive travel-heavy agents reached Mina 0% because they did not return to Spenard
 
 The district-gated story behavior is intentional. Human playtesting still needs to confirm that missing a local storyline feels like a consequence of travel choices.
 
@@ -148,18 +148,18 @@ The district-gated story behavior is intentional. Human playtesting still needs 
 
 Run two complete human sessions:
 
-1. Stay mostly in Spenard and engage with Mara, Kip, Eli, and local events.
+1. Stay mostly in Spenard and engage with Mina, Goodie, Eli, and local events.
 2. Travel frequently and observe which local stories are missed or delayed.
 
 During both runs, test:
 
-- Kip's introduction
-- Buy off Kip
+- Goodie's introduction
+- Buy off Goodie
 - Ask what's moving
 - Successful and failed robbery
 - Spenard supply reduction
-- Mara's reaction to Kip robbery
+- Mina's reaction to Goodie robbery
 - Retaliation and betrayal callbacks
-- Eli, Dre, and Rook pacing
+- Eli, Dre, and Curtis pacing
 - Street Contacts navigation
 - Mobile layout and title-screen scaling

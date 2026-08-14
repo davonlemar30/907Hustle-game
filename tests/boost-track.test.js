@@ -28,7 +28,7 @@ test("Boost is absent before unlock and the first store exploration is transacti
   assert.equal(state.boost.visible, false);
   assert.deepEqual(C.selectors.visibleBoostTargets(state), []);
   const ui = fs.readFileSync(path.join(__dirname, "..", "ui.jsx"), "utf8");
-  assert.match(ui, /id !== "boost" \|\| features\.boost\.available/);
+  assert.match(ui, /state\.boost\.visible/);
   state = C.reduceGame(state, { type: "EXPLORE_SPENARD" });
   assert.equal(state.run.pendingEvent?.id, "boost_first_opportunity");
   assert.ok(state.run.pendingEvent.description.trim().split(/\s+/).length < 40);

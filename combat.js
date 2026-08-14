@@ -9,7 +9,7 @@ const ENEMIES = {
   rival_dealer: { name: "Rival Dealer",      hp: 55, atk: [7, 14],  speed: 6, fleeEase: 0.50, bribe: 220, lootDrug: "crack", lootQty: [3, 8] },
   undercover:   { name: "Undercover",        hp: 60, atk: [5, 13],  speed: 7, fleeEase: 0.45, bribe: 300, seizes: true },
   patrol:       { name: "APD Patrol",        hp: 75, atk: [6, 15],  speed: 8, fleeEase: 0.35, bribe: 400, seizes: true, heatOnFlee: 4 },
-  rook_goon:    { name: "Rook's Goon",       hp: 85, atk: [10, 18], speed: 5, fleeEase: 0.40, bribe: 350, rookHit: -3 },
+  curtis_goon:  { name: "Curtis's Goon",       hp: 85, atk: [10, 18], speed: 5, fleeEase: 0.40, bribe: 350, curtisHit: -3 },
   rival_crew:   { name: "Rival Crew",        hp: 95, atk: [9, 17],  speed: 5, fleeEase: 0.35, bribe: 500 },
   dre_enforcer: { name: "Dre's Enforcer",    hp: 100,atk: [12, 22], speed: 6, fleeEase: 0.25, bribe: 800, dreSpecial: true },
 };
@@ -105,7 +105,7 @@ function endCombat(result, extra = {}) {
       GAME.inventory[e.lootDrug] = (GAME.inventory[e.lootDrug] || 0) + actual;
       msg += ` Took ${actual} ${nameOf(e.lootDrug)} off them.`;
     }
-    if (e.rookHit) GAME.rook.attention = Math.max(0, GAME.rook.attention + e.rookHit);
+    if (e.curtisHit) GAME.rook.attention = Math.max(0, GAME.rook.attention + e.curtisHit);
     if (id === "dre_enforcer") {
       GAME.dre.loanOutstanding = 0;
       GAME.dre.deadlineDay = null;

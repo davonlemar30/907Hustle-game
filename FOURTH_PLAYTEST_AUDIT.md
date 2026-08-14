@@ -62,7 +62,7 @@ Currency values shown to the player should round to whole dollars while calculat
 Each neighborhood currently shows:
 
 - Neighborhood name.
-- Current location, player-controlled, or Rook-controlled status.
+- Current location, player-controlled, or Curtis-controlled status.
 - Broad neighborhood blurb.
 - Adjusted risk rating.
 - Police rating.
@@ -81,7 +81,7 @@ It does not show:
 - Supply memory.
 - Crew, relationship, gear, or intelligence modifiers.
 
-Although `effects.rumors` exists in state and Miri can create one, v0.5 does not render rumors on Travel or People.
+Although `effects.rumors` exists in state and Pherris can create one, v0.5 does not render rumors on Travel or People.
 
 ## 5. Market-intelligence proposal
 
@@ -108,7 +108,7 @@ Freshness bands:
 
 ### Rumors
 
-Use source, product/area target, direction/supply claim, confidence language, observed/expiry slot, and a hidden truth model. Mara and Miri are usually more credible; Rook-linked or anonymous information can be self-serving. The UI must distinguish rumor from observed price.
+Use source, product/area target, direction/supply claim, confidence language, observed/expiry slot, and a hidden truth model. Mina and Pherris are usually more credible; Curtis-linked or anonymous information can be self-serving. The UI must distinguish rumor from observed price.
 
 ### Purchasable intelligence
 
@@ -119,22 +119,22 @@ Use source, product/area target, direction/supply claim, confidence language, ob
 
 Avoid a permanent “best price” answer. Intelligence should narrow uncertainty, not solve routing.
 
-## 6. Active Mara interactions and eligibility
+## 6. Active Mina interactions and eligibility
 
 | Interaction | Current eligibility | Current issue |
 |---|---|---|
 | `mara_intro` / The Night Clerk | Forced after the first consumed slot until resolved | Establishes her job and surveillance concern, but not clearly the prior connection or relationship intent. |
-| `mara_truth` | Mara met, Day 3+, unresolved, 45% story roll | Properly gated behind introduction, but skips a deliberate invitation/meeting step. |
-| `VISIT_MARA` | Mara met, $40 available | People action says “Meet after close,” but no pending invitation or scene category explains why tonight matters. |
-| Early encounter `call_mara` | Early threat, Mara met, trust ≥2 | Useful callback; costs trust and adds Heat. |
-| `buyer_hurry` | Generic event pool | Mara witnesses the scene, but this is not explicitly classified as a relationship consequence. |
-| Mara escape ending | Escape plan, trust ≥3, consent not violated | Strong final callback, though the path to it is not clearly presented during the week. |
+| `mara_truth` | Mina met, Day 3+, unresolved, 45% story roll | Properly gated behind introduction, but skips a deliberate invitation/meeting step. |
+| `VISIT_MARA` | Mina met, $40 available | People action says “Meet after close,” but no pending invitation or scene category explains why tonight matters. |
+| Early encounter `call_mara` | Early threat, Mina met, trust ≥2 | Useful callback; costs trust and adds Heat. |
+| `buyer_hurry` | Generic event pool | Mina witnesses the scene, but this is not explicitly classified as a relationship consequence. |
+| Mina escape ending | Escape plan, trust ≥3, consent not violated | Strong final callback, though the path to it is not clearly presented during the week. |
 
 Current `mara_truth` does respect introduction. The problem is progression clarity, not an entirely ungated deep event.
 
-## 7. Proposed Mara introduction and Date Night progression
+## 7. Proposed Mina introduction and Date Night progression
 
-1. **Introduction — “Mara on the Night Shift”**
+1. **Introduction — “Mina on the Night Shift”**
    - Establish that she knew the player before this week.
    - Explain her nursing-school/night-shift situation, boundaries, and concern about the garage.
    - Classify as `relationship:introduction`.
@@ -159,15 +159,15 @@ Current `mara_truth` does respect introduction. The problem is progression clari
 | Event | Character | Current result |
 |---|---|---|
 | `eli_offer` | Eli “Shortcut” Ward, Runner | Introduces Eli; invite/decline changes loyalty. Actual recruitment later costs $120 base, $45 wage, one slot, and one of two crew slots. |
-| `miri_offer` | Samira “Miri” Cole, Connector | Introduces Miri; ownership/list framing changes loyalty. Recruitment later costs $180 base, $60 wage, one slot, and one crew slot. |
+| `miri_offer` | Samira “Pherris” Cole, Connector | Introduces Pherris; ownership/list framing changes loyalty. Recruitment later costs $180 base, $60 wage, one slot, and one crew slot. |
 | `tone_offer` | Anton “Tone” Bell, Enforcer/Lookout | Introduces Anton; offer/decline changes loyalty. Recruitment later costs $250 base, $85 wage, one slot, and one crew slot. |
-| `dre_after_payoff` | Dre Holloway, lender/supplier | Not crew recruitment; offers another note, Cocaine access, or independence after payoff. |
+| `dre_after_payoff` | Dre Smooth, lender/supplier | Not crew recruitment; offers another note, Cocaine access, or independence after payoff. |
 
 The introduction events do not charge or recruit immediately; their copy does not make that two-step structure sufficiently explicit. The later People cards show role, base cost, Power, and wage due after recruitment, but the event itself does not state recurring cost, slot occupancy, time cost, primary benefit, or liability.
 
 ## 9. Recurring-character purpose audit
 
-### Mara Velez
+### Mina Vale
 
 - Gives: trust-based information, encounter alarm, possible care, escape ending.
 - Wants: truth, consent, and protection from operation spillover.
@@ -176,7 +176,7 @@ The introduction events do not charge or recruit immediately; their copy does no
 - Later effect: early threat, boundary scene, final escape.
 - Gap: invitation/category/history are not explicit.
 
-### Dre Holloway
+### Dre Smooth
 
 - Gives: starting capital relationship, post-payoff loan/supplier/independence branch.
 - Wants: payment and credible dates.
@@ -185,7 +185,7 @@ The introduction events do not charge or recruit immediately; their copy does no
 - Later effect: warning events and expansion ending.
 - Gap: Finance details/history need progressive disclosure.
 
-### Rook Mercer
+### Curtis Foyer
 
 - Gives: antagonist pressure, respect path, partnership possibility.
 - Wants: control, payment, or proof that the player is costly to oppose.
@@ -203,7 +203,7 @@ The introduction events do not charge or recruit immediately; their copy does no
 - Later effect: assignment result and crew crisis.
 - Gap: no unique authored callback beyond shared crisis; role benefit is absent from introduction summary.
 
-### Miri Cole
+### Pherris Dickens
 
 - Gives: Cocaine/Meth access and reliable rumors.
 - Wants: ownership, honesty, and inclusion.
@@ -215,7 +215,7 @@ The introduction events do not charge or recruit immediately; their copy does no
 ### Anton Bell
 
 - Gives: highest crew Power, garage defense, confrontation support, intimidation.
-- Wants: wages, limits on reckless harm, and a way back after Rook displaced him.
+- Wants: wages, limits on reckless harm, and a way back after Curtis displaced him.
 - Maintenance cost: $250 recruit, $85 wages; one crew slot.
 - Failure: Heat escalation, loyalty test, possible permanent takeover loss.
 - Later effect: Call Tone, base defense, territory attack, final defense.
@@ -227,7 +227,7 @@ The introduction events do not charge or recruit immediately; their copy does no
 
 **Worldbuilding**
 
-Anton Bell stands beneath the broken garage light and points toward a sedan parked beyond the camera's view. Rook's people cost him his security job. He says he can watch the garage, stand with a crew, and spot trouble before it reaches the door.
+Anton Bell stands beneath the broken garage light and points toward a sedan parked beyond the camera's view. Curtis's people cost him his security job. He says he can watch the garage, stand with a crew, and spot trouble before it reaches the door.
 
 **Decision summary — Bring Anton into the operation**
 
@@ -235,16 +235,16 @@ Anton Bell stands beneath the broken garage light and points toward a sedan park
 - Recruitment later: $250 at North Star Garage.
 - Recurring wage: $85 after each day.
 - Primary benefit: Power 5; base defense and confrontation support.
-- Liability: his methods can raise Heat and provoke Rook.
+- Liability: his methods can raise Heat and provoke Curtis.
 - Capacity: occupies one of two crew slots.
 - Time: this introduction is free; hiring later consumes one slot.
 
 **Choices**
 
 1. **Ask Anton to meet at the garage** — Introduces him for later recruitment; starts with +1 loyalty.
-2. **Question him about Rook** — Introduces him and provides a Rook/surveillance clue; loyalty unchanged.
+2. **Question him about Curtis** — Introduces him and provides a Curtis/surveillance clue; loyalty unchanged.
 3. **Ask for one night of warning** — Creates a temporary base warning without recruiting; he expects a later answer.
-4. **Decline** — Introduces him as refused; starts with −1 loyalty and enables a later Rook-side callback.
+4. **Decline** — Introduces him as refused; starts with −1 loyalty and enables a later Curtis-side callback.
 
 ## 11. Finance and People wireframes
 
@@ -316,7 +316,7 @@ Prior choices and callbacks. Only one character card expands at a time on mobile
 ### Later reviewed phases
 
 - Phase 2: market intelligence state, tendencies, memory/freshness, rumors, purchasable intel, Travel disclosure.
-- Phase 3: Mara invitation and Date Night category/progression.
+- Phase 3: Mina invitation and Date Night category/progression.
 - Phase 4: recruitment summaries and character-specific callbacks.
 - Phase 5: progressive disclosure for Finance and People.
 

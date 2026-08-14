@@ -21,7 +21,8 @@ function clearSurfaces(state) {
 function discover(state, ...ids) {
   for (const id of ids) {
     if (!state.jobs.discovered.includes(id)) state.jobs.discovered.push(id);
-    if (!state.jobs.hired.includes(id)) state.jobs.hired.push(id);
+    state.jobs.activeJobId = id;
+    state.jobs.hired = ["day_labor", id];
   }
   return state;
 }
@@ -78,7 +79,7 @@ test("discovered job selectors keep hidden jobs absent and show unmet execution 
   discover(state, "wash_go", "night_owl", "delivery");
   assert.deepEqual(C.selectors.discoveredJobs(state).map((job) => job.id), ["wash_go", "night_owl", "delivery", "day_labor"]);
   assert.equal(C.selectors.jobAvailability(state, "ship_creek").available, false);
-  assert.equal(C.selectors.jobAvailability(state, "night_owl").reason, "Meet the Night Owl clerk first.");
+  assert.equal(C.selectors.jobAvailability(state, "night_owl").reason, "Apply before taking a shift.");
   assert.equal(C.selectors.jobAvailability(state, "delivery").reason, "Needs a reliable ride.");
 });
 
@@ -116,7 +117,7 @@ test("approaches affect pay, health, XP, relationships, details, and seeded resu
 });
 
 test("Night Owl ranks unlock Night scheduling, the exclusive stash, and Deshawn's vouch", () => {
-  let state = fresh(4404); discover(state, "night_owl"); state.people.mara.met = true;
+  let state = fresh(4404); discover(state, "night_owl"); state.npc.mina.met = true;
   for (let shift = 1; shift <= 7; shift += 1) {
     clearSurfaces(state); state.run.day = shift; state.run.slot = 2; state.player.energy = C.MAX_ENERGY;
     state = C.reduceGame(state, { type: "WORK_JOB", jobId: "night_owl", approach: "work_hard" });
@@ -126,7 +127,7 @@ test("Night Owl ranks unlock Night scheduling, the exclusive stash, and Deshawn'
   clearSurfaces(state); state.run.slot = 3; state.jobs.lastScheduledShiftDay = null;
   assert.equal(C.selectors.jobAvailability(state, "night_owl").available, true);
   assert.equal(state.flags.spenardVouched, true);
-  assert.equal(C.selectors.knownWorkplaceContacts(state)[0].name, "Mara Velez");
+  assert.equal(C.selectors.knownWorkplaceContacts(state)[0].name, "Mina Vale");
 
   state.player.inventory.weed.qty = 1;
   state = C.reduceGame(state, { type: "NIGHT_OWL_STASH_PRODUCT", direction: "store", productId: "weed", qty: 1 });
@@ -156,16 +157,16 @@ test("all authored job discovery, introduction, detail, and live result copy sta
   for (const line of authored) assert.ok(line.trim().split(/\s+/).length < 40, line);
   for (const job of C.SPENARD_JOBS) {
     let state = fresh(); discover(state, job.id);
-    if (job.id === "night_owl") { state.people.mara.met = true; state.run.slot = 2; }
+    if (job.id === "night_owl") { state.npc.mina.met = true; state.run.slot = 2; }
     if (job.id === "delivery") state.world.transport.industrialRouteKnown = true;
     state = C.reduceGame(state, { type: "WORK_JOB", jobId: job.id, approach: "learn_job" });
     for (const entry of state.log.slice(0, 4)) assert.ok(entry.text.trim().split(/\s+/).length < 40, entry.text);
   }
   for (const line of [
     "You catch part of a hiring conversation, but not enough to know who is taking names.",
-    "Night Owl Rank 1. Mara adds Night shifts to your schedule.",
-    "Night Owl Rank 2. Mara clears a small back-room stash for you.",
-    "Mara introduces Deshawn. He puts his name behind yours on Spenard Road.",
+    "Night Owl Rank 1. Mina adds Night shifts to your schedule.",
+    "Night Owl Rank 2. Mina clears a small back-room stash for you.",
+    "Mina introduces Deshawn. He puts his name behind yours on Spenard Road.",
     "Wash & Go Attendant: Rank 3. The better rate starts with your next shift.",
   ]) assert.ok(line.trim().split(/\s+/).length < 40, line);
 });

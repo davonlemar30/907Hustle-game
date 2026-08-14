@@ -5,7 +5,7 @@ Audit date: 2026-08-03 (America/Anchorage)
 Baseline: merged `main` commit `0e07a00` (PR #46), save schema/key v3 / `907ogr_v3`.
 
 Scope: story structure, event writing, player identity, and early-run direction.
-This is the first of two builds; the Eli/Dre/Rook/Kip chains, the Kip Sallis
+This is the first of two builds; the Eli/Dre/Curtis/Goodie chains, the Goodie
 dealer-robbery prototype, and the EndModal narrative recap are deferred to
 v0.7.1.
 
@@ -30,7 +30,7 @@ legacy files. They were not deleted this pass.
 ladder. The first eligible branch won, every time, for every seed. Measured
 before the change: **one distinct opening sequence across 30 seeds.**
 
-### Mara had a beginning and an ending but no middle
+### Mina had a beginning and an ending but no middle
 
 Three pieces of content total: `mara_intro`, `mara_truth`, and the `early_mara`
 encounter. Worse, the encounter fired on **Day 2**, putting her in danger before
@@ -65,7 +65,7 @@ No replacement asset was required.
 3. **Event registry.** 30 declarative descriptors replacing the ladder, with a
    three-tier weighted selector, per-event cooldowns via `run.eventHistory`, an
    anti-monopoly rule, and a per-day story cap.
-4. **Mara's six-stage arc**, including what she wants independent of the player
+4. **Mina's six-stage arc**, including what she wants independent of the player
    (the Ship Creek dispatch job) and three distinct Day 7 outcomes.
 5. **The Day 2 threat is now always `early_street`.** Her sedan encounter moved
    to stage 5, Day 5+.
@@ -116,7 +116,7 @@ No replacement asset was required.
   `String({})` was yielding "object Object".
 - **No profanity filter.** Local single-player, blocklists are unwinnable, and
   character-set sanitation covers the real risk (layout breakage / injection).
-- **Miri Cole is canonical.** The ClickUp "Mina Vale" entry is retired.
+- **Pherris Dickens is canonical.** The ClickUp "Mina Vale" entry is retired.
 
 ---
 
@@ -133,7 +133,7 @@ opening variance, the anti-monopoly rule, reactive firing, and cooldowns.
 
 Additions to `tests/game-core.test.js` cover name sanitation and defaults,
 pre-v0.7 save hydration, the save preview, chain-progress recording, the
-no-double-tick rule, betrayal removing Mara, and all three Day 7 outcomes.
+no-double-tick rule, betrayal removing Mina, and all three Day 7 outcomes.
 
 Additions to `tests/ui-contract.test.js` cover the three aspect tiers, the
 preserved Tier A rule, Finish Trading, the Street Name field, and metadata
@@ -143,7 +143,7 @@ leakage into `ui.jsx`.
 
 `node tests/simulate-runs.js 200` — **600/600 runs terminated, 0 dead ends.**
 
-| Profile | Story | Ambient (distinct) | Total | Mara ≥4 | Mara ≥6 | Quiet |
+| Profile | Story | Ambient (distinct) | Total | Mina ≥4 | Mina ≥6 | Quiet |
 |---|---|---|---|---|---|---|
 | cautious | 7.1 | 5.2 (4.0) | 12.3 | 42% | 8% | 9/200 |
 | balanced | 6.8 | 6.6 (5.2) | 13.4 | 22% | 1% | 7/200 |
@@ -156,26 +156,26 @@ leakage into `ui.jsx`.
 Two measurement corrections were made during this pass and both changed the
 conclusions:
 
-1. An early probe measured Mara ≥4 at 96% — but it never travelled, so it sat in
+1. An early probe measured Mina ≥4 at 96% — but it never travelled, so it sat in
    Spenard all week. Her chain is district-gated to the Night Owl.
 2. A `chainStall` metric derived from `run.eventHistory` undercounted, because
    that map is keyed by id and repeat firings overwrite earlier slots. The
    simulation now instruments the run loop directly.
 
-The aggressive profile reaches Mara 0% of the time because its route never
+The aggressive profile reaches Mina 0% of the time because its route never
 returns to Spenard. That is the design working. Its high quiet count is largely
 an artifact of the bot spamming Rob: `ROB`, `ELI_TEST_ROUTE`, and
 `TAKEOVER` pass `suppressStory: true` so they never stack two modals on one tick,
 so those slots roll no beat. A human uses Rob rarely — it is gated to
 working capital below $150.
 
-**Human playtest is required** to settle the true Mara frequency; the bots
+**Human playtest is required** to settle the true Mina frequency; the bots
 bracket it between 0% and 64% depending on travel behavior.
 
 ### Not done
 
 - **The `stickup` simulation profile** planned for this pass was dropped: it robs
-  Kip Sallis, who is deferred to v0.7.1. Adding a profile for a system that does
+  Goodie, who is deferred to v0.7.1. Adding a profile for a system that does
   not exist would have produced a meaningless number.
 - **Browser/mobile QA across the ten planned viewports has not been run.** The
   CSS tiers are asserted by contract test, not by rendering. This must happen
@@ -325,7 +325,7 @@ requires no new asset.
 
 ## Deferred
 
-**To v0.7.1:** Eli (5 stages), Dre (5 stages), Rook (6 stages) · Kip Sallis and
+**To v0.7.1:** Eli (5 stages), Dre (5 stages), Curtis (6 stages) · Goodie and
 the Stickup Track · EndModal three-part authored recap · absorbing the orphaned
 `mid` encounter and `rook_cut` fully into `rook_pressure`.
 

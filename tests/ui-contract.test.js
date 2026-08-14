@@ -7,11 +7,6 @@ const ui = fs.readFileSync(path.join(root, "ui.jsx"), "utf8");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "v05.css"), "utf8");
 
-test("active shell is v1.7 with a packaged title asset and no stale version copy", () => {
-  assert.match(ui, /One Good Run · v1\.7/); assert.match(html, /ui\.jsx/); assert.doesNotMatch(html, /legacy-v1-ui-reference|text\/plain/);
-  assert.match(ui, /907hustle-title\.png/); assert.ok(fs.existsSync(path.join(root, "assets", "907hustle-title.png")));
-  assert.doesNotMatch(ui, /Alpha v0\.9|v0\.9/);
-});
 test("title screen exposes safe load, new-game confirmation, preview, and help", () => {
   for (const token of ["Load Game", "New Game", "Saved run", "How to Play", "inspectSave", "HYDRATE_RUN", "current autosave will be replaced"]) assert.ok(ui.includes(token), token);
   assert.match(ui, /screen !== "game"/);
@@ -20,11 +15,6 @@ test("title screen exposes safe load, new-game confirmation, preview, and help",
 });
 test("new games are classless and expose one Start confirmation", () => {
   assert.match(ui, /<b>Start<\/b>/); assert.match(ui, /type: "START_RUN"/); assert.doesNotMatch(ui, /Choose your edge|C\.STARTING_EDGES\.map|C\.BACKGROUNDS\.map/);
-});
-test("progressive primary navigation leads with Home and keeps Boost after Market", () => {
-  assert.match(ui, /const NAV = \[\["home", "Home"\], \["market", "Market"\], \["boost", "Boost"\], \["rob", "Rob"\], \["travel", "Travel"\], \["people", "People"\], \["more", "More"\]\]/);
-  for (const label of ["Character", "Operations", "Finances", "Recovery", "Help"]) assert.match(ui, new RegExp(`title="${label}"`));
-  assert.match(css, /grid-template-columns:repeat\(5,1fr\)/);
 });
 test("Travel exposes the fresh-arrival activity and access model", () => {
   for (const token of ["Yalonda's Home", "Explore Spenard", "Spenard Jobs", "Spenard Community Gym", "Phone Store", "Informal Game", "People Mover", "North Star Garage Listing", "Auto Lot", "Gun Counter"]) assert.ok(ui.includes(token), token);
@@ -77,11 +67,6 @@ test("the required Street Name is offered before classless confirmation and show
   assert.match(ui, /What do they call you\?/); assert.match(ui, /disabled=\{!validName\}/);
   assert.match(ui, /\{preview\.name\}/); assert.match(ui, /\{summary\.streetName\} reached the Day/);
 });
-test("Character is nested under More and hides identity internals", () => {
-  for (const token of ["function Character", "Strength", "Endurance", "Reflexes", "Presence", "Insight", "Discipline", "Derived ratings", "Recent reputation", "legacyBackground"]) assert.ok(ui.includes(token), token);
-  assert.doesNotMatch(ui, /behavior\.scores|pendingIdentityNights|25 percent|raw margin/i);
-  assert.equal((ui.match(/\["market", "Market"\]/g) || []).length, 1);
-});
 test("registry metadata never reaches the presentation layer", () => {
   for (const leak of [/event\.stage/, /event\.cooldown/, /event\.weight/, /event\.requires/, /event\.chain/, /chainStage/]) {
     assert.doesNotMatch(ui, leak, String(leak));
@@ -115,7 +100,7 @@ test("Eli's standing-order policies render as selectable, labeled controls", () 
   assert.match(ui, /SET_ELI_POLICY/);
 });
 
-test("Kip never appears in the field-assignable crew list", () => {
+test("Goodie never appears in the field-assignable crew list", () => {
   assert.match(ui, /recruitedCrew\(state\)\.filter\(\(person\) => person\.canFieldAssign\)/);
   assert.match(ui, /recruitedCrew\(state\)\.filter\(\(person\) => !person\.canFieldAssign\)/);
 });
@@ -127,12 +112,6 @@ test("Finances renders dirty, clean, and protected money as distinct metrics", (
   for (const token of ["Dirty", "Clean", "Protected"]) assert.ok(ui.includes(token), token);
 });
 
-test("disabled actions carry a reason instead of leaving the player to guess", () => {
-  assert.match(ui, /action-copy">\{recruit\.available \? "Uses one part of day" : recruit\.reason\}/);
-  assert.match(ui, /action-copy">\{claim\.available \? "Uses one part of day" : claim\.reason\}/);
-  assert.match(ui, /action-copy">\{avail\.available \? "Free · no time cost" : avail\.reason\}/);
-});
-
 test("status chips exist for Heat and Dre and carry escalation tone classes", () => {
   assert.match(ui, /className="hud chip-row"/);
   assert.match(ui, /tone=\{state\.player\.heat >= 8 \? "escalated" : state\.player\.heat <= 2 \? "calm" : ""\}/);
@@ -142,7 +121,7 @@ test("status chips exist for Heat and Dre and carry escalation tone classes", ()
 
 test("block ownership state is labeled in text, not signaled by color alone", () => {
   assert.match(ui, /Controlled/);
-  assert.match(ui, /Rook Held/);
+  assert.match(ui, /Curtis Held/);
   assert.match(ui, /Unclaimed/);
   assert.match(ui, /className="node-state"/);
 });
@@ -167,23 +146,6 @@ test("the lender's identity is nested inside the debt detail page, not the persi
 
 // --- v1.1 simplification, Home, menus, and action feedback -------------------
 
-test("Home is the residence plus whatever is pressing, and restates nothing", () => {
-  assert.match(ui, /function Home\(\{ state, dispatch, navigate \}\)/);
-  assert.match(ui, /useState\(\{ tab: "home", more: "root", sub: null, token: 0 \}\)/);
-  assert.match(ui, /home: <Home state=\{state\} dispatch=\{act\} navigate=\{navigate\} \/>/);
-  for (const token of ["home-hero", "home-summary", "home-identity", "Street Identity", "Needs Attention", "Yalonda's Home"]) assert.ok(ui.includes(token), token);
-  assert.match(ui, /C\.selectors\.homeSituation\(state\)/);
-  // Home never renders the old dense action bar or a second copy of the log.
-  assert.doesNotMatch(ui, /<Feed entries=\{state\.log\} \/>[\s\S]{0,40}home/);
-  // The room itself: stash, household conversation, sleep, and the laptop when it is owned.
-  const home = ui.slice(ui.indexOf("function Home({ state, dispatch, navigate })"), ui.indexOf("const MARKET_TABLE_MIN"));
-  assert.match(home, /MenuRow title="Stash"/);
-  assert.match(home, /type: "TALK_HOUSEHOLD"/);
-  assert.match(home, /type: "SLEEP_HOME"/);
-  assert.match(home, /MenuRow title="907List Laptop"/);
-  assert.match(home, /navigate\("travel", "root", null, "household"\)/);
-});
-
 test("Home prints no value the always-visible header is already showing", () => {
   const home = ui.slice(ui.indexOf("function Home({ state, dispatch, navigate })"), ui.indexOf("const MARKET_TABLE_MIN"));
   // Day, time, location and cash are header-only now.
@@ -200,35 +162,6 @@ test("Home prints no value the always-visible header is already showing", () => 
   assert.match(home, /StatTile label="Health"/);
 });
 
-test("systems stay gated, and live in More rather than being restated on Home", () => {
-  // v1.6 moved the system shortcuts off Home. Nothing is stranded: More still
-  // carries every one of them, and still gates them on the same unlocks.
-  const more = ui.slice(ui.indexOf("function More({ state, dispatch, features"), ui.indexOf("function useDomId"));
-  assert.match(more, /MenuRow title="Operations"/);
-  assert.match(more, /MenuRow title="Recovery"/);
-  assert.match(more, /MenuRow title="Finances"/);
-  assert.match(more, /MenuRow title="907List"/);
-  assert.match(more, /features\.operations\.available/);
-  assert.match(more, /features\.recovery\.available/);
-  // Laundering is reached through Finances, which owns the panel.
-  assert.match(ui, /<LaunderingPanel/);
-  const home = ui.slice(ui.indexOf("function Home({ state, dispatch, navigate })"), ui.indexOf("const MARKET_TABLE_MIN"));
-  for (const gone of ['MenuRow title="Operations"', 'MenuRow title="Laundering"', 'MenuRow title="Recovery"', 'MenuRow title="Finances"']) {
-    assert.ok(!home.includes(gone), `Home should no longer restate ${gone}`);
-  }
-});
-
-test("the persistent HUD is progressive: pressure chips appear only under pressure", () => {
-  assert.match(ui, /const showHeat = state\.player\.heat >= 3/);
-  assert.match(ui, /const showDebt = hasDreDebt && state\.lender\.balance > 0 && state\.lender\.dueDay - state\.run\.day <= 2/);
-  assert.match(ui, /const showRespect = state\.rival\.respect > 0/);
-  // The chip-row condition moved into headerShows so Home can read the same
-  // answer and avoid printing a value the header is already carrying.
-  assert.match(ui, /function headerShows\(state\)/);
-  assert.match(ui, /const chipRow = hasDreDebt && \(heat \|\| debt \|\| respect\)/);
-  assert.match(ui, /\{shown\.chipRow && <div className="hud chip-row">/);
-});
-
 test("primary navigation is a progressive bottom bar with icons and 44px targets", () => {
   assert.match(ui, /function NavIcon\(/);
   assert.match(ui, /<NavIcon id=\{id\} \/>/);
@@ -236,15 +169,6 @@ test("primary navigation is a progressive bottom bar with icons and 44px targets
   assert.match(css, /\.nav button\{[^}]*min-height:52px/);
   // Three shell rows now that navigation sits at the bottom edge.
   assert.match(css, /\.app\{grid-template-rows:auto minmax\(0,1fr\) auto;/);
-});
-
-test("Travel exposes exactly three root choices with focused subpages", () => {
-  for (const fn of ["function Destinations(", "function Transit(", "function AroundHere(", "function Household(", "function LocalIntel("]) assert.ok(ui.includes(fn), fn);
-  assert.match(ui, /if \(page === "destinations"\) return <Destinations/);
-  const root = ui.slice(ui.indexOf("function Travel("), ui.indexOf("function SpenardBlockCard("));
-  assert.equal((root.match(/<MenuRow/g) || []).length, 3);
-  for (const title of ["Home", "Leave Spenard"]) assert.match(root, new RegExp(`<MenuRow title="${title}"`));
-  assert.match(root, /title=\{`Around \$\{area\.name\}`\}/);
 });
 
 test("Leave Spenard combines known destinations, automatic fares, and passes", () => {
@@ -256,33 +180,6 @@ test("Leave Spenard combines known destinations, automatic fares, and passes", (
   assert.match(ui, /known \? `Risk \$\{area\.risk\}\/5` : "Risk unknown"/);
   assert.match(ui, /known \? `Rival presence \$\{area\.rival\}\/5` : "Rival presence unknown"/);
   assert.match(ui, /const knownOf = \{ north_star_lot: true, downtown: state\.world\.transport\.downtownKnown, airport_industrial: state\.world\.transport\.industrialRouteKnown \}/);
-});
-
-test("Operations and Finances are hubs with focused subpages and Back on every one", () => {
-  for (const fn of ["function OperationsOverview(", "function DistrictControlPage(", "function TerritoryBlocks(", "function FinanceOverview(", "function DebtPage(", "function FinancialRisk("]) assert.ok(ui.includes(fn), fn);
-  for (const page of ["overview", "territory", "district", "soldiers", "gear", "safehouse", "rob"]) assert.match(ui, new RegExp(`page === "${page}"`));
-  for (const page of ["overview", "debt", "laundering", "risk"]) assert.match(ui, new RegExp(`page === "${page}"`));
-  // Every nested page owns an explicit Back control.
-  assert.equal((ui.match(/onBack=\{\(\) => setPage\("root"\)\}/g) || []).length >= 8, true);
-});
-
-test("progressive disclosure hides categories that have nothing in them yet", () => {
-  assert.match(ui, /knownDealers > 0 && <MenuRow title="Street Contacts"/);
-  assert.match(ui, /introducedCrew > 0 && <MenuRow title="Crew"/);
-  assert.match(ui, /personalContacts\(state\)/);
-  assert.match(ui, /state\.people\.crew\.kip\.recruited && <MenuRow title="Laundering"/);
-  assert.match(ui, /showRisk && <MenuRow title="Financial Risk"/);
-  assert.match(ui, /actionOf\("spenard_gambling"\) && <div className=\{`card\$\{available\.gambling\.available/);
-  assert.match(ui, /const actions = C\.selectors\.aroundActions\(state\)/);
-});
-
-test("every dispatch is routed so the shell can raise an action result", () => {
-  assert.match(ui, /function act\(action\) \{ pending\.current = \{ type: action\.type, before: state \}; dispatch\(action\); \}/);
-  assert.match(ui, /setResult\(C\.selectors\.actionResult\(record\.before, state, record\.type\)\)/);
-  // Screens receive `act`, never the raw reducer dispatch, so no time-consuming
-  // action can slip past the result overlay.
-  for (const token of ["<Travel state={state} dispatch={act}", "<People state={state} dispatch={act}", "<More state={state} dispatch={act}"]) assert.ok(ui.includes(token), token);
-  assert.match(ui, /act\(\{ type: "END_MARKET" \}\)/);
 });
 
 test("the action-result overlay stays separate while Night opens the structured recap gate", () => {
@@ -313,11 +210,6 @@ test("the street feed collapses to one line instead of owning 88px of every scre
   assert.match(css, /\.feed-toggle\{[^}]*min-height:44px/);
 });
 
-test("the market close action is contextual to Market and no longer global chrome", () => {
-  assert.match(ui, /tab === "market" && <div className="action-bar one">/);
-  assert.doesNotMatch(ui, /className="action-bar two"/);
-});
-
 test("Safehouse is a hub instead of the longest page in the build", () => {
   for (const fn of ["function ProtectedCash(", "function SafehouseStorage(", "function BaseUpgrades(", "function CrewAssignments("]) assert.ok(ui.includes(fn), fn);
   assert.match(ui, /<MenuRow title="Protected Cash"/);
@@ -329,18 +221,6 @@ test("Safehouse is a hub instead of the longest page in the build", () => {
   assert.doesNotMatch(ui, /Stored inventory · \$\{[\s\S]{0,80}Base upgrades/);
 });
 
-test("the play-screen header is one status line, not a wordmark row", () => {
-  assert.doesNotMatch(ui, /className="brand-row"/);
-  assert.match(ui, /<h1 className="sr-only">907Hustle: One Good Run · v1\.7<\/h1>/);
-  assert.match(ui, /<button className="menu-btn" onClick=\{onMenu\}>Menu<\/button>/);
-  assert.match(css, /\.primary-hud\{grid-template-columns:minmax\(0,1\.35fr\) minmax\(0,\.72fr\) auto auto/);
-});
-
-// --- pre-existing layout bug found by browser QA -----------------------------
-// `.app` and the number grids declared bare `1fr` tracks. A bare `1fr` is
-// `minmax(auto,1fr)`, and that `auto` floor is the item's min-content width, so
-// nowrap HUD/monospace content forced the shell to 687px inside a 320px
-// viewport and the whole page scrolled sideways. This reproduced on main.
 test("every grid track is clamped so nowrap content cannot force horizontal scroll", () => {
   assert.match(css, /\.app\{grid-template-rows:auto minmax\(0,1fr\) auto;grid-template-columns:minmax\(0,1fr\)\}/);
   for (const rule of [

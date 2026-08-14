@@ -9,7 +9,7 @@ Baseline: merged `main` commit `7084504f` (PR #45), save schema/key v3 / `907ogr
 - The app currently skips a title screen, automatically hydrates a parseable save, creates a new run otherwise, and immediately writes that state back to local storage.
 - Starting identity is a three-choice modal. Shooter, Hustler, and Strategist are all selectable even though this pass calls for two clearer starting edges.
 - Six primary tabs and eight HUD values are visible at once. People and Operations are long management pages without nested navigation.
-- Mara's introduction and the gray-sedan threat are combined. The first Day 2 encounter can use Mara before the run has established a meaningful relationship callback.
+- Mina's introduction and the gray-sedan threat are combined. The first Day 2 encounter can use Mina before the run has established a meaningful relationship callback.
 - Eli becomes recruitable immediately after his introduction. No contact, test-route, or follow-up stage exists.
 - Emergency robbery is permanently consumed after one attempt. Finance uses an ambiguous `SAFE` control, Recovery exposes every treatment tier, and the trade modal renders empty local-context copy.
 - The stable internal location IDs can support player-facing names such as Spenard and Industrial Service Roads without a save-key change.
@@ -31,7 +31,7 @@ The supplied `907chatgptimage.png` is a 941×1672 RGB PNG (approximately 1.9 MB)
 - Preserve save version 3 and normalize additive fields during hydration.
 - Keep Strategist internally for old saves while exposing only Silver-Tongued Hustler and Steady-Hand Shooter to new runs.
 - Centralize feature availability and unlock notices in the domain layer.
-- Introduce Mara before a relationship-dependent threat and stage Eli through a test route before recruitment.
+- Introduce Mina before a relationship-dependent threat and stage Eli through a test route before recruitment.
 - Replace the run-level robbery flag with a once-per-day Rob and cumulative statistics.
 - Reorganize People and Operations into nested full-screen views; simplify the HUD and primary navigation.
 - Preserve the economy, transaction projections, territory rules, and single time-advance pipeline unless this phase explicitly changes presentation or gating.
@@ -39,7 +39,7 @@ The supplied `907chatgptimage.png` is a 941×1672 RGB PNG (approximately 1.9 MB)
 ## Deferred proposals
 
 - Full cross-district imperfect market intelligence.
-- Mara invitation and Date Night scenes.
+- Mina invitation and Date Night scenes.
 - Generic XP, Street Knowledge, or manual skill allocation.
 - Hierarchical city/state travel.
 - Banking, laundering, and additional robbery types.
@@ -53,7 +53,7 @@ Verification, event-gating diagrams, simulation results, mobile results, save-co
 3. Centralized feature availability in `selectors.featureAvailability`; Travel and Operations open after the first period, People opens after an introduction (or returning-run progress), and Recovery opens when injury, Heat, story, or returning progress makes it relevant.
 4. Reduced primary navigation to Market, Travel, People, and More. The primary HUD now shows Day/Time, Cash, and Heat; Status reveals district, debt, Health, cargo, and crew Power.
 5. Converted People and Operations into nested full-screen category views with explicit Back controls.
-6. Rewrote Mara's introduction, stored the chosen tone, gated the Night Owl threat behind that introduction, and added a Mara-free service-road threat fallback.
+6. Rewrote Mina's introduction, stored the chosen tone, gated the Night Owl threat behind that introduction, and added a Mina-free service-road threat fallback.
 7. Rewrote Eli's introduction and added contact stages, a $35 test route that uses one part of day, deterministic risk/reward, a rejection callback, and recruitment gating.
 8. Hid Recent Local Context until a prior local price exists.
 9. Replaced player-facing time “slot” copy with part-of-day language while preserving internal `run.slot` and equipment-slot identifiers.
@@ -70,18 +70,18 @@ Verification, event-gating diagrams, simulation results, mobile results, save-co
 |---|---|---|
 | Market, Finances, Help, menu | Immediate | Immediate |
 | Travel, Operations | First market period has ended | Any existing time progress |
-| People | Mara or crew contact introduced | Day 2+ / established pipeline progress |
+| People | Mina or crew contact introduced | Day 2+ / established pipeline progress |
 | Recovery | Health below 100, Heat above 1, or story flag | Day 2+ / established pipeline progress |
 
 Each first unlock writes one concise Street Feed notice. Locked More cards retain a concrete hint without revealing story probability thresholds.
 
 ## Event-gating diagrams
 
-### Mara
+### Mina
 
-`Unmet → Mara on the Night Shift → flirt | friendly | distant → People card unlocked → eligible Night Owl threat callback → later truth/visit/ending logic`
+`Unmet → Mina on the Night Shift → flirt | friendly | distant → People card unlocked → eligible Night Owl threat callback → later truth/visit/ending logic`
 
-If Mara is not introduced, unavailable, or lacks interaction history, the early confrontation becomes `A Tail on the Service Road` and does not mention her.
+If Mina is not introduced, unavailable, or lacks interaction history, the early confrontation becomes `A Tail on the Service Road` and does not mention her.
 
 ### Eli
 
@@ -96,7 +96,7 @@ If Mara is not introduced, unavailable, or lacks interaction history, the early 
 - Requires working capital below $150, no unresolved event/encounter/operation, and time remaining.
 - May be attempted once on each in-game day.
 - Success considers Combat, Intelligence, an equipped weapon, active crew, Heat, and prior attempts.
-- Payout is $115–$210. Repeated attempts reduce success chance and increase Heat, Rook pressure, and injury range.
+- Payout is $115–$210. Repeated attempts reduce success chance and increase Heat, Curtis pressure, and injury range.
 - Failure never creates a permanent weekly lockout; a later day can reopen the action if the player still needs recovery capital.
 
 The deterministic agents attempted Rob in 331 of 600 runs/attempt opportunities total (52 cautious, 72 balanced, 207 aggressive). Successful payout totaled $20,816, but aggressive use produced 127 failures and a peak-Heat average of 14. The action therefore functions as emergency recovery rather than a low-risk replacement for market trading.
@@ -105,7 +105,7 @@ The deterministic agents attempted Rob in 331 of 600 runs/attempt opportunities 
 
 Save schema and key remain version 3 / `907ogr_v3`.
 
-`hydrateRun` deep-fills additive defaults, preserves old market/player state, retains Strategist, restores missing Mara/crew fields, and converts legacy robbery `{ attempted, success, payout }` data into cumulative statistics. Automated fixtures cover a fresh run, Strategist, Mara met, Eli introduced, and an old attempted robbery. No destructive migration or old-key rewrite occurs.
+`hydrateRun` deep-fills additive defaults, preserves old market/player state, retains Strategist, restores missing Mina/crew fields, and converts legacy robbery `{ attempted, success, payout }` data into cumulative statistics. Automated fixtures cover a fresh run, Strategist, Mina met, Eli introduced, and an old attempted robbery. No destructive migration or old-key rewrite occurs.
 
 ## Verification
 
@@ -114,7 +114,7 @@ Save schema and key remain version 3 / `907ogr_v3`.
 Command: `node --test tests/*.test.js`
 
 - 40 passed, 0 failed.
-- Covers save inspection, corrupt saves, legacy hydration, two new-run edges, feature unlocks, Mara gating/callback, Eli test-route progression, Rob daily gating/stat normalization, Finance clamping, trade-projection parity, local-context reveal, nested navigation contracts, player-facing time terminology, and existing clock/economy/territory/endings.
+- Covers save inspection, corrupt saves, legacy hydration, two new-run edges, feature unlocks, Mina gating/callback, Eli test-route progression, Rob daily gating/stat normalization, Finance clamping, trade-projection parity, local-context reveal, nested navigation contracts, player-facing time terminology, and existing clock/economy/territory/endings.
 
 ### Deterministic simulations
 
@@ -128,7 +128,7 @@ Command: `node tests/simulate-runs.js 200`
 
 ### Browser and mobile verification
 
-Live browser flow covered title/no-save, artwork load, new game, edge selection, first market, live trade totals, hidden empty context, feature notices, Mara introduction, People nesting, Operations nesting, Finance preview, Return to Title, save preview, and exact autosave resume.
+Live browser flow covered title/no-save, artwork load, new game, edge selection, first market, live trade totals, hidden empty context, feature notices, Mina introduction, People nesting, Operations nesting, Finance preview, Return to Title, save preview, and exact autosave resume.
 
 | Viewport | Horizontal overflow | Smallest visible control | Title/New Game | Bottom actions |
 |---|---:|---:|---|---|
@@ -149,5 +149,5 @@ The current run stays compact: Alaska → Anchorage → district → named stop.
 - The 1.9 MB title PNG is locally packaged and visually appropriate but could be optimized to WebP/AVIF in a production asset pipeline.
 - React, ReactDOM, Babel, and fonts still load from CDNs; offline play and production bundling remain unresolved.
 - The deterministic agents are intentionally weak traders and still finish with negative average net worth and high debt. Human balance testing remains necessary.
-- Full imperfect cross-district market intelligence, Mara invitation/Date Night, generic progression/manual skill allocation, hierarchical statewide travel, banking/laundering, and additional robbery types remain deferred.
+- Full imperfect cross-district market intelligence, Mina invitation/Date Night, generic progression/manual skill allocation, hierarchical statewide travel, banking/laundering, and additional robbery types remain deferred.
 - People history is concise rather than a full relationship ledger; Operations/Safehouse management remains intentionally lightweight.

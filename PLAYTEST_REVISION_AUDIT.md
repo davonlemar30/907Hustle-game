@@ -26,14 +26,14 @@ The contained pass makes `You owe Dre: $480` the primary hierarchy, shows `Due D
 | Cargo | Visible | Keep; directly constrains trading and future escape outcomes. |
 | Banked | Visible | Secondary; keep where space permits and always expose on Cash + Debt. It may collapse from the 320px HUD. |
 | Dre adjective | Persistent | Remove. Communicate through messages, terms, access, and behavior. |
-| Rook adjective | Persistent | Remove. Communicate through interference, dialogue, access, and behavior. |
+| Curtis adjective | Persistent | Remove. Communicate through interference, dialogue, access, and behavior. |
 | Visit/trade counter | Persistent | Remove from player UI; retain `currentVisit` and `stats.visits` for analytics. |
 
 ## 3. Relationship presentation trace
 
 The core stores `lender.trust`, `lender.relationship`, `rival.pressure`, `rival.respect`, and `rival.relationship`. Lender and rival adjectives are recalculated after pressure changes, event effects, and payments. Before this pass, the UI exposed those adjectives in the HUD, People cards, and final recap; People also exposed raw trust, pressure, respect, and the exact lender escalation day.
 
-The revised UI leaves the numeric/state-machine fields internal. It translates current state into short behavioral reads: Dre notices payments or shortens his messages; Rook ignores, watches, accommodates, or applies pressure. The final recap uses the same behavior language. Later phases should express state through loan terms, store access, encounter choices, assistance, retaliation, and Day 7 options.
+The revised UI leaves the numeric/state-machine fields internal. It translates current state into short behavioral reads: Dre notices payments or shortens his messages; Curtis ignores, watches, accommodates, or applies pressure. The final recap uses the same behavior language. Later phases should express state through loan terms, store access, encounter choices, assistance, retaliation, and Day 7 options.
 
 ## 4. Debt calculation and payoff trace
 
@@ -48,7 +48,7 @@ Debt difficulty remains intentionally unchanged in Phase 1. Phase 2 should simul
 
 ## 5. Legacy combat, weapon, stat, and store review
 
-`combat.js` contains ten enemy profiles and four actions: fight, flee, bribe, and draw burner. It supports enemy health, attack ranges, cash loss, heat, inventory seizure, loot, Rook/Dre consequences, and a compact two-column modal. `events.js` contains many encounter hooks but mixes authored choices with immediate global mutations. `script.js` and the prototypes contain a four-item upgrade shop (beater, hidden stash, burner pack, crew muscle), asset-gated effects, and reusable shop-card styling.
+`combat.js` contains ten enemy profiles and four actions: fight, flee, bribe, and draw burner. It supports enemy health, attack ranges, cash loss, heat, inventory seizure, loot, Curtis/Dre consequences, and a compact two-column modal. `events.js` contains many encounter hooks but mixes authored choices with immediate global mutations. `script.js` and the prototypes contain a four-item upgrade shop (beater, hidden stash, burner pack, crew muscle), asset-gated effects, and reusable shop-card styling.
 
 There is no coherent player-stat model. Combat bonuses are asset checks, firearm and phone concepts are conflated in `burner_pack`, randomness mixes a custom RNG with `Math.random()`, combat sits outside the unified clock, and death resets the whole game inside resolution. Legacy prices, products, contacts, unlocks, and 30-day assumptions also conflict with One Good Run.
 
@@ -117,13 +117,13 @@ The first store implementation should ship no more than these ten entries and ma
 
 ## 10. Encounter templates
 
-1. **Rook's Roadblock:** pay, turn back, draw, call Rook, or find another route with Instinct.
+1. **Curtis's Roadblock:** pay, turn back, draw, call Curtis, or find another route with Instinct.
 2. **Mini-Mart Watch:** leave, ditch cargo, hide and spend time, use a burner, or stay for the rumor.
 3. **Industrial Ambush:** fight, run, surrender a selected product, or call in a relationship favor.
-4. **Injured Courier:** spend time helping, use a medical kit, search them, walk away, or call Dre/Rook; the courier can return later.
+4. **Injured Courier:** spend time helping, use a medical kit, search them, walk away, or call Dre/Curtis; the courier can return later.
 5. **Bad Buyer:** talk down, draw, run with the money, or cancel; can affect later market supply.
 6. **Dre's Collection Visit:** make a partial payment, request terms, surrender gear, run, or fight as a costly last resort.
-7. **Rook's Test:** carry a package, refuse, negotiate, or expose a setup; alters later interference and Day 7 access.
+7. **Curtis's Test:** carry a package, refuse, negotiate, or expose a setup; alters later interference and Day 7 access.
 8. **Checkpoint Spill:** turn around, hide cargo, use a lockbox/burner option, abandon product, or risk an escape.
 
 ## 11. Persistent consequence connections

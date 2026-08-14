@@ -1,405 +1,127 @@
 # 907Hustle: One Good Run
 
-907Hustle: One Good Run is a mobile-first, single-player crime, trading, resource-management, and light RPG web game set in an Anchorage-inspired version of Spenard.
+907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-The current playable build is **v1.7: Character Rework, Obligation Layer, and Social Gating**. The player begins as a broke newcomer renting Yalonda's spare room, establishes a Week Zero routine, manages recurring bills and Dre's debt, trades and hustles for money, develops relationships and reputation, acquires the North Star Garage, and can grow into an operator who controls blocks through soldiers and lieutenants.
+The current playable build is **v1.8: Character, Relationship, and Hustle Rework**.
 
-The game uses a classless progression model. Access and identity emerge from behavior, attributes, relationships, Street Read, Respect, money, property, crew, and territory rather than a fixed class path.
+## What changed in v1.8
 
-## Current Build: v1.7
+### Characters and relationships
 
-v1.7 turns the apartment, phone, jobs, and 907List into connected social and logistical systems. Access now comes through people and places, while phone service and rent establish the first recurring upkeep layer.
+- **Mina Vale** has a six-scene Night Owl arc: *First Coffee*, *Twenty Minutes Past Close*, *Four Hours and No Agenda*, *Someone Said Your Name Wrong*, *The Vale Call*, and *Aftermath*. Her trust changes dealer pricing, daily intelligence, broker texts, the Kieran Vale confrontation, and the outcomes `mina_stays`, `mina_calls_home`, or `mina_gone`.
+- **Curtis Foyer** reacts to concrete exposure instead of generic Respect. Attention rises from cumulative sales, rolling illegal revenue, conspicuous Spenard business, reports, and network escalation. Tax, friendship, guarded independence, rejection, betrayal, protection, and truce paths are all persistent.
+- **Dre Smooth** is no longer required to end Week Zero. Juan or a missed phone bill can introduce him; repeat loans, four mission types, relationship tiers, five backstory fragments, and the Shark lending track deepen his route.
+- **Goodie** is a dealer only. His standing, discounts, rumors, supply retaliation, robbery history, and disappearance limit remain; the finance-lieutenant and laundering progression has been removed.
+- **Pherris Dickens** grows from a paid rumor source into a social territory manager and seeded network-income operator.
+- **Simone Hart** is Curtis's independent partner, with her own trust, threat, leverage, and truce state.
+- **Tone** gains territory-defense tiers and the Day 7+ Jacksonville chain.
+- **Deshawn** is recruitable through an intact Goodie relationship or restitution. His higher tiers reduce recruiting costs, broker truces, and can stop Curtis's betrayal.
 
-Implementation: [draft PR #64](https://github.com/davonlemar30/907Hustle-game/pull/64).
+Legacy aliases remain only in migration code and fixtures; player-facing copy uses the v1.8 identities throughout.
 
-### v1.7 additions
+### Hustle and lending
 
-- Yalonda Hernandez is the player's landlord and Juan Hernandez is her 18-year-old son. Both have deterministic household schedules, persistent trust, free daily conversation, story events, and useful local knowledge.
-- Explore Spenard is split into Places and Activities. Night Owl, the discoverable community gym, and the walk-in phone store live under Places.
-- People → Contacts now includes a Personal section for Yalonda, Juan, Mara, Dre, and Rook; the duplicate Personal menu and dead routes are gone.
-- Free actions can raise short, non-blocking consequence cards. Time-consuming actions keep the existing action-result overlay.
-- Home and More both reach a Phone screen with texts, the current day's log, rotating local intel, and online bill payment.
-- Phone service costs **$75 weekly**. It shuts off after three missed daily grace ticks, blocking calls, texts, callbacks, and mobile listings until a walk-in payment restores service on the next part of day.
-- Rent costs **$150 weekly** after the first free week. Misses reduce Yalonda's trust, and repeated missed weeks enter the household warning system.
-- 907List is invisible until discovered through Juan, work, Night Owl, or wandering. Phone access shows three listings; an owned laptop preserves a five-listing Home tier even when phone service is off.
-- Employers require a one-part application and a callback two elapsed parts later. Juan can refer the player directly to his warehouse, while Day Labor remains an always-available $40–$60 survival option.
-- The gym is hidden until discovered and charges a one-time **$30 membership fee** with the first session.
-- New Game, run restart, and reserve-crossing debt payments use accessible in-game confirmations instead of blocking native browser dialogs.
-- Saves use version 4 and `907ogr_v4`; v3 saves migrate household trust, known listings, existing jobs, and completed runs without losing progress.
+The unified Hustle record tracks Market, Boost, Stickup, and Shark visibility, illegal revenue history, Curtis exposure, and loan-shark state.
 
-### Core gameplay
+- Hustle unlocks after the first successful dirty-income action.
+- A discovered Street Market remains available through Street before that unlock, so the first sale cannot deadlock.
+- Market-session completion, robbery attempts, and boost attempts consume time.
+- Shark unlocks after Dre trust 3, three clean missions, and two repaid Dre loans.
+- Nora Pike, Jamal Briggs, Kelsey Roy, and Leon Grant have distinct limits and qualitative risk.
+- Shark terms support $100, $250, and $500 principals and 2-, 4-, and 7-day durations where allowed.
+- Defaults are deterministic from borrower risk, amount, deadline, Insight, and Dre mentorship. Collection, extension, enforcement, and forgiveness create different time, Heat, and relationship consequences.
 
-- Dynamic 10–14 day typical run with Morning, Afternoon, Evening, and Night
-- Spenard and Industrial Service Roads gameplay, plus a return-safe Downtown arrival scaffold
-- Four-product market with seeded price movement and weighted-average cost basis
-- Buy/sell previews with revenue, cost basis, projected profit or loss, cash after, and cargo after
-- Legal work, exploration, gym training, informal gambling, shoplifting, transit, relationships, and property progression
-- Dre debt management with reserve-aware payments and physical enforcement at the Day 7 deadline
-- Heat, Health, Recovery, gear, protected storage, garage upgrades, crew, Respect, and territory
-- Autosave, title screen, New Game, Load Game, save preview, and mobile-first navigation
+### Jobs and time
 
-## Organization Layer
+- Multiple applications may mature simultaneously into explicit offers.
+- Only one employer can be active. Accepting another offer quits the current employer and resets that employer's XP, rank, and coworker relationship while preserving discovered details and history.
+- Day Labor is always available and does not count as a held job.
+- Mina leaving does not remove an already-earned Night Owl position.
+- Time cost is centralized. Travel, exploration, shifts, applications, dates, missions, completed market sessions, robbery/boost attempts, training, gambling, takeovers, claims, garage visits, treatment, sleep, and final plans advance time.
+- Phone use, payments, Goodie interactions, local conversations, immediate first aid, 907List transactions, recruitment, assignments, equipment, and upgrades are free.
+- Free actions can show consequences but do not roll story progression or advance automatic timers.
 
-### Soldiers
+## Navigation
 
-Soldiers are anonymous manpower hired with cash and assigned to controlled Spenard blocks.
+The fixed bottom rail contains five destinations:
 
-- Soldier capacity scales with controlled territory
-- Claiming a block requires an available soldier
-- Successful claims immediately post a soldier to the new block
-- Assigned soldiers generate passive dirty income through the existing `advanceRun` pipeline
-- Soldiers can be lost to raids, arrests, and attrition
-- Survivors from a lost block return to the available manpower pool
+1. **Home** — household, immediate obligations, and the current situation.
+2. **Street** — destinations, local places and activities, People, and the pre-unlock Street Market.
+3. **Hustle** — Market, Boost, Stickup, and Shark; hidden until dirty income first succeeds.
+4. **Phone** — always present. Inactive service shows No Service and walk-in restoration directions.
+5. **More** — finances, operations, recovery, character, Street Read, history, and help.
 
-### Territory Blocks
+All primary controls target a minimum 44px touch area. The shell is designed for 320px-wide phones through desktop layouts without horizontal overflow.
 
-Spenard currently contains six claimable blocks.
+## Core systems
 
-Each block has:
+- Four-part days: Morning, Afternoon, Evening, and Night
+- Dynamic checkpoint rather than a forced literal seven-day ending
+- Seeded market prices, inventory, weighted cost basis, rumors, and buyer modifiers
+- Dirty and clean cash with the invariant `cash = dirtyCash + cleanCash`
+- Phone and rent obligations, household trust, jobs, callbacks, and 907List
+- Heat, Health, Recovery, equipment, garage upgrades, crew, soldiers, Respect, and territory
+- Data-driven seeded stories, encounters, missions, and borrower outcomes
+- Autosave, title screen, run restart, save preview, and exact resume
 
-- earning potential
-- Heat exposure
-- Rook visibility
-- patrol frequency
-- manpower requirements
+## Save compatibility
 
-Eli's territory intelligence reveals block stats before expansion. Without that intelligence, the player operates with incomplete information.
+v1.8 saves use schema version **5** and local-storage key `907ogr_v5`.
 
-### District Control
+The loader continues to read `907ogr_v4` and `907ogr_v3` once, migrate them to v5, and preserve:
 
-Territory Blocks are the tactical layer. District Control is the neighborhood-level strategic layer.
+- completed relationship stages, choices, and outcome history
+- Curtis attention/respect and renamed territory ownership
+- Goodie's dealer standing and robbery history, without laundering access
+- Pherris recruitment and loyalty
+- crew, blocks, cash classifications, completed runs, and pending state
+- the last-worked eligible employer as the active job; other prior employers become offers without losing their records
 
-Spenard progresses through:
+Migration preserves already-clean cash and removes only future laundering actions. Renamed events are marked as already resolved so they do not replay.
 
-- Presence
-- Influence
-- Dominant
-- District Control
+## Development
 
-Block income owns the passive territory payout where the block layer exists, preventing duplicate district income. District Control provides broader strategic benefits and creates a foundation for future Downtown and Industrial block expansion.
+No build step is required. Serve the repository over HTTP and open `index.html`:
 
-### Lieutenants
-
-Two specialist lieutenant roles drive the organization layer.
-
-**Eli "Shortcut" Ward — Operations**
-
-- soldier positioning
-- block rotation
-- territory defense
-- operational efficiency
-- automated manpower management
-
-Eli can run one standing operations policy:
-
-- Balanced
-- Maximize Income
-- Hold Ground
-- Stay Quiet
-- Manual
-
-Policy changes and automated redistribution consume no additional player time.
-
-**Kip Sallis — Finance**
-
-- dirty-to-clean cash conversion
-- laundering capacity
-- financial Heat reduction
-- legitimate money management
-
-Kip is a finance specialist and stays outside field crew assignments.
-
-### Dirty and Clean Cash
-
-v1.0 tracks money as:
-
-- `player.dirtyCash`
-- `player.cleanCash`
-- `player.cash`
-
-The core invariant is:
-
-```text
-cash = dirtyCash + cleanCash
+```bash
+python3 -m http.server 8000
 ```
 
-Ship Creek work enters as clean income. Street income generally enters as dirty cash.
-
-Kip launders dirty cash at a flat **15% fee**. Clean cash avoids financial Heat from spending and supports legitimate purchases.
-
-### Rook
-
-Rook escalation now follows **Respect**.
-
-- Respect represents the player's growing street presence and influence
-- Heat represents police attention
-- Rook's escalation stage reacts to Respect and organization growth
-- Legacy saves preserve already-earned Rook progression
-
-### Dre
-
-Dre's debt remains the central seven-day obligation.
-
-- The fresh-arrival note is due on Day 7
-- Unpaid debt at the deadline can trigger collector enforcement
-- Collector severity scales with the remaining balance
-- Killing collectors increases future enforcement cost through Dre's interest multiplier
-- Paying the debt in full prevents collector escalation
-
-## Story and Relationships
-
-The current build extends the authored character and event systems with an occupied household and social access gates.
-
-- **Yalonda Hernandez:** landlord, rent relationship, household boundaries, warnings, and a trust-gated personal path
-- **Juan Hernandez:** warehouse worker, job referral, Ship Creek intel, gym discovery, and local connector
-- **Mara Velez:** relationship progression with friendship, romance, boundaries, danger, and Day 7 outcomes
-- **Eli Ward:** contact-to-crew-to-lieutenant progression
-- **Dre Holloway:** lender relationship, payment behavior, warnings, and enforcement
-- **Rook Mercer:** rival escalation driven by Respect
-- **Kip Sallis:** dealer progression that can grow into a finance lieutenant role
-
-The live story system remains data-driven through `STORY_REGISTRY` in `game-core.js` and uses seeded deterministic selection.
-
-## UI / UX
-
-The interface is a mobile-first single shell built on menu hubs and progressive
-disclosure. A Day 1 arrival does not inherit a Day 6 operator's interface:
-systems appear in the menus only once the run has unlocked them.
-
-### Primary navigation
-
-Progressive bottom-bar destinations, icon over label:
-
-- **Home** — situation overview and the run's anchor
-- **Market** — the hero trading surface after supplier access
-- **Boost** — hidden until the first successful lift
-- **Rob** — hidden until the first successful Rob
-- **Travel** — where to go, how to get there, what is around you
-- **People** — personal and social contacts, street contacts, crew, lieutenants
-- **More** — Phone, Finances, Operations, Recovery, Character, Street Read, Help
-
-Navigation sits at the bottom edge where a thumb reaches it. The header is one
-status line (day part, district, cash, status drawer, menu); a pressure row of
-Heat / Debt / Respect chips appears only once one of them is applying pressure.
-
-### Home
-
-Home is the landing screen for a new or loaded run and the calmest screen in the
-game. The header owns day, location, cash, and status; Home owns the residence,
-household presence, immediate obligations, and the next useful routes. Its model
-comes from `selectors.homeSituation`, which produces an authored situation
-summary, at most two priorities, and a per-system unlock map so empty systems
-stay hidden rather than rendering as `Soldiers: 0`.
-
-### Menu hubs
-
-Each hub lists destinations; each subpage answers one gameplay question and
-carries an explicit Back control.
+The active build is:
 
 ```text
-Travel      → Destinations · Around <district> · Explore Spenard (Places · Activities) · Home · Transit · Local Intel
-People      → Contacts (Personal · Social) · Street Contacts · Crew · Lieutenants · Recent History
-Operations  → Overview · Safehouse · Territory · Soldiers · District Control · Gear · Rob opportunity
-Safehouse   → Protected Cash · Storage · Upgrades · Assignments
-Finances    → Overview · Debt & Obligations · Laundering · Financial Risk
+index.html
+  ├── v05.css
+  ├── game-core.js
+  ├── encounters.js
+  └── ui.jsx
 ```
 
-High-level surfaces name systems and world state (Debt, Territory, District
-Control, Heat, Respect, Crew, Soldiers, Financial Heat). Character names appear
-in the detail that concerns them — the lender is named on the Debt page, not in
-the persistent HUD.
+Run the automated checks with:
 
-### Action feedback
-
-Any action that consumes part of the day raises a compact action-result overlay:
-what happened, the money that moved, the important result, and — most
-prominently — the time it cost (`MORNING → AFTERNOON`). It auto-dismisses, and a
-tap anywhere closes it early, so routine actions never cost an extra deliberate
-tap.
-
-Action results are deliberately separate from story. The receipt is short and
-system-focused; narrative, choices, and relationship consequences keep their own
-event surfaces. Richer surfaces still own their outcomes: takeovers keep the
-operation modal and a crossed day keeps the day summary, and the receipt stays
-silent rather than stacking on top of them.
-
-Free and automatic changes use a separate consequence stack that never blocks the
-controls beneath it. Cards auto-dismiss after 2.5 seconds, support tap-to-close,
-announce politely to assistive technology, and disable entrance motion when the
-operating system requests reduced motion.
-
-The overlay is driven by `selectors.actionResult(before, after, actionType)`, a
-pure diff of two committed states. The shell routes every dispatch through one
-wrapper so no time-consuming action can slip past it, and the reducer is
-untouched.
-
-### Mobile standards
-
-- 44px minimum visible control height, verified by measurement in Chromium
-- zero horizontal overflow at 320, 375, 390, 430, and 375×560 reduced height
-- bottom navigation uses 44px minimum cells and contained horizontal scrolling when every progressive tab is visible on a narrow phone
-- player-facing time shown as day parts
-- nested screens use explicit Back controls
-- trading remains the strongest primary gameplay surface
-
-## Deterministic Architecture
-
-907Hustle uses one central gameplay clock and one seeded RNG path.
-
-- `advanceRun` owns time advancement
-- passive soldier and territory resolution runs inside the same pipeline
-- organization activity consumes no hidden extra turns
-- deterministic RNG is preserved across combat, events, territory, raids, and passive systems
-- save version is `4`
-- compatible v3 saves migrate explicitly before additive hydration
+```bash
+node --check game-core.js
+node --check encounters.js
+node --test tests/*.test.js
+node tests/simulate-runs.js --total 2000
+git diff --check
+```
 
 ## Verification
 
-Current automated verification:
-
-```sh
-node --test tests/*.test.js
-node tests/simulate-runs.js
-```
-
-Latest recorded results (v1.7 systems pass):
-
-- **332 / 332 automated tests passing**
-- **2,000 simulated runs (200 per strategy across 10 strategies) with zero dead ends**
-- simulation baseline SHA-256: `56abc0e4b5d22d46ff3d4e5b572787c0ac326c15e21b80d86fac06d28653eb97`
-- operator strategy covers garage, Eli, soldiers, territory, Kip, and laundering progression
-- zero simulation crashes reported
-- Node-driven end-to-end organization run completed through save/load
-
-The v1.7 contract suite covers household presence and trust, rent and phone
-obligations, application callbacks, all four 907List discovery routes, gym
-discovery and membership, consequence queues, v3-to-v4 migration, accessible
-confirmation dialogs, navigation structure, and presentation invariants.
-
-### Rendered verification
-
-The real v1.7 `index.html` loads in Chromium. Native `window.confirm` calls were
-replaced with accessible in-game confirmation dialogs so browser control and normal
-play use the same reliable flow. The interactive pass opened New Game, confirmed a
-fresh run, entered a Street Name, reached Home, and exercised Explore Spenard,
-Contacts, and Phone. Viewports at 320×568, 375×667, 390×844, 430×932, 375×560,
-and 1280×800 all reported zero horizontal overflow and a 44px minimum visible button
-height; the browser console reported zero errors. Automated UI-contract tests also
-cover consequence stacking and reduced-motion rules.
-
-That pass found a **pre-existing layout bug that also reproduces on the previous
-main**: `.app` and several number grids declared bare `1fr` tracks. A bare `1fr`
-is `minmax(auto,1fr)`, and that `auto` floor is the item's min-content width, so
-nowrap HUD and monospace content forced the shell to 687px inside a 320px
-viewport and the whole page scrolled sideways. Every affected track is now
-clamped to `minmax(0,1fr)`, with a regression test asserting the clamped rule is
-the last one to apply.
-
-The final v1.0 stabilization pass verified the full flow:
-
-```text
-garage
-→ Eli recruitment
-→ Eli promotion
-→ soldier recruitment
-→ territory claims
-→ passive income
-→ Eli policy change
-→ Kip introduction
-→ laundering
-→ Day 7 Dre enforcement
-→ save/load
-```
-
-Human playtesting on a physical device is still recommended for feel, pacing,
-final typography, and the title-artwork tiers. The automated rendered pass used
-the real `index.html`, `v05.css`, `game-core.js`, and `ui.jsx` runtime.
-
-## Run Locally
-
-Serve the repository with any static HTTP server, then open `index.html`:
-
-```sh
-python3 -m http.server 4173
-```
-
-Then visit:
-
-```text
-http://localhost:4173
-```
-
-The active runtime is:
-
-- `index.html`
-- `v05.css`
-- `game-core.js`
-- `ui.jsx`
-
-`game-core.js` is a UMD domain module exposed through `window.GameCore` and `module.exports`. `ui.jsx` contains the React presentation layer.
-
-## Save Compatibility
-
-- Save version: `4`
-- Save key: `907ogr_v4`
-- compatible v3 state first migrates to v4, then hydrates through additive defaults
-- pre-existing cash migrates into the dirty-cash model
-- legacy Rook progression is preserved during the Respect migration
-- v3-discovered jobs become hired jobs, known 907List access is preserved, and household trust moves to the new NPC state
-- fresh, Week Zero, pressure-phase, and completed v3 runs remain playable
-
-## Project Direction
-
-The current progression arc is:
-
-```text
-street-level survival
-→ working/trading/hustling
-→ garage ownership
-→ crew growth
-→ Eli as Operations Lieutenant
-→ soldiers and Territory Blocks
-→ passive organization income
-→ Kip and laundering
-→ District Control
-→ larger rival and law-enforcement consequences
-```
-
-Near-term development priority:
-
-1. human pacing validation of applications, phone grace, and weekly rent
-2. balance validation of the organization systems
-3. stronger District Control rewards and capstone presentation
-4. later expansion of obligations, vehicles, and block territory
+- Node tests: **337 passing**
+- Deterministic simulations: **2,000 runs, zero crashes or dead ends**
+- Simulation SHA-256: `5890e37a3c039d4929fa59273857ec528b2a929c2de3cd4a7d2dbb7f895a6b76`
+- Viewports: 320×568, 375×667, 390×844, 430×932, 375×560, and 1280×800
+- Browser criteria: zero console errors, zero horizontal overflow, usable Phone/Hustle locked states, correct five-tab navigation, and 44px controls
 
 ## Documentation
 
-Key repository references:
+- [STORY_BIBLE.md](STORY_BIBLE.md) — current character voices, relationship rules, and story continuity
+- [VISION.md](VISION.md) — long-form design direction
+- [ROADMAP.md](ROADMAP.md) — release history and future work
+- [PROGRESSION_DESIGN.md](PROGRESSION_DESIGN.md) — progression and identity model
 
-- `VISION.md` — long-term design target
-- `ROADMAP.md` — build sequence
-- `PROJECT_STATUS.md` — architecture, verification, and current limitations
-- `STORY_BIBLE.md` — character voices, story standards, and event chains
-- `ALPHA_V0.9.md` — v0.9 daily-life foundation
-- `EIGHTH_PLAYTEST_AUDIT.md` — v0.9 verification record
-- `COPY_REVIEW.md` — current narrative-copy review
-- `tests/v1-7.test.js` — v1.7 household, obligation, access, job-friction, and migration contract
-- PR #64 — v1.7 Character Rework, Obligation Layer, and Social Gating
-- PR #52 — v1.0 Soldiers, Territory, Lieutenants, Laundering, and stabilization work
+The ClickUp v1.8 specification is the release source of truth: [v1.8 Character, Relationship, and Hustle Rework](https://app.clickup.com/90141007990/v/dc/2kyd583p-4054/2kyd583p-15114).
 
-The ClickUp 907Hustle Master Doc remains the broader design and playtesting source of truth.
-
-## Legacy Files
-
-`index.html` loads only `v05.css`, `game-core.js`, and `ui.jsx`.
-
-These files remain for historical reference and are outside the active runtime:
-
-- `events.js`
-- `script.js`
-- `style.css`
-- `combat.js`
-- `907hustle/`
-- `assets/cousins-apt-placeholder.svg`
-
-The live event set is `STORY_REGISTRY` inside `game-core.js`.
+Implementation: [draft PR #65](https://github.com/davonlemar30/907Hustle-game/pull/65).

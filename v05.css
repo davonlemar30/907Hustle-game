@@ -40,7 +40,7 @@
 
 /* HUD row-weight overrides: primary row is now Day/Time+Location and Cash
    plus the status toggle (3 cells, not the original 4); the drawer lost
-   District/Dre (promoted to the always-visible chip row) and gained Rook
+   District/Dre (promoted to the always-visible chip row) and gained Curtis
    (4 cells, not 5). */
 .primary-hud{grid-template-columns:1.5fr .7fr auto}
 .status-drawer{grid-template-columns:repeat(4,minmax(0,1fr))}
@@ -96,8 +96,8 @@
 .block-node .node-state{display:block;margin-top:4px;font-size:.6rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
 .block-node.player{border-top-color:var(--green)}
 .block-node.player .node-state{color:var(--green)}
-.block-node.rook{border-top-color:var(--red2)}
-.block-node.rook .node-state{color:var(--red2)}
+.block-node.curtis{border-top-color:var(--red2)}
+.block-node.curtis .node-state{color:var(--red2)}
 .block-node.unknown{border-top-color:#666;opacity:.8}
 .block-node.unknown .node-state{color:var(--muted)}
 .block-node.selected{outline:2px solid var(--amber);outline-offset:-2px}
@@ -106,15 +106,6 @@
 .district-summary .tier{color:var(--amber);font-family:var(--head);font-size:1.15rem;text-transform:uppercase;letter-spacing:.04em}
 .district-meter{height:8px;background:#080808;border:1px solid var(--line);margin-top:8px}
 .district-meter span{display:block;height:100%;background:var(--amber)}
-
-/* Kip laundering conversion visual. */
-.launder-flow{display:flex;align-items:center;gap:10px;margin:10px 0}
-.launder-flow .amount{flex:1;text-align:center;border:1px solid var(--line);padding:9px 4px}
-.launder-flow .amount small{display:block;color:var(--muted);text-transform:uppercase;font-size:.6rem}
-.launder-flow .amount b{display:block;font-family:var(--mono);font-size:1.05rem;margin-top:2px}
-.launder-flow .amount.dirty b{color:var(--dirty)}
-.launder-flow .amount.clean b{color:var(--clean)}
-.launder-flow .arrow{color:var(--muted);font-size:1.2rem}
 
 @media(max-width:350px){.policy-grid{grid-template-columns:1fr}}
 @media(max-width:340px){.chip-row{grid-template-columns:repeat(3,1fr);gap:3px}.status-chip{padding:5px 4px}.status-chip .v{font-size:.62rem}.territory-board{gap:5px}.block-node{padding:6px;min-height:70px}}

@@ -4,7 +4,7 @@
 
 All six attributes carry hidden `player.attributeProgress`. Gym progress is 3/2/1/1 across same-day sessions costing $25/$45/$75/$120. Attribute increases require 10 progress, then 18 additional, then 28 additional, and cap at 5.
 
-`stats.streetRead = { xp, level, awards }` resets with each fresh run. Levels use 40/110/210/340 XP and deduplicated first-accomplishment awards. Street Read is displayed only under More; it does not enter the HUD, Street Identity, or Operation Score. Legal work contributes Earner behavior; property contributes Mover; family, employer, Mara, and gambling contacts contribute Connector. Gym attendance alone does not define identity, and ordinary shoplifting alone does not create Stickup.
+`stats.streetRead = { xp, level, awards }` resets with each fresh run. Levels use 40/110/210/340 XP and deduplicated first-accomplishment awards. Street Read is displayed only under More; it does not enter the HUD, Street Identity, or Operation Score. Legal work contributes Earner behavior; property contributes Mover; family, employer, Mina, and gambling contacts contribute Connector. Gym attendance alone does not define identity, and ordinary shoplifting alone does not create Stickup.
 
 The sections below preserve the original design rationale. Where they differ from the implementation summary above, the implemented v0.9 behavior is authoritative.
 
@@ -106,7 +106,7 @@ first two days feel deliberately crippled.
 ## Alternative worth considering first
 
 Before building an XP bar, consider replacing it with **three competing
-reputations** — Street (Rook, dealers), Straight (Mara, civilians, legitimate
+reputations** — Street (Curtis, dealers), Straight (Mina, civilians, legitimate
 work), and Paper (Dre, suppliers, buyers). Actions move one or two, often at
 another's expense.
 

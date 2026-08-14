@@ -11,16 +11,16 @@ This register covers player-facing scenes changed for the fresh-arrival premise.
 - Callback: household, Dre, and Places restate only relevant facts.
 - Author question: none blocking.
 
-## Mara stage 1 — First Coffee in Spenard
+## Mina stage 1 — First Coffee in Spenard
 
 - Scene: actual first meeting at the Night Owl. Neither person implies prior knowledge or routine.
-- **Friendly honesty** — preview: tell her you just arrived and keep the first exchange warm. Result: Alaska is a restart; Mara offers bus information. Effects: `maraTrust +1`, `maraFriendlyIntro`, `maraIntroChoice=friendly`.
+- **Friendly honesty** — preview: tell her you just arrived and keep the first exchange warm. Result: Alaska is a restart; Mina offers bus information. Effects: `maraTrust +1`, `maraFriendlyIntro`, `maraIntroChoice=friendly`.
 - **Light flirtation** — preview: let mutual interest show while respecting the counter. Result: brief professional banter and a real smile. Effects: `maraTrust +1`, `maraFlirted`, `maraIntroChoice=flirt`.
 - **Brief and guarded** — preview: keep history private and surface-level. Result: correct change, neutral goodnight, no invented familiarity. Effects: `maraDistantIntro`, `maraIntroChoice=distant`.
 - Required callback: resolution sets `mara.met` and `maraIntroResolved`; People and the later threat remember the tone.
 - Author question: none blocking.
 
-## Mara stage 3 — Four Hours After Close
+## Mina stage 3 — Four Hours After Close
 
 - Copy change: neither character owns a car; the bus-to-inlet option fits the arrival premise.
 - **Take the bus toward the inlet** — preview/result: fare is folded into a quiet evening away from the block. Effects: `maraTrust +2`, Heat −1, `maraDateNight`.
@@ -29,21 +29,21 @@ This register covers player-facing scenes changed for the fresh-arrival premise.
 - Callback: stage 5/6 remembers date, garage exposure, or distance.
 - Author question: whether to name Point Woronzof in this scene; the current later callback names it.
 
-## Mara stage 4 — The Question Behind the Store
+## Mina stage 4 — The Question Behind the Store
 
-- Copy change: replaces a premature followed-home sedan with a customer asking for Mara's closing schedule and the player's street name.
+- Copy change: replaces a premature followed-home sedan with a customer asking for Mina's closing schedule and the player's street name.
 - **Tell her everything, risk included** — preview: she receives the whole picture. Result: she records names and claims her own decision. Effects: `maraTrust +2`, `toldMaraTruth`.
-- **Give the officer her name** — preview: Heat drops and Mara learns her name was used. Result: attention shifts through her clean name. Effects: `maraTrust −2`, Heat −1, `usedMaraWithoutConsent`.
+- **Give the officer her name** — preview: Heat drops and Mina learns her name was used. Result: attention shifts through her clean name. Effects: `maraTrust −2`, Heat −1, `usedMaraWithoutConsent`.
 - **Tell her you can't answer that** — preview: the question remains open. Result: emotional distance without a fabricated threat. Effect: `maraTrust −1`.
 - Callback: stage 5 remembers truth, betrayal, date, or the unanswered question; stage 6 preserves established outcomes.
 - Author question: confirm whether the officer should ever be identified as John; current copy keeps family separate from this violation.
 
-## Mara stage 5 — Your Pressure Reaches the Night Owl
+## Mina stage 5 — Your Pressure Reaches the Night Owl
 
-- Scene: the gray sedan appears only after stage 4, established Mara continuity, and Rook pressure 4+ created after arrival. The driver watches the player and uses Mara's shift as leverage.
+- Scene: the gray sedan appears only after stage 4, established Mina continuity, and Curtis pressure 4+ created after arrival. The driver watches the player and uses Mina's shift as leverage.
 - Choices/previews/results: shared encounter actions—talk, run, pay when affordable, surrender carried product, and weapon-enabled combat—use the established seeded encounter contract.
 - Required effects/flags: shared encounter costs and outcomes; `maraSedanNightResolved`; no introduction-time threat flag.
-- Callbacks: intro tone changes Mara's signal; truth, betrayal, date, or the unanswered boundary changes the history line.
+- Callbacks: intro tone changes Mina's signal; truth, betrayal, date, or the unanswered boundary changes the history line.
 - Author question: guarded-tone callback says the player “used to leave in a hurry”; consider “left quickly the first night” for the strictest single-meeting language.
 
 ## Dre stage 1 — Fixed terms

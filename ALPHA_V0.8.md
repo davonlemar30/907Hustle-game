@@ -10,7 +10,7 @@ Alpha v0.8 removes starting-class selection. A new run begins with an optional S
 - Meaningful sales, payments, confrontations, recruiting, contact work, and investments feed a hidden, deduplicated ledger.
 - Nightly evaluation can assign The Mover, The Earner, The Stickup, The Connector, or The Wild Card. A replacement needs a 25% lead, a margin of 3, and two consecutive nights.
 - More → Character shows identity, attributes, derived ratings, and five qualitative reputation notes without score math.
-- Mara, Eli, Dre, Rook, Kip, one ambient scene, encounter previews, and the Day 7 summary recognize the current identity without changing relationship state or base effects.
+- Mina, Eli, Dre, Curtis, Goodie, one ambient scene, encounter previews, and the Day 7 summary recognize the current identity without changing relationship state or base effects.
 
 ## Save compatibility
 
@@ -25,7 +25,7 @@ The save key remains `907ogr_v3` and the schema version remains 3. Shooter, Hust
 
 ## Playtest targets
 
-The title, Street Name confirmation, classless start, Character screen, and exact save/return/load flow were exercised in the in-app browser. All ten specified viewports reported no horizontal overflow, visible controls stayed at least 44px, and the console stayed clean. Full mixed and stickup seven-day human runs, including every Kip action and a naturally emerging identity, remain open.
+The title, Street Name confirmation, classless start, Character screen, and exact save/return/load flow were exercised in the in-app browser. All ten specified viewports reported no horizontal overflow, visible controls stayed at least 44px, and the console stayed clean. Full mixed and stickup seven-day human runs, including every Goodie action and a naturally emerging identity, remain open.
 
 ## Deferred
 

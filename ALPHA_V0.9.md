@@ -1,6 +1,6 @@
 # Alpha v0.9 — Fresh Start, Daily Life, and Player Freedom
 
-Alpha v0.9 replaces the garage-first new-run premise with an Anchorage arrival at Yalonda and John's home. New players begin with $1,000 cash, zero Heat, Dre's fixed $1,200 Day 7 note, and no product, weapon, vehicle, property, local standing, or Rook attention. Save version 3 and `907ogr_v3` are unchanged; hydrated v3 saves keep their established assets and premise.
+Alpha v0.9 replaces the garage-first new-run premise with an Anchorage arrival at Yalonda and John's home. New players begin with $1,000 cash, zero Heat, Dre's fixed $1,200 Day 7 note, and no product, weapon, vehicle, property, local standing, or Curtis attention. Save version 3 and `907ogr_v3` are unchanged; hydrated v3 saves keep their established assets and premise.
 
 ## Playable systems
 
@@ -22,7 +22,7 @@ Street Read is run-scoped and separate from Street Identity and Operation Score.
 
 ## Story continuity
 
-Mara is an optional stranger met for the first time at the Night Owl, with the exact opening tones Friendly honesty, Light flirtation, and Brief and guarded. Her sedan threat is a later consequence requiring established continuity and player-created Rook pressure. Kip begins unknown and is discovered through play. Rook begins unaware at zero pressure. Garage-dependent beats require garage control.
+Mina is an optional stranger met for the first time at the Night Owl, with the exact opening tones Friendly honesty, Light flirtation, and Brief and guarded. Her sedan threat is a later consequence requiring established continuity and player-created Curtis pressure. Goodie begins unknown and is discovered through play. Curtis begins unaware at zero pressure. Garage-dependent beats require garage control.
 
 ## Verification
 

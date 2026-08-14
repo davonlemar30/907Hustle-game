@@ -286,7 +286,7 @@ actions.
 
 **Every crime connects to a person or place, Heat, injury, retaliation, lost
 access, reputation, product or cash, and future callbacks.** The same target
-remembers fair business, robbery, betrayal, and repetition. This is the rule Kip
+remembers fair business, robbery, betrayal, and repetition. This is the rule Goodie
 Sallis exists to prove.
 
 ---
@@ -313,7 +313,7 @@ one lender to repay another.
 ## 12. Relationships and reputation
 
 Reputation is **character-specific**, not a global meter. Dre tracks payment
-reliability, promises, loan history, and respect for terms. Rook tracks pressure,
+reliability, promises, loan history, and respect for terms. Curtis tracks pressure,
 respect, territory conflict, and public reputation. Dealers track standing,
 volume, fair business, robbery, betrayal, and reliability. Employers track
 attendance, performance, theft, honesty, and references. Crew track wages,
@@ -322,7 +322,7 @@ leadership, risk exposure, assignments, loyalty, and protection.
 Keep the values behind the scenes. Show concrete behavior and recent status
 through dialogue, cards, access, and history.
 
-**Mara is the prototype for every future relationship**: she has an independent
+**Mina is the prototype for every future relationship**: she has an independent
 goal, the player can help or endanger it, her help has limits, she remembers, she
 can leave, romance is one possible direction, and friendship, distance, and
 separation are all complete outcomes.

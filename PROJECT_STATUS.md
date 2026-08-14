@@ -2,7 +2,60 @@
 
 Last updated: 2026-08-14 (America/Anchorage)
 
-## v1.9a Exposure System and Bug Fixes — branch in progress
+## v1.9b 907List Tiered Broker System — branch in progress
+
+- Branch: `codex/v1-9b-907list-broker`, based on `origin/main` commit `b63241f`
+  containing merged PR #67 (v1.9a).
+- 907List is no longer a free action. A buy costs one part of the day, posting a
+  listing is free, delivering it costs another part of the day the next morning,
+  and a quick sell trades 20% of the margin for the same slot and certainty.
+- Three tiers, two of them earned. Scrapper is the default: two listings a day,
+  a title and an asking price and nothing else, Spenard meetups only. Flipper
+  arrives with the $250 laptop: four listings with condition and seller
+  reliability, Downtown meetups at a 30% better margin, quick sells, and the
+  specialist tag at three flips in one category. Broker is ten clean flips with
+  fewer than two disputes: named buyers who text what they want, three-item lots
+  from distressed sellers, and verified status that closes a sale the same day.
+- Appraisal is the skill. `buy` (what the seller wants) and `trueValue` (what it
+  fetches) are separate fields, and the board carries listings priced above what
+  they are worth. A Scrapper gets no condition readout, so the title carries the
+  tell. Delivering at a loss is a dispute; two disputes close Broker standing.
+- Robbery risk is contextual and *shown*:
+  `0.03 × (carried/100) × district × time of day × (1 + heat × 0.1)`, capped at
+  85%, with carried value contributing up to $500. $200 of stock Downtown at
+  Night on heat 4 reads 38%; the same bag in Spenard on a Morning reads 3%.
+- Every market probability hashes `run.seed` rather than drawing from
+  `run.rngState`, so an unrelated encounter earlier in the day cannot change
+  whether a flip is sniped, flakes, or gets robbed.
+- Exposure integration: clean flips broadcast `financial / 907list_profit` on the
+  household channel with the payout as `value` (so a big day clears Curtis's $200
+  volume filter), robberies broadcast `violence / robbery_victim` to the
+  neighborhood, held stock over $250 is noticed weekly as
+  `growth / inventory_accumulation`, and Broker standing goes out as
+  `growth / market_reputation` on the reputation channel.
+- New files: `src/data/market.js` (catalogue, tiers, risk constants) and
+  `src/events/market-events.js` (the rolls). Reducer cases stayed in
+  `reduceGame` with the other actions rather than pioneering `src/actions/`.
+- Save schema v7 (`907ogr_v7`); v3 through v6 migrate. The v6 string tier is
+  dropped and re-derived rather than trusted.
+- Verification: 401 tests passed (up from 377); 2,000/2,000 seeded runs completed
+  with zero dead ends; all ten viewports 320–1440px show zero horizontal overflow
+  and no tap target under 44px; zero console errors. New baselines `d4474787…`
+  (`--total 200`) and `ddd76695…` (`--total 2000`).
+- **Balance, measured rather than asserted.** Tier 1 lands at $37.9/day against a
+  $30–50 target and Tier 2 at $71.3/day against $60–100, both in band. Tier 3
+  lands at $34.2/day against a $100–150 target and **misses**. Half of
+  907List-focused runs reach Broker (76 of 153), so the content is reachable; the
+  ten-flip gate simply opens around day 11 of a 14-day run, leaving two or three
+  days to earn with most of the bankroll locked in stock when the run ends. The
+  gate was left at ten as specified — the agreed trigger for lowering it was a
+  reach rate under 15%, and it is at 50%. Closing the income gap would need
+  either a longer run or margins that make 907List the strongest earner in the
+  game (`legal_worker`, the current best, averages about $79/day).
+- The eleven pre-v1.9b simulation strategies stay within 3.5% of their v1.9a
+  averages and the economy overall within 0.34%.
+
+## v1.9a Exposure System and Bug Fixes — shipped (PR #67)
 
 - Branch: `codex/v1-9a-exposure-system`, based on `origin/main` commit `dc6aff4`
   containing merged PR #66 (v1.8.1).

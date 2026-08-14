@@ -2000,6 +2000,338 @@
     }
   });
 
+  // src/data/market.js
+  var require_market = __commonJS({
+    "src/data/market.js"(exports, module) {
+      var MARKET_CATEGORIES = ["electronics", "auto_parts", "furniture", "household"];
+      var CONDITIONS = {
+        mint: { id: "mint", label: "Like new", position: 0.9 },
+        good: { id: "good", label: "Good", position: 0.65 },
+        fair: { id: "fair", label: "Fair", position: 0.4 },
+        rough: { id: "rough", label: "Rough", position: 0.15 }
+      };
+      var SELLER_RELIABILITY = {
+        solid: { id: "solid", label: "Solid", snipeMultiplier: 0.5 },
+        mixed: { id: "mixed", label: "Mixed", snipeMultiplier: 1 },
+        flaky: { id: "flaky", label: "Flaky", snipeMultiplier: 1.8 }
+      };
+      var LISTING_ITEMS = [
+        // Tier 1 — Spenard curb finds. Margin about 65% of cost.
+        { id: "space_heater", name: "Space heater", category: "household", tier: 1, buy: 25, trueValue: [42, 58], condition: "good" },
+        { id: "winter_coat", name: "Winter coat bundle", category: "household", tier: 1, buy: 35, trueValue: [56, 78], condition: "good" },
+        { id: "dresser", name: "Solid dresser", category: "furniture", tier: 1, buy: 40, trueValue: [64, 88], condition: "good" },
+        { id: "shop_vac", name: "Shop vacuum", category: "household", tier: 1, buy: 45, trueValue: [71, 97], condition: "fair" },
+        { id: "used_tv", name: "Used television", category: "electronics", tier: 1, buy: 55, trueValue: [86, 116], condition: "good" },
+        { id: "camp_stove", name: "Camp stove", category: "household", tier: 1, buy: 60, trueValue: [93, 125], condition: "mint" },
+        { id: "tool_set", name: "Mechanic tool set", category: "auto_parts", tier: 1, buy: 70, trueValue: [108, 144], condition: "good" },
+        { id: "snow_tires", name: "Set of snow tires", category: "auto_parts", tier: 1, buy: 80, trueValue: [122, 162], condition: "fair" },
+        // Tier 1 junk. The title is the only warning at Scrapper tier.
+        { id: "cracked_tv", name: "Flatscreen, cracked bezel", category: "electronics", tier: 1, buy: 65, trueValue: [30, 48], condition: "rough" },
+        { id: "rusted_toolbox", name: "Toolbox, surface rust", category: "auto_parts", tier: 1, buy: 50, trueValue: [24, 40], condition: "rough" },
+        { id: "sagging_couch", name: "Couch, sags in the middle", category: "furniture", tier: 1, buy: 60, trueValue: [28, 46], condition: "rough" },
+        // Tier 2 — the laptop opens the wider board. Margin about 60% of cost, on
+        // stock that costs twice as much to get into.
+        { id: "car_battery", name: "Car battery, tested", category: "auto_parts", tier: 2, buy: 85, trueValue: [126, 168], condition: "good" },
+        { id: "office_chair", name: "Ergonomic office chair", category: "furniture", tier: 2, buy: 95, trueValue: [140, 186], condition: "good" },
+        { id: "bluetooth_speaker", name: "Bluetooth speaker set", category: "electronics", tier: 2, buy: 105, trueValue: [154, 205], condition: "mint" },
+        { id: "roof_rack", name: "Roof rack and crossbars", category: "auto_parts", tier: 2, buy: 115, trueValue: [169, 224], condition: "good" },
+        { id: "game_console", name: "Game console, two pads", category: "electronics", tier: 2, buy: 125, trueValue: [183, 243], condition: "good" },
+        { id: "chest_freezer", name: "Chest freezer", category: "household", tier: 2, buy: 140, trueValue: [204, 271], condition: "fair" },
+        // Tier 2 junk.
+        { id: "flood_console", name: "Console, was in a flood", category: "electronics", tier: 2, buy: 125, trueValue: [58, 92], condition: "rough" },
+        { id: "bent_roof_rack", name: "Roof rack, slight bend", category: "auto_parts", tier: 2, buy: 115, trueValue: [52, 84], condition: "rough" },
+        // Tier 3 — Broker inventory. Margin about 60% of cost on the heaviest stock a
+        // run's bankroll can actually carry, and every dollar of it is also a robbery
+        // target until it moves.
+        { id: "alternator_set", name: "Rebuilt alternator set", category: "auto_parts", tier: 3, buy: 150, trueValue: [222, 292], condition: "good" },
+        { id: "sectional_couch", name: "Leather sectional", category: "furniture", tier: 3, buy: 165, trueValue: [244, 320], condition: "good" },
+        { id: "dslr_camera", name: "DSLR body and lens", category: "electronics", tier: 3, buy: 175, trueValue: [258, 340], condition: "mint" },
+        { id: "dining_set", name: "Dining set, six chairs", category: "furniture", tier: 3, buy: 185, trueValue: [273, 359], condition: "good" },
+        { id: "snow_blower", name: "Two-stage snow blower", category: "household", tier: 3, buy: 195, trueValue: [288, 378], condition: "good" },
+        // Tier 3 junk. The most expensive mistake on the board.
+        { id: "seized_blower", name: "Snow blower, seized last winter", category: "household", tier: 3, buy: 190, trueValue: [82, 128], condition: "rough" }
+      ];
+      var LISTING_ITEM_BY_ID = Object.fromEntries(LISTING_ITEMS.map((item) => [item.id, item]));
+      function isJunk(item) {
+        return item.buy >= item.trueValue[1];
+      }
+      var MARKET_TIERS = {
+        1: {
+          id: 1,
+          name: "Scrapper",
+          listings: 2,
+          capacity: 3,
+          sellDelayDays: 1,
+          fields: ["title", "price"],
+          districts: ["north_star_lot"],
+          quickSell: false,
+          requests: false,
+          bulk: false,
+          specialist: false,
+          blurb: "A random poster with no reputation. Two listings, no detail, meet in Spenard."
+        },
+        2: {
+          id: 2,
+          name: "Flipper",
+          listings: 4,
+          capacity: 4,
+          sellDelayDays: 1,
+          fields: ["title", "price", "condition", "reliability"],
+          districts: ["north_star_lot", "downtown"],
+          quickSell: true,
+          requests: false,
+          bulk: false,
+          specialist: true,
+          blurb: "The laptop opens the board. Condition, seller reliability, Downtown meetups, and quick sells."
+        },
+        3: {
+          id: 3,
+          name: "Broker",
+          listings: 4,
+          capacity: 6,
+          sellDelayDays: 0,
+          fields: ["title", "price", "condition", "reliability"],
+          districts: ["north_star_lot", "downtown"],
+          quickSell: true,
+          requests: true,
+          bulk: true,
+          specialist: true,
+          blurb: "Named buyers text you what they need. Verified status sells same day."
+        }
+      };
+      var MAX_TIER = 3;
+      var BROKER_FLIP_REQUIREMENT = 10;
+      var BROKER_DISPUTE_LIMIT = 2;
+      var SPECIALIST_FLIP_REQUIREMENT = 3;
+      var ROBBERY = {
+        baseRate: 0.03,
+        carriedValueCap: 500,
+        carriedValueDivisor: 100,
+        heatWeight: 0.1,
+        maxRisk: 0.85,
+        districtMultiplier: { north_star_lot: 1, downtown: 1.8, airport_industrial: 2.2 },
+        slotMultiplier: [0.5, 1, 1.5, 2.5],
+        healthLoss: [6, 14],
+        heatGain: 1
+      };
+      var DOWNTOWN_MARGIN_BONUS = 0.3;
+      var QUICK_SELL_MARKDOWN = 0.2;
+      var REQUEST_PREMIUM = 0.15;
+      var FLAKE_CHANCE = 0.15;
+      var SNIPE_CHANCE = 0.15;
+      var PRICE_VOLATILITY = 0.2;
+      var BULK_DEAL = { items: 3, discount: 0.3, chance: 0.22 };
+      var BUYER_NPCS = [
+        { id: "renata", name: "Renata", category: "electronics" },
+        { id: "wendell", name: "Wendell", category: "auto_parts" },
+        { id: "tasha", name: "Tasha", category: "furniture" },
+        { id: "boone", name: "Boone", category: "household" }
+      ];
+      var BUYER_REQUEST_TEMPLATES = {
+        electronics: "need something electronic under ${budget}, lmk what you got",
+        auto_parts: "looking for parts, ${budget} ceiling. hit me when you find it",
+        furniture: "furnishing a place. under ${budget} and it's yours",
+        household: "need household stuff, ${budget} max. no junk"
+      };
+      var REQUEST_BASE_CHANCE = 0.35;
+      var REQUEST_FILL_BONUS = 0.08;
+      var REQUEST_MAX_CHANCE = 0.75;
+      var REQUEST_EXPIRY_DAYS = 3;
+      var INVENTORY_NOTICE_VALUE = 250;
+      var TIER_INCOME_TARGETS = {
+        1: [30, 50],
+        2: [60, 100],
+        3: [100, 150]
+      };
+      module.exports = {
+        MARKET_CATEGORIES,
+        CONDITIONS,
+        SELLER_RELIABILITY,
+        LISTING_ITEMS,
+        LISTING_ITEM_BY_ID,
+        isJunk,
+        MARKET_TIERS,
+        MAX_TIER,
+        BROKER_FLIP_REQUIREMENT,
+        BROKER_DISPUTE_LIMIT,
+        SPECIALIST_FLIP_REQUIREMENT,
+        ROBBERY,
+        DOWNTOWN_MARGIN_BONUS,
+        QUICK_SELL_MARKDOWN,
+        REQUEST_PREMIUM,
+        FLAKE_CHANCE,
+        SNIPE_CHANCE,
+        PRICE_VOLATILITY,
+        BULK_DEAL,
+        BUYER_NPCS,
+        BUYER_REQUEST_TEMPLATES,
+        REQUEST_BASE_CHANCE,
+        REQUEST_FILL_BONUS,
+        REQUEST_MAX_CHANCE,
+        REQUEST_EXPIRY_DAYS,
+        INVENTORY_NOTICE_VALUE,
+        TIER_INCOME_TARGETS
+      };
+    }
+  });
+
+  // src/events/market-events.js
+  var require_market_events = __commonJS({
+    "src/events/market-events.js"(exports, module) {
+      var { stringHash } = require_random();
+      var {
+        CONDITIONS,
+        SELLER_RELIABILITY,
+        LISTING_ITEMS,
+        LISTING_ITEM_BY_ID,
+        MARKET_TIERS,
+        ROBBERY,
+        DOWNTOWN_MARGIN_BONUS,
+        QUICK_SELL_MARKDOWN,
+        REQUEST_PREMIUM,
+        FLAKE_CHANCE,
+        SNIPE_CHANCE,
+        PRICE_VOLATILITY,
+        BULK_DEAL,
+        BUYER_NPCS,
+        BUYER_REQUEST_TEMPLATES,
+        REQUEST_BASE_CHANCE,
+        REQUEST_FILL_BONUS,
+        REQUEST_MAX_CHANCE
+      } = require_market();
+      var HASH_CEILING = 4294967296;
+      function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+      }
+      function roll(seed, key) {
+        return stringHash(`${seed}:market:${key}`) / HASH_CEILING;
+      }
+      function rollRange(seed, key, min, max) {
+        if (max <= min) return min;
+        return min + Math.floor(roll(seed, key) * (max - min + 1));
+      }
+      function robberyRisk(state, { carriedValue = 0, district, slot } = {}) {
+        const value = clamp(Number(carriedValue) || 0, 0, ROBBERY.carriedValueCap);
+        const areaId = district || state.world.currentNeighborhoodId;
+        const districtMultiplier = ROBBERY.districtMultiplier[areaId] != null ? ROBBERY.districtMultiplier[areaId] : 1;
+        const slotIndex = clamp(Math.floor(slot == null ? state.run.slot : slot), 0, ROBBERY.slotMultiplier.length - 1);
+        const timeMultiplier = ROBBERY.slotMultiplier[slotIndex];
+        const heatModifier = 1 + (Number(state.player.heat) || 0) * ROBBERY.heatWeight;
+        const risk = ROBBERY.baseRate * (value / ROBBERY.carriedValueDivisor) * districtMultiplier * timeMultiplier * heatModifier;
+        return clamp(Math.round(risk * 1e4) / 1e4, 0, ROBBERY.maxRisk);
+      }
+      function robberyPreview(state, context = {}) {
+        const risk = robberyRisk(state, context);
+        return {
+          risk,
+          percent: Math.round(risk * 100),
+          band: risk >= 0.3 ? "severe" : risk >= 0.15 ? "high" : risk >= 0.06 ? "moderate" : "low",
+          carriedValue: clamp(Number(context.carriedValue) || 0, 0, ROBBERY.carriedValueCap),
+          district: context.district || state.world.currentNeighborhoodId,
+          slot: context.slot == null ? state.run.slot : context.slot
+        };
+      }
+      function rollRobbery(state, context = {}) {
+        const risk = robberyRisk(state, context);
+        if (risk <= 0) return false;
+        const key = `robbery:${state.run.day}:${context.slot == null ? state.run.slot : context.slot}:${context.nonce || 0}`;
+        return roll(state.run.seed, key) < risk;
+      }
+      function robberyHealthLoss(state, nonce = 0) {
+        return rollRange(state.run.seed, `robbery_hp:${state.run.day}:${state.run.slot}:${nonce}`, ROBBERY.healthLoss[0], ROBBERY.healthLoss[1]);
+      }
+      function rollSnipe(state, itemId, reliabilityId) {
+        const reliability = SELLER_RELIABILITY[reliabilityId] || SELLER_RELIABILITY.mixed;
+        const chance = clamp(SNIPE_CHANCE * reliability.snipeMultiplier, 0, 0.9);
+        return roll(state.run.seed, `snipe:${state.run.day}:${state.run.slot}:${itemId}`) < chance;
+      }
+      function reliabilityFor(state, itemId, day) {
+        const value = roll(state.run.seed, `reliability:${day}:${itemId}`);
+        if (value < 0.45) return "solid";
+        if (value < 0.82) return "mixed";
+        return "flaky";
+      }
+      function salePrice(state, item, { condition, nonce = 0, district, quickSell = false, request = false } = {}) {
+        const listing = typeof item === "string" ? LISTING_ITEM_BY_ID[item] : item;
+        if (!listing) return 0;
+        const band = CONDITIONS[condition || listing.condition] || CONDITIONS.good;
+        const [low, high] = listing.trueValue;
+        const anchor = low + (high - low) * band.position;
+        const swing = (roll(state.run.seed, `volatility:${state.run.day}:${state.run.slot}:${listing.id}:${nonce}`) * 2 - 1) * PRICE_VOLATILITY;
+        let price = anchor * (1 + swing);
+        if (district === "downtown") price += Math.max(0, price - listing.buy) * DOWNTOWN_MARGIN_BONUS;
+        if (quickSell) price *= 1 - QUICK_SELL_MARKDOWN;
+        if (request) price *= 1 + REQUEST_PREMIUM;
+        return Math.max(1, Math.round(price));
+      }
+      function estimatedResale(item) {
+        const listing = typeof item === "string" ? LISTING_ITEM_BY_ID[item] : item;
+        if (!listing) return 0;
+        return Math.round((listing.trueValue[0] + listing.trueValue[1]) / 2);
+      }
+      function rollFlake(state, pendingId) {
+        return roll(state.run.seed, `flake:${pendingId}`) < FLAKE_CHANCE;
+      }
+      function requestChance(filledRequests) {
+        return clamp(REQUEST_BASE_CHANCE + (Number(filledRequests) || 0) * REQUEST_FILL_BONUS, 0, REQUEST_MAX_CHANCE);
+      }
+      function generateBuyerRequest(state, { filledRequests = 0, day } = {}) {
+        const onDay = day == null ? state.run.day : day;
+        if (roll(state.run.seed, `request:${onDay}`) >= requestChance(filledRequests)) return null;
+        const buyer = BUYER_NPCS[rollRange(state.run.seed, `request_buyer:${onDay}`, 0, BUYER_NPCS.length - 1)];
+        const pool = LISTING_ITEMS.filter((item) => item.category === buyer.category);
+        if (!pool.length) return null;
+        const budget = rollRange(state.run.seed, `request_budget:${onDay}`, 120, 320);
+        return {
+          id: `req:${onDay}:${buyer.id}`,
+          buyerId: buyer.id,
+          buyerName: buyer.name,
+          category: buyer.category,
+          budget,
+          day: onDay,
+          text: BUYER_REQUEST_TEMPLATES[buyer.category].replace("${budget}", `$${budget}`)
+        };
+      }
+      function generateBulkDeal(state, { tier, day } = {}) {
+        const onDay = day == null ? state.run.day : day;
+        if (!MARKET_TIERS[tier] || !MARKET_TIERS[tier].bulk) return null;
+        if (roll(state.run.seed, `bulk:${onDay}`) >= BULK_DEAL.chance) return null;
+        const pool = LISTING_ITEMS.filter((item) => item.tier <= tier && item.buy < item.trueValue[1]);
+        if (pool.length < BULK_DEAL.items) return null;
+        const itemIds = [];
+        for (let index = 0; index < BULK_DEAL.items; index += 1) {
+          const remaining = pool.filter((item) => !itemIds.includes(item.id));
+          itemIds.push(remaining[rollRange(state.run.seed, `bulk_item:${onDay}:${index}`, 0, remaining.length - 1)].id);
+        }
+        const listPrice = itemIds.reduce((sum, id) => sum + LISTING_ITEM_BY_ID[id].buy, 0);
+        return {
+          id: `bulk:${onDay}`,
+          itemIds,
+          listPrice,
+          price: Math.round(listPrice * (1 - BULK_DEAL.discount)),
+          discount: BULK_DEAL.discount,
+          day: onDay
+        };
+      }
+      module.exports = {
+        roll,
+        rollRange,
+        robberyRisk,
+        robberyPreview,
+        rollRobbery,
+        robberyHealthLoss,
+        rollSnipe,
+        reliabilityFor,
+        salePrice,
+        estimatedResale,
+        rollFlake,
+        requestChance,
+        generateBuyerRequest,
+        generateBulkDeal
+      };
+    }
+  });
+
   // src/data/products.js
   var require_products = __commonJS({
     "src/data/products.js"(exports, module) {
@@ -2024,6 +2356,7 @@
   // src/data/items.js
   var require_items = __commonJS({
     "src/data/items.js"(exports, module) {
+      var { LISTING_ITEMS, LISTING_ITEM_BY_ID } = require_market();
       var GEAR = [
         { id: "utility_knife", name: "Utility Knife", cost: 90, slot: "weapon", type: "close", accuracy: 0.04, damage: [8, 14], heat: 0, description: "Concealable close-range protection." },
         { id: "cheap_handgun", name: "Cheap Handgun", cost: 230, slot: "weapon", type: "firearm", accuracy: -0.06, damage: [14, 24], heat: 2, description: "Affordable stopping power with unreliable aim." },
@@ -2045,17 +2378,6 @@
         { track: "recovery", level: 2, id: "safe_room", name: "Safe Room + Medical Contact", cost: 380, description: "Protects one person and can prevent a fatal ending." }
       ];
       var GEAR_BY_ID = Object.fromEntries(GEAR.map((item) => [item.id, item]));
-      var LISTING_ITEMS = [
-        { id: "space_heater", name: "Space heater", buy: 25, resale: [45, 65] },
-        { id: "used_tv", name: "Used television", buy: 55, resale: [85, 120] },
-        { id: "dresser", name: "Solid dresser", buy: 40, resale: [65, 95] },
-        { id: "tool_set", name: "Mechanic tool set", buy: 70, resale: [100, 140] },
-        { id: "snow_tires", name: "Set of snow tires", buy: 80, resale: [120, 160] },
-        { id: "shop_vac", name: "Shop vacuum", buy: 45, resale: [70, 100] },
-        { id: "winter_coat", name: "Winter coat bundle", buy: 35, resale: [55, 85] },
-        { id: "camp_stove", name: "Camp stove", buy: 60, resale: [90, 125] }
-      ];
-      var LISTING_ITEM_BY_ID = Object.fromEntries(LISTING_ITEMS.map((item) => [item.id, item]));
       module.exports = {
         GEAR,
         BASE_UPGRADES,
@@ -2327,13 +2649,15 @@
         const { BANDS, bandFor, bandId, bandLabel } = require_disposition_bands();
         const { EXPOSURE_NPC_IDS } = require_npc_lenses();
         const { NPC_CHANNELS } = require_propagation();
-        const VERSION = 6;
+        const Market = require_market();
+        const MarketEvents = require_market_events();
+        const VERSION = 7;
         const RUN_DAYS = 7;
         const PRESSURE_DAYS = 7;
         const MAX_ENERGY = 4;
         const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
-        const SAVE_KEY = "907ogr_v6";
-        const LEGACY_SAVE_KEYS = ["907ogr_v5", "907ogr_v4", "907ogr_v3"];
+        const SAVE_KEY = "907ogr_v7";
+        const LEGACY_SAVE_KEYS = ["907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"];
         const PHONE_BILL = 75;
         const WEEKLY_RENT = 150;
         const WORKING_CAPITAL_RESERVE = 150;
@@ -2447,7 +2771,7 @@
         ];
         const BOOST_TARGET_BY_ID = Object.fromEntries(BOOST_TARGETS.map((target) => [target.id, target]));
         const { JOB_RANK_THRESHOLDS, JOB_APPROACHES, SPENARD_JOBS, SPENARD_JOB_BY_ID, STARTER_JOB_IDS } = require_jobs();
-        const LISTING_CAPACITY = 3;
+        const LISTING_CAPACITY = Market.MARKET_TIERS[1].capacity;
         const NIGHT_OWL_BOARD = [
           { id: "jobs", title: "Help wanted", body: "Two counters need reliable hands this week." },
           { id: "list", title: "907List", body: "Buy it cheap. Clean it up. Find the next buyer." },
@@ -2601,6 +2925,26 @@
             action: null,
             around: false,
             closedReason: "Opens at dusk."
+          },
+          // The Downtown meetup point. A routing entry like night_owl and local_intel:
+          // it costs nothing to walk up to, and the slot is charged by whichever
+          // 907List action the player takes once the board is open. Downtown listings
+          // pay a 30% better margin and carry a 1.8x robbery multiplier, which is the
+          // whole reason to make the trip.
+          downtown_907list_meetup: {
+            id: "downtown_907list_meetup",
+            areaId: "downtown",
+            slots: ALL_DAY_SLOTS,
+            cashCost: 0,
+            timeCost: 0,
+            healthCost: 0,
+            action: null,
+            around: true,
+            order: 15,
+            visibleWhen: (state) => {
+              var _a;
+              return !!((_a = state.knowledge) == null ? void 0 : _a.knows907List) && marketTierConfig(state).districts.includes("downtown");
+            }
           },
           return_spenard: {
             id: "return_spenard",
@@ -3068,6 +3412,11 @@
           BUY: "trade",
           SELL: "trade",
           END_MARKET: "trade",
+          BUY_907LIST: "trade",
+          DELIVER_907LIST: "trade",
+          QUICK_SELL_907LIST: "trade",
+          FILL_BUYER_REQUEST: "trade",
+          BUY_BULK_907LIST: "trade",
           VISIT_NIGHT_OWL: "social",
           CONTACT_VISIT: "social",
           RECRUIT_CREW: "social",
@@ -3602,7 +3951,30 @@
               ambientSeen: [],
               regulars: Object.fromEntries(NIGHT_OWL_REGULARS.map((person) => [person.id, { met: false, relationship: 0, lastTalkDay: null }]))
             },
-            nineZeroSevenList: { known: false, tier: "basic", inventory: [], purchases: 0, sales: 0, profit: 0, alerts: { enabled: false, subscriptions: [] } },
+            // v1.9b: the broker track. `tier` is derived on every read by marketTier()
+            // and mirrored here for saves and display, never trusted as the source.
+            // The build prompt calls this state `market.*`; that key is already the
+            // plug market's, so the broker fields live where 907List already lived.
+            nineZeroSevenList: {
+              known: false,
+              tier: 1,
+              inventory: [],
+              purchases: 0,
+              sales: 0,
+              profit: 0,
+              flipCount: 0,
+              disputes: 0,
+              specialist: null,
+              categoryFlips: {},
+              pendingSells: [],
+              buyerRequests: [],
+              filledRequests: 0,
+              bulkDeal: null,
+              robberies: 0,
+              lastNoticeDay: 0,
+              taken: { day: 0, ids: [] },
+              alerts: { enabled: false, subscriptions: [] }
+            },
             rob: { visible: false },
             boost: {
               visible: false,
@@ -3664,10 +4036,10 @@
           return { attempts, successes, failures, totalPayout, lastAttemptedDay, attempted: attempts > 0, success: successes > 0, payout: totalPayout };
         }
         function migrateSave(value) {
-          var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u;
+          var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v;
           if (!value || typeof value !== "object") return null;
           if (value.version === VERSION) return value;
-          if (![3, 4, 5].includes(value.version) || !value.run || !value.world || !value.player) return null;
+          if (![3, 4, 5, 6].includes(value.version) || !value.run || !value.world || !value.player) return null;
           const migrated = JSON.parse(JSON.stringify(value));
           const oldHousehold = ((_a = migrated.people) == null ? void 0 : _a.household) || {};
           const legacyNpc = migrated.npc || {};
@@ -3751,6 +4123,13 @@
           if ((_u = migrated.stats) == null ? void 0 : _u.majorDecisions) migrated.stats.majorDecisions = rewriteLegacyText(migrated.stats.majorDecisions);
           for (const territory of Object.values(migrated.world.territories || {})) if (territory.owner === "rook") territory.owner = "curtis";
           for (const block of Object.values(migrated.world.territoryBlocks || {})) if (block.owner === "rook") block.owner = "curtis";
+          const legacyList = migrated.nineZeroSevenList;
+          if (legacyList && typeof legacyList.tier === "string") delete legacyList.tier;
+          if (legacyList) {
+            legacyList.pendingSells = Array.isArray(legacyList.pendingSells) ? legacyList.pendingSells : [];
+            legacyList.buyerRequests = Array.isArray(legacyList.buyerRequests) ? legacyList.buyerRequests : [];
+            legacyList.flipCount = Math.max(0, Math.floor(Number((_v = legacyList.flipCount) != null ? _v : legacyList.sales) || 0));
+          }
           migrated.version = VERSION;
           return migrated;
         }
@@ -3875,12 +4254,24 @@
           state.inventory.laptop = !!state.inventory.laptop;
           state.knowledge.knows907List = !!state.knowledge.knows907List || !!state.nineZeroSevenList.known;
           state.nineZeroSevenList.known = state.knowledge.knows907List;
-          state.nineZeroSevenList.tier = state.inventory.laptop ? "upgraded" : "basic";
-          state.nineZeroSevenList.inventory = (Array.isArray(state.nineZeroSevenList.inventory) ? state.nineZeroSevenList.inventory : []).filter((entry) => LISTING_ITEM_BY_ID[entry.itemId]).slice(0, LISTING_CAPACITY);
-          state.nineZeroSevenList.purchases = Math.max(0, Math.floor(Number(state.nineZeroSevenList.purchases) || 0));
-          state.nineZeroSevenList.sales = Math.max(0, Math.floor(Number(state.nineZeroSevenList.sales) || 0));
-          state.nineZeroSevenList.profit = Math.floor(Number(state.nineZeroSevenList.profit) || 0);
-          state.nineZeroSevenList.alerts = { enabled: false, subscriptions: [] };
+          const list = state.nineZeroSevenList;
+          list.purchases = Math.max(0, Math.floor(Number(list.purchases) || 0));
+          list.sales = Math.max(0, Math.floor(Number(list.sales) || 0));
+          list.profit = Math.floor(Number(list.profit) || 0);
+          list.flipCount = Math.max(0, Math.floor(Number(list.flipCount) || 0));
+          list.disputes = Math.max(0, Math.floor(Number(list.disputes) || 0));
+          list.filledRequests = Math.max(0, Math.floor(Number(list.filledRequests) || 0));
+          list.robberies = Math.max(0, Math.floor(Number(list.robberies) || 0));
+          list.lastNoticeDay = Math.max(0, Math.floor(Number(list.lastNoticeDay) || 0));
+          list.categoryFlips = list.categoryFlips && typeof list.categoryFlips === "object" ? list.categoryFlips : {};
+          list.tier = marketTier(state);
+          list.specialist = specialistCategory(state);
+          list.inventory = (Array.isArray(list.inventory) ? list.inventory : []).filter((entry) => entry && LISTING_ITEM_BY_ID[entry.itemId]).slice(0, marketCapacity(state));
+          list.pendingSells = (Array.isArray(list.pendingSells) ? list.pendingSells : []).filter((entry) => entry && LISTING_ITEM_BY_ID[entry.itemId] && entry.resolveAtSlot != null);
+          list.buyerRequests = (Array.isArray(list.buyerRequests) ? list.buyerRequests : []).filter((entry) => entry && Market.MARKET_CATEGORIES.includes(entry.category));
+          list.bulkDeal = list.bulkDeal && Array.isArray(list.bulkDeal.itemIds) && list.bulkDeal.itemIds.every((id) => LISTING_ITEM_BY_ID[id]) ? list.bulkDeal : null;
+          list.taken = list.taken && Array.isArray(list.taken.ids) ? { day: Math.max(0, Math.floor(Number(list.taken.day) || 0)), ids: list.taken.ids.filter((id) => LISTING_ITEM_BY_ID[id]) } : { day: 0, ids: [] };
+          list.alerts = { enabled: false, subscriptions: [] };
           state.world.locations.downtownAmbientSeen = [...new Set((Array.isArray(state.world.locations.downtownAmbientSeen) ? state.world.locations.downtownAmbientSeen : []).filter((index) => index === 0 || index === 1))];
           state.flags.featureNotices = state.flags.featureNotices && typeof state.flags.featureNotices === "object" ? state.flags.featureNotices : {};
           state.npc.mina.available = state.npc.mina.available !== false && state.npc.mina.status !== "gone";
@@ -4360,17 +4751,238 @@
           const params = action.type === "GAMBLE" ? { stake: action.stake } : action.type === "WORK_JOB" && action.jobId === "night_owl" && ((_c = (_b = (_a = state.jobs) == null ? void 0 : _a.records) == null ? void 0 : _b.night_owl) == null ? void 0 : _c.rank) >= 1 ? { slots: [2, 3] } : {};
           return districtActionAvailability(state, actionId, params).available;
         }
-        function listingSlate(state, surface) {
-          const access = nineZeroSevenListAccess(state, surface);
-          if (!access.available) return [];
-          const atHome = surface === "home" && state.world.currentNeighborhoodId === "north_star_lot" && state.inventory.laptop;
-          const count = atHome ? 5 : 3;
-          const refresh = atHome ? state.run.day : Math.floor((state.run.day - 1) / 2);
-          const order = seededShuffle(LISTING_ITEMS, state.run.seed, stringHash(`907list:${refresh}:${atHome ? "home" : "phone"}`));
-          return order.slice(0, count);
+        function marketTier(state) {
+          var _a, _b;
+          const list = state.nineZeroSevenList;
+          if (!list) return 1;
+          const flips = Math.max(0, Math.floor(Number(list.flipCount) || 0));
+          const disputes = Math.max(0, Math.floor(Number(list.disputes) || 0));
+          if (((_a = state.inventory) == null ? void 0 : _a.laptop) && flips >= Market.BROKER_FLIP_REQUIREMENT && disputes < Market.BROKER_DISPUTE_LIMIT) return 3;
+          if ((_b = state.inventory) == null ? void 0 : _b.laptop) return 2;
+          return 1;
+        }
+        function marketTierConfig(state) {
+          return Market.MARKET_TIERS[marketTier(state)];
+        }
+        function marketCapacity(state) {
+          return marketTierConfig(state).capacity;
+        }
+        function specialistCategory(state) {
+          var _a;
+          if (!marketTierConfig(state).specialist) return null;
+          const counts = ((_a = state.nineZeroSevenList) == null ? void 0 : _a.categoryFlips) || {};
+          for (const category of Market.MARKET_CATEGORIES) {
+            if ((Number(counts[category]) || 0) >= Market.SPECIALIST_FLIP_REQUIREMENT) return category;
+          }
+          return null;
+        }
+        function marketMeetupDistrict(state) {
+          const here = state.world.currentNeighborhoodId;
+          return marketTierConfig(state).districts.includes(here) ? here : null;
         }
         function listingInventoryValue(state) {
           return state.nineZeroSevenList.inventory.reduce((sum, entry) => sum + (entry.cost || 0), 0);
+        }
+        function marketCarriedValue(state) {
+          return state.nineZeroSevenList.inventory.reduce((sum, entry) => sum + (Number(entry.cost) || 0), 0);
+        }
+        function marketRobberyPreview(state, overrides = {}) {
+          return MarketEvents.robberyPreview(state, {
+            carriedValue: marketCarriedValue(state),
+            district: marketMeetupDistrict(state) || state.world.currentNeighborhoodId,
+            ...overrides
+          });
+        }
+        function listingSlate(state, surface) {
+          var _a;
+          const access = nineZeroSevenListAccess(state, surface);
+          if (!access.available) return [];
+          const tier = marketTier(state);
+          const config = Market.MARKET_TIERS[tier];
+          const day = state.run.day;
+          const list = state.nineZeroSevenList;
+          const heldIds = new Set(list.inventory.map((entry) => entry.itemId));
+          const takenIds = new Set(((_a = list.taken) == null ? void 0 : _a.day) === day ? list.taken.ids : []);
+          const pool = LISTING_ITEMS.filter((item) => item.tier <= tier && !heldIds.has(item.id) && !takenIds.has(item.id));
+          const order = seededShuffle(pool, state.run.seed, stringHash(`907list:${day}:${tier}`));
+          const picked = order.slice(0, config.listings);
+          const specialist = specialistCategory(state);
+          if (specialist) {
+            const bonus = order.find((item) => item.category === specialist && !picked.includes(item));
+            if (bonus) picked.push(bonus);
+          }
+          return picked.map((item) => decorateListing(state, item, day, config));
+        }
+        function decorateListing(state, item, day, config) {
+          const shows = (field) => config.fields.includes(field);
+          const reliability = MarketEvents.reliabilityFor(state, item.id, day);
+          return {
+            id: item.id,
+            name: item.name,
+            category: item.category,
+            buy: item.buy,
+            estimate: MarketEvents.estimatedResale(item),
+            condition: shows("condition") ? item.condition : null,
+            conditionLabel: shows("condition") ? Market.CONDITIONS[item.condition].label : null,
+            reliability: shows("reliability") ? reliability : null,
+            reliabilityLabel: shows("reliability") ? Market.SELLER_RELIABILITY[reliability].label : null,
+            specialist: specialistCategory(state) === item.category
+          };
+        }
+        function marketBulkDeal(state) {
+          var _a;
+          if (!marketTierConfig(state).bulk) return null;
+          const list = state.nineZeroSevenList;
+          if (((_a = list.bulkDeal) == null ? void 0 : _a.day) === state.run.day) return list.bulkDeal;
+          return MarketEvents.generateBulkDeal(state, { tier: marketTier(state), day: state.run.day });
+        }
+        function marketRequests(state) {
+          return (state.nineZeroSevenList.buyerRequests || []).filter((request) => state.run.day - request.day < Market.REQUEST_EXPIRY_DAYS);
+        }
+        function requestFillCandidates(state, requestId) {
+          const request = marketRequests(state).find((entry) => entry.id === requestId);
+          if (!request) return [];
+          return state.nineZeroSevenList.inventory.filter((held) => {
+            if (held.listed) return false;
+            const item = LISTING_ITEM_BY_ID[held.itemId];
+            return item && item.category === request.category && item.buy <= request.budget;
+          });
+        }
+        function marketOverview(state) {
+          const tier = marketTier(state);
+          const config = Market.MARKET_TIERS[tier];
+          const list = state.nineZeroSevenList;
+          return {
+            tier,
+            name: config.name,
+            blurb: config.blurb,
+            capacity: config.capacity,
+            held: list.inventory.length,
+            carriedValue: marketCarriedValue(state),
+            flipCount: list.flipCount,
+            disputes: list.disputes,
+            specialist: specialistCategory(state),
+            quickSell: config.quickSell,
+            requests: config.requests,
+            bulk: config.bulk,
+            verified: tier >= Market.MAX_TIER,
+            district: marketMeetupDistrict(state),
+            nextTier: tier < Market.MAX_TIER ? nextTierRequirement(state, tier) : null
+          };
+        }
+        function nextTierRequirement(state, tier) {
+          if (tier === 1) return "A used laptop opens the wider board.";
+          const remaining = Math.max(0, Market.BROKER_FLIP_REQUIREMENT - state.nineZeroSevenList.flipCount);
+          if (state.nineZeroSevenList.disputes >= Market.BROKER_DISPUTE_LIMIT) return "Too many disputes. Broker standing is closed this run.";
+          return `${remaining} more clean ${remaining === 1 ? "flip" : "flips"} for Broker standing.`;
+        }
+        function marketMeetupRobbery(state, nonce) {
+          const district = marketMeetupDistrict(state) || state.world.currentNeighborhoodId;
+          const carriedValue = marketCarriedValue(state);
+          if (!MarketEvents.rollRobbery(state, { carriedValue, district, slot: state.run.slot, nonce })) return false;
+          const list = state.nineZeroSevenList;
+          const lost = list.inventory.length;
+          list.inventory = [];
+          list.pendingSells = [];
+          list.robberies += 1;
+          const damage = MarketEvents.robberyHealthLoss(state, nonce);
+          state.player.health = clamp(state.player.health - damage, 0, 100);
+          state.player.heat = clamp(state.player.heat + Market.ROBBERY.heatGain, 0, 15);
+          Exposure.broadcastObservation(state, {
+            type: "violence",
+            event: "robbery_victim",
+            location: district,
+            value: carriedValue,
+            channel: "neighborhood"
+          });
+          logEntry(state, lost ? `Two of them work the meetup. You lose ${lost === 1 ? "the item" : `all ${lost} items`} and ${damage} health, and the block will hear about it.` : `Two of them work the meetup and find nothing worth taking. You lose ${damage} health.`, "bad");
+          return true;
+        }
+        function recordMarketFlip(state, { item, payout, cost, district }) {
+          const list = state.nineZeroSevenList;
+          list.sales += 1;
+          list.profit += payout - cost;
+          list.flipCount += 1;
+          list.categoryFlips[item.category] = (list.categoryFlips[item.category] || 0) + 1;
+          if (payout < cost) list.disputes += 1;
+          addCleanCash(state, payout);
+          Exposure.broadcastObservation(state, {
+            type: "financial",
+            event: "907list_profit",
+            location: district,
+            value: payout,
+            channel: "household"
+          });
+          const beforeTier = list.tier;
+          list.tier = marketTier(state);
+          list.specialist = specialistCategory(state);
+          if (list.tier > beforeTier && list.tier === Market.MAX_TIER) {
+            Exposure.broadcastObservation(state, {
+              type: "growth",
+              event: "market_reputation",
+              value: list.flipCount,
+              channel: "reputation"
+            });
+            logEntry(state, "Enough clean deals have closed that people use your name. Broker standing: buyers text you now, and your listings move the same day.", "good");
+            pushPhoneMessage(state, "907List", "your account is verified. listings post same-day now.");
+          }
+          return payout - cost;
+        }
+        function markListingTaken(state, itemId) {
+          const list = state.nineZeroSevenList;
+          if (list.taken.day !== state.run.day) list.taken = { day: state.run.day, ids: [] };
+          if (!list.taken.ids.includes(itemId)) list.taken.ids.push(itemId);
+        }
+        function resolveMarketSells(state) {
+          const list = state.nineZeroSevenList;
+          if (!Array.isArray(list.pendingSells) || !list.pendingSells.length) return 0;
+          const now = slotNumber(state.run.day, state.run.slot);
+          const waiting = [];
+          let resolved = 0;
+          for (const pending of list.pendingSells) {
+            const held = list.inventory.find((entry) => entry.id === pending.inventoryId);
+            if (!held) continue;
+            if (pending.status !== "listed" || now < pending.resolveAtSlot) {
+              waiting.push(pending);
+              continue;
+            }
+            const item = LISTING_ITEM_BY_ID[pending.itemId];
+            if (MarketEvents.rollFlake(state, pending.id)) {
+              held.listed = false;
+              logEntry(state, `The buyer for the ${item.name.toLowerCase()} stops answering. It is still yours to list again.`, "warn");
+              continue;
+            }
+            pending.status = "ready";
+            pending.price = MarketEvents.salePrice(state, item, { condition: item.condition, nonce: pending.id, district: pending.district });
+            waiting.push(pending);
+            resolved += 1;
+            pushPhoneMessage(state, "907List", `buyer confirmed for the ${item.name.toLowerCase()} at $${pending.price}. meet up to close it.`);
+          }
+          list.pendingSells = waiting;
+          return resolved;
+        }
+        function resolveBuyerRequests(state) {
+          const list = state.nineZeroSevenList;
+          if (!marketTierConfig(state).requests) return;
+          list.buyerRequests = marketRequests(state);
+          if (list.buyerRequests.some((request2) => request2.day === state.run.day)) return;
+          const request = MarketEvents.generateBuyerRequest(state, { filledRequests: list.filledRequests, day: state.run.day });
+          if (!request) return;
+          list.buyerRequests.push(request);
+          pushPhoneMessage(state, request.buyerName, request.text);
+        }
+        function noticeMarketInventory(state) {
+          const list = state.nineZeroSevenList;
+          if (marketCarriedValue(state) < Market.INVENTORY_NOTICE_VALUE) return;
+          if (state.run.day - list.lastNoticeDay < 7) return;
+          list.lastNoticeDay = state.run.day;
+          Exposure.broadcastObservation(state, {
+            type: "growth",
+            event: "inventory_accumulation",
+            location: state.world.currentNeighborhoodId,
+            value: marketCarriedValue(state),
+            channel: "neighborhood"
+          });
         }
         function nightOwlBoardItems(state) {
           const offset = Math.abs((state.run.seed || 1) + state.run.day) % NIGHT_OWL_BOARD.length;
@@ -4392,6 +5004,10 @@
             BUY_907LIST: "Bought from 907List",
             SELL_907LIST: "Sold through 907List",
             BUS_TRAVEL: "Rode the People Mover",
+            DELIVER_907LIST: "Delivered a 907List sale",
+            QUICK_SELL_907LIST: "Took a 907List quick sell",
+            FILL_BUYER_REQUEST: "Filled a buyer's request",
+            BUY_BULK_907LIST: "Bought a 907List lot",
             WALK_HOME: "Walked home",
             TRAVEL: "Traveled",
             TRAIN_ATTRIBUTE: "Trained",
@@ -4489,8 +5105,20 @@
         function nineZeroSevenListAccess(state, surface = "phone") {
           var _a, _b;
           if (!((_a = state.knowledge) == null ? void 0 : _a.knows907List)) return { visible: false, available: false, reason: "The link is still unknown." };
-          if (surface === "home") return state.inventory.laptop ? { visible: true, available: true, reason: "Five listings refresh daily." } : { visible: false, available: false, reason: "A laptop is required at home." };
-          return ((_b = state.phone) == null ? void 0 : _b.active) ? { visible: true, available: true, reason: "Three listings refresh every two days." } : { visible: true, available: false, reason: "Phone service is off." };
+          if (surface === "home" && !state.inventory.laptop) return { visible: false, available: false, reason: "A laptop is required at home." };
+          if (!((_b = state.phone) == null ? void 0 : _b.active) && surface !== "home") return { visible: true, available: false, reason: "Phone service is off." };
+          const config = marketTierConfig(state);
+          return { visible: true, available: true, reason: `${config.name} tier. ${config.listings} listings refresh daily.` };
+        }
+        function marketMeetupAvailability(state) {
+          const access = nineZeroSevenListAccess(state, "phone");
+          if (!access.available) return { available: false, reason: access.reason };
+          const district = marketMeetupDistrict(state);
+          if (!district) {
+            const config = marketTierConfig(state);
+            return config.districts.length > 1 ? { available: false, reason: "No 907List sellers meet out here. Spenard or Downtown." } : { available: false, reason: "Scrapper meetups happen in Spenard only." };
+          }
+          return { available: true, reason: district === "downtown" ? "Downtown meetup: better margins, more exposure." : "Spenard meetup." };
         }
         function quickShift(state) {
           var _a;
@@ -6800,6 +7428,9 @@
           state.run.slot = reachesDayEnd ? SLOTS.length - 1 : oldSlot + timeCost;
           restorePhoneIfReady(state, slotNumber(oldDay, oldSlot));
           resolveJobApplications(state);
+          resolveMarketSells(state);
+          resolveBuyerRequests(state);
+          noticeMarketInventory(state);
           Exposure.resolveObservationQueue(state);
           expireEffects(state);
           resolveCrewAssignments(state, random);
@@ -8187,36 +8818,124 @@
           if (action.type === "BUY_907LIST") {
             const item = LISTING_ITEM_BY_ID[action.itemId];
             const list = base.nineZeroSevenList;
-            if (!nineZeroSevenListAccess(base, action.surface).available || !item || !listingSlate(base, action.surface).some((entry) => entry.id === item.id) || list.inventory.length >= LISTING_CAPACITY || base.player.cash < item.buy) return inputState;
+            const meetup = marketMeetupAvailability(base);
+            if (!meetup.available || !item || !listingSlate(base, action.surface).some((entry) => entry.id === item.id) || list.inventory.length >= marketCapacity(base) || base.player.cash < item.buy) return inputState;
+            const reliability = MarketEvents.reliabilityFor(base, item.id, base.run.day);
+            markListingTaken(base, item.id);
+            if (MarketEvents.rollSnipe(base, item.id, reliability)) {
+              logEntry(base, `The ${item.name.toLowerCase()} is already gone when you get there. Somebody moved faster.`, "warn");
+              return advanceRun(base, { reason: "BUY_907LIST", suppressStory: true, summary: "Listing already taken" });
+            }
             spendCash(base, item.buy);
-            list.inventory.push({ id: `${base.run.day}:${base.run.slot}:${list.purchases}`, itemId: item.id, cost: item.buy, boughtDay: base.run.day });
+            list.inventory.push({ id: `${base.run.day}:${base.run.slot}:${list.purchases}`, itemId: item.id, cost: item.buy, boughtDay: base.run.day, listed: false });
             list.purchases += 1;
             logEntry(base, `You buy the ${item.name.toLowerCase()} for $${item.buy} and make room to hold it.`, "good");
-            return base;
+            marketMeetupRobbery(base, `buy:${item.id}`);
+            return advanceRun(base, { reason: "BUY_907LIST", suppressStory: true, cashDelta: item.buy, summary: `Bought ${item.name.toLowerCase()}` });
           }
           if (action.type === "SELL_907LIST") {
             const list = base.nineZeroSevenList;
-            const index = list.inventory.findIndex((entry) => entry.id === action.inventoryId);
-            const held = list.inventory[index];
+            const held = list.inventory.find((entry) => entry.id === action.inventoryId);
             const item = held && LISTING_ITEM_BY_ID[held.itemId];
-            if (index < 0 || !item || !nineZeroSevenListAccess(base, action.surface || "phone").available && !nineZeroSevenListAccess(base, "home").available) return inputState;
-            const random2 = makeRandom(base.run.rngState);
-            const payout = random2.int(item.resale[0], item.resale[1]);
-            base.run.rngState = random2.state;
-            list.inventory.splice(index, 1);
-            list.sales += 1;
-            list.profit += payout - held.cost;
-            addCleanCash(base, payout);
-            logEntry(base, `A 907List buyer takes the ${item.name.toLowerCase()} for $${payout}. The money is clean.`, "good");
+            if (!held || held.listed || !item || !nineZeroSevenListAccess(base, action.surface || "phone").available) return inputState;
+            const config = marketTierConfig(base);
+            const district = marketMeetupDistrict(base) || HOME_DISTRICT_ID;
+            held.listed = true;
+            list.pendingSells.push({
+              id: `sell:${base.run.day}:${base.run.slot}:${held.id}`,
+              inventoryId: held.id,
+              itemId: item.id,
+              cost: held.cost,
+              district,
+              status: "listed",
+              price: 0,
+              resolveAtSlot: config.sellDelayDays === 0 ? slotNumber(base.run.day, base.run.slot) : slotNumber(base.run.day + config.sellDelayDays, 0)
+            });
+            logEntry(base, config.sellDelayDays === 0 ? `You post the ${item.name.toLowerCase()}. Verified listings move the same day.` : `You post the ${item.name.toLowerCase()} and wait. Somebody answers by morning, or nobody does.`, "");
+            if (config.sellDelayDays === 0) resolveMarketSells(base);
             return base;
+          }
+          if (action.type === "DELIVER_907LIST") {
+            const list = base.nineZeroSevenList;
+            const pending = list.pendingSells.find((entry) => entry.id === action.pendingId && entry.status === "ready");
+            const held = pending && list.inventory.find((entry) => entry.id === pending.inventoryId);
+            const item = held && LISTING_ITEM_BY_ID[held.itemId];
+            const meetup = marketMeetupAvailability(base);
+            if (!pending || !held || !item || !meetup.available) return inputState;
+            if (marketMeetupRobbery(base, `deliver:${pending.id}`)) {
+              return advanceRun(base, { reason: "DELIVER_907LIST", suppressStory: true, summary: "Robbed at the meetup" });
+            }
+            list.inventory = list.inventory.filter((entry) => entry.id !== held.id);
+            list.pendingSells = list.pendingSells.filter((entry) => entry.id !== pending.id);
+            const margin = recordMarketFlip(base, { item, payout: pending.price, cost: held.cost, district: pending.district });
+            logEntry(base, `The buyer takes the ${item.name.toLowerCase()} for $${pending.price}. ${margin >= 0 ? `That is $${margin} clean.` : `That is $${Math.abs(margin)} down, and they made sure 907List heard about it.`}`, margin >= 0 ? "good" : "warn");
+            return advanceRun(base, { reason: "DELIVER_907LIST", suppressStory: true, cashDelta: pending.price, summary: `Sold ${item.name.toLowerCase()} (+$${pending.price})` });
+          }
+          if (action.type === "QUICK_SELL_907LIST") {
+            const list = base.nineZeroSevenList;
+            const held = list.inventory.find((entry) => entry.id === action.inventoryId);
+            const item = held && LISTING_ITEM_BY_ID[held.itemId];
+            const meetup = marketMeetupAvailability(base);
+            if (!held || held.listed || !item || !meetup.available || !marketTierConfig(base).quickSell) return inputState;
+            if (marketMeetupRobbery(base, `quick:${held.id}`)) {
+              return advanceRun(base, { reason: "QUICK_SELL_907LIST", suppressStory: true, summary: "Robbed at the meetup" });
+            }
+            const district = marketMeetupDistrict(base) || HOME_DISTRICT_ID;
+            const payout = MarketEvents.salePrice(base, item, { condition: item.condition, nonce: `quick:${held.id}`, district, quickSell: true });
+            list.inventory = list.inventory.filter((entry) => entry.id !== held.id);
+            const margin = recordMarketFlip(base, { item, payout, cost: held.cost, district });
+            logEntry(base, `A known buyer takes the ${item.name.toLowerCase()} off your hands for $${payout}, no haggling. ${margin >= 0 ? `$${margin} clean.` : `$${Math.abs(margin)} down.`}`, margin >= 0 ? "good" : "warn");
+            return advanceRun(base, { reason: "QUICK_SELL_907LIST", suppressStory: true, cashDelta: payout, summary: `Quick sold ${item.name.toLowerCase()} (+$${payout})` });
+          }
+          if (action.type === "FILL_BUYER_REQUEST") {
+            const list = base.nineZeroSevenList;
+            const request = marketRequests(base).find((entry) => entry.id === action.requestId);
+            const held = list.inventory.find((entry) => entry.id === action.inventoryId);
+            const item = held && LISTING_ITEM_BY_ID[held.itemId];
+            const meetup = marketMeetupAvailability(base);
+            if (!request || !held || held.listed || !item || !meetup.available || item.category !== request.category || item.buy > request.budget) return inputState;
+            if (marketMeetupRobbery(base, `fill:${request.id}`)) {
+              return advanceRun(base, { reason: "FILL_BUYER_REQUEST", suppressStory: true, summary: "Robbed at the meetup" });
+            }
+            const district = marketMeetupDistrict(base) || HOME_DISTRICT_ID;
+            const payout = MarketEvents.salePrice(base, item, { condition: item.condition, nonce: `fill:${request.id}`, district, request: true });
+            list.inventory = list.inventory.filter((entry) => entry.id !== held.id);
+            list.buyerRequests = list.buyerRequests.filter((entry) => entry.id !== request.id);
+            list.filledRequests += 1;
+            const margin = recordMarketFlip(base, { item, payout, cost: held.cost, district });
+            logEntry(base, `${request.buyerName} takes the ${item.name.toLowerCase()} for $${payout} and says to keep them in mind. $${Math.abs(margin)} ${margin >= 0 ? "clean" : "down"}.`, margin >= 0 ? "good" : "warn");
+            return advanceRun(base, { reason: "FILL_BUYER_REQUEST", suppressStory: true, cashDelta: payout, summary: `Filled ${request.buyerName}'s ask (+$${payout})` });
+          }
+          if (action.type === "BUY_BULK_907LIST") {
+            const list = base.nineZeroSevenList;
+            const deal = marketBulkDeal(base);
+            const meetup = marketMeetupAvailability(base);
+            if (!deal || deal.id !== action.dealId || !meetup.available || list.inventory.length + deal.itemIds.length > marketCapacity(base) || base.player.cash < deal.price) return inputState;
+            spendCash(base, deal.price);
+            deal.itemIds.forEach((itemId, index) => {
+              const item = LISTING_ITEM_BY_ID[itemId];
+              markListingTaken(base, itemId);
+              list.inventory.push({
+                id: `${base.run.day}:${base.run.slot}:${list.purchases + index}`,
+                itemId,
+                cost: Math.round(item.buy * (1 - deal.discount)),
+                boughtDay: base.run.day,
+                listed: false
+              });
+            });
+            list.purchases += deal.itemIds.length;
+            list.bulkDeal = { ...deal, taken: true };
+            logEntry(base, `The seller wants the whole lot gone. Three items for $${deal.price}, $${deal.listPrice - deal.price} under asking, and now you are carrying all of it.`, "good");
+            marketMeetupRobbery(base, `bulk:${deal.id}`);
+            return advanceRun(base, { reason: "BUY_BULK_907LIST", suppressStory: true, cashDelta: deal.price, summary: `Bought a three-item lot for $${deal.price}` });
           }
           if (action.type === "BUY_LAPTOP") {
             const offeredAtNightOwl = nightOwlAvailability(base).available && base.nightOwl.boardViewedDays.includes(base.run.day) && nightOwlBoardItems(base).some((entry) => entry.id === "laptop");
             if (!base.nineZeroSevenList.known && !offeredAtNightOwl || base.inventory.laptop || base.player.cash < 250) return inputState;
             spendCash(base, 250);
             base.inventory.laptop = true;
-            base.nineZeroSevenList.tier = "upgraded";
-            logEntry(base, "The used laptop boots at home. Five listings refresh there every day.", "good");
+            base.nineZeroSevenList.tier = marketTier(base);
+            logEntry(base, "The used laptop boots at home. Four listings a day now, with condition and seller history on every one, and Downtown sellers will meet you.", "good");
             return base;
           }
           if (action.type === "VISIT_NIGHT_OWL") {
@@ -8954,7 +9673,12 @@
           RESOLVE_EVENT: "Choice Made",
           ROB: "Rob Resolved",
           CONTACT_VISIT: "Visit Complete",
-          BUY_LAPTOP: "Laptop Acquired"
+          BUY_LAPTOP: "Laptop Acquired",
+          BUY_907LIST: "Meetup Done",
+          DELIVER_907LIST: "Sale Closed",
+          QUICK_SELL_907LIST: "Quick Sell Done",
+          FILL_BUYER_REQUEST: "Request Filled",
+          BUY_BULK_907LIST: "Lot Acquired"
         };
         const ACTION_RESULT_SKIPPED = ["NEW_RUN", "HYDRATE_RUN", "START_RUN", "CHOOSE_BACKGROUND"];
         function actionResult(before, after, actionType) {
@@ -9064,6 +9788,8 @@
           JOB_RANK_THRESHOLDS,
           LISTING_ITEMS,
           LISTING_CAPACITY,
+          MARKET: Market,
+          marketEvents: MarketEvents,
           NIGHT_OWL_REGULARS,
           NIGHT_OWL_BOARD,
           HOUSEHOLD_NPCS,
@@ -9239,7 +9965,22 @@
             nightOwlBoardItems,
             nightOwlRegularFor,
             nightOwlAvailability,
-            listingInventoryValue
+            listingInventoryValue,
+            // v1.9b broker track. marketOverview is the one read the 907List page
+            // needs; the rest exist so tests and the simulator can ask a narrower
+            // question without recomputing a tier gate slightly differently.
+            marketTier,
+            marketTierConfig,
+            marketCapacity,
+            marketOverview,
+            marketMeetupDistrict,
+            marketMeetupAvailability,
+            marketCarriedValue,
+            marketRobberyPreview,
+            marketBulkDeal,
+            marketRequests,
+            requestFillCandidates,
+            specialistCategory
           }
         };
       });
@@ -9342,7 +10083,7 @@
         const showRespect = state.npc.curtis.respect > 0;
         const showCrew = C.selectors.recruitedCrew(state).length > 0;
         const showCurtis = state.npc.curtis.relationship !== "unaware";
-        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.8.1"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", value: /* @__PURE__ */ React.createElement(React.Fragment, null, `${state.run.day}${state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""} \xB7 ${C.SLOTS[state.run.slot]} \xB7 ${area.name}`, /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })), good: true }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "" })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
+        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.9b"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", value: /* @__PURE__ */ React.createElement(React.Fragment, null, `${state.run.day}${state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""} \xB7 ${C.SLOTS[state.run.slot]} \xB7 ${area.name}`, /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })), good: true }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "" })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
       }
       var NAV_ICONS = {
         home: "M12 3 3 10.4V21h6v-6h6v6h6V10.4z",
@@ -9408,7 +10149,7 @@
         const openRoom = () => navigate("street", "root", null, "travel:household");
         const showHeatTile = !shown.heat;
         const showDebtTile = hasDreDebt && !shown.debt;
-        return /* @__PURE__ */ React.createElement("div", { className: "scroll home" }, view.priorities.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Needs Attention"), view.priorities.map((item) => /* @__PURE__ */ React.createElement("button", { key: item.id, className: `priority-row ${item.tone}`, onClick: () => navigate(...PRIORITY_TARGETS[item.id] || ["home"]) }, /* @__PURE__ */ React.createElement("span", { className: "menu-row-main" }, /* @__PURE__ */ React.createElement("b", null, item.label), /* @__PURE__ */ React.createElement("small", null, item.detail)), /* @__PURE__ */ React.createElement("span", { className: "menu-row-arrow", "aria-hidden": "true" }, "\u203A")))), /* @__PURE__ */ React.createElement("div", { className: "home-hero" }, /* @__PURE__ */ React.createElement("p", { className: "home-summary" }, view.summary), /* @__PURE__ */ React.createElement("div", { className: "home-identity" }, /* @__PURE__ */ React.createElement("span", { className: "k" }, "Street Identity"), /* @__PURE__ */ React.createElement("b", null, view.identity.label))), /* @__PURE__ */ React.createElement("div", { className: "stat-row" }, /* @__PURE__ */ React.createElement(StatTile, { label: "Health", value: view.health, note: "of 100", tone: view.health < 40 ? "bad" : view.health < 70 ? "warn" : "" }), showHeatTile && /* @__PURE__ */ React.createElement(StatTile, { label: "Heat", value: view.heat.label, note: `${view.heat.value} of 15`, tone: view.heat.tone === "good" ? "" : view.heat.tone, text: true }), showDebtTile && /* @__PURE__ */ React.createElement(StatTile, { label: "Debt", value: view.debt.label, note: view.debt.note, tone: view.debt.tone })), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Yalonda's Home"), atHome ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(MenuRow, { title: "Stash", status: `${money(state.home.storedCash)} \xB7 ${storedProducts}/2 held`, description: household.evicted ? "The room is closed to you." : "Cash is safe here. Contraband is not.", onClick: openRoom }), present && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: household.evicted || askedToday, onClick: () => dispatch({ type: "TALK_HOUSEHOLD", npcId: present }) }, "Talk with ", present === "yalonda" ? "Yalonda" : "Juan", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, askedToday ? "Already talked today" : "Free \xB7 once daily")), !present && /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "The apartment is quiet right now."), state.run.day >= state.obligations.rentDueDay && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: state.player.cash < C.WEEKLY_RENT, onClick: () => dispatch({ type: "PAY_RENT" }) }, "Pay weekly rent \xB7 ", money(C.WEEKLY_RENT), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Cash \xB7 no time passes")), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: household.evicted, onClick: () => dispatch({ type: "SLEEP_HOME" }) }, "Sleep at home", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "$0 \xB7 uses one part of day")), /* @__PURE__ */ React.createElement(MenuRow, { title: state.phone.active ? "Phone" : "No Service", status: state.phone.active ? `${state.phone.inbox.length} texts` : "Restoration directions", description: state.phone.active ? "Texts, today's log, and word around town." : "Open the phone to see how to restore service.", onClick: () => navigate("phone") }), state.inventory.laptop && C.selectors.nineZeroSevenListAccess(state, "home").visible && /* @__PURE__ */ React.createElement(MenuRow, { title: "907List Laptop", status: "5 today", description: "Open the daily Home listings.", onClick: () => navigate("more", "907list", "home") })) : /* @__PURE__ */ React.createElement(MenuRow, { title: "The spare room", status: "Back in Spenard", description: "Storage, Yalonda, Juan, and sleep wait until you return.", onClick: openRoom }));
+        return /* @__PURE__ */ React.createElement("div", { className: "scroll home" }, view.priorities.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Needs Attention"), view.priorities.map((item) => /* @__PURE__ */ React.createElement("button", { key: item.id, className: `priority-row ${item.tone}`, onClick: () => navigate(...PRIORITY_TARGETS[item.id] || ["home"]) }, /* @__PURE__ */ React.createElement("span", { className: "menu-row-main" }, /* @__PURE__ */ React.createElement("b", null, item.label), /* @__PURE__ */ React.createElement("small", null, item.detail)), /* @__PURE__ */ React.createElement("span", { className: "menu-row-arrow", "aria-hidden": "true" }, "\u203A")))), /* @__PURE__ */ React.createElement("div", { className: "home-hero" }, /* @__PURE__ */ React.createElement("p", { className: "home-summary" }, view.summary), /* @__PURE__ */ React.createElement("div", { className: "home-identity" }, /* @__PURE__ */ React.createElement("span", { className: "k" }, "Street Identity"), /* @__PURE__ */ React.createElement("b", null, view.identity.label))), /* @__PURE__ */ React.createElement("div", { className: "stat-row" }, /* @__PURE__ */ React.createElement(StatTile, { label: "Health", value: view.health, note: "of 100", tone: view.health < 40 ? "bad" : view.health < 70 ? "warn" : "" }), showHeatTile && /* @__PURE__ */ React.createElement(StatTile, { label: "Heat", value: view.heat.label, note: `${view.heat.value} of 15`, tone: view.heat.tone === "good" ? "" : view.heat.tone, text: true }), showDebtTile && /* @__PURE__ */ React.createElement(StatTile, { label: "Debt", value: view.debt.label, note: view.debt.note, tone: view.debt.tone })), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Yalonda's Home"), atHome ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(MenuRow, { title: "Stash", status: `${money(state.home.storedCash)} \xB7 ${storedProducts}/2 held`, description: household.evicted ? "The room is closed to you." : "Cash is safe here. Contraband is not.", onClick: openRoom }), present && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: household.evicted || askedToday, onClick: () => dispatch({ type: "TALK_HOUSEHOLD", npcId: present }) }, "Talk with ", present === "yalonda" ? "Yalonda" : "Juan", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, askedToday ? "Already talked today" : "Free \xB7 once daily")), !present && /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "The apartment is quiet right now."), state.run.day >= state.obligations.rentDueDay && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: state.player.cash < C.WEEKLY_RENT, onClick: () => dispatch({ type: "PAY_RENT" }) }, "Pay weekly rent \xB7 ", money(C.WEEKLY_RENT), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Cash \xB7 no time passes")), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: household.evicted, onClick: () => dispatch({ type: "SLEEP_HOME" }) }, "Sleep at home", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "$0 \xB7 uses one part of day")), /* @__PURE__ */ React.createElement(MenuRow, { title: state.phone.active ? "Phone" : "No Service", status: state.phone.active ? `${state.phone.inbox.length} texts` : "Restoration directions", description: state.phone.active ? "Texts, today's log, and word around town." : "Open the phone to see how to restore service.", onClick: () => navigate("phone") }), state.inventory.laptop && C.selectors.nineZeroSevenListAccess(state, "home").visible && /* @__PURE__ */ React.createElement(MenuRow, { title: "907List Laptop", status: `${C.selectors.marketTierConfig(state).listings} today`, description: "Open the day's listings with condition and seller history.", onClick: () => navigate("more", "907list", "home") })) : /* @__PURE__ */ React.createElement(MenuRow, { title: "The spare room", status: "Back in Spenard", description: "Storage, Yalonda, Juan, and sleep wait until you return.", onClick: openRoom }));
       }
       var MARKET_TABLE_MIN = 3;
       function Market({ state, onTrade }) {
@@ -9574,11 +10315,25 @@
       }
       function NineOhSevenList({ state, dispatch, onBack, surface = "phone" }) {
         const atHome = (surface === "home" || !state.phone.active) && state.inventory.laptop && state.world.currentNeighborhoodId === "north_star_lot";
-        const slate = C.selectors.listingSlate(state, atHome ? "home" : "phone");
+        const board = atHome ? "home" : "phone";
+        const slate = C.selectors.listingSlate(state, board);
         const list = state.nineZeroSevenList;
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "907List", sub: atHome ? "Five listings refresh daily on the laptop" : "Three listings refresh every two days on your phone", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, state.run.day >= state.phone.billDueDay && /* @__PURE__ */ React.createElement("div", { className: "card debt-card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Phone bill", /* @__PURE__ */ React.createElement("small", null, money(C.PHONE_BILL), " DUE")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Online payment needs the laptop and active service. A dead phone must be paid at the store."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !state.inventory.laptop || !state.phone.active || state.player.cash < C.PHONE_BILL, onClick: () => dispatch({ type: "PAY_PHONE_BILL", surface: "online" }) }, "Pay online \xB7 ", money(C.PHONE_BILL), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free \xB7 no time passes"))), /* @__PURE__ */ React.createElement("div", { className: "stat-row" }, /* @__PURE__ */ React.createElement(StatTile, { label: "Held", value: `${list.inventory.length}/${C.LISTING_CAPACITY}` }), /* @__PURE__ */ React.createElement(StatTile, { label: "Sales", value: list.sales }), /* @__PURE__ */ React.createElement(StatTile, { label: "Profit", value: money(list.profit), tone: list.profit >= 0 ? "good" : "bad" })), !state.inventory.laptop && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Used laptop", /* @__PURE__ */ React.createElement("small", null, "$250")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Unlock five listings that refresh each day from Home."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: state.player.cash < 250, onClick: () => dispatch({ type: "BUY_LAPTOP" }) }, "Buy laptop \xB7 $250", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "One-time purchase \xB7 no alert matching"))), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Today's listings"), slate.map((item) => /* @__PURE__ */ React.createElement("div", { className: "card", key: item.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, item.name, /* @__PURE__ */ React.createElement("small", null, money(item.buy))), /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, /* @__PURE__ */ React.createElement(Outcome, { label: "Est. resale", value: `${money(item.resale[0])}\u2013${money(item.resale[1])}` }), /* @__PURE__ */ React.createElement(Outcome, { label: "Est. profit", value: `${money(item.resale[0] - item.buy)}\u2013${money(item.resale[1] - item.buy)}` })), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: list.inventory.length >= C.LISTING_CAPACITY || state.player.cash < item.buy, onClick: () => dispatch({ type: "BUY_907LIST", itemId: item.id, surface: atHome ? "home" : "phone" }) }, "Buy for ", money(item.buy), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free transaction \xB7 held until resold")))), list.inventory.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Held items"), list.inventory.map((held) => {
-          const item = C.LISTING_ITEMS.find((entry) => entry.id === held.itemId);
-          return /* @__PURE__ */ React.createElement("div", { className: "card", key: held.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, item.name, /* @__PURE__ */ React.createElement("small", null, "BOUGHT ", money(held.cost))), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Expected buyer range ", money(item.resale[0]), "\u2013", money(item.resale[1]), "."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", onClick: () => dispatch({ type: "SELL_907LIST", inventoryId: held.id, surface: atHome ? "home" : "phone" }) }, "Find a buyer", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free transaction \xB7 proceeds are clean cash")));
+        const view = C.selectors.marketOverview(state);
+        const meetup = C.selectors.marketMeetupAvailability(state);
+        const risk = C.selectors.marketRobberyPreview(state);
+        const bulk = C.selectors.marketBulkDeal(state);
+        const requests = C.selectors.marketRequests(state);
+        const ready = list.pendingSells.filter((entry) => entry.status === "ready");
+        const waiting = list.pendingSells.filter((entry) => entry.status !== "ready");
+        const nameOf = (itemId) => (C.LISTING_ITEMS.find((entry) => entry.id === itemId) || {}).name || "Item";
+        const full = list.inventory.length >= view.capacity;
+        const held = (id) => list.inventory.find((entry) => entry.id === id);
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "907List", sub: `${view.name} tier \xB7 ${view.blurb}`, onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, state.run.day >= state.phone.billDueDay && /* @__PURE__ */ React.createElement("div", { className: "card debt-card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Phone bill", /* @__PURE__ */ React.createElement("small", null, money(C.PHONE_BILL), " DUE")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Online payment needs the laptop and active service. A dead phone must be paid at the store."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !state.inventory.laptop || !state.phone.active || state.player.cash < C.PHONE_BILL, onClick: () => dispatch({ type: "PAY_PHONE_BILL", surface: "online" }) }, "Pay online \xB7 ", money(C.PHONE_BILL), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free \xB7 no time passes"))), /* @__PURE__ */ React.createElement("div", { className: "stat-row" }, /* @__PURE__ */ React.createElement(StatTile, { label: "Held", value: `${list.inventory.length}/${view.capacity}` }), /* @__PURE__ */ React.createElement(StatTile, { label: "Flips", value: view.flipCount }), /* @__PURE__ */ React.createElement(StatTile, { label: "Profit", value: money(list.profit), tone: list.profit >= 0 ? "good" : "bad" })), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Meetup risk", /* @__PURE__ */ React.createElement("small", null, risk.percent, "%")), /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, /* @__PURE__ */ React.createElement(Outcome, { label: "Carrying", value: money(risk.carriedValue) }), /* @__PURE__ */ React.createElement(Outcome, { label: "Where", value: meetup.available ? risk.district === "downtown" ? "Downtown" : "Spenard" : "No meetup" }), /* @__PURE__ */ React.createElement(Outcome, { label: "When", value: C.SLOTS[risk.slot] }), /* @__PURE__ */ React.createElement(Outcome, { label: "Robbery odds", value: `${risk.percent}%`, tone: risk.band === "low" ? "good" : risk.band === "moderate" ? "" : "bad" })), /* @__PURE__ */ React.createElement("p", { className: "compact" }, meetup.reason, " Mornings are safest and Night is worst; the more you carry, the more it matters.")), view.nextTier && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Next tier", /* @__PURE__ */ React.createElement("small", null, view.tier === 1 ? "FLIPPER" : "BROKER")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, view.nextTier, view.disputes > 0 ? ` ${view.disputes} dispute${view.disputes === 1 ? "" : "s"} on record.` : "")), view.specialist && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Specialist", /* @__PURE__ */ React.createElement("small", null, String(view.specialist).replace("_", " ").toUpperCase())), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Three flips in one category earned you an extra listing in it every day.")), !state.inventory.laptop && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Used laptop", /* @__PURE__ */ React.createElement("small", null, "$250")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Four listings a day with condition and seller history on every one, Downtown meetups, and quick sells."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: state.player.cash < 250, onClick: () => dispatch({ type: "BUY_LAPTOP" }) }, "Buy laptop \xB7 $250", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "One-time purchase \xB7 no time passes"))), requests.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Buyers looking"), requests.map((request) => {
+          const candidate = C.selectors.requestFillCandidates(state, request.id)[0];
+          return /* @__PURE__ */ React.createElement("div", { className: "card", key: request.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, request.buyerName, /* @__PURE__ */ React.createElement("small", null, "UNDER ", money(request.budget))), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "\u201C", request.text, "\u201D"), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !candidate || !meetup.available, onClick: () => dispatch({ type: "FILL_BUYER_REQUEST", requestId: request.id, inventoryId: candidate.id }) }, candidate ? `Deliver the ${nameOf(candidate.itemId).toLowerCase()}` : "Nothing held that fits", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "One part of day \xB7 15% premium \xB7 never falls through")));
+        })), ready.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Buyers waiting on you"), ready.map((pending) => /* @__PURE__ */ React.createElement("div", { className: "card", key: pending.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, nameOf(pending.itemId), /* @__PURE__ */ React.createElement("small", null, money(pending.price))), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "A buyer confirmed at ", money(pending.price), ". Meet them to close it."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !meetup.available, onClick: () => dispatch({ type: "DELIVER_907LIST", pendingId: pending.id }) }, "Deliver for ", money(pending.price), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "One part of day \xB7 proceeds are clean cash"))))), waiting.length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Posted, waiting"), waiting.map((pending) => /* @__PURE__ */ React.createElement("div", { className: "card", key: pending.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, nameOf(pending.itemId), /* @__PURE__ */ React.createElement("small", null, "LISTED")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Posted and waiting. Somebody answers by morning, or nobody does.")))), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Today's listings"), slate.map((item) => /* @__PURE__ */ React.createElement("div", { className: "card", key: item.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, item.name, /* @__PURE__ */ React.createElement("small", null, money(item.buy)), item.specialist ? /* @__PURE__ */ React.createElement("small", null, " \xB7 SPECIALTY") : null), /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, /* @__PURE__ */ React.createElement(Outcome, { label: "Est. resale", value: money(item.estimate) }), /* @__PURE__ */ React.createElement(Outcome, { label: "Est. profit", value: money(item.estimate - item.buy), tone: item.estimate - item.buy >= 0 ? "good" : "bad" }), item.conditionLabel ? /* @__PURE__ */ React.createElement(Outcome, { label: "Condition", value: item.conditionLabel }) : null, item.reliabilityLabel ? /* @__PURE__ */ React.createElement(Outcome, { label: "Seller", value: item.reliabilityLabel }) : null), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: full || !meetup.available || state.player.cash < item.buy, onClick: () => dispatch({ type: "BUY_907LIST", itemId: item.id, surface: board }) }, "Buy for ", money(item.buy), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "One part of day \xB7 the seller may already be gone")))), view.tier === 1 && /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Scrapper listings show a title and a price. What it is actually worth is your read to make."), bulk && !bulk.taken && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Distressed seller"), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Three-item lot", /* @__PURE__ */ React.createElement("small", null, money(bulk.price))), /* @__PURE__ */ React.createElement("p", { className: "compact" }, bulk.itemIds.map(nameOf).join(", "), ". ", money(bulk.listPrice - bulk.price), " under asking, and all of it becomes carried value until it moves."), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !meetup.available || state.player.cash < bulk.price || list.inventory.length + bulk.itemIds.length > view.capacity, onClick: () => dispatch({ type: "BUY_BULK_907LIST", dealId: bulk.id }) }, "Take the lot \xB7 ", money(bulk.price), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "One part of day \xB7 high capital lock")))), list.inventory.filter((entry) => !entry.listed).length > 0 && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Held items"), list.inventory.filter((entry) => !entry.listed).map((entry) => {
+          const item = C.LISTING_ITEMS.find((row) => row.id === entry.itemId);
+          return /* @__PURE__ */ React.createElement("div", { className: "card", key: entry.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, item.name, /* @__PURE__ */ React.createElement("small", null, "PAID ", money(entry.cost))), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Open market runs about ", money(C.marketEvents.estimatedResale(item)), " and can fall through. A quick sell takes 20% off and cannot."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", onClick: () => dispatch({ type: "SELL_907LIST", inventoryId: entry.id, surface: board }) }, "Post it", view.verified ? " \xB7 sells today" : " \xB7 buyer answers by morning", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free to post \xB7 delivering costs one part of day")), view.quickSell && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !meetup.available, onClick: () => dispatch({ type: "QUICK_SELL_907LIST", inventoryId: entry.id }) }, "Quick sell \xB7 about ", money(Math.round(C.marketEvents.estimatedResale(item) * 0.8)), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "One part of day \xB7 guaranteed \xB7 never falls through")));
         })), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Aspirational property"), /* @__PURE__ */ React.createElement(PlaceAction, { title: "North Star Garage", status: state.base.controlled ? "CONTROLLED" : "$650 DEPOSIT", purpose: "Storage and operations space. This property never occupies a 907List inventory slot.", cost: state.base.controlled ? "Paid" : "$650", time: state.base.controlled ? "Owned" : "Leasing uses one part of day", disabled: state.base.controlled || state.player.cash < C.GARAGE_DEPOSIT, reason: state.base.controlled ? "Already controlled." : state.player.cash < C.GARAGE_DEPOSIT ? `You need ${money(C.GARAGE_DEPOSIT - state.player.cash)} more.` : "Deposit and first week included.", onClick: () => dispatch({ type: "LEASE_GARAGE" }) })));
       }
       function Travel({ state, dispatch, page, setPage }) {
@@ -9870,7 +10625,7 @@
         const dayLog = state.log.filter((entry) => entry.stamp.startsWith(today));
         const intel = C.selectors.phoneIntel(state);
         if (!state.phone.active) return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "No Service", sub: "The phone stays available even when the network does not", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card locked" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Signal unavailable", /* @__PURE__ */ React.createElement("small", null, state.phone.daysPastDue, " days past due")), /* @__PURE__ */ React.createElement("p", null, "Pay ", money(C.PHONE_BILL), " at Night Owl to start restoration. Online payment requires active service and a laptop."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: state.player.cash < C.PHONE_BILL, onClick: () => dispatch({ type: "PAY_PHONE_BILL", surface: "store" }) }, "Pay at Night Owl \xB7 ", money(C.PHONE_BILL), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free \xB7 service restores after the next action"))), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Held messages"), /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, state.phone.heldInbox.length, " message", state.phone.heldInbox.length === 1 ? " is" : "s are", " waiting for service.")));
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Phone", sub: "Texts, today's log, and word around town", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Texts"), state.phone.inbox.length ? state.phone.inbox.map((message) => /* @__PURE__ */ React.createElement("div", { className: "card compact", key: message.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, message.from, /* @__PURE__ */ React.createElement("small", null, "DAY ", message.day, " \xB7 ", C.SLOTS[message.slot])), /* @__PURE__ */ React.createElement("p", { className: "compact" }, message.text))) : /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "No messages yet."), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Day Log"), dayLog.length ? dayLog.map((entry, index) => /* @__PURE__ */ React.createElement("div", { className: `card compact ${entry.tone || ""}`, key: index }, entry.text)) : /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "Nothing logged today."), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Word Around Town"), intel.map((line, index) => /* @__PURE__ */ React.createElement("div", { className: "card compact", key: index }, line)), state.knowledge.knows907List && /* @__PURE__ */ React.createElement(MenuRow, { title: "907List", status: state.phone.active ? "3 listings" : "No service", description: "Local resale listings.", disabled: !state.phone.active, onClick: openList })));
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Phone", sub: "Texts, today's log, and word around town", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Texts"), state.phone.inbox.length ? state.phone.inbox.map((message) => /* @__PURE__ */ React.createElement("div", { className: "card compact", key: message.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, message.from, /* @__PURE__ */ React.createElement("small", null, "DAY ", message.day, " \xB7 ", C.SLOTS[message.slot])), /* @__PURE__ */ React.createElement("p", { className: "compact" }, message.text))) : /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "No messages yet."), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Day Log"), dayLog.length ? dayLog.map((entry, index) => /* @__PURE__ */ React.createElement("div", { className: `card compact ${entry.tone || ""}`, key: index }, entry.text)) : /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "Nothing logged today."), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Word Around Town"), intel.map((line, index) => /* @__PURE__ */ React.createElement("div", { className: "card compact", key: index }, line)), state.knowledge.knows907List && /* @__PURE__ */ React.createElement(MenuRow, { title: "907List", status: state.phone.active ? `${C.selectors.marketTierConfig(state).listings} listings` : "No service", description: "Local resale listings.", disabled: !state.phone.active, onClick: openList })));
       }
       function More({ state, dispatch, features, page, setPage, sub, subToken }) {
         if (page === "operations") return /* @__PURE__ */ React.createElement(Operations, { key: `ops:${sub || "root"}:${subToken}`, state, dispatch, onBack: () => setPage("root"), initialPage: sub });
@@ -9886,7 +10641,7 @@
         const hasDreDebt = state.lender.status === "active" || state.lender.status === "cleared";
         const daysLeft = hasDreDebt ? state.lender.dueDay - state.run.day : null;
         const financeSummary = !hasDreDebt ? `${money(state.player.cleanCash)} clean` : !state.lender.balance ? "Debt clear" : daysLeft <= 0 ? "Debt due" : `Debt Day ${state.lender.dueDay}`;
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "More", sub: "Character, progress, finances, and help stay available; property unlocks operations" }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(MenuRow, { title: "Finances", status: financeSummary, description: hasDreDebt ? "Cash, debt, Shark notes, and financial risk." : "Cash and financial risk.", onClick: () => setPage("finances") }), state.knowledge.knows907List && /* @__PURE__ */ React.createElement(MenuRow, { title: "907List", status: `${state.nineZeroSevenList.inventory.length}/${C.LISTING_CAPACITY} held`, description: "Three two-day phone listings, resale estimates, and a laptop upgrade.", disabled: !C.selectors.nineZeroSevenListAccess(state, "phone").available && !C.selectors.nineZeroSevenListAccess(state, "home").available, onClick: () => setPage("907list") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Operations", status: opsSummary, description: features.operations.available ? "Safehouse, territory, soldiers, gear, and Rob." : features.operations.hint, disabled: !features.operations.available, onClick: () => setPage("operations") }), features.recovery.available && /* @__PURE__ */ React.createElement(MenuRow, { title: "Recovery", status: `Health ${state.player.health}`, description: "Treat injuries or lay low to reduce Heat.", onClick: () => setPage("recovery") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Character", status: `${identity} \xB7 Respect ${state.npc.curtis.respect}`, description: "Street Identity, attributes, derived ratings, and reputation.", onClick: () => setPage("character") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Help", status: "Available", description: "Time, trading, major actions, and the dynamic checkpoint.", onClick: () => setPage("help") })));
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "More", sub: "Character, progress, finances, and help stay available; property unlocks operations" }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(MenuRow, { title: "Finances", status: financeSummary, description: hasDreDebt ? "Cash, debt, Shark notes, and financial risk." : "Cash and financial risk.", onClick: () => setPage("finances") }), state.knowledge.knows907List && /* @__PURE__ */ React.createElement(MenuRow, { title: "907List", status: `${state.nineZeroSevenList.inventory.length}/${C.selectors.marketCapacity(state)} held`, description: `${C.selectors.marketOverview(state).name} tier. Buy low, read the listing, find the next buyer.`, disabled: !C.selectors.nineZeroSevenListAccess(state, "phone").available && !C.selectors.nineZeroSevenListAccess(state, "home").available, onClick: () => setPage("907list") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Operations", status: opsSummary, description: features.operations.available ? "Safehouse, territory, soldiers, gear, and Rob." : features.operations.hint, disabled: !features.operations.available, onClick: () => setPage("operations") }), features.recovery.available && /* @__PURE__ */ React.createElement(MenuRow, { title: "Recovery", status: `Health ${state.player.health}`, description: "Treat injuries or lay low to reduce Heat.", onClick: () => setPage("recovery") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Character", status: `${identity} \xB7 Respect ${state.npc.curtis.respect}`, description: "Street Identity, attributes, derived ratings, and reputation.", onClick: () => setPage("character") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Help", status: "Available", description: "Time, trading, major actions, and the dynamic checkpoint.", onClick: () => setPage("help") })));
       }
       var disclosureSeq = 0;
       function useDomId(prefix) {
@@ -10071,7 +10826,7 @@
           ExpandableMoreSection,
           {
             collapsedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-lead" }, "Autosave is on. This run saves to your browser after every action."),
-            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.8.1 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
+            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.9b \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
             moreLabel: "Save detail",
             lessLabel: "Hide detail"
           }

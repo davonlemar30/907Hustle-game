@@ -12,14 +12,16 @@
   const { BANDS, bandFor, bandId, bandLabel } = require("./src/data/disposition-bands.js");
   const { EXPOSURE_NPC_IDS } = require("./src/data/npc-lenses.js");
   const { NPC_CHANNELS } = require("./src/data/propagation.js");
+  const Market = require("./src/data/market.js");
+  const MarketEvents = require("./src/events/market-events.js");
 
-  const VERSION = 6;
+  const VERSION = 7;
   const RUN_DAYS = 7;
   const PRESSURE_DAYS = 7;
   const MAX_ENERGY = 4;
   const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
-  const SAVE_KEY = "907ogr_v6";
-  const LEGACY_SAVE_KEYS = ["907ogr_v5", "907ogr_v4", "907ogr_v3"];
+  const SAVE_KEY = "907ogr_v7";
+  const LEGACY_SAVE_KEYS = ["907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"];
   const PHONE_BILL = 75;
   const WEEKLY_RENT = 150;
   const WORKING_CAPITAL_RESERVE = 150;
@@ -172,7 +174,9 @@
 
   const { JOB_RANK_THRESHOLDS, JOB_APPROACHES, SPENARD_JOBS, SPENARD_JOB_BY_ID, STARTER_JOB_IDS } = require("./src/data/jobs.js");
 
-  const LISTING_CAPACITY = 3;
+  // Kept as the Tier 1 figure and the export name every caller already uses.
+  // How much a player can actually hold is per-tier now: see marketCapacity().
+  const LISTING_CAPACITY = Market.MARKET_TIERS[1].capacity;
   const NIGHT_OWL_BOARD = [
     { id: "jobs", title: "Help wanted", body: "Two counters need reliable hands this week." },
     { id: "list", title: "907List", body: "Buy it cheap. Clean it up. Find the next buyer." },
@@ -243,6 +247,16 @@
     night_owl_stash: {
       id: "night_owl_stash", areaId: HOME_DISTRICT_ID, slots: [2, 3], cashCost: 0, timeCost: 0, healthCost: 0,
       action: null, around: false, closedReason: "Opens at dusk.",
+    },
+    // The Downtown meetup point. A routing entry like night_owl and local_intel:
+    // it costs nothing to walk up to, and the slot is charged by whichever
+    // 907List action the player takes once the board is open. Downtown listings
+    // pay a 30% better margin and carry a 1.8x robbery multiplier, which is the
+    // whole reason to make the trip.
+    downtown_907list_meetup: {
+      id: "downtown_907list_meetup", areaId: "downtown", slots: ALL_DAY_SLOTS, cashCost: 0, timeCost: 0, healthCost: 0,
+      action: null, around: true, order: 15,
+      visibleWhen: (state) => !!state.knowledge?.knows907List && marketTierConfig(state).districts.includes("downtown"),
     },
     return_spenard: {
       id: "return_spenard", areaId: "*", slots: ALL_DAY_SLOTS,
@@ -653,6 +667,7 @@
   // funnels through - onto a routine activity class.
   const STREET_READ_ACTIVITY = {
     BUY: "trade", SELL: "trade", END_MARKET: "trade",
+    BUY_907LIST: "trade", DELIVER_907LIST: "trade", QUICK_SELL_907LIST: "trade", FILL_BUYER_REQUEST: "trade", BUY_BULK_907LIST: "trade",
     VISIT_NIGHT_OWL: "social", CONTACT_VISIT: "social", RECRUIT_CREW: "social", ASSIGN_CREW: "social", PROMOTE_LIEUTENANT: "social", PAY_DEBT: "social", RECRUIT_SOLDIER: "social",
     HEAL: "heal", HEAL_AT_BASE: "heal", LAY_LOW: "rest", SLEEP_HOME: "rest",
     WORK_SHIFT: "work", WORK_JOB: "work", SHOPLIFT: "work", BOOST: "work", ASK_BOOST_WINDOW: "social",
@@ -1099,7 +1114,17 @@
         boardViewedDays: [], ambientSeen: [],
         regulars: Object.fromEntries(NIGHT_OWL_REGULARS.map((person) => [person.id, { met: false, relationship: 0, lastTalkDay: null }])),
       },
-      nineZeroSevenList: { known: false, tier: "basic", inventory: [], purchases: 0, sales: 0, profit: 0, alerts: { enabled: false, subscriptions: [] } },
+      // v1.9b: the broker track. `tier` is derived on every read by marketTier()
+      // and mirrored here for saves and display, never trusted as the source.
+      // The build prompt calls this state `market.*`; that key is already the
+      // plug market's, so the broker fields live where 907List already lived.
+      nineZeroSevenList: {
+        known: false, tier: 1, inventory: [], purchases: 0, sales: 0, profit: 0,
+        flipCount: 0, disputes: 0, specialist: null, categoryFlips: {},
+        pendingSells: [], buyerRequests: [], filledRequests: 0, bulkDeal: null,
+        robberies: 0, lastNoticeDay: 0, taken: { day: 0, ids: [] },
+        alerts: { enabled: false, subscriptions: [] },
+      },
       rob: { visible: false },
       boost: {
         visible: false, tier: 0, technique: 0, storeBans: [], fenceStanding: 0,
@@ -1151,7 +1176,7 @@
   function migrateSave(value) {
     if (!value || typeof value !== "object") return null;
     if (value.version === VERSION) return value;
-    if (![3, 4, 5].includes(value.version) || !value.run || !value.world || !value.player) return null;
+    if (![3, 4, 5, 6].includes(value.version) || !value.run || !value.world || !value.player) return null;
     const migrated = JSON.parse(JSON.stringify(value));
     const oldHousehold = migrated.people?.household || {};
     const legacyNpc = migrated.npc || {};
@@ -1232,6 +1257,20 @@
     if (migrated.stats?.majorDecisions) migrated.stats.majorDecisions = rewriteLegacyText(migrated.stats.majorDecisions);
     for (const territory of Object.values(migrated.world.territories || {})) if (territory.owner === "rook") territory.owner = "curtis";
     for (const block of Object.values(migrated.world.territoryBlocks || {})) if (block.owner === "rook") block.owner = "curtis";
+    // v7: 907List grew a broker track. Every new field is additive, so
+    // mergeDefaults in hydrateRun supplies them; the only thing that cannot be
+    // merged is the old `tier`, which was the string "basic" or "upgraded" and
+    // is now a number. Left as a string it would fail every tier comparison, so
+    // it is dropped here and re-derived by marketTier() from the laptop.
+    const legacyList = migrated.nineZeroSevenList;
+    if (legacyList && typeof legacyList.tier === "string") delete legacyList.tier;
+    if (legacyList) {
+      legacyList.pendingSells = Array.isArray(legacyList.pendingSells) ? legacyList.pendingSells : [];
+      legacyList.buyerRequests = Array.isArray(legacyList.buyerRequests) ? legacyList.buyerRequests : [];
+      // Pre-v7 flips were free and risk-free, so they never earned broker
+      // standing. Sales carry over as the flip count they would have been.
+      legacyList.flipCount = Math.max(0, Math.floor(Number(legacyList.flipCount ?? legacyList.sales) || 0));
+    }
     migrated.version = VERSION;
     return migrated;
   }
@@ -1350,12 +1389,34 @@
     state.inventory.laptop = !!state.inventory.laptop;
     state.knowledge.knows907List = !!state.knowledge.knows907List || !!state.nineZeroSevenList.known;
     state.nineZeroSevenList.known = state.knowledge.knows907List;
-    state.nineZeroSevenList.tier = state.inventory.laptop ? "upgraded" : "basic";
-    state.nineZeroSevenList.inventory = (Array.isArray(state.nineZeroSevenList.inventory) ? state.nineZeroSevenList.inventory : []).filter((entry) => LISTING_ITEM_BY_ID[entry.itemId]).slice(0, LISTING_CAPACITY);
-    state.nineZeroSevenList.purchases = Math.max(0, Math.floor(Number(state.nineZeroSevenList.purchases) || 0));
-    state.nineZeroSevenList.sales = Math.max(0, Math.floor(Number(state.nineZeroSevenList.sales) || 0));
-    state.nineZeroSevenList.profit = Math.floor(Number(state.nineZeroSevenList.profit) || 0);
-    state.nineZeroSevenList.alerts = { enabled: false, subscriptions: [] };
+    const list = state.nineZeroSevenList;
+    list.purchases = Math.max(0, Math.floor(Number(list.purchases) || 0));
+    list.sales = Math.max(0, Math.floor(Number(list.sales) || 0));
+    list.profit = Math.floor(Number(list.profit) || 0);
+    list.flipCount = Math.max(0, Math.floor(Number(list.flipCount) || 0));
+    list.disputes = Math.max(0, Math.floor(Number(list.disputes) || 0));
+    list.filledRequests = Math.max(0, Math.floor(Number(list.filledRequests) || 0));
+    list.robberies = Math.max(0, Math.floor(Number(list.robberies) || 0));
+    list.lastNoticeDay = Math.max(0, Math.floor(Number(list.lastNoticeDay) || 0));
+    list.categoryFlips = list.categoryFlips && typeof list.categoryFlips === "object" ? list.categoryFlips : {};
+    // Derived, never trusted from the save: a v6 save carrying "upgraded", or a
+    // v7 save edited by hand, both land on whatever the laptop and the flip
+    // record actually justify.
+    list.tier = marketTier(state);
+    list.specialist = specialistCategory(state);
+    list.inventory = (Array.isArray(list.inventory) ? list.inventory : [])
+      .filter((entry) => entry && LISTING_ITEM_BY_ID[entry.itemId])
+      .slice(0, marketCapacity(state));
+    list.pendingSells = (Array.isArray(list.pendingSells) ? list.pendingSells : [])
+      .filter((entry) => entry && LISTING_ITEM_BY_ID[entry.itemId] && entry.resolveAtSlot != null);
+    list.buyerRequests = (Array.isArray(list.buyerRequests) ? list.buyerRequests : [])
+      .filter((entry) => entry && Market.MARKET_CATEGORIES.includes(entry.category));
+    list.bulkDeal = list.bulkDeal && Array.isArray(list.bulkDeal.itemIds)
+      && list.bulkDeal.itemIds.every((id) => LISTING_ITEM_BY_ID[id]) ? list.bulkDeal : null;
+    list.taken = list.taken && Array.isArray(list.taken.ids)
+      ? { day: Math.max(0, Math.floor(Number(list.taken.day) || 0)), ids: list.taken.ids.filter((id) => LISTING_ITEM_BY_ID[id]) }
+      : { day: 0, ids: [] };
+    list.alerts = { enabled: false, subscriptions: [] };
     state.world.locations.downtownAmbientSeen = [...new Set((Array.isArray(state.world.locations.downtownAmbientSeen) ? state.world.locations.downtownAmbientSeen : []).filter((index) => index === 0 || index === 1))];
     state.flags.featureNotices = state.flags.featureNotices && typeof state.flags.featureNotices === "object" ? state.flags.featureNotices : {};
     state.npc.mina.available = state.npc.mina.available !== false && state.npc.mina.status !== "gone";
@@ -1808,17 +1869,315 @@
         : {};
     return districtActionAvailability(state, actionId, params).available;
   }
+  // ---------------------------------------------------------------------------
+  // 907List broker track (v1.9b)
+  // ---------------------------------------------------------------------------
+
+  // Which tier the player is actually at, recomputed on every read rather than
+  // stored. Tier 2 is bought (the laptop); Tier 3 is earned, and the dispute
+  // ceiling is what stops it being a pure grind: ten flips only count if you
+  // were reading the listings instead of buying everything on the board.
+  function marketTier(state) {
+    const list = state.nineZeroSevenList;
+    if (!list) return 1;
+    const flips = Math.max(0, Math.floor(Number(list.flipCount) || 0));
+    const disputes = Math.max(0, Math.floor(Number(list.disputes) || 0));
+    if (state.inventory?.laptop && flips >= Market.BROKER_FLIP_REQUIREMENT && disputes < Market.BROKER_DISPUTE_LIMIT) return 3;
+    if (state.inventory?.laptop) return 2;
+    return 1;
+  }
+
+  function marketTierConfig(state) {
+    return Market.MARKET_TIERS[marketTier(state)];
+  }
+
+  function marketCapacity(state) {
+    return marketTierConfig(state).capacity;
+  }
+
+  // The first category to reach three flips keeps the tag for the run. Checked
+  // in a fixed category order so two categories crossing on the same flip do not
+  // resolve differently on two machines.
+  function specialistCategory(state) {
+    if (!marketTierConfig(state).specialist) return null;
+    const counts = state.nineZeroSevenList?.categoryFlips || {};
+    for (const category of Market.MARKET_CATEGORIES) {
+      if ((Number(counts[category]) || 0) >= Market.SPECIALIST_FLIP_REQUIREMENT) return category;
+    }
+    return null;
+  }
+
+  // Where a meetup can happen: wherever the player is standing, provided the
+  // tier reaches it. Downtown is not a menu option, it is a bus ride — which is
+  // what makes the +30% margin cost something before the robbery roll is even
+  // made.
+  function marketMeetupDistrict(state) {
+    const here = state.world.currentNeighborhoodId;
+    return marketTierConfig(state).districts.includes(here) ? here : null;
+  }
+
+  // Anything held or listed. Listed items have not left the player's hands yet —
+  // the buyer has only agreed — so they still count as carried value on the walk
+  // to the next meetup.
+  function listingInventoryValue(state) {
+    return state.nineZeroSevenList.inventory.reduce((sum, entry) => sum + (entry.cost || 0), 0);
+  }
+
+  // Carried value is what the bag cost, not what it might fetch. The player is
+  // shown this number next to the risk it produces, so it has to be one they can
+  // do arithmetic on: "I paid $155 for the freezer" is checkable, "it might go
+  // for $208" is a forecast, and pricing risk off a forecast makes the readout
+  // impossible to plan against.
+  function marketCarriedValue(state) {
+    return state.nineZeroSevenList.inventory.reduce((sum, entry) => sum + (Number(entry.cost) || 0), 0);
+  }
+
+  function marketRobberyPreview(state, overrides = {}) {
+    return MarketEvents.robberyPreview(state, {
+      carriedValue: marketCarriedValue(state),
+      district: marketMeetupDistrict(state) || state.world.currentNeighborhoodId,
+      ...overrides,
+    });
+  }
+
+  // The board. One draw per day from everything the tier can see, with the
+  // specialist category adding a fifth slot in the thing the player got good at.
+  //
+  // Fields the tier does not include are nulled rather than omitted, so a UI
+  // that forgets to check the tier still cannot leak condition to a Scrapper.
   function listingSlate(state, surface) {
     const access = nineZeroSevenListAccess(state, surface);
     if (!access.available) return [];
-    const atHome = surface === "home" && state.world.currentNeighborhoodId === "north_star_lot" && state.inventory.laptop;
-    const count = atHome ? 5 : 3;
-    const refresh = atHome ? state.run.day : Math.floor((state.run.day - 1) / 2);
-    const order = seededShuffle(LISTING_ITEMS, state.run.seed, stringHash(`907list:${refresh}:${atHome ? "home" : "phone"}`));
-    return order.slice(0, count);
+    const tier = marketTier(state);
+    const config = Market.MARKET_TIERS[tier];
+    const day = state.run.day;
+    const list = state.nineZeroSevenList;
+    const heldIds = new Set(list.inventory.map((entry) => entry.itemId));
+    const takenIds = new Set(list.taken?.day === day ? list.taken.ids : []);
+    const pool = LISTING_ITEMS.filter((item) => item.tier <= tier && !heldIds.has(item.id) && !takenIds.has(item.id));
+    const order = seededShuffle(pool, state.run.seed, stringHash(`907list:${day}:${tier}`));
+    const picked = order.slice(0, config.listings);
+    const specialist = specialistCategory(state);
+    if (specialist) {
+      const bonus = order.find((item) => item.category === specialist && !picked.includes(item));
+      if (bonus) picked.push(bonus);
+    }
+    return picked.map((item) => decorateListing(state, item, day, config));
   }
-  function listingInventoryValue(state) {
-    return state.nineZeroSevenList.inventory.reduce((sum, entry) => sum + (entry.cost || 0), 0);
+
+  function decorateListing(state, item, day, config) {
+    const shows = (field) => config.fields.includes(field);
+    const reliability = MarketEvents.reliabilityFor(state, item.id, day);
+    return {
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      buy: item.buy,
+      estimate: MarketEvents.estimatedResale(item),
+      condition: shows("condition") ? item.condition : null,
+      conditionLabel: shows("condition") ? Market.CONDITIONS[item.condition].label : null,
+      reliability: shows("reliability") ? reliability : null,
+      reliabilityLabel: shows("reliability") ? Market.SELLER_RELIABILITY[reliability].label : null,
+      specialist: specialistCategory(state) === item.category,
+    };
+  }
+
+  // A distressed seller's three-item lot. Regenerated per day from the seed, so
+  // it is the same lot every replay and it disappears if it is not taken.
+  function marketBulkDeal(state) {
+    if (!marketTierConfig(state).bulk) return null;
+    const list = state.nineZeroSevenList;
+    if (list.bulkDeal?.day === state.run.day) return list.bulkDeal;
+    return MarketEvents.generateBulkDeal(state, { tier: marketTier(state), day: state.run.day });
+  }
+
+  function marketRequests(state) {
+    return (state.nineZeroSevenList.buyerRequests || [])
+      .filter((request) => state.run.day - request.day < Market.REQUEST_EXPIRY_DAYS);
+  }
+
+  // Which held item can satisfy a given request: right category, and priced
+  // inside what the buyer said they would pay.
+  function requestFillCandidates(state, requestId) {
+    const request = marketRequests(state).find((entry) => entry.id === requestId);
+    if (!request) return [];
+    return state.nineZeroSevenList.inventory.filter((held) => {
+      if (held.listed) return false;
+      const item = LISTING_ITEM_BY_ID[held.itemId];
+      return item && item.category === request.category && item.buy <= request.budget;
+    });
+  }
+
+  // Everything the 907List page needs in one read, so the UI never has to
+  // recompute a tier gate and get it slightly different.
+  function marketOverview(state) {
+    const tier = marketTier(state);
+    const config = Market.MARKET_TIERS[tier];
+    const list = state.nineZeroSevenList;
+    return {
+      tier,
+      name: config.name,
+      blurb: config.blurb,
+      capacity: config.capacity,
+      held: list.inventory.length,
+      carriedValue: marketCarriedValue(state),
+      flipCount: list.flipCount,
+      disputes: list.disputes,
+      specialist: specialistCategory(state),
+      quickSell: config.quickSell,
+      requests: config.requests,
+      bulk: config.bulk,
+      verified: tier >= Market.MAX_TIER,
+      district: marketMeetupDistrict(state),
+      nextTier: tier < Market.MAX_TIER ? nextTierRequirement(state, tier) : null,
+    };
+  }
+
+  function nextTierRequirement(state, tier) {
+    if (tier === 1) return "A used laptop opens the wider board.";
+    const remaining = Math.max(0, Market.BROKER_FLIP_REQUIREMENT - state.nineZeroSevenList.flipCount);
+    if (state.nineZeroSevenList.disputes >= Market.BROKER_DISPUTE_LIMIT) return "Too many disputes. Broker standing is closed this run.";
+    return `${remaining} more clean ${remaining === 1 ? "flip" : "flips"} for Broker standing.`;
+  }
+
+  // The risk check every meetup runs. Returns true when the player was robbed,
+  // having already applied the whole outcome: the bag is gone, so is the health,
+  // and the block heard about it.
+  //
+  // Losing the bag also drops anything already promised to a buyer, which is why
+  // pendingSells is rebuilt rather than left pointing at inventory ids that no
+  // longer exist.
+  function marketMeetupRobbery(state, nonce) {
+    const district = marketMeetupDistrict(state) || state.world.currentNeighborhoodId;
+    const carriedValue = marketCarriedValue(state);
+    if (!MarketEvents.rollRobbery(state, { carriedValue, district, slot: state.run.slot, nonce })) return false;
+    const list = state.nineZeroSevenList;
+    const lost = list.inventory.length;
+    list.inventory = [];
+    list.pendingSells = [];
+    list.robberies += 1;
+    const damage = MarketEvents.robberyHealthLoss(state, nonce);
+    state.player.health = clamp(state.player.health - damage, 0, 100);
+    state.player.heat = clamp(state.player.heat + Market.ROBBERY.heatGain, 0, 15);
+    Exposure.broadcastObservation(state, {
+      type: "violence",
+      event: "robbery_victim",
+      location: district,
+      value: carriedValue,
+      channel: "neighborhood",
+    });
+    logEntry(state, lost
+      ? `Two of them work the meetup. You lose ${lost === 1 ? "the item" : `all ${lost} items`} and ${damage} health, and the block will hear about it.`
+      : `Two of them work the meetup and find nothing worth taking. You lose ${damage} health.`, "bad");
+    return true;
+  }
+
+  // One completed flip: the money landed, the counters move, and the household
+  // notices a run of clean income.
+  //
+  // A dispute is a flip delivered for less than it cost. That is the appraisal
+  // skill made consequential: buying the flatscreen with the cracked bezel is
+  // not just a thin day, it is the thing that closes Broker standing.
+  function recordMarketFlip(state, { item, payout, cost, district }) {
+    const list = state.nineZeroSevenList;
+    list.sales += 1;
+    list.profit += payout - cost;
+    list.flipCount += 1;
+    list.categoryFlips[item.category] = (list.categoryFlips[item.category] || 0) + 1;
+    if (payout < cost) list.disputes += 1;
+    addCleanCash(state, payout);
+    // value carries the payout because Curtis's network filter gates financial
+    // observations at $200: a big 907List day is exactly how this is meant to
+    // reach him, and a $40 space heater is exactly how it is meant not to.
+    Exposure.broadcastObservation(state, {
+      type: "financial",
+      event: "907list_profit",
+      location: district,
+      value: payout,
+      channel: "household",
+    });
+    const beforeTier = list.tier;
+    list.tier = marketTier(state);
+    list.specialist = specialistCategory(state);
+    if (list.tier > beforeTier && list.tier === Market.MAX_TIER) {
+      Exposure.broadcastObservation(state, {
+        type: "growth",
+        event: "market_reputation",
+        value: list.flipCount,
+        channel: "reputation",
+      });
+      logEntry(state, "Enough clean deals have closed that people use your name. Broker standing: buyers text you now, and your listings move the same day.", "good");
+      pushPhoneMessage(state, "907List", "your account is verified. listings post same-day now.");
+    }
+    return payout - cost;
+  }
+
+  // Marks the listing as taken so the same item cannot be bought twice off one
+  // day's board.
+  function markListingTaken(state, itemId) {
+    const list = state.nineZeroSevenList;
+    if (list.taken.day !== state.run.day) list.taken = { day: state.run.day, ids: [] };
+    if (!list.taken.ids.includes(itemId)) list.taken.ids.push(itemId);
+  }
+
+  // Buyers responding to open-market listings. Rebuilds the survivor list rather
+  // than splicing in place, matching resolveJobApplications.
+  //
+  // A flake is the buyer ghosting, not the player's fault, so it costs the slot
+  // that was spent listing and nothing else: the item stays held and can be
+  // relisted.
+  function resolveMarketSells(state) {
+    const list = state.nineZeroSevenList;
+    if (!Array.isArray(list.pendingSells) || !list.pendingSells.length) return 0;
+    const now = slotNumber(state.run.day, state.run.slot);
+    const waiting = [];
+    let resolved = 0;
+    for (const pending of list.pendingSells) {
+      const held = list.inventory.find((entry) => entry.id === pending.inventoryId);
+      if (!held) continue;
+      if (pending.status !== "listed" || now < pending.resolveAtSlot) { waiting.push(pending); continue; }
+      const item = LISTING_ITEM_BY_ID[pending.itemId];
+      if (MarketEvents.rollFlake(state, pending.id)) {
+        held.listed = false;
+        logEntry(state, `The buyer for the ${item.name.toLowerCase()} stops answering. It is still yours to list again.`, "warn");
+        continue;
+      }
+      pending.status = "ready";
+      pending.price = MarketEvents.salePrice(state, item, { condition: item.condition, nonce: pending.id, district: pending.district });
+      waiting.push(pending);
+      resolved += 1;
+      pushPhoneMessage(state, "907List", `buyer confirmed for the ${item.name.toLowerCase()} at $${pending.price}. meet up to close it.`);
+    }
+    list.pendingSells = waiting;
+    return resolved;
+  }
+
+  // A named buyer texts once a day at Broker tier, and expired asks fall off.
+  function resolveBuyerRequests(state) {
+    const list = state.nineZeroSevenList;
+    if (!marketTierConfig(state).requests) return;
+    list.buyerRequests = marketRequests(state);
+    if (list.buyerRequests.some((request) => request.day === state.run.day)) return;
+    const request = MarketEvents.generateBuyerRequest(state, { filledRequests: list.filledRequests, day: state.run.day });
+    if (!request) return;
+    list.buyerRequests.push(request);
+    pushPhoneMessage(state, request.buyerName, request.text);
+  }
+
+  // Holding a board's worth of resale stock is visible from the street. Fires at
+  // most once a week so a Broker who never sells does not flood the ledger.
+  function noticeMarketInventory(state) {
+    const list = state.nineZeroSevenList;
+    if (marketCarriedValue(state) < Market.INVENTORY_NOTICE_VALUE) return;
+    if (state.run.day - list.lastNoticeDay < 7) return;
+    list.lastNoticeDay = state.run.day;
+    Exposure.broadcastObservation(state, {
+      type: "growth",
+      event: "inventory_accumulation",
+      location: state.world.currentNeighborhoodId,
+      value: marketCarriedValue(state),
+      channel: "neighborhood",
+    });
   }
   function nightOwlBoardItems(state) {
     const offset = Math.abs((state.run.seed || 1) + state.run.day) % NIGHT_OWL_BOARD.length;
@@ -1835,6 +2194,8 @@
       WORK_JOB: "Worked a shift", WANDER_SPENARD: "Walked Spenard", VISIT_NIGHT_OWL: "Talked with Mina",
       BUY_COFFEE: "Had coffee at Night Owl", TALK_NIGHT_OWL_REGULAR: "Talked with a Night Owl regular",
       BUY_907LIST: "Bought from 907List", SELL_907LIST: "Sold through 907List", BUS_TRAVEL: "Rode the People Mover",
+      DELIVER_907LIST: "Delivered a 907List sale", QUICK_SELL_907LIST: "Took a 907List quick sell",
+      FILL_BUYER_REQUEST: "Filled a buyer's request", BUY_BULK_907LIST: "Bought a 907List lot",
       WALK_HOME: "Walked home", TRAVEL: "Traveled", TRAIN_ATTRIBUTE: "Trained", GAMBLE: "Played the backroom game",
       SLEEP_HOME: "Rested at home", LAY_LOW: "Laid low", PAY_DEBT: "Paid Dre", END_MARKET: "Finished trading",
       ROB: "Tried a Rob", CONTACT_VISIT: "Visited a contact", BUY_LAPTOP: "Bought a used laptop",
@@ -1917,14 +2278,30 @@
     if (state.run.slot <= 1) return roll < 5 ? "yalonda" : roll < 7 ? "juan" : null;
     return roll < 5 ? "juan" : roll < 7 ? "yalonda" : null;
   }
+  // Reading the board and meeting a seller are two different permissions. The
+  // board is a phone surface and travels with the player; a meetup only happens
+  // where the tier reaches, which is why a Scrapper standing Downtown can browse
+  // and cannot buy.
   function nineZeroSevenListAccess(state, surface = "phone") {
     if (!state.knowledge?.knows907List) return { visible: false, available: false, reason: "The link is still unknown." };
-    if (surface === "home") return state.inventory.laptop
-      ? { visible: true, available: true, reason: "Five listings refresh daily." }
-      : { visible: false, available: false, reason: "A laptop is required at home." };
-    return state.phone?.active
-      ? { visible: true, available: true, reason: "Three listings refresh every two days." }
-      : { visible: true, available: false, reason: "Phone service is off." };
+    if (surface === "home" && !state.inventory.laptop) return { visible: false, available: false, reason: "A laptop is required at home." };
+    if (!state.phone?.active && surface !== "home") return { visible: true, available: false, reason: "Phone service is off." };
+    const config = marketTierConfig(state);
+    return { visible: true, available: true, reason: `${config.name} tier. ${config.listings} listings refresh daily.` };
+  }
+
+  // Whether a seller will actually meet you where you are standing.
+  function marketMeetupAvailability(state) {
+    const access = nineZeroSevenListAccess(state, "phone");
+    if (!access.available) return { available: false, reason: access.reason };
+    const district = marketMeetupDistrict(state);
+    if (!district) {
+      const config = marketTierConfig(state);
+      return config.districts.length > 1
+        ? { available: false, reason: "No 907List sellers meet out here. Spenard or Downtown." }
+        : { available: false, reason: "Scrapper meetups happen in Spenard only." };
+    }
+    return { available: true, reason: district === "downtown" ? "Downtown meetup: better margins, more exposure." : "Spenard meetup." };
   }
   // The shift the player worked most recently, offered as a shortcut so the
   // repeated daily action does not cost four routing taps. Returns null until
@@ -3628,6 +4005,9 @@
     state.run.slot = reachesDayEnd ? SLOTS.length - 1 : oldSlot + timeCost;
     restorePhoneIfReady(state, slotNumber(oldDay, oldSlot));
     resolveJobApplications(state);
+    resolveMarketSells(state);
+    resolveBuyerRequests(state);
+    noticeMarketInventory(state);
     Exposure.resolveObservationQueue(state);
     expireEffects(state);
     resolveCrewAssignments(state, random);
@@ -4968,31 +5348,138 @@
       }
       return base;
     }
+    // Buying is a meetup: one slot to travel, inspect, and pay, and a robbery
+    // roll on the way back with whatever is now in the bag.
     if (action.type === "BUY_907LIST") {
       const item = LISTING_ITEM_BY_ID[action.itemId];
       const list = base.nineZeroSevenList;
-      if (!nineZeroSevenListAccess(base, action.surface).available || !item || !listingSlate(base, action.surface).some((entry) => entry.id === item.id) || list.inventory.length >= LISTING_CAPACITY || base.player.cash < item.buy) return inputState;
+      const meetup = marketMeetupAvailability(base);
+      if (!meetup.available || !item
+        || !listingSlate(base, action.surface).some((entry) => entry.id === item.id)
+        || list.inventory.length >= marketCapacity(base)
+        || base.player.cash < item.buy) return inputState;
+      const reliability = MarketEvents.reliabilityFor(base, item.id, base.run.day);
+      markListingTaken(base, item.id);
+      // Someone else got there first. The slot is still gone: the trip happened.
+      if (MarketEvents.rollSnipe(base, item.id, reliability)) {
+        logEntry(base, `The ${item.name.toLowerCase()} is already gone when you get there. Somebody moved faster.`, "warn");
+        return advanceRun(base, { reason: "BUY_907LIST", suppressStory: true, summary: "Listing already taken" });
+      }
       spendCash(base, item.buy);
-      list.inventory.push({ id: `${base.run.day}:${base.run.slot}:${list.purchases}`, itemId: item.id, cost: item.buy, boughtDay: base.run.day });
+      list.inventory.push({ id: `${base.run.day}:${base.run.slot}:${list.purchases}`, itemId: item.id, cost: item.buy, boughtDay: base.run.day, listed: false });
       list.purchases += 1;
       logEntry(base, `You buy the ${item.name.toLowerCase()} for $${item.buy} and make room to hold it.`, "good");
-      return base;
+      marketMeetupRobbery(base, `buy:${item.id}`);
+      return advanceRun(base, { reason: "BUY_907LIST", suppressStory: true, cashDelta: item.buy, summary: `Bought ${item.name.toLowerCase()}` });
     }
+    // Listing costs nothing but the wait. A buyer answers next morning, or at
+    // Broker tier immediately, and either way the delivery is its own slot.
     if (action.type === "SELL_907LIST") {
       const list = base.nineZeroSevenList;
-      const index = list.inventory.findIndex((entry) => entry.id === action.inventoryId);
-      const held = list.inventory[index];
+      const held = list.inventory.find((entry) => entry.id === action.inventoryId);
       const item = held && LISTING_ITEM_BY_ID[held.itemId];
-      if (index < 0 || !item || (!nineZeroSevenListAccess(base, action.surface || "phone").available && !nineZeroSevenListAccess(base, "home").available)) return inputState;
-      const random = makeRandom(base.run.rngState);
-      const payout = random.int(item.resale[0], item.resale[1]);
-      base.run.rngState = random.state;
-      list.inventory.splice(index, 1);
-      list.sales += 1;
-      list.profit += payout - held.cost;
-      addCleanCash(base, payout);
-      logEntry(base, `A 907List buyer takes the ${item.name.toLowerCase()} for $${payout}. The money is clean.`, "good");
+      if (!held || held.listed || !item || !nineZeroSevenListAccess(base, action.surface || "phone").available) return inputState;
+      const config = marketTierConfig(base);
+      const district = marketMeetupDistrict(base) || HOME_DISTRICT_ID;
+      held.listed = true;
+      list.pendingSells.push({
+        id: `sell:${base.run.day}:${base.run.slot}:${held.id}`,
+        inventoryId: held.id, itemId: item.id, cost: held.cost, district,
+        status: "listed", price: 0,
+        resolveAtSlot: config.sellDelayDays === 0
+          ? slotNumber(base.run.day, base.run.slot)
+          : slotNumber(base.run.day + config.sellDelayDays, 0),
+      });
+      logEntry(base, config.sellDelayDays === 0
+        ? `You post the ${item.name.toLowerCase()}. Verified listings move the same day.`
+        : `You post the ${item.name.toLowerCase()} and wait. Somebody answers by morning, or nobody does.`, "");
+      // A verified listing resolves in the slot it was posted, which is the
+      // whole benefit of the tier. Everything else waits for advanceRun.
+      if (config.sellDelayDays === 0) resolveMarketSells(base);
       return base;
+    }
+    // The delivery half of an open-market sale. One slot, one meetup, one more
+    // robbery roll while carrying everything still unsold.
+    if (action.type === "DELIVER_907LIST") {
+      const list = base.nineZeroSevenList;
+      const pending = list.pendingSells.find((entry) => entry.id === action.pendingId && entry.status === "ready");
+      const held = pending && list.inventory.find((entry) => entry.id === pending.inventoryId);
+      const item = held && LISTING_ITEM_BY_ID[held.itemId];
+      const meetup = marketMeetupAvailability(base);
+      if (!pending || !held || !item || !meetup.available) return inputState;
+      if (marketMeetupRobbery(base, `deliver:${pending.id}`)) {
+        return advanceRun(base, { reason: "DELIVER_907LIST", suppressStory: true, summary: "Robbed at the meetup" });
+      }
+      list.inventory = list.inventory.filter((entry) => entry.id !== held.id);
+      list.pendingSells = list.pendingSells.filter((entry) => entry.id !== pending.id);
+      const margin = recordMarketFlip(base, { item, payout: pending.price, cost: held.cost, district: pending.district });
+      logEntry(base, `The buyer takes the ${item.name.toLowerCase()} for $${pending.price}. ${margin >= 0 ? `That is $${margin} clean.` : `That is $${Math.abs(margin)} down, and they made sure 907List heard about it.`}`, margin >= 0 ? "good" : "warn");
+      return advanceRun(base, { reason: "DELIVER_907LIST", suppressStory: true, cashDelta: pending.price, summary: `Sold ${item.name.toLowerCase()} (+$${pending.price})` });
+    }
+    // Certainty for twenty percent. The buyer comes to you, same slot, and never
+    // ghosts — the trade is margin for a day you can plan around.
+    if (action.type === "QUICK_SELL_907LIST") {
+      const list = base.nineZeroSevenList;
+      const held = list.inventory.find((entry) => entry.id === action.inventoryId);
+      const item = held && LISTING_ITEM_BY_ID[held.itemId];
+      const meetup = marketMeetupAvailability(base);
+      if (!held || held.listed || !item || !meetup.available || !marketTierConfig(base).quickSell) return inputState;
+      if (marketMeetupRobbery(base, `quick:${held.id}`)) {
+        return advanceRun(base, { reason: "QUICK_SELL_907LIST", suppressStory: true, summary: "Robbed at the meetup" });
+      }
+      const district = marketMeetupDistrict(base) || HOME_DISTRICT_ID;
+      const payout = MarketEvents.salePrice(base, item, { condition: item.condition, nonce: `quick:${held.id}`, district, quickSell: true });
+      list.inventory = list.inventory.filter((entry) => entry.id !== held.id);
+      const margin = recordMarketFlip(base, { item, payout, cost: held.cost, district });
+      logEntry(base, `A known buyer takes the ${item.name.toLowerCase()} off your hands for $${payout}, no haggling. ${margin >= 0 ? `$${margin} clean.` : `$${Math.abs(margin)} down.`}`, margin >= 0 ? "good" : "warn");
+      return advanceRun(base, { reason: "QUICK_SELL_907LIST", suppressStory: true, cashDelta: payout, summary: `Quick sold ${item.name.toLowerCase()} (+$${payout})` });
+    }
+    // Filling a named buyer's ask. The sourcing was the work, so this pays a
+    // premium and never flakes — but the player had to read the request and go
+    // find the thing.
+    if (action.type === "FILL_BUYER_REQUEST") {
+      const list = base.nineZeroSevenList;
+      const request = marketRequests(base).find((entry) => entry.id === action.requestId);
+      const held = list.inventory.find((entry) => entry.id === action.inventoryId);
+      const item = held && LISTING_ITEM_BY_ID[held.itemId];
+      const meetup = marketMeetupAvailability(base);
+      if (!request || !held || held.listed || !item || !meetup.available
+        || item.category !== request.category || item.buy > request.budget) return inputState;
+      if (marketMeetupRobbery(base, `fill:${request.id}`)) {
+        return advanceRun(base, { reason: "FILL_BUYER_REQUEST", suppressStory: true, summary: "Robbed at the meetup" });
+      }
+      const district = marketMeetupDistrict(base) || HOME_DISTRICT_ID;
+      const payout = MarketEvents.salePrice(base, item, { condition: item.condition, nonce: `fill:${request.id}`, district, request: true });
+      list.inventory = list.inventory.filter((entry) => entry.id !== held.id);
+      list.buyerRequests = list.buyerRequests.filter((entry) => entry.id !== request.id);
+      list.filledRequests += 1;
+      const margin = recordMarketFlip(base, { item, payout, cost: held.cost, district });
+      logEntry(base, `${request.buyerName} takes the ${item.name.toLowerCase()} for $${payout} and says to keep them in mind. $${Math.abs(margin)} ${margin >= 0 ? "clean" : "down"}.`, margin >= 0 ? "good" : "warn");
+      return advanceRun(base, { reason: "FILL_BUYER_REQUEST", suppressStory: true, cashDelta: payout, summary: `Filled ${request.buyerName}'s ask (+$${payout})` });
+    }
+    // Three items from a seller who needs them gone today. Thirty percent off the
+    // lot, and every dollar of it becomes carried value until it moves.
+    if (action.type === "BUY_BULK_907LIST") {
+      const list = base.nineZeroSevenList;
+      const deal = marketBulkDeal(base);
+      const meetup = marketMeetupAvailability(base);
+      if (!deal || deal.id !== action.dealId || !meetup.available
+        || list.inventory.length + deal.itemIds.length > marketCapacity(base)
+        || base.player.cash < deal.price) return inputState;
+      spendCash(base, deal.price);
+      deal.itemIds.forEach((itemId, index) => {
+        const item = LISTING_ITEM_BY_ID[itemId];
+        markListingTaken(base, itemId);
+        list.inventory.push({
+          id: `${base.run.day}:${base.run.slot}:${list.purchases + index}`,
+          itemId, cost: Math.round(item.buy * (1 - deal.discount)), boughtDay: base.run.day, listed: false,
+        });
+      });
+      list.purchases += deal.itemIds.length;
+      list.bulkDeal = { ...deal, taken: true };
+      logEntry(base, `The seller wants the whole lot gone. Three items for $${deal.price}, $${deal.listPrice - deal.price} under asking, and now you are carrying all of it.`, "good");
+      marketMeetupRobbery(base, `bulk:${deal.id}`);
+      return advanceRun(base, { reason: "BUY_BULK_907LIST", suppressStory: true, cashDelta: deal.price, summary: `Bought a three-item lot for $${deal.price}` });
     }
     if (action.type === "BUY_LAPTOP") {
       const offeredAtNightOwl = nightOwlAvailability(base).available
@@ -5001,8 +5488,8 @@
       if ((!base.nineZeroSevenList.known && !offeredAtNightOwl) || base.inventory.laptop || base.player.cash < 250) return inputState;
       spendCash(base, 250);
       base.inventory.laptop = true;
-      base.nineZeroSevenList.tier = "upgraded";
-      logEntry(base, "The used laptop boots at home. Five listings refresh there every day.", "good");
+      base.nineZeroSevenList.tier = marketTier(base);
+      logEntry(base, "The used laptop boots at home. Four listings a day now, with condition and seller history on every one, and Downtown sellers will meet you.", "good");
       return base;
     }
     if (action.type === "VISIT_NIGHT_OWL") {
@@ -5671,6 +6158,8 @@
     APPLY_JOB: "Application Left", PAY_PHONE_BILL: "Phone Bill Paid", PAY_RENT: "Rent Paid",
     BUY_FROM_DEALER: "Deal Done", ASK_DEALER: "Word Passed", RESOLVE_EVENT: "Choice Made",
     ROB: "Rob Resolved", CONTACT_VISIT: "Visit Complete", BUY_LAPTOP: "Laptop Acquired",
+    BUY_907LIST: "Meetup Done", DELIVER_907LIST: "Sale Closed", QUICK_SELL_907LIST: "Quick Sell Done",
+    FILL_BUYER_REQUEST: "Request Filled", BUY_BULK_907LIST: "Lot Acquired",
   };
 
   // Diffs two committed states into the compact "what just happened" card.
@@ -5744,7 +6233,7 @@
     VERSION, RUN_DAYS, PRESSURE_DAYS, MAX_ENERGY, SLOTS, SAVE_KEY, LEGACY_SAVE_KEYS, PHONE_BILL, WEEKLY_RENT, HOME_DISTRICT_ID, DISTRICT_ACTIONS, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
     STREET_NAME_MAX, DEFAULT_STREET_NAMES, ATTRIBUTE_DEFAULTS, LEGACY_ATTRIBUTES, STREET_IDENTITIES, sanitizeStreetName,
     CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS, ENTITY_REGISTRY, ENTITY_MATCH_ORDER, PLUGS, BOOST_TARGETS, SPENARD_JOBS, STARTER_JOB_IDS, JOB_APPROACHES, JOB_RANK_THRESHOLDS,
-    LISTING_ITEMS, LISTING_CAPACITY, NIGHT_OWL_REGULARS, NIGHT_OWL_BOARD, HOUSEHOLD_NPCS, SOCIAL_CONTACTS, STORY_CONTACTS, PHONE_INTEL, DOWNTOWN_CONTENT_STUBS, DOWNTOWN_AMBIENT,
+    LISTING_ITEMS, LISTING_CAPACITY, MARKET: Market, marketEvents: MarketEvents, NIGHT_OWL_REGULARS, NIGHT_OWL_BOARD, HOUSEHOLD_NPCS, SOCIAL_CONTACTS, STORY_CONTACTS, PHONE_INTEL, DOWNTOWN_CONTENT_STUBS, DOWNTOWN_AMBIENT,
     SPENARD_BLOCKS, SOLDIER_RECRUIT_COST, SOLDIER_BASE_CAPACITY, SOLDIER_CAPACITY_PER_BLOCK, SOLDIERS_PER_BLOCK_CAP,
     SHARK_BORROWERS, SHARK_TERMS, DRE_MISSIONS, DRE_COLLECTOR_TIERS, ELI_LIEUTENANT_UNLOCK, RESPECT_STAGE_THRESHOLDS,
     DISTRICT_CONTROL_TIERS, DISTRICT_CONTROL_CAPSTONE_BLOCKS, DISTRICT_CONTROL_LABEL, ELI_OPERATION_POLICIES,
@@ -5789,6 +6278,11 @@
       districtActionAvailability, aroundActions, travelAvailability, householdPresence, nineZeroSevenListAccess,
       nightOwlStashUsed, nightOwlStashAvailability, relationshipLabel,
       checkpointDay, weekZeroProgress, listingSlate, nightOwlBoardItems, nightOwlRegularFor, nightOwlAvailability, listingInventoryValue,
+      // v1.9b broker track. marketOverview is the one read the 907List page
+      // needs; the rest exist so tests and the simulator can ask a narrower
+      // question without recomputing a tier gate slightly differently.
+      marketTier, marketTierConfig, marketCapacity, marketOverview, marketMeetupDistrict, marketMeetupAvailability,
+      marketCarriedValue, marketRobberyPreview, marketBulkDeal, marketRequests, requestFillCandidates, specialistCategory,
     },
   };
 });

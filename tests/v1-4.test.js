@@ -170,7 +170,7 @@ test("legacy v3 saves hydrate directly into pressure with inferred lender state"
   assert.equal(loaded.run.checkpointDay, 7);
   assert.equal(loaded.lender.status, "active");
   assert.ok(loaded.onboarding);
-  assert.equal(C.SAVE_KEY, "907ogr_v6");
+  assert.equal(C.SAVE_KEY, "907ogr_v7");
 });
 
 test("Night Owl postings rotate deterministically and regulars keep separate relationships", () => {
@@ -207,30 +207,41 @@ test("Cal Level 2 and Lena's third shift both unlock gambling through a scene", 
   assert.equal(lena.run.pendingEvent?.id, "gambling_discovery");
 });
 
-test("907List has three deterministic listings, a three-item cap, and clean resale profit", () => {
+// v1.9b replaced the free instant resale this used to assert. The board is now
+// two deterministic Scrapper listings, a buy costs a slot, and the money only
+// lands after a delivery on a later day.
+test("907List Scrapper listings are deterministic, capped, and only pay out on delivery", () => {
   let state = fresh(13);
   state.nineZeroSevenList.known = true;
   state.knowledge.knows907List = true;
   state.player.cash = 500;
   state.player.cleanCash = 500;
   state.player.dirtyCash = 0;
-  const slate = C.selectors.listingSlate(state);
-  assert.equal(slate.length, 3);
-  assert.equal(new Set(slate.map((item) => item.id)).size, 3);
-  for (const item of slate) {
-    state = clearStory(C.reduceGame(state, { type: "BUY_907LIST", itemId: item.id }));
+  const slate = C.selectors.listingSlate(state, "phone");
+  assert.equal(slate.length, 2);
+  assert.equal(new Set(slate.map((item) => item.id)).size, 2);
+  assert.deepEqual(C.selectors.listingSlate(state, "phone").map((item) => item.id), slate.map((item) => item.id));
+  // Scrapper tier shows a title and a price and nothing else.
+  for (const listing of slate) {
+    assert.equal(listing.condition, null);
+    assert.equal(listing.reliability, null);
   }
-  assert.equal(state.nineZeroSevenList.inventory.length, 3);
-  const blocked = C.reduceGame(state, { type: "BUY_907LIST", itemId: slate[0].id });
-  assert.equal(blocked, state);
+
+  const target = slate.find((listing) => !C.marketEvents.rollSnipe(state, listing.id, "mixed"));
+  assert.ok(target, "seed 13 sniped every Scrapper listing");
+  const slotBefore = state.run.slot;
+  state = clearStory(C.reduceGame(state, { type: "BUY_907LIST", itemId: target.id, surface: "phone" }));
+  assert.equal(state.nineZeroSevenList.inventory.length, 1);
+  assert.notEqual(state.run.slot, slotBefore, "a meetup has to cost a part of the day");
+
   const held = state.nineZeroSevenList.inventory[0];
-  const item = C.LISTING_ITEMS.find((entry) => entry.id === held.itemId);
   const cleanBefore = state.player.cleanCash;
-  state = C.reduceGame(state, { type: "SELL_907LIST", inventoryId: held.id });
-  const payout = state.player.cleanCash - cleanBefore;
-  assert.ok(payout >= item.resale[0] && payout <= item.resale[1]);
-  assert.equal(state.nineZeroSevenList.inventory.length, 2);
-  assert.equal(state.nineZeroSevenList.profit, payout - held.cost);
+  // Listing is free and resolves nothing on its own: this is the "post and pray".
+  state = C.reduceGame(state, { type: "SELL_907LIST", inventoryId: held.id, surface: "phone" });
+  assert.equal(state.player.cleanCash, cleanBefore, "listing must not pay before a buyer answers");
+  assert.equal(state.nineZeroSevenList.pendingSells.length, 1);
+  assert.equal(state.nineZeroSevenList.pendingSells[0].status, "listed");
+  assert.equal(state.nineZeroSevenList.inventory.length, 1, "the item stays held until it is delivered");
 });
 
 test("travel applies a $5 fare unless a pass covers it", () => {

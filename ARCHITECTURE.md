@@ -34,7 +34,8 @@ v05.css               The entire stylesheet.
 src/data/             Static definitions. No logic, no state.
   products.js         PRODUCTS, PRODUCT_BY_ID
   locations.js        HOME_DISTRICT_ID, NEIGHBORHOODS, TERRITORIES, SPENARD_BLOCKS, AREA_BY_ID
-  items.js            GEAR, BASE_UPGRADES, LISTING_ITEMS + lookups
+  items.js            GEAR, BASE_UPGRADES (re-exports the 907List catalogue)
+  market.js           907List: LISTING_ITEMS, MARKET_TIERS, ROBBERY, buyer requests
   jobs.js             SPENARD_JOBS, JOB_APPROACHES, JOB_RANK_THRESHOLDS, STARTER_JOB_IDS
   npcs.js             CREW, DEALERS, PLUGS, HOUSEHOLD_NPCS, NIGHT_OWL_REGULARS + lookups
   observations.js     OBSERVATION_CATEGORIES, createObservation(), addObservation(), effectiveCount()
@@ -46,6 +47,9 @@ src/events/
   registry.js         ENTITY_REGISTRY, ENTITY_MATCH_ORDER, EVENT_FLAVOR, EVENT_CONTEXT, AMBIENT_FLAVOR
   cards.js            event(), effectPreview(), activeEvent() — every event card
   random.js           Seeded RNG + isEligible() / getWeight()
+  market-events.js    907List rolls: robbery risk, snipes, flakes, sale price,
+                      buyer requests, bulk deals. stringHash only, never
+                      run.rngState, and never game-core.
 
 src/exposure/
   engine.js           The Exposure System: ledgers in, dispositions out, gossip
@@ -73,6 +77,8 @@ tests/                node --test, no runner config
 | A thing an action makes visible | `OBSERVED_ACTIONS` in `game-core.js` |
 | A new job | `src/data/jobs.js` |
 | A product, district, or gear item | the matching `src/data/` file |
+| A 907List listing, tier, or risk constant | `src/data/market.js` |
+| A 907List probability roll | `src/events/market-events.js`, hashed off the seed |
 | Tooltip copy for a name | `ENTITY_REGISTRY` in `src/events/registry.js` |
 | Ambient street lines | `AMBIENT_FLAVOR` in `src/events/registry.js` |
 | A new action the player can take | a case in `reduceGame` (`game-core.js`) |
@@ -113,7 +119,7 @@ module-scoped and `window.playSound` is `undefined`.
 
 ## State and saves
 
-`SAVE_KEY = "907ogr_v6"`, `VERSION = 6`, `LEGACY_SAVE_KEYS = ["907ogr_v5", "907ogr_v4", "907ogr_v3"]`.
+`SAVE_KEY = "907ogr_v7"`, `VERSION = 7`, `LEGACY_SAVE_KEYS = ["907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"]`.
 
 Top-level state sections:
 
@@ -137,12 +143,19 @@ Notable ones:
   surviving `trust` / `attention` / `respect` integers are **inert**: they exist
   so a v5 save has somewhere to land during migration, and nothing gates on them
 - `people` — `household`, `crew`, `dealers`
+- `nineZeroSevenList` — the 907List broker track. `tier`, `flipCount`,
+  `disputes`, `categoryFlips`, `specialist`, `inventory[]`, `pendingSells[]`,
+  `buyerRequests[]`, `bulkDeal`, `taken`. **`tier` and `specialist` are mirrors,
+  not sources**: both are recomputed by `marketTier()` / `specialistCategory()`
+  on every hydrate and after every flip, so a hand-edited or stale save cannot
+  grant a tier. Note this is *not* `state.market`, which is the plug/drug market
+  visibility flag and unrelated
 
 ### Migration rules
 
 - **Additive only.** Never remove or repurpose a field; add a new one.
-- `migrateSave(value)` accepts versions **3, 4, and 5** and returns `null` for
-  anything older or malformed. It is one flat pass, not a v3→v4→v5 chain: every
+- `migrateSave(value)` accepts versions **3, 4, 5, and 6** and returns `null` for
+  anything older or malformed. It is one flat pass, not a v3→v4→v5→v6 chain: every
   accepted version takes the same code path. `hydrateRun` fills defaults via
   `mergeDefaults`.
 - `hydrateRun` captures the version **before** calling `migrateSave`, because
@@ -362,7 +375,7 @@ Two invariants worth naming:
 ## Testing
 
 ```bash
-npm test                              # 377 tests
+npm test                              # 401 tests
 node tests/simulate-runs.js --total 200
 node tests/simulate-runs.js --total 2000   # slower, for balance work
 ```
@@ -377,21 +390,27 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 Compare after. A matching hash proves you changed nothing the player can see.
 
-**v1.9a baselines** (gameplay changed on purpose, so these replace the v1.8.1
-hash of `5890e37a…`):
+**v1.9b baselines** (907List gameplay changed on purpose and two strategies were
+added, so these replace the v1.9a hashes of `c2f0e24d…` / `3e0b84f6…`):
 
 | Run | SHA-256 |
 |---|---|
-| `--total 200` | `c2f0e24d5e9355bf3a0372a978c2f226c1442342bf0c9c27bcecfe74332f1bc2` |
-| `--total 2000` | `3e0b84f6d2856ddf292eed0aadeb5a5e8d46540ef215d8ac3d8efb30590453f1` |
+| `--total 200` | `d4474787bd02ce5b08c3a24bb10c3e738616c5367843bbc641e9b8026a0a8a25` |
+| `--total 2000` | `ddd7669506d2e85cbcb1c5a1c9a7617211af928fcb2fbf09033a75c8c8af1d8f` |
 
-Note the two forms differ: `--total 200` splits 200 runs across the eleven
+Note the two forms differ: `--total 200` splits 200 runs across the thirteen
 strategies, while a bare `200` runs 200 *per strategy*.
 Nothing in the run path may use `Math.random()` — only `makeRandom(seed)`.
 
-The simulator plays eleven strategies (cautious, balanced, aggressive, stickup,
-legal_worker, trader, thief, gambler, trainer, mixed_freedom, operator) and
-reports endings, economy, story beat counts, identity assignment, and dead ends.
+The simulator plays thirteen strategies (cautious, balanced, aggressive, stickup,
+legal_worker, trader, thief, gambler, trainer, mixed_freedom, operator, and the
+v1.9b pair flipper and broker) and reports endings, economy, story beat counts,
+identity assignment, and dead ends.
+
+The two 907List strategies also report a `market` block with per-tier daily
+income against the design targets. That is the only way to tell a tuned tier
+ladder from unreachable content, so a change to `src/data/market.js` should be
+checked against it rather than against the hash alone.
 
 ---
 

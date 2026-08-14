@@ -1,6 +1,6 @@
 {
   "name": "907hustle-game",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.",
   "main": "game-core.js",
   "directories": {

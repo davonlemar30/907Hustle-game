@@ -2,10 +2,78 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-The current playable build is **v1.9a: Exposure System and Bug Fixes**.
+The current playable build is **v1.9b: 907List Tiered Broker System**.
 
 New here? Read [ARCHITECTURE.md](ARCHITECTURE.md) — file map, state shape, event
 card schema, and the rules a change has to hold to.
+
+## What changed in v1.9b
+
+**907List stopped being a money printer.** Buying and selling used to cost no
+time, carry no risk, and resolve instantly, so there was never a reason not to
+spam it. It is now a legal hustle with three earned tiers, real opportunity cost,
+and a risk number the player moves by deciding when and where to meet.
+
+- **Three tiers.** *Scrapper* (default) sees two listings a day, a title and a
+  price and nothing else, and meets sellers in Spenard only. *Flipper* (the $250
+  laptop) sees four with condition and seller reliability, unlocks Downtown
+  meetups at a 30% better margin, and can quick-sell. *Broker* (ten clean flips
+  with fewer than two disputes) gets named buyers who text what they need, bulk
+  lots from distressed sellers, and verified status that sells the same day.
+- **Appraisal is the verb.** Asking price and true value are separate fields, and
+  the board carries listings worth less than the seller wants for them. A
+  Scrapper gets no condition readout, so "Flatscreen, cracked bezel — $65" is the
+  whole tell. Deliver one at a loss and it is a dispute, and two disputes close
+  Broker standing for the run.
+- **Time is the balancer.** A buy costs a part of the day. Posting is free; the
+  delivery costs another part of the day, the next morning. A quick sell trades
+  20% of the margin for the same slot and certainty. 907List now competes with
+  gym, jobs, the Night Owl, and the drug loop for the same four slots.
+- **Robbery is a decision, not a die roll.**
+  `0.03 × (carried/100) × district × time of day × (1 + heat × 0.1)`. Two hundred
+  dollars of stock Downtown at Night on heat 4 is **38%**; the same bag in
+  Spenard on a Morning is **3%**. The number is shown on the page before you
+  commit, because a risk the player cannot see is not a decision.
+- **Every roll is replay-stable.** Snipes, flakes, price volatility, and robbery
+  all hash the seed rather than drawing from `run.rngState`, so an unrelated
+  encounter earlier in the day cannot change how a flip turns out.
+- **The social layer notices.** Clean flips reach the household, a robbery
+  reaches the neighborhood, held stock gets noticed weekly, and Broker standing
+  goes out on the reputation channel. A big enough day clears Curtis's $200
+  volume filter, which is how the legal hustle finally shows up on his radar.
+
+**Saves are v7.** v3 through v6 all migrate. The old string tier is dropped and
+re-derived rather than trusted, so a v6 save lands on whatever the laptop and its
+flip record actually justify.
+
+**Balance, measured over 2,000 seeded runs.** Two new simulation strategies
+(`flipper`, `broker`) work the board so the tier ladder can be measured instead
+of asserted:
+
+| Tier | Measured | Target from the design doc |
+|---|---|---|
+| 1 — Scrapper | **$37.9/day** | $30–50 |
+| 2 — Flipper | **$71.3/day** | $60–100 |
+| 3 — Broker | **$34.2/day** | $100–150 |
+
+Tiers 1 and 2 land in band. **Tier 3 does not, and the reason is structural
+rather than a tuning miss:** the ten-flip gate opens around day 11 of a 14-day
+run, so Broker gets two or three days to earn, most of a bankroll is locked in
+stock when the run ends, and the last days are spent on the final plan. Half of
+907List-focused runs reach Broker (76 of 153), so the content is not unreachable
+— it just cannot earn at the stated rate inside the run length. Reaching
+$100–150/day would also make 907List the strongest income source in the game by a
+wide margin: the best existing strategy, `legal_worker`, averages about $79/day.
+Left as specified and reported rather than tuned around.
+
+Existing strategies are unmoved: the eleven pre-v1.9b profiles sit within **3.5%**
+of their v1.9a averages and the economy overall within **0.34%**. 401 tests pass
+and 2,000 seeded runs finish with zero dead ends.
+
+| Run | SHA-256 |
+|---|---|
+| `--total 200` | `d4474787bd02ce5b08c3a24bb10c3e738616c5367843bbc641e9b8026a0a8a25` |
+| `--total 2000` | `ddd7669506d2e85cbcb1c5a1c9a7617211af928fcb2fbf09033a75c8c8af1d8f` |
 
 ## What changed in v1.9a
 
@@ -148,9 +216,11 @@ All primary controls target a minimum 44px touch area. The shell is designed for
 
 ## Save compatibility
 
-v1.8 saves use schema version **5** and local-storage key `907ogr_v5`.
+v1.9b saves use schema version **7** and local-storage key `907ogr_v7`.
 
-The loader continues to read `907ogr_v4` and `907ogr_v3` once, migrate them to v5, and preserve:
+The loader continues to read `907ogr_v6`, `907ogr_v5`, `907ogr_v4`, and `907ogr_v3` once, migrate them to v7, and preserve:
+
+- every 907List field a v6 save had, plus the broker track defaulted in: old sales carry over as the flip count they would have been, and the old string tier (`"basic"` / `"upgraded"`) is dropped and re-derived rather than trusted
 
 - completed relationship stages, choices, and outcome history
 - Curtis attention/respect and renamed territory ownership
@@ -214,12 +284,15 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 ## Verification
 
-- Node tests: **345 passing**
+- Node tests: **401 passing**
 - Deterministic simulations: **2,000 runs, zero crashes or dead ends**
-- Simulation SHA-256: `5890e37a3c039d4929fa59273857ec528b2a929c2de3cd4a7d2dbb7f895a6b76`
-  — **unchanged from v1.8**, which is the proof that the v1.8.1 refactor moved
-  no behavior
-- Build: `npm run build` completes in ~20ms with no circular imports
+- Simulation SHA-256: `ddd7669506d2e85cbcb1c5a1c9a7617211af928fcb2fbf09033a75c8c8af1d8f`
+  (`--total 2000`) and
+  `d4474787bd02ce5b08c3a24bb10c3e738616c5367843bbc641e9b8026a0a8a25`
+  (`--total 200`). Both moved from v1.9a on purpose: 907List gameplay changed and
+  two strategies were added. The eleven pre-existing strategies stay within 3.5%
+  of their v1.9a averages, and the economy overall within 0.34%.
+- Build: `npm run build` completes in ~30ms with no circular imports
 - Title art over the wire: 68KB at 375px, 145KB at 1280px, down from 1,976KB
 - Viewports: 320×568, 360×640, 375×812, 414×896, 640×480, 768×1024, 834×1112,
   1024×768, 1280×720, and 1440×900 — all with zero horizontal overflow and no

@@ -4,32 +4,50 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
-## In progress — v1.9a Exposure System and Bug Fixes
+## Shipped — v1.9b 907List Tiered Broker System
 
-Branch: `codex/v1-9a-exposure-system`. Under review, not yet merged.
+Branch: `codex/v1-9b-907list-broker`.
 
-- Flat relationship integers replaced by per-NPC observation ledgers read through
-  personality lenses; disposition is derived, never stored.
-- Eleven observation categories, four archetypes with per-character overrides,
-  five gossip channels, six shared disposition bands.
-- Clamped logarithmic diminishing returns, with betrayal exempt and missed
-  obligations escalating.
-- Heat above 8 / 10 / 12 propagates to household / neighborhood / network,
-  closing the connection the v1.8.1 audit filed as absent.
-- Save schema v6; v3, v4, and v5 migrate, converting old relationships into
-  ledger entries.
-- Two blockers fixed: the Start control now shows its disabled state and says
-  why, and the destination list is relative to where the player stands so
-  Downtown is no longer one-way.
-- Dev-only ledger inspector behind `localStorage 907_exposure_debug`.
+- 907List went from a risk-free money printer to a three-tier legal hustle:
+  Scrapper (2 blind listings, Spenard only, post and pray), Flipper (the laptop:
+  4 listings with condition and seller reliability, Downtown at +30% margin,
+  quick sell), Broker (named buyers who text, bulk lots, verified same-day
+  listings).
+- Asking price and true value are separate fields and the board carries junk, so
+  appraisal is a real read. A flip delivered at a loss is a dispute, and two
+  disputes close Broker standing for the run.
+- Time slot economy: a buy costs a part of the day, posting is free, delivery
+  costs another the next morning, a quick sell trades 20% for the same slot.
+- Contextual robbery risk, shown on the page before the player commits:
+  `0.03 × (carried/100) × district × time of day × (1 + heat × 0.1)`.
+- Every market roll hashes the seed instead of drawing from `run.rngState`, so
+  outcomes are stable across replays of the same day.
+- Exposure integration: clean flips to the household, robberies to the
+  neighborhood, held stock noticed weekly, Broker standing to reputation.
+- Save schema v7; v3 through v6 migrate.
 
-Gameplay changed on purpose, so the simulation hash moved. New 2,000-run
-baseline `3e0b84f6d2856ddf292eed0aadeb5a5e8d46540ef215d8ac3d8efb30590453f1`;
-377 tests pass; 2,000 seeded runs finish with zero dead ends; overall economy
-within 3.3% of v1.8.1.
+Measured over 2,000 seeded runs: Tier 1 **$37.9/day** (target $30–50) and Tier 2
+**$71.3/day** (target $60–100) both land in band. Tier 3 lands at **$34.2/day**
+against a $100–150 target — half of 907List runs reach Broker, but the ten-flip
+gate opens around day 11 of a 14-day run, so there is not enough run left to earn
+at that rate. Reported rather than tuned around; see README for the reasoning.
 
-**Next:** v1.9b, the 907List tiered broker system, which depends on the
-Exposure integration points this build ships.
+401 tests pass, 2,000 seeded runs finish with zero dead ends, and the eleven
+pre-existing strategies stay within 3.5% of their v1.9a averages. New baselines:
+`--total 200` `d4474787…`, `--total 2000` `ddd76695…`.
+
+**Next:** the stat architecture and attribute pass, which the robbery formula's
+escape-chance hook is already waiting on.
+
+## Shipped — v1.9a Exposure System and Bug Fixes
+
+Flat relationship integers replaced by per-NPC observation ledgers read through
+personality lenses · eleven observation categories, four archetypes, five gossip
+channels, six disposition bands · clamped logarithmic diminishing returns · heat
+above 8/10/12 propagates to household/neighborhood/network · save schema v6 ·
+Start-control disabled state and one-way Downtown both fixed · dev-only ledger
+inspector. 377 tests; 2,000-run baseline
+`3e0b84f6d2856ddf292eed0aadeb5a5e8d46540ef215d8ac3d8efb30590453f1`.
 
 ## Shipped — v1.8.1 (Refactor, Code Hygiene, and Architecture Prep)
 

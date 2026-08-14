@@ -1318,7 +1318,13 @@ function GameShell({ state, dispatch, onTitle }) {
   function navigate(nextTab, more = "root", sub = null, street = "root") {
     const apply = () => { setNav((prev) => ({ tab: nextTab, more, sub, token: prev.token + 1 })); if (nextTab === "street") setStreetPage(street); if (nextTab === "hustle") setHustlePage(street); };
     if (typeof document === "undefined" || typeof document.startViewTransition !== "function") { apply(); return; }
-    document.startViewTransition(() => ReactDOM.flushSync(apply));
+    // Switching tabs faster than a transition can finish makes the browser
+    // abort the in-flight one and reject its promises with InvalidStateError.
+    // The navigation itself still lands, so the rejection is noise; left
+    // unhandled it surfaces as an uncaught console error.
+    const transition = document.startViewTransition(() => ReactDOM.flushSync(apply));
+    const ignore = () => {};
+    if (transition) { transition.ready?.catch(ignore); transition.finished?.catch(ignore); transition.updateCallbackDone?.catch(ignore); }
   }
   const setTab = (nextTab) => navigate(nextTab);
   const setMorePage = (page) => setNav((prev) => ({ ...prev, more: page, sub: null }));

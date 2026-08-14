@@ -2,7 +2,37 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-The current playable build is **v1.8: Character, Relationship, and Hustle Rework**.
+The current playable build is **v1.8.1: Refactor, Code Hygiene, and Architecture Prep**.
+
+New here? Read [ARCHITECTURE.md](ARCHITECTURE.md) — file map, state shape, event
+card schema, and the rules a change has to hold to.
+
+## What changed in v1.8.1
+
+A structural pass. **No gameplay changed**: a 200-run seeded simulation hashes
+identical to v1.8, which is the check that nothing the player can see moved.
+
+- **Runtime Babel is gone.** JSX was compiled in the browser by
+  `@babel/standalone` on every load. `npm run build` now bundles with esbuild in
+  about 20ms, and React switched to its production builds. This also removes the
+  class of bug behind the v1.6 `playSound` crash: under Babel every top-level
+  declaration became a `window` property, and inside the bundle they are
+  module-scoped.
+- **The title art is 96.5% smaller on phones.** The 1.9MB PNG is now served as
+  WebP through `<picture>`: 68KB at 600px and under, 145KB above. The PNG
+  remains as a fallback.
+- **`game-core.js` split from 499KB to 371KB.** Product, district, job, item,
+  NPC, and event-card definitions moved into `src/data/` and `src/events/`.
+  `game-core.js` stays the barrel and its exported shape is unchanged.
+- **One event gate.** Card eligibility and weighting moved into
+  `isEligible()` / `getWeight()`, and all 60 story descriptors are now checked
+  against a schema by a test.
+- **~11MB of dead files deleted**: `script.js`, `events.js`, `combat.js`, and
+  `style.css` were unreferenced, and `907hustle/` was an old prototype holding
+  the same 5.5MB image twice.
+- **The character renames are locked in.** A test fails if `rook`, `mara`,
+  `kip`, or `miri` appears anywhere outside `migrateSave`, which still needs them
+  to load old saves.
 
 ## What changed in v1.8
 
@@ -81,7 +111,17 @@ Migration preserves already-clean cash and removes only future laundering action
 
 ## Development
 
-No build step is required. Serve the repository over HTTP and open `index.html`:
+There is a build step as of v1.8.1. Install once, then build:
+
+```bash
+npm install
+```
+
+```bash
+npm run build
+```
+
+Serve the repository over HTTP and open `index.html`:
 
 ```bash
 python3 -m http.server 8000
@@ -92,31 +132,52 @@ The active build is:
 ```text
 index.html
   ├── v05.css
-  ├── game-core.js
-  ├── encounters.js
-  └── ui.jsx
+  ├── react / react-dom (UMD, production, from unpkg)
+  └── ui.built.js          ← esbuild output, committed
+        ├── game-core.js   ← barrel over src/
+        ├── encounters.js
+        └── ui.jsx
 ```
+
+**`ui.built.js` is committed on purpose.** GitHub Pages serves this repo directly
+with no CI, so the bundle has to be in the repo. Rebuild and commit it with any
+change to `ui.jsx`, `game-core.js`, `encounters.js`, or `src/`.
 
 Run the automated checks with:
 
 ```bash
-node --check game-core.js
-node --check encounters.js
-node --test tests/*.test.js
+npm test
+```
+
+```bash
 node tests/simulate-runs.js --total 2000
-git diff --check
+```
+
+To prove a refactor changed no behavior, compare the seeded simulation hash
+before and after:
+
+```bash
+node tests/simulate-runs.js --total 200 | shasum -a 256
 ```
 
 ## Verification
 
-- Node tests: **337 passing**
+- Node tests: **345 passing**
 - Deterministic simulations: **2,000 runs, zero crashes or dead ends**
 - Simulation SHA-256: `5890e37a3c039d4929fa59273857ec528b2a929c2de3cd4a7d2dbb7f895a6b76`
-- Viewports: 320×568, 375×667, 390×844, 430×932, 375×560, and 1280×800
-- Browser criteria: zero console errors, zero horizontal overflow, usable Phone/Hustle locked states, correct five-tab navigation, and 44px controls
+  — **unchanged from v1.8**, which is the proof that the v1.8.1 refactor moved
+  no behavior
+- Build: `npm run build` completes in ~20ms with no circular imports
+- Title art over the wire: 68KB at 375px, 145KB at 1280px, down from 1,976KB
+- Viewports: 320×568, 360×640, 375×812, 414×896, 640×480, 768×1024, 834×1112,
+  1024×768, 1280×720, and 1440×900 — all with zero horizontal overflow and no
+  tap target under 44px
+- Browser criteria: zero console errors, usable Phone/Hustle locked states,
+  correct five-tab navigation, and no Babel in the page
 
 ## Documentation
 
+- [ARCHITECTURE.md](ARCHITECTURE.md) — file map, state shape, save migration, event card schema, and the constraints a change has to hold to. Start here.
 - [STORY_BIBLE.md](STORY_BIBLE.md) — current character voices, relationship rules, and story continuity
 - [VISION.md](VISION.md) — long-form design direction
 - [ROADMAP.md](ROADMAP.md) — release history and future work

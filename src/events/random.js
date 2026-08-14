@@ -35,6 +35,28 @@ function seededShuffle(items, seed, salt) {
   return out;
 }
 
+const HASH_CEILING = 4294967296;
+
+// A weighted pick keyed on a string rather than drawn from run.rngState.
+//
+// Same algorithm as weightedPick in game-core and weightedTemplate in
+// encounters.js, and deliberately not a third copy of the *stream* version: an
+// attribute check must resolve the same way on a replay of the same day, which
+// it cannot do if an unrelated encounter earlier in the day consumed a draw
+// first. Entries carry an optional `weight` and default to 1.
+function seededPick(items, key) {
+  if (!Array.isArray(items) || !items.length) return null;
+  const weights = items.map((item) => Math.max(0, Number(item && item.weight) || 0));
+  const total = weights.reduce((sum, value) => sum + value, 0);
+  if (total <= 0) return items[stringHash(key) % items.length];
+  let roll = (stringHash(key) / HASH_CEILING) * total;
+  for (let index = 0; index < items.length; index += 1) {
+    roll -= weights[index];
+    if (roll <= 0) return items[index];
+  }
+  return items[items.length - 1];
+}
+
 // Week Zero is the tutorial stretch, so the arcs that escalate pressure and the
 // cards that close a run are held back until it ends.
 const WEEK_ZERO_BLOCKED_CHAINS = ["dre_note", "curtis_pressure"];
@@ -69,6 +91,7 @@ module.exports = {
   stringHash,
   makeRandom,
   seededShuffle,
+  seededPick,
   isEligible,
   getWeight,
 };

@@ -29,6 +29,1070 @@
     mod
   ));
 
+  // src/data/attributes.js
+  var require_attributes = __commonJS({
+    "src/data/attributes.js"(exports, module) {
+      var ATTRIBUTE_IDS = ["combat", "charisma", "intelligence"];
+      var ATTRIBUTE_DEFAULTS = { combat: 1, charisma: 1, intelligence: 1 };
+      var ATTRIBUTE_MIN = 0;
+      var ATTRIBUTE_MAX = 12;
+      var ATTRIBUTES = [
+        {
+          id: "combat",
+          label: "Combat",
+          domain: "Violence",
+          purpose: "Robbery, confrontation, escape, and every physical outcome."
+        },
+        {
+          id: "charisma",
+          label: "Charisma",
+          domain: "Social",
+          purpose: "Being read well: interviews, tables, first impressions, a room at night."
+        },
+        {
+          id: "intelligence",
+          label: "Intelligence",
+          domain: "Economic",
+          purpose: "Appraisal, price certainty, planning, and knowing when not to be somewhere."
+        }
+      ];
+      var ATTRIBUTE_LABEL_TIERS = [
+        { floor: 8, label: "Elite" },
+        { floor: 6, label: "Dangerous" },
+        { floor: 4, label: "Solid" },
+        { floor: 2, label: "Capable" },
+        { floor: 0, label: "Green" }
+      ];
+      var ADVANTAGE_THRESHOLD = 3;
+      var CATASTROPHE_IMMUNITY_THRESHOLD = 6;
+      var GROWTH_RATES = { bag_work: 0.3, cardio: 0.2, sparring: 0.5 };
+      var GYM_ACTIVITIES = [
+        {
+          id: "bag_work",
+          label: "Bag work",
+          attribute: "combat",
+          blurb: "Reliable, safe, and the first sessions are the ones that count.",
+          requires: null
+        },
+        {
+          id: "cardio",
+          label: "Cardio",
+          attribute: "combat",
+          blurb: "Slower going. Builds the wind you need when a night goes wrong.",
+          requires: null
+        },
+        {
+          id: "sparring",
+          label: "Sparring",
+          attribute: "combat",
+          blurb: "The fastest way up, and the only one that can send you home hurt.",
+          requires: { attribute: "combat", value: 3 }
+        }
+      ];
+      var GYM_ACTIVITY_BY_ID = Object.fromEntries(GYM_ACTIVITIES.map((item) => [item.id, item]));
+      var SPARRING_INJURY_CHANCE = 0.15;
+      var SPARRING_INJURY_HEALTH = 10;
+      var GYM_STREAK_REQUIREMENT = 3;
+      var GYM_STREAK_BONUS = 1;
+      var GROWTH_CAP_PENALTY_FLOOR = 6;
+      var GROWTH_CAP_PENALTY = 0.5;
+      var IDENTITY_BEHAVIOR_COLUMNS = {
+        violence: "violence",
+        defiance: "violence",
+        betrayal: "violence",
+        heat_exposure: "violence",
+        presence: "presence",
+        discretion: "presence",
+        loyalty: "presence",
+        submission: "presence",
+        honesty: "presence",
+        financial: "financial",
+        growth: "financial"
+      };
+      var IDENTITY_BALANCE_MARGIN = 2;
+      var IDENTITY_RECENT_DAYS = 7;
+      var IDENTITY_MATRIX = {
+        combat: {
+          violence: "Shooter",
+          presence: "Enforcer",
+          financial: "Collector",
+          default: "Muscle"
+        },
+        charisma: {
+          violence: "Smooth Talker",
+          presence: "Connected",
+          financial: "Broker",
+          default: "People Person"
+        },
+        intelligence: {
+          violence: "Ghost",
+          presence: "Observer",
+          financial: "Quiet Money",
+          default: "Calculator"
+        },
+        balanced: {
+          violence: "Unpredictable",
+          presence: "Hustler",
+          financial: "Adaptable",
+          default: "New Face"
+        }
+      };
+      var IDENTITY_DESCRIPTIONS = {
+        Shooter: "People step back when you come up the block, and they are not wrong to.",
+        Enforcer: "You are the one somebody sends. Everyone knows which somebody.",
+        Collector: "What you are owed, you collect. The block has watched it happen.",
+        Muscle: "Nobody has decided what you want yet. They have decided what you can do.",
+        "Smooth Talker": "You have talked your way out of rooms other people got carried out of.",
+        Connected: "Your name comes up in conversations you were not in.",
+        Broker: "Two people who needed each other met through you, and both of them paid.",
+        "People Person": "You know everybody. It has not cost you anything yet.",
+        Ghost: "Things happen near you and nobody can say you were there.",
+        Observer: "You are always at the edge of it, and you are always still there after.",
+        "Quiet Money": "No jewelry, no noise, and somehow never short.",
+        Calculator: "You think two moves out. It reads as patience, which suits you.",
+        Unpredictable: "Nobody can guess your next move, which is its own kind of protection.",
+        Hustler: "Whatever the week needs, you are already doing it.",
+        Adaptable: "You have no lane, and that has never once slowed you down.",
+        "New Face": "The block is still deciding."
+      };
+      var OUTCOME_VALUES = { clean: 3, messy: 2, failure: 1, catastrophic: 0 };
+      var OUTCOME_SHAPES = {
+        robbery: { success: { clean: 0.55, messy: 0.45 }, failure: { failure: 0.72, catastrophic: 0.28 } },
+        dealer_robbery: { success: { clean: 0.45, messy: 0.55 }, failure: { failure: 0.6, catastrophic: 0.4 } },
+        confrontation: { success: { clean: 0.5, messy: 0.5 }, failure: { failure: 0.65, catastrophic: 0.35 } },
+        negotiation: { success: { clean: 0.5, messy: 0.5 }, failure: { failure: 0.7, catastrophic: 0.3 } },
+        escape: { success: { clean: 0.6, messy: 0.4 }, failure: { failure: 0.8, catastrophic: 0.2 } },
+        job_interview: { success: { clean: 0.45, messy: 0.55 }, failure: { failure: 1 } },
+        night_owl: { success: { clean: 0.5, messy: 0.5 }, failure: { failure: 0.85, catastrophic: 0.15 } },
+        gambling: { success: { clean: 0.4, messy: 0.6 }, failure: { failure: 0.8, catastrophic: 0.2 } },
+        market_meetup: { success: { clean: 0.7, messy: 0.3 }, failure: { failure: 0.55, catastrophic: 0.45 } }
+      };
+      var ACTION_ATTRIBUTE_MAP = {
+        robbery: "combat",
+        dealer_robbery: "combat",
+        confrontation: "combat",
+        escape: "combat",
+        negotiation: "charisma",
+        job_interview: "charisma",
+        night_owl: "charisma",
+        gambling: "charisma",
+        market_meetup: "intelligence"
+      };
+      var OUTCOME_OBSERVATIONS = {
+        robbery: {
+          clean: [{ type: "financial", event: "robbery_profit", channel: "direct" }],
+          messy: [
+            { type: "violence", event: "robbery_struggle", channel: "neighborhood" },
+            { type: "heat_exposure", event: "heat_seen_low", channel: "neighborhood" }
+          ],
+          failure: [{ type: "defiance", event: "attempted_robbery", channel: "neighborhood" }],
+          catastrophic: [
+            { type: "violence", event: "robbery_gone_loud", channel: "neighborhood" },
+            { type: "heat_exposure", event: "heat_seen_high", channel: "network" }
+          ]
+        },
+        dealer_robbery: {
+          clean: [{ type: "financial", event: "robbery_profit", channel: "direct" }],
+          messy: [{ type: "violence", event: "dealer_stickup", channel: "neighborhood" }],
+          failure: [{ type: "defiance", event: "attempted_robbery", channel: "neighborhood" }],
+          catastrophic: [
+            { type: "violence", event: "dealer_stickup", channel: "neighborhood" },
+            { type: "heat_exposure", event: "heat_seen_high", channel: "network" }
+          ]
+        },
+        confrontation: {
+          clean: [],
+          messy: [{ type: "violence", event: "street_fight", channel: "neighborhood" }],
+          failure: [],
+          catastrophic: [
+            { type: "violence", event: "serious_violence", channel: "neighborhood" },
+            { type: "heat_exposure", event: "heat_seen_high", channel: "network" }
+          ]
+        },
+        negotiation: {
+          clean: [],
+          messy: [],
+          failure: [],
+          catastrophic: [{ type: "violence", event: "street_fight", channel: "neighborhood" }]
+        },
+        escape: {
+          clean: [],
+          messy: [],
+          failure: [],
+          catastrophic: [{ type: "heat_exposure", event: "heat_seen_high", channel: "neighborhood" }]
+        },
+        job_interview: {
+          clean: [{ type: "growth", event: "hired_on", channel: "household" }],
+          messy: [],
+          failure: []
+        },
+        night_owl: {
+          clean: [],
+          messy: [],
+          failure: [],
+          catastrophic: [{ type: "violence", event: "made_a_scene", channel: "neighborhood" }]
+        },
+        gambling: {
+          clean: [],
+          messy: [],
+          failure: [],
+          catastrophic: [{ type: "financial", event: "gambling_debt", channel: "neighborhood" }]
+        },
+        market_meetup: {
+          // A clean meetup writes nothing. The flip itself already broadcasts
+          // `financial / 907list_profit` when it settles; a well-run handoff in a
+          // parking lot is simply not an event anybody reports.
+          clean: [],
+          messy: [{ type: "presence", event: "met_a_stranger", channel: "neighborhood" }],
+          failure: [],
+          catastrophic: [{ type: "violence", event: "robbery_victim", channel: "neighborhood" }]
+        }
+      };
+      var STANDING_PACING = {
+        capped: [{ floor: 4, multiplier: 0.25 }, { floor: 3, multiplier: 0.5 }],
+        open: [{ floor: 8, multiplier: 0.25 }, { floor: 5, multiplier: 0.5 }]
+      };
+      module.exports = {
+        ATTRIBUTE_IDS,
+        ATTRIBUTES,
+        ATTRIBUTE_DEFAULTS,
+        ATTRIBUTE_MIN,
+        ATTRIBUTE_MAX,
+        ATTRIBUTE_LABEL_TIERS,
+        ADVANTAGE_THRESHOLD,
+        CATASTROPHE_IMMUNITY_THRESHOLD,
+        GROWTH_RATES,
+        GYM_ACTIVITIES,
+        GYM_ACTIVITY_BY_ID,
+        SPARRING_INJURY_CHANCE,
+        SPARRING_INJURY_HEALTH,
+        GYM_STREAK_REQUIREMENT,
+        GYM_STREAK_BONUS,
+        GROWTH_CAP_PENALTY_FLOOR,
+        GROWTH_CAP_PENALTY,
+        IDENTITY_BEHAVIOR_COLUMNS,
+        IDENTITY_BALANCE_MARGIN,
+        IDENTITY_RECENT_DAYS,
+        IDENTITY_MATRIX,
+        IDENTITY_DESCRIPTIONS,
+        OUTCOME_VALUES,
+        OUTCOME_SHAPES,
+        ACTION_ATTRIBUTE_MAP,
+        OUTCOME_OBSERVATIONS,
+        STANDING_PACING
+      };
+    }
+  });
+
+  // src/selectors.js
+  var require_selectors = __commonJS({
+    "src/selectors.js"(exports, module) {
+      function checkpointDay(state) {
+        return state.run.checkpointDay || Infinity;
+      }
+      function controlled(state, areaId) {
+        var _a;
+        return ((_a = state.world.territories[areaId]) == null ? void 0 : _a.owner) === "player";
+      }
+      function slotNumber(day, slot) {
+        return (day - 1) * 4 + slot;
+      }
+      module.exports = {
+        checkpointDay,
+        controlled,
+        slotNumber
+      };
+    }
+  });
+
+  // src/events/random.js
+  var require_random = __commonJS({
+    "src/events/random.js"(exports, module) {
+      var { slotNumber } = require_selectors();
+      function normalizeSeed(seed) {
+        const numeric = Number(seed);
+        const fallback = 151461926;
+        return (Number.isFinite(numeric) ? numeric : fallback) >>> 0 || fallback;
+      }
+      function stringHash(value) {
+        let hash = 2166136261;
+        for (const char of String(value || "")) {
+          hash ^= char.charCodeAt(0);
+          hash = Math.imul(hash, 16777619);
+        }
+        return hash >>> 0;
+      }
+      function makeRandom(seed) {
+        let value = normalizeSeed(seed);
+        return {
+          next() {
+            value ^= value << 13;
+            value ^= value >>> 17;
+            value ^= value << 5;
+            value >>>= 0;
+            return value / 4294967296;
+          },
+          int(min, max) {
+            return Math.floor(this.next() * (max - min + 1)) + min;
+          },
+          pick(items) {
+            return items[Math.floor(this.next() * items.length)];
+          },
+          get state() {
+            return value >>> 0;
+          }
+        };
+      }
+      function seededShuffle(items, seed, salt) {
+        const random = makeRandom(stringHash(`${normalizeSeed(seed)}:${normalizeSeed(salt)}`));
+        const out = items.slice();
+        for (let index = out.length - 1; index > 0; index -= 1) {
+          const swap = random.int(0, index);
+          [out[index], out[swap]] = [out[swap], out[index]];
+        }
+        return out;
+      }
+      var HASH_CEILING = 4294967296;
+      function seededPick(items, key) {
+        if (!Array.isArray(items) || !items.length) return null;
+        const weights = items.map((item) => Math.max(0, Number(item && item.weight) || 0));
+        const total = weights.reduce((sum, value) => sum + value, 0);
+        if (total <= 0) return items[stringHash(key) % items.length];
+        let roll = stringHash(key) / HASH_CEILING * total;
+        for (let index = 0; index < items.length; index += 1) {
+          roll -= weights[index];
+          if (roll <= 0) return items[index];
+        }
+        return items[items.length - 1];
+      }
+      var WEEK_ZERO_BLOCKED_CHAINS = ["dre_note", "curtis_pressure"];
+      var WEEK_ZERO_BLOCKED_CLASSIFICATIONS = ["threat", "ending_setup"];
+      function isEligible(card, state, { absolute, resolved }) {
+        if (state.run.phase === "week_zero" && (WEEK_ZERO_BLOCKED_CHAINS.includes(card.chain) || WEEK_ZERO_BLOCKED_CLASSIFICATIONS.includes(card.classification))) return false;
+        if (card.once && resolved(state, card.id)) return false;
+        if (card.area && card.area !== state.world.currentNeighborhoodId) return false;
+        if (absolute < slotNumber(card.earliest.day, card.earliest.slot || 0)) return false;
+        if (card.latest && state.run.day > card.latest.day) return false;
+        if (state.run.recentEvents.includes(card.id)) return false;
+        const last = state.run.eventHistory ? state.run.eventHistory[card.id] : void 0;
+        if (last !== void 0 && absolute - last < card.cooldown) return false;
+        if (card.exit && card.exit(state)) return false;
+        return card.requires(state);
+      }
+      function getWeight(card, state, weightMultiplier) {
+        return Math.max(0.01, card.weight) * weightMultiplier(state, card);
+      }
+      module.exports = {
+        normalizeSeed,
+        stringHash,
+        makeRandom,
+        seededShuffle,
+        seededPick,
+        isEligible,
+        getWeight
+      };
+    }
+  });
+
+  // src/data/observations.js
+  var require_observations = __commonJS({
+    "src/data/observations.js"(exports, module) {
+      var OBSERVATION_CATEGORIES = [
+        "presence",
+        "honesty",
+        "violence",
+        "financial",
+        "heat_exposure",
+        "loyalty",
+        "betrayal",
+        "discretion",
+        "growth",
+        "submission",
+        "defiance"
+      ];
+      var OBSERVATION_CATEGORY_SET = new Set(OBSERVATION_CATEGORIES);
+      var OBSERVATION_SOURCES = ["witnessed", "told", "household", "neighborhood", "network", "reputation"];
+      var OBSERVATION_SOURCE_SET = new Set(OBSERVATION_SOURCES);
+      var MAX_LEDGER_ROWS = 120;
+      var ESCALATING_EVENT = "missed_obligation";
+      function normalizeCategory(type) {
+        return OBSERVATION_CATEGORY_SET.has(type) ? type : null;
+      }
+      function createObservation({ type, event = null, location = null, value = null, day = 1, source = "witnessed", count = 1 } = {}) {
+        const category = normalizeCategory(type);
+        if (!category) return null;
+        return {
+          type: category,
+          event: event == null ? null : String(event),
+          location: location == null ? null : String(location),
+          value: value == null ? null : Number(value) || 0,
+          day: Math.max(1, Math.floor(Number(day) || 1)),
+          count: Math.max(1, Math.floor(Number(count) || 1)),
+          source: OBSERVATION_SOURCE_SET.has(source) ? source : "witnessed"
+        };
+      }
+      function observationKey(observation) {
+        return [observation.type, observation.event || "", observation.location || "", observation.source].join("|");
+      }
+      function addObservation(ledger, observation) {
+        if (!Array.isArray(ledger) || !observation) return null;
+        const key = observationKey(observation);
+        const existing = ledger.find((row) => observationKey(row) === key);
+        if (existing) {
+          existing.count += observation.count;
+          existing.day = Math.max(existing.day, observation.day);
+          if (observation.value != null) existing.value = observation.value;
+          return existing;
+        }
+        if (ledger.length >= MAX_LEDGER_ROWS) return null;
+        ledger.push(observation);
+        return observation;
+      }
+      var MAX_EFFECTIVE_COUNT = 4;
+      function effectiveCount(observation) {
+        const count = Math.max(1, Number(observation.count) || 1);
+        if (observation.type === "betrayal") return count;
+        if (observation.event === ESCALATING_EVENT) return count;
+        return Math.min(MAX_EFFECTIVE_COUNT, Math.log2(count + 1));
+      }
+      module.exports = {
+        OBSERVATION_CATEGORIES,
+        OBSERVATION_CATEGORY_SET,
+        OBSERVATION_SOURCES,
+        MAX_LEDGER_ROWS,
+        ESCALATING_EVENT,
+        createObservation,
+        observationKey,
+        addObservation,
+        effectiveCount
+      };
+    }
+  });
+
+  // src/data/npc-lenses.js
+  var require_npc_lenses = __commonJS({
+    "src/data/npc-lenses.js"(exports, module) {
+      var { OBSERVATION_CATEGORIES } = require_observations();
+      var CIVILIAN = {
+        presence: 1,
+        honesty: 1.5,
+        violence: -3,
+        financial: 1.5,
+        heat_exposure: -2.5,
+        loyalty: 1.5,
+        betrayal: -4,
+        discretion: 1,
+        growth: 1,
+        submission: 0.5,
+        defiance: -1
+      };
+      var STREET = {
+        presence: 0.6,
+        honesty: 1,
+        violence: -0.5,
+        financial: 2,
+        heat_exposure: -1,
+        loyalty: 2,
+        betrayal: -5,
+        discretion: 1.5,
+        growth: 1.5,
+        submission: -0.5,
+        defiance: 0.5
+      };
+      var ROMANTIC = {
+        presence: 1.5,
+        honesty: 2.5,
+        violence: -2,
+        financial: 0.3,
+        heat_exposure: -1.5,
+        loyalty: 2,
+        betrayal: -6,
+        discretion: 2,
+        growth: 1,
+        submission: 0,
+        defiance: -0.5
+      };
+      var THREAT = {
+        presence: -0.3,
+        honesty: 0.5,
+        violence: -2.5,
+        financial: -1.5,
+        heat_exposure: -1.5,
+        loyalty: 1,
+        betrayal: -3,
+        discretion: 1.5,
+        growth: -2,
+        submission: 2,
+        defiance: -2.5
+      };
+      var ARCHETYPES = { CIVILIAN, STREET, ROMANTIC, THREAT };
+      var SHARED_EVENT_WEIGHTS = {
+        missed_obligation: -2.5,
+        let_them_down: -2,
+        walked_a_debt: -3,
+        botched_mission: -2,
+        refused_work: -1.5
+      };
+      var INVERTED_ARCHETYPES = /* @__PURE__ */ new Set(["THREAT"]);
+      var NPC_LENSES = {
+        mina: {
+          archetype: "ROMANTIC",
+          weights: { violence: -4, discretion: 4 },
+          // She hears things. What the network carries back weighs double what she
+          // watches happen across her own counter.
+          sourceMultipliers: { network: 2 }
+        },
+        curtis: {
+          archetype: "THREAT",
+          weights: { growth: -3 }
+        },
+        dre: {
+          archetype: "STREET",
+          weights: { financial: 4, honesty: 2 }
+        },
+        yalonda: {
+          archetype: "CIVILIAN",
+          weights: { heat_exposure: -3, presence: 1.5 },
+          eventWeights: { rent_paid: 3 }
+        },
+        juan: {
+          archetype: "CIVILIAN",
+          weights: { violence: -1, growth: 2, discretion: 1.5 }
+        },
+        simone: {
+          // Stubbed on the base table until her content exists. Listed rather than
+          // omitted so a missing lens is always a bug, never a silent default.
+          archetype: "THREAT",
+          weights: {}
+        }
+      };
+      var EXPOSURE_NPC_IDS = Object.keys(NPC_LENSES);
+      function resolveLens(npcId) {
+        const definition = NPC_LENSES[npcId];
+        if (!definition) return null;
+        const base = ARCHETYPES[definition.archetype];
+        const weights = {};
+        for (const category of OBSERVATION_CATEGORIES) {
+          weights[category] = definition.weights && category in definition.weights ? definition.weights[category] : base[category];
+        }
+        return {
+          npcId,
+          archetype: definition.archetype,
+          inverted: INVERTED_ARCHETYPES.has(definition.archetype),
+          weights,
+          eventWeights: { ...SHARED_EVENT_WEIGHTS, ...definition.eventWeights || {} },
+          sourceMultipliers: definition.sourceMultipliers || {}
+        };
+      }
+      module.exports = {
+        ARCHETYPES,
+        SHARED_EVENT_WEIGHTS,
+        INVERTED_ARCHETYPES,
+        NPC_LENSES,
+        EXPOSURE_NPC_IDS,
+        resolveLens
+      };
+    }
+  });
+
+  // src/data/disposition-bands.js
+  var require_disposition_bands = __commonJS({
+    "src/data/disposition-bands.js"(exports, module) {
+      var BANDS = {
+        HOSTILE: 0,
+        COLD: 1,
+        NEUTRAL: 2,
+        WARM: 3,
+        TRUSTED: 4,
+        BONDED: 5
+      };
+      var BAND_IDS = ["hostile", "cold", "neutral", "warm", "trusted", "bonded"];
+      var BAND_LABELS = {
+        hostile: "Hostile",
+        cold: "Cold",
+        neutral: "Neutral",
+        warm: "Warm",
+        trusted: "Trusted",
+        bonded: "Bonded"
+      };
+      var BAND_FLOORS = [
+        [BANDS.BONDED, 9],
+        [BANDS.TRUSTED, 6],
+        [BANDS.WARM, 3],
+        [BANDS.NEUTRAL, 0],
+        [BANDS.COLD, -5]
+      ];
+      function bandFor(score) {
+        const value = Number(score) || 0;
+        for (const [band, floor] of BAND_FLOORS) if (value >= floor) return band;
+        return BANDS.HOSTILE;
+      }
+      function bandId(band) {
+        return BAND_IDS[band] || BAND_IDS[BANDS.NEUTRAL];
+      }
+      function bandLabel(band) {
+        return BAND_LABELS[bandId(band)];
+      }
+      module.exports = { BANDS, BAND_IDS, BAND_LABELS, BAND_FLOORS, bandFor, bandId, bandLabel };
+    }
+  });
+
+  // src/data/propagation.js
+  var require_propagation = __commonJS({
+    "src/data/propagation.js"(exports, module) {
+      var { OBSERVATION_CATEGORIES } = require_observations();
+      var CHANNELS = {
+        direct: { id: "direct", arrival: "now", source: "witnessed", presence: false, timeOfDay: true },
+        household: { id: "household", arrival: "end_of_day", source: "household", presence: false, timeOfDay: false },
+        neighborhood: { id: "neighborhood", arrival: "days", days: 1, maxExtraDays: 1, source: "neighborhood", presence: true, timeOfDay: true },
+        network: { id: "network", arrival: "days", days: 1, source: "network", presence: false, timeOfDay: false },
+        reputation: { id: "reputation", arrival: "days", days: 7, source: "reputation", presence: false, timeOfDay: false }
+      };
+      var CHANNEL_IDS = Object.keys(CHANNELS);
+      var NPC_CHANNELS = {
+        yalonda: ["direct", "household", "neighborhood"],
+        juan: ["direct", "household", "neighborhood"],
+        mina: ["direct", "neighborhood", "network"],
+        curtis: ["direct", "network", "reputation"],
+        dre: ["direct", "network"],
+        simone: ["direct", "network"]
+      };
+      var CURTIS_NETWORK_CATEGORIES = /* @__PURE__ */ new Set(["violence", "defiance", "growth"]);
+      var CURTIS_VOLUME_THRESHOLD = 200;
+      var HEAT_CHANNEL_THRESHOLDS = [
+        { above: 12, channel: "network" },
+        { above: 10, channel: "neighborhood" },
+        { above: 8, channel: "household" }
+      ];
+      var NPC_PRESENCE_SLOTS = {
+        yalonda: [0, 2, 3],
+        juan: [0, 2, 3],
+        mina: [2, 3],
+        curtis: [1, 2, 3],
+        dre: [1, 2, 3],
+        simone: [1, 2, 3]
+      };
+      var NPC_PRESENCE_AREAS = {
+        yalonda: ["north_star_lot"],
+        juan: ["north_star_lot"],
+        mina: ["north_star_lot"],
+        curtis: ["north_star_lot", "downtown"],
+        dre: ["north_star_lot", "downtown"],
+        simone: ["north_star_lot", "downtown"]
+      };
+      function channelFor(id) {
+        return CHANNELS[id] || CHANNELS.direct;
+      }
+      function listensOn(npcId, channelId) {
+        return (NPC_CHANNELS[npcId] || ["direct"]).includes(channelId);
+      }
+      function clearsCurtisFilter(observation) {
+        if (CURTIS_NETWORK_CATEGORIES.has(observation.type)) return true;
+        if (observation.type === "financial") return Math.abs(Number(observation.value) || 0) >= CURTIS_VOLUME_THRESHOLD;
+        return false;
+      }
+      function heatChannel(heat) {
+        const value = Number(heat) || 0;
+        for (const entry of HEAT_CHANNEL_THRESHOLDS) if (value > entry.above) return entry.channel;
+        return null;
+      }
+      module.exports = {
+        CHANNELS,
+        CHANNEL_IDS,
+        NPC_CHANNELS,
+        CURTIS_NETWORK_CATEGORIES,
+        CURTIS_VOLUME_THRESHOLD,
+        HEAT_CHANNEL_THRESHOLDS,
+        NPC_PRESENCE_SLOTS,
+        NPC_PRESENCE_AREAS,
+        OBSERVATION_CATEGORIES,
+        channelFor,
+        listensOn,
+        clearsCurtisFilter,
+        heatChannel
+      };
+    }
+  });
+
+  // src/exposure/engine.js
+  var require_engine = __commonJS({
+    "src/exposure/engine.js"(exports, module) {
+      var { slotNumber } = require_selectors();
+      var { stringHash } = require_random();
+      var { createObservation, addObservation, effectiveCount } = require_observations();
+      var { resolveLens, EXPOSURE_NPC_IDS } = require_npc_lenses();
+      var { BANDS, bandFor, bandId, bandLabel } = require_disposition_bands();
+      var {
+        channelFor,
+        listensOn,
+        clearsCurtisFilter,
+        heatChannel,
+        NPC_PRESENCE_SLOTS,
+        NPC_PRESENCE_AREAS
+      } = require_propagation();
+      function ledgerOf(state, npcId) {
+        const record = state && state.npc && state.npc[npcId];
+        if (!record) return [];
+        if (!Array.isArray(record.ledger)) record.ledger = [];
+        return record.ledger;
+      }
+      function rowWeight(lens, row) {
+        const base = row.event && row.event in lens.eventWeights ? lens.eventWeights[row.event] : lens.weights[row.type];
+        const multiplier = lens.sourceMultipliers[row.source] || 1;
+        return base * multiplier * effectiveCount(row);
+      }
+      function getDisposition(npcId, state) {
+        const lens = resolveLens(npcId);
+        if (!lens) return 0;
+        let score = 0;
+        for (const row of ledgerOf(state, npcId)) score += rowWeight(lens, row);
+        return Math.round(score * 100) / 100;
+      }
+      function getDispositionBand(npcId, state) {
+        return bandFor(getDisposition(npcId, state));
+      }
+      function recordObservation(state, npcId, spec) {
+        if (!state || !state.npc || !state.npc[npcId]) return null;
+        const observation = createObservation({ ...spec, day: spec.day || state.run.day });
+        if (!observation) return null;
+        return addObservation(ledgerOf(state, npcId), observation);
+      }
+      function couldObserve(npcId, { slot, location }) {
+        const slots = NPC_PRESENCE_SLOTS[npcId];
+        if (slots && slot != null && !slots.includes(slot)) return false;
+        const areas = NPC_PRESENCE_AREAS[npcId];
+        if (areas && location && !areas.includes(location)) return false;
+        return true;
+      }
+      var LAST_SLOT = 3;
+      function deliverySlot(state, channel, observation, { day, slot }) {
+        if (channel.arrival === "now") return slotNumber(day, slot);
+        if (channel.arrival === "end_of_day") return slotNumber(day, LAST_SLOT);
+        let days = channel.days || 1;
+        if (channel.maxExtraDays) {
+          const key = `${state.run.seed}:gossip:${observation.type}:${observation.event || ""}:${observation.location || ""}:${day}`;
+          days += stringHash(key) % (channel.maxExtraDays + 1);
+        }
+        return slotNumber(day + days, 0);
+      }
+      function receives(npcId, channelId, observation, context) {
+        if (!listensOn(npcId, channelId)) return false;
+        const channel = channelFor(channelId);
+        if (channel.presence && !couldObserve(npcId, context)) return false;
+        if (channel.timeOfDay && !channel.presence && context.slot != null) {
+          const slots = NPC_PRESENCE_SLOTS[npcId];
+          if (slots && !slots.includes(context.slot)) return false;
+        }
+        if (npcId === "curtis" && channelId === "network" && !clearsCurtisFilter(observation)) return false;
+        return true;
+      }
+      function broadcastObservation(state, spec) {
+        const channelId = spec.channel || "direct";
+        const channel = channelFor(channelId);
+        const day = spec.day || state.run.day;
+        const slot = spec.slot == null ? state.run.slot : spec.slot;
+        const observation = createObservation({ ...spec, day, source: channel.source });
+        if (!observation) return [];
+        const context = { slot, location: spec.location || state.world.currentNeighborhoodId };
+        const reached = [];
+        for (const npcId of EXPOSURE_NPC_IDS) {
+          if (!state.npc[npcId]) continue;
+          if (!receives(npcId, channelId, observation, context)) continue;
+          reached.push(npcId);
+          const deliverAtSlot = deliverySlot(state, channel, observation, { day, slot });
+          if (deliverAtSlot <= slotNumber(day, slot)) {
+            addObservation(ledgerOf(state, npcId), { ...observation });
+            continue;
+          }
+          state.run.pendingObservations.push({ npcId, observation: { ...observation }, deliverAtSlot });
+        }
+        return reached;
+      }
+      function resolveObservationQueue(state) {
+        const queue = state.run.pendingObservations;
+        if (!Array.isArray(queue) || !queue.length) return 0;
+        const now = slotNumber(state.run.day, state.run.slot);
+        const waiting = [];
+        let delivered = 0;
+        for (const entry of queue) {
+          if (!entry || !state.npc[entry.npcId] || !entry.observation) continue;
+          if (now < entry.deliverAtSlot) {
+            waiting.push(entry);
+            continue;
+          }
+          addObservation(ledgerOf(state, entry.npcId), entry.observation);
+          delivered += 1;
+        }
+        state.run.pendingObservations = waiting;
+        return delivered;
+      }
+      function propagateHeat(state) {
+        const channel = heatChannel(state.player.heat);
+        if (!channel) return null;
+        broadcastObservation(state, {
+          type: "heat_exposure",
+          event: `heat_${channel}`,
+          value: state.player.heat,
+          channel,
+          day: state.run.day,
+          slot: state.run.slot
+        });
+        return channel;
+      }
+      function describeDisposition(state, npcId) {
+        const lens = resolveLens(npcId);
+        if (!lens) return null;
+        const rows = ledgerOf(state, npcId).map((row) => ({
+          type: row.type,
+          event: row.event,
+          location: row.location,
+          source: row.source,
+          count: row.count,
+          day: row.day,
+          baseWeight: row.event && row.event in lens.eventWeights ? lens.eventWeights[row.event] : lens.weights[row.type],
+          sourceMultiplier: lens.sourceMultipliers[row.source] || 1,
+          effectiveCount: Math.round(effectiveCount(row) * 100) / 100,
+          contribution: Math.round(rowWeight(lens, row) * 100) / 100
+        })).sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
+        const score = getDisposition(npcId, state);
+        const band = bandFor(score);
+        return {
+          npcId,
+          archetype: lens.archetype,
+          inverted: lens.inverted,
+          score,
+          band,
+          bandId: bandId(band),
+          bandLabel: bandLabel(band),
+          rows,
+          pending: (state.run.pendingObservations || []).filter((entry) => entry.npcId === npcId).map((entry) => ({ type: entry.observation.type, event: entry.observation.event, deliverAtSlot: entry.deliverAtSlot }))
+        };
+      }
+      module.exports = {
+        BANDS,
+        EXPOSURE_NPC_IDS,
+        getDisposition,
+        getDispositionBand,
+        recordObservation,
+        broadcastObservation,
+        resolveObservationQueue,
+        propagateHeat,
+        describeDisposition,
+        couldObserve,
+        ledgerOf
+      };
+    }
+  });
+
+  // src/systems/attributes.js
+  var require_attributes2 = __commonJS({
+    "src/systems/attributes.js"(exports, module) {
+      var {
+        ATTRIBUTE_IDS,
+        ATTRIBUTE_DEFAULTS,
+        ATTRIBUTE_MIN,
+        ATTRIBUTE_MAX,
+        ATTRIBUTE_LABEL_TIERS,
+        ADVANTAGE_THRESHOLD,
+        CATASTROPHE_IMMUNITY_THRESHOLD,
+        GROWTH_RATES,
+        GROWTH_CAP_PENALTY_FLOOR,
+        GROWTH_CAP_PENALTY,
+        GYM_ACTIVITY_BY_ID,
+        GYM_STREAK_REQUIREMENT,
+        GYM_STREAK_BONUS,
+        IDENTITY_BEHAVIOR_COLUMNS,
+        IDENTITY_BALANCE_MARGIN,
+        IDENTITY_RECENT_DAYS,
+        IDENTITY_MATRIX,
+        IDENTITY_DESCRIPTIONS,
+        OUTCOME_VALUES,
+        OUTCOME_SHAPES,
+        ACTION_ATTRIBUTE_MAP,
+        STANDING_PACING
+      } = require_attributes();
+      var { seededPick } = require_random();
+      var { EXPOSURE_NPC_IDS } = require_npc_lenses();
+      var { ledgerOf } = require_engine();
+      function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+      }
+      function normalizedAttributes(state) {
+        const stored = state && state.player && state.player.attributes || {};
+        const out = {};
+        for (const id of ATTRIBUTE_IDS) {
+          const value = Number(stored[id]);
+          out[id] = clamp(Number.isFinite(value) ? Math.floor(value) : ATTRIBUTE_DEFAULTS[id], ATTRIBUTE_MIN, ATTRIBUTE_MAX);
+        }
+        return out;
+      }
+      function attributeValue(state, attribute) {
+        var _a;
+        return (_a = normalizedAttributes(state)[attribute]) != null ? _a : ATTRIBUTE_MIN;
+      }
+      function compatibilityRating(state, attribute) {
+        return clamp(attributeValue(state, attribute) + 1, 1, 5);
+      }
+      function attributeLabel(value) {
+        const numeric = Number(value) || 0;
+        const tier = ATTRIBUTE_LABEL_TIERS.find((entry) => numeric >= entry.floor);
+        return tier ? tier.label : ATTRIBUTE_LABEL_TIERS[ATTRIBUTE_LABEL_TIERS.length - 1].label;
+      }
+      function gymStreakBonus(state, attribute) {
+        if (attribute !== "combat") return 0;
+        const streak = Number(state && state.player && state.player.gymStreak) || 0;
+        return streak >= GYM_STREAK_REQUIREMENT ? GYM_STREAK_BONUS : 0;
+      }
+      function effectiveAttribute(state, attribute) {
+        return clamp(attributeValue(state, attribute) + gymStreakBonus(state, attribute), ATTRIBUTE_MIN, ATTRIBUTE_MAX);
+      }
+      function buildOutcomePool(actionType, chance) {
+        const shape = OUTCOME_SHAPES[actionType];
+        if (!shape) return [];
+        const success = clamp(Number(chance) || 0, 0, 1);
+        const pool = [];
+        for (const [tier, share] of Object.entries(shape.success || {})) {
+          pool.push({ tier, value: OUTCOME_VALUES[tier], weight: success * share });
+        }
+        for (const [tier, share] of Object.entries(shape.failure || {})) {
+          pool.push({ tier, value: OUTCOME_VALUES[tier], weight: (1 - success) * share });
+        }
+        return pool;
+      }
+      function resolveWithAttribute(outcomePool, attributeValue2, seed) {
+        let pool = Array.isArray(outcomePool) ? outcomePool.slice() : [];
+        if (!pool.length) return null;
+        const value = Number(attributeValue2) || 0;
+        if (value >= CATASTROPHE_IMMUNITY_THRESHOLD) {
+          const survivors = pool.filter((outcome) => outcome.tier !== "catastrophic");
+          if (survivors.length) pool = survivors;
+        }
+        const first = seededPick(pool, `${seed}`);
+        if (value < ADVANTAGE_THRESHOLD) return first;
+        const second = seededPick(pool, `${seed}:adv`);
+        if (!first) return second;
+        if (!second) return first;
+        return (Number(first.value) || 0) >= (Number(second.value) || 0) ? first : second;
+      }
+      function resolveAction(state, actionType, chance, seed) {
+        const attribute = ACTION_ATTRIBUTE_MAP[actionType];
+        const pool = buildOutcomePool(actionType, chance);
+        const outcome = resolveWithAttribute(pool, effectiveAttribute(state, attribute), seed);
+        return outcome || { tier: "failure", value: OUTCOME_VALUES.failure };
+      }
+      function isSuccessTier(tier) {
+        return tier === "clean" || tier === "messy";
+      }
+      function attributeGrowth(currentValue, sessionCount, activity) {
+        const baseGrowth = GROWTH_RATES[activity];
+        if (!baseGrowth) return 0;
+        const sessions = Math.max(0, Math.floor(Number(sessionCount) || 0));
+        const diminishing = 1 / Math.log2(sessions + 2);
+        const capPenalty = (Number(currentValue) || 0) >= GROWTH_CAP_PENALTY_FLOOR ? GROWTH_CAP_PENALTY : 1;
+        return baseGrowth * diminishing * capPenalty;
+      }
+      function gymActivityAvailable(state, activityId) {
+        const activity = GYM_ACTIVITY_BY_ID[activityId];
+        if (!activity) return false;
+        if (!activity.requires) return true;
+        return attributeValue(state, activity.requires.attribute) >= activity.requires.value;
+      }
+      function getRecentObservations(state, days) {
+        const today = Number(state && state.run && state.run.day) || 1;
+        const window2 = Math.max(1, Number(days) || IDENTITY_RECENT_DAYS);
+        const floor = today - window2 + 1;
+        const out = [];
+        for (const npcId of EXPOSURE_NPC_IDS) {
+          for (const row of ledgerOf(state, npcId)) {
+            if ((Number(row.day) || 0) >= floor) out.push(row);
+          }
+        }
+        return out;
+      }
+      function getDominantAttribute(combat, charisma, intelligence) {
+        const ranked = [
+          ["combat", Number(combat) || 0],
+          ["charisma", Number(charisma) || 0],
+          ["intelligence", Number(intelligence) || 0]
+        ].sort((a, b) => b[1] - a[1]);
+        const [first, second] = ranked;
+        return first[1] - second[1] > IDENTITY_BALANCE_MARGIN ? first[0] : "balanced";
+      }
+      function getDominantCategory(observations) {
+        const totals = {};
+        for (const row of observations || []) {
+          const column = IDENTITY_BEHAVIOR_COLUMNS[row && row.type];
+          if (!column) continue;
+          totals[column] = (totals[column] || 0) + Math.max(1, Number(row.count) || 1);
+        }
+        const ranked = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+        if (!ranked.length) return "default";
+        if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) return "default";
+        return ranked[0][0];
+      }
+      function getStreetIdentity(state) {
+        const { combat, charisma, intelligence } = normalizedAttributes(state);
+        const recentObs = getRecentObservations(state, IDENTITY_RECENT_DAYS);
+        const dominant = getDominantAttribute(combat, charisma, intelligence);
+        const recentBehavior = getDominantCategory(recentObs);
+        const row = IDENTITY_MATRIX[dominant] || IDENTITY_MATRIX.balanced;
+        return row[recentBehavior] || row.default;
+      }
+      function identityProfile(state) {
+        const { combat, charisma, intelligence } = normalizedAttributes(state);
+        const dominant = getDominantAttribute(combat, charisma, intelligence);
+        const behavior = getDominantCategory(getRecentObservations(state, IDENTITY_RECENT_DAYS));
+        const row = IDENTITY_MATRIX[dominant] || IDENTITY_MATRIX.balanced;
+        const label = row[behavior] || row.default;
+        return { dominant, behavior, label, description: IDENTITY_DESCRIPTIONS[label] || IDENTITY_DESCRIPTIONS["New Face"] };
+      }
+      function describeStreetIdentity(state) {
+        const { label, description } = identityProfile(state);
+        return { label, description };
+      }
+      function adjustedStandingGain(currentStanding, rawGain, ladder = "capped") {
+        const gain = Number(rawGain) || 0;
+        if (gain <= 0) return gain;
+        const standing = Number(currentStanding) || 0;
+        const rungs = STANDING_PACING[ladder] || STANDING_PACING.capped;
+        for (const rung of rungs) {
+          if (standing >= rung.floor) return gain * rung.multiplier;
+        }
+        return gain;
+      }
+      function bankStandingGain(record, currentStanding, rawGain, ladder = "capped") {
+        if (!record || typeof record !== "object") return Math.round(Number(rawGain) || 0);
+        const adjusted = adjustedStandingGain(currentStanding, rawGain, ladder);
+        const banked = (Number(record.standingProgress) || 0) + adjusted;
+        const whole = Math.floor(banked);
+        record.standingProgress = banked - whole;
+        return whole;
+      }
+      module.exports = {
+        normalizedAttributes,
+        attributeValue,
+        compatibilityRating,
+        attributeLabel,
+        effectiveAttribute,
+        gymStreakBonus,
+        buildOutcomePool,
+        resolveWithAttribute,
+        resolveAction,
+        isSuccessTier,
+        attributeGrowth,
+        gymActivityAvailable,
+        getRecentObservations,
+        getDominantAttribute,
+        getDominantCategory,
+        getStreetIdentity,
+        identityProfile,
+        describeStreetIdentity,
+        adjustedStandingGain,
+        bankStandingGain
+      };
+    }
+  });
+
   // encounters.js
   var require_encounters = __commonJS({
     "encounters.js"(exports, module) {
@@ -38,6 +1102,7 @@
         root.EncounterSystem = api;
       })(typeof globalThis !== "undefined" ? globalThis : exports, function() {
         "use strict";
+        const Attributes = require_attributes2();
         const AUTHORED_ENCOUNTERS = {
           mini_mart_parking_lot: {
             id: "mini_mart_parking_lot",
@@ -172,11 +1237,22 @@
           return ((_b = (_a = state.player.gear) == null ? void 0 : _a.equipped) == null ? void 0 : _b.armor) === "protective_vest" ? 4 : 0;
         }
         function attributes(state) {
-          return state.player.attributes || {};
+          return Attributes.normalizedAttributes(state);
         }
         function combat(state) {
-          var _a;
-          return ((_a = state.player.stats) == null ? void 0 : _a.combat) || 2;
+          return Attributes.compatibilityRating(state, "combat");
+        }
+        function outcomeKey(state, encounter, action) {
+          return `${state.run.seed}:${action}:${state.run.day}:${state.run.slot}:${encounter.id || encounter.type}`;
+        }
+        function resolve(state, encounter, actionType, chance, choice2) {
+          const outcome = Attributes.resolveAction(state, actionType, chance, outcomeKey(state, encounter, choice2));
+          if (Attributes.gymStreakBonus(state, "combat")) {
+            state.player.gymStreak = 0;
+            state.player.gymStreakDay = null;
+          }
+          state.run.lastOutcomeTier = outcome.tier;
+          return outcome;
         }
         function influence(state, areaId) {
           var _a;
@@ -400,19 +1476,19 @@
           const a = attributes(state);
           const choices = [];
           if (encounter.phase === 0) {
-            if (encounter.type === "authored" || (a.presence || 0) >= 4) choices.push(choice("talk", "Talk", "Read the pressure and try to lower it without showing odds."));
+            if (encounter.type === "authored" || (a.charisma || 0) >= 3) choices.push(choice("talk", "Talk", "Read the pressure and try to lower it without showing odds."));
             choices.push(choice("run", "Run", "You will survive the attempt, but the street always collects something."));
             const demand = encounter.type === "random" ? encounter.npc.demand : encounter.pay;
             if (state.player.cash >= demand) choices.push(choice("pay", `Pay $${demand}`, "Lose cash and leave without violence."));
             for (const product of held) choices.push(choice(`surrender:${product.id}`, `Surrender ${productName(product.id)}`, "Give up selected product and protect your health."));
-            if (weapon || (a.strength || 0) >= 4 || toneNearby(state, areaId)) choices.push(choice("fight", "Fight", "Combat, health, protection, and nearby backup shape the result."));
+            if (weapon || (a.combat || 0) >= 3 || toneNearby(state, areaId)) choices.push(choice("fight", "Fight", "Combat, health, protection, and nearby backup shape the result."));
             if (weapon) choices.push(choice("draw", `Draw ${weapon.name}`, "Escalate first, then commit or find another exit."));
             if (hasNearbyCrew(state, areaId)) choices.push(choice("call_crew", "Call Crew", "Nearby crew can end this, but the response will be visible."));
             if (encounter.type === "authored" && (((_a = state.flags) == null ? void 0 : _a.curtisArrangement) || ((_b = state.npc.curtis) == null ? void 0 : _b.respect) >= 3)) choices.push(choice("use_relationship", "Invoke Curtis's Arrangement", "Spend relationship leverage instead of blood or money."));
             if (((_d = (_c = state.player.gear) == null ? void 0 : _c.consumables) == null ? void 0 : _d.medical_kit) > 0 && state.player.health < 100) choices.push(choice("medical_kit", "Use Medical Kit", "Recover now, but the confrontation keeps moving."));
             if (((_f = (_e = state.player.gear) == null ? void 0 : _e.equipped) == null ? void 0 : _f.tool) === "burner_phone") choices.push(choice("burner_phone", "Burn the Phone", "Create a fast distraction; the phone will be gone afterward."));
           } else {
-            if (weapon || (a.strength || 0) >= 4 || toneNearby(state, areaId)) choices.push(choice("fight", "Commit to the Fight", "The escalation is already visible."));
+            if (weapon || (a.combat || 0) >= 3 || toneNearby(state, areaId)) choices.push(choice("fight", "Commit to the Fight", "The escalation is already visible."));
             choices.push(choice("run", "Take the Opening", "Leave something behind and get clear."));
             for (const product of held) choices.push(choice(`surrender:${product.id}`, `Drop ${productName(product.id)}`, "Trade selected product for a clean exit."));
             if (hasNearbyCrew(state, areaId)) choices.push(choice("call_crew", "Call Crew", "Bring nearby backup into the confrontation."));
@@ -467,15 +1543,16 @@
           const firearm = (weapon == null ? void 0 : weapon.type) === "firearm";
           const tone = toneNearby(state, encounter.areaId) ? 0.1 : 0;
           const threat = encounter.type === "random" ? encounter.npc.threat : encounter.threat;
-          const chance = clamp(0.28 + combat(state) * 0.1 + ((weapon == null ? void 0 : weapon.accuracy) || 0) + tone - threat * 0.045, 0.12, 0.88);
+          const chance = clamp(0.48 + ((weapon == null ? void 0 : weapon.accuracy) || 0) + tone - threat * 0.045, 0.12, 0.88);
           if (encounter.type === "random") state.encounterLog.randomFights += 1;
           if (firearm) {
             addHeat(state, weapon.heat || 0);
             if (encounter.type === "authored" && encounter.areaId === "downtown") state.flags.firedWeaponDowntown = true;
           }
-          if (next(rng) < chance) {
+          const outcome = resolve(state, encounter, "confrontation", chance, "fight");
+          if (Attributes.isSuccessTier(outcome.tier)) {
             const lethalChance = firearm ? 0.35 : (weapon == null ? void 0 : weapon.type) === "close" ? 0.08 : 0.02;
-            const killed = next(rng) < lethalChance;
+            const killed = outcome.tier === "messy" && next(rng) < lethalChance;
             if (encounter.type === "random") {
               addHeat(state, killed ? 5 : 2);
               if (killed) state.encounterLog.randomKills += 1;
@@ -492,18 +1569,23 @@
             }
           } else {
             const attack = encounter.type === "random" ? encounter.npc.attack : [10, 19];
-            const damage = applyDamage(state, int(rng, attack[0], attack[1]), false);
+            const severe = outcome.tier === "catastrophic";
+            const damage = applyDamage(state, int(rng, attack[0], attack[1]) + (severe ? 6 : 0), false);
             const loss = escapeCost(state, encounter, rng, true);
-            finish(state, encounter, "lost", `The answer comes back harder. You lose ${damage} health and ${loss} before the street gives you room to leave.`);
+            if (severe) {
+              addHeat(state, 3);
+              setFlag(state, "seriousViolence", true);
+            }
+            finish(state, encounter, "lost", severe ? `It goes badly in front of people. You lose ${damage} health and ${loss}, and somebody was already on the phone.` : `The answer comes back harder. You lose ${damage} health and ${loss} before the street gives you room to leave.`);
           }
         }
         function resolveRun(state, encounter, rng) {
           var _a, _b;
-          const a = attributes(state);
           const shoes = ((_b = (_a = state.player.gear) == null ? void 0 : _a.equipped) == null ? void 0 : _b.utility) === "running_shoes" ? 0.1 : 0;
           const threat = encounter.type === "random" ? encounter.npc.threat : encounter.threat;
-          const chance = clamp(0.35 + (a.reflexes || 0) * 0.09 + (a.endurance || 0) * 0.05 + shoes - cargoRatio(state) * 0.25 - threat * 0.035, 0.18, 0.9);
-          const success = next(rng) < chance;
+          const chance = clamp(0.63 + shoes - cargoRatio(state) * 0.25 - threat * 0.035, 0.18, 0.9);
+          const outcome = resolve(state, encounter, "escape", chance, "run");
+          const success = Attributes.isSuccessTier(outcome.tier);
           const cost = escapeCost(state, encounter, rng, !success);
           let damage = 0;
           if (!success) {
@@ -514,11 +1596,11 @@
           finish(state, encounter, success ? "escaped" : "escaped_hurt", success ? `You find the open lane first. ${cost} stays behind, but you do not.` : `They catch you once before you clear the lot. You lose ${damage} health and ${cost}, but the escape does not take your life.`);
         }
         function resolveTalk(state, encounter, rng) {
-          const a = attributes(state);
           const arrangement = state.flags.curtisArrangement ? 0.12 : 0;
           const aggression = encounter.type === "random" ? encounter.npc.aggression : 0.2;
-          const chance = clamp(0.28 + (a.presence || 0) * 0.08 + (a.insight || 0) * 0.05 + arrangement + influence(state, encounter.areaId) * 0.025 - aggression, 0.12, 0.9);
-          if (next(rng) < chance) {
+          const chance = clamp(0.54 + arrangement + influence(state, encounter.areaId) * 0.025 - aggression, 0.12, 0.9);
+          const outcome = resolve(state, encounter, "negotiation", chance, "talk");
+          if (Attributes.isSuccessTier(outcome.tier)) {
             if (encounter.type === "authored") {
               setFlag(state, "negotiatedCurtisPassage", true);
               state.npc.curtis.respect += 1;
@@ -593,102 +1675,6 @@
           buildAuthoredEncounter
         };
       });
-    }
-  });
-
-  // src/selectors.js
-  var require_selectors = __commonJS({
-    "src/selectors.js"(exports, module) {
-      function checkpointDay(state) {
-        return state.run.checkpointDay || Infinity;
-      }
-      function controlled(state, areaId) {
-        var _a;
-        return ((_a = state.world.territories[areaId]) == null ? void 0 : _a.owner) === "player";
-      }
-      function slotNumber(day, slot) {
-        return (day - 1) * 4 + slot;
-      }
-      module.exports = {
-        checkpointDay,
-        controlled,
-        slotNumber
-      };
-    }
-  });
-
-  // src/events/random.js
-  var require_random = __commonJS({
-    "src/events/random.js"(exports, module) {
-      var { slotNumber } = require_selectors();
-      function normalizeSeed(seed) {
-        const numeric = Number(seed);
-        const fallback = 151461926;
-        return (Number.isFinite(numeric) ? numeric : fallback) >>> 0 || fallback;
-      }
-      function stringHash(value) {
-        let hash = 2166136261;
-        for (const char of String(value || "")) {
-          hash ^= char.charCodeAt(0);
-          hash = Math.imul(hash, 16777619);
-        }
-        return hash >>> 0;
-      }
-      function makeRandom(seed) {
-        let value = normalizeSeed(seed);
-        return {
-          next() {
-            value ^= value << 13;
-            value ^= value >>> 17;
-            value ^= value << 5;
-            value >>>= 0;
-            return value / 4294967296;
-          },
-          int(min, max) {
-            return Math.floor(this.next() * (max - min + 1)) + min;
-          },
-          pick(items) {
-            return items[Math.floor(this.next() * items.length)];
-          },
-          get state() {
-            return value >>> 0;
-          }
-        };
-      }
-      function seededShuffle(items, seed, salt) {
-        const random = makeRandom(stringHash(`${normalizeSeed(seed)}:${normalizeSeed(salt)}`));
-        const out = items.slice();
-        for (let index = out.length - 1; index > 0; index -= 1) {
-          const swap = random.int(0, index);
-          [out[index], out[swap]] = [out[swap], out[index]];
-        }
-        return out;
-      }
-      var WEEK_ZERO_BLOCKED_CHAINS = ["dre_note", "curtis_pressure"];
-      var WEEK_ZERO_BLOCKED_CLASSIFICATIONS = ["threat", "ending_setup"];
-      function isEligible(card, state, { absolute, resolved }) {
-        if (state.run.phase === "week_zero" && (WEEK_ZERO_BLOCKED_CHAINS.includes(card.chain) || WEEK_ZERO_BLOCKED_CLASSIFICATIONS.includes(card.classification))) return false;
-        if (card.once && resolved(state, card.id)) return false;
-        if (card.area && card.area !== state.world.currentNeighborhoodId) return false;
-        if (absolute < slotNumber(card.earliest.day, card.earliest.slot || 0)) return false;
-        if (card.latest && state.run.day > card.latest.day) return false;
-        if (state.run.recentEvents.includes(card.id)) return false;
-        const last = state.run.eventHistory ? state.run.eventHistory[card.id] : void 0;
-        if (last !== void 0 && absolute - last < card.cooldown) return false;
-        if (card.exit && card.exit(state)) return false;
-        return card.requires(state);
-      }
-      function getWeight(card, state, weightMultiplier) {
-        return Math.max(0.01, card.weight) * weightMultiplier(state, card);
-      }
-      module.exports = {
-        normalizeSeed,
-        stringHash,
-        makeRandom,
-        seededShuffle,
-        isEligible,
-        getWeight
-      };
     }
   });
 
@@ -1510,496 +2496,6 @@
     }
   });
 
-  // src/data/observations.js
-  var require_observations = __commonJS({
-    "src/data/observations.js"(exports, module) {
-      var OBSERVATION_CATEGORIES = [
-        "presence",
-        "honesty",
-        "violence",
-        "financial",
-        "heat_exposure",
-        "loyalty",
-        "betrayal",
-        "discretion",
-        "growth",
-        "submission",
-        "defiance"
-      ];
-      var OBSERVATION_CATEGORY_SET = new Set(OBSERVATION_CATEGORIES);
-      var OBSERVATION_SOURCES = ["witnessed", "told", "household", "neighborhood", "network", "reputation"];
-      var OBSERVATION_SOURCE_SET = new Set(OBSERVATION_SOURCES);
-      var MAX_LEDGER_ROWS = 120;
-      var ESCALATING_EVENT = "missed_obligation";
-      function normalizeCategory(type) {
-        return OBSERVATION_CATEGORY_SET.has(type) ? type : null;
-      }
-      function createObservation({ type, event = null, location = null, value = null, day = 1, source = "witnessed", count = 1 } = {}) {
-        const category = normalizeCategory(type);
-        if (!category) return null;
-        return {
-          type: category,
-          event: event == null ? null : String(event),
-          location: location == null ? null : String(location),
-          value: value == null ? null : Number(value) || 0,
-          day: Math.max(1, Math.floor(Number(day) || 1)),
-          count: Math.max(1, Math.floor(Number(count) || 1)),
-          source: OBSERVATION_SOURCE_SET.has(source) ? source : "witnessed"
-        };
-      }
-      function observationKey(observation) {
-        return [observation.type, observation.event || "", observation.location || "", observation.source].join("|");
-      }
-      function addObservation(ledger, observation) {
-        if (!Array.isArray(ledger) || !observation) return null;
-        const key = observationKey(observation);
-        const existing = ledger.find((row) => observationKey(row) === key);
-        if (existing) {
-          existing.count += observation.count;
-          existing.day = Math.max(existing.day, observation.day);
-          if (observation.value != null) existing.value = observation.value;
-          return existing;
-        }
-        if (ledger.length >= MAX_LEDGER_ROWS) return null;
-        ledger.push(observation);
-        return observation;
-      }
-      var MAX_EFFECTIVE_COUNT = 4;
-      function effectiveCount(observation) {
-        const count = Math.max(1, Number(observation.count) || 1);
-        if (observation.type === "betrayal") return count;
-        if (observation.event === ESCALATING_EVENT) return count;
-        return Math.min(MAX_EFFECTIVE_COUNT, Math.log2(count + 1));
-      }
-      module.exports = {
-        OBSERVATION_CATEGORIES,
-        OBSERVATION_CATEGORY_SET,
-        OBSERVATION_SOURCES,
-        MAX_LEDGER_ROWS,
-        ESCALATING_EVENT,
-        createObservation,
-        observationKey,
-        addObservation,
-        effectiveCount
-      };
-    }
-  });
-
-  // src/data/npc-lenses.js
-  var require_npc_lenses = __commonJS({
-    "src/data/npc-lenses.js"(exports, module) {
-      var { OBSERVATION_CATEGORIES } = require_observations();
-      var CIVILIAN = {
-        presence: 1,
-        honesty: 1.5,
-        violence: -3,
-        financial: 1.5,
-        heat_exposure: -2.5,
-        loyalty: 1.5,
-        betrayal: -4,
-        discretion: 1,
-        growth: 1,
-        submission: 0.5,
-        defiance: -1
-      };
-      var STREET = {
-        presence: 0.6,
-        honesty: 1,
-        violence: -0.5,
-        financial: 2,
-        heat_exposure: -1,
-        loyalty: 2,
-        betrayal: -5,
-        discretion: 1.5,
-        growth: 1.5,
-        submission: -0.5,
-        defiance: 0.5
-      };
-      var ROMANTIC = {
-        presence: 1.5,
-        honesty: 2.5,
-        violence: -2,
-        financial: 0.3,
-        heat_exposure: -1.5,
-        loyalty: 2,
-        betrayal: -6,
-        discretion: 2,
-        growth: 1,
-        submission: 0,
-        defiance: -0.5
-      };
-      var THREAT = {
-        presence: -0.3,
-        honesty: 0.5,
-        violence: -2.5,
-        financial: -1.5,
-        heat_exposure: -1.5,
-        loyalty: 1,
-        betrayal: -3,
-        discretion: 1.5,
-        growth: -2,
-        submission: 2,
-        defiance: -2.5
-      };
-      var ARCHETYPES = { CIVILIAN, STREET, ROMANTIC, THREAT };
-      var SHARED_EVENT_WEIGHTS = {
-        missed_obligation: -2.5,
-        let_them_down: -2,
-        walked_a_debt: -3,
-        botched_mission: -2,
-        refused_work: -1.5
-      };
-      var INVERTED_ARCHETYPES = /* @__PURE__ */ new Set(["THREAT"]);
-      var NPC_LENSES = {
-        mina: {
-          archetype: "ROMANTIC",
-          weights: { violence: -4, discretion: 4 },
-          // She hears things. What the network carries back weighs double what she
-          // watches happen across her own counter.
-          sourceMultipliers: { network: 2 }
-        },
-        curtis: {
-          archetype: "THREAT",
-          weights: { growth: -3 }
-        },
-        dre: {
-          archetype: "STREET",
-          weights: { financial: 4, honesty: 2 }
-        },
-        yalonda: {
-          archetype: "CIVILIAN",
-          weights: { heat_exposure: -3, presence: 1.5 },
-          eventWeights: { rent_paid: 3 }
-        },
-        juan: {
-          archetype: "CIVILIAN",
-          weights: { violence: -1, growth: 2, discretion: 1.5 }
-        },
-        simone: {
-          // Stubbed on the base table until her content exists. Listed rather than
-          // omitted so a missing lens is always a bug, never a silent default.
-          archetype: "THREAT",
-          weights: {}
-        }
-      };
-      var EXPOSURE_NPC_IDS = Object.keys(NPC_LENSES);
-      function resolveLens(npcId) {
-        const definition = NPC_LENSES[npcId];
-        if (!definition) return null;
-        const base = ARCHETYPES[definition.archetype];
-        const weights = {};
-        for (const category of OBSERVATION_CATEGORIES) {
-          weights[category] = definition.weights && category in definition.weights ? definition.weights[category] : base[category];
-        }
-        return {
-          npcId,
-          archetype: definition.archetype,
-          inverted: INVERTED_ARCHETYPES.has(definition.archetype),
-          weights,
-          eventWeights: { ...SHARED_EVENT_WEIGHTS, ...definition.eventWeights || {} },
-          sourceMultipliers: definition.sourceMultipliers || {}
-        };
-      }
-      module.exports = {
-        ARCHETYPES,
-        SHARED_EVENT_WEIGHTS,
-        INVERTED_ARCHETYPES,
-        NPC_LENSES,
-        EXPOSURE_NPC_IDS,
-        resolveLens
-      };
-    }
-  });
-
-  // src/data/disposition-bands.js
-  var require_disposition_bands = __commonJS({
-    "src/data/disposition-bands.js"(exports, module) {
-      var BANDS = {
-        HOSTILE: 0,
-        COLD: 1,
-        NEUTRAL: 2,
-        WARM: 3,
-        TRUSTED: 4,
-        BONDED: 5
-      };
-      var BAND_IDS = ["hostile", "cold", "neutral", "warm", "trusted", "bonded"];
-      var BAND_LABELS = {
-        hostile: "Hostile",
-        cold: "Cold",
-        neutral: "Neutral",
-        warm: "Warm",
-        trusted: "Trusted",
-        bonded: "Bonded"
-      };
-      var BAND_FLOORS = [
-        [BANDS.BONDED, 9],
-        [BANDS.TRUSTED, 6],
-        [BANDS.WARM, 3],
-        [BANDS.NEUTRAL, 0],
-        [BANDS.COLD, -5]
-      ];
-      function bandFor(score) {
-        const value = Number(score) || 0;
-        for (const [band, floor] of BAND_FLOORS) if (value >= floor) return band;
-        return BANDS.HOSTILE;
-      }
-      function bandId(band) {
-        return BAND_IDS[band] || BAND_IDS[BANDS.NEUTRAL];
-      }
-      function bandLabel(band) {
-        return BAND_LABELS[bandId(band)];
-      }
-      module.exports = { BANDS, BAND_IDS, BAND_LABELS, BAND_FLOORS, bandFor, bandId, bandLabel };
-    }
-  });
-
-  // src/data/propagation.js
-  var require_propagation = __commonJS({
-    "src/data/propagation.js"(exports, module) {
-      var { OBSERVATION_CATEGORIES } = require_observations();
-      var CHANNELS = {
-        direct: { id: "direct", arrival: "now", source: "witnessed", presence: false, timeOfDay: true },
-        household: { id: "household", arrival: "end_of_day", source: "household", presence: false, timeOfDay: false },
-        neighborhood: { id: "neighborhood", arrival: "days", days: 1, maxExtraDays: 1, source: "neighborhood", presence: true, timeOfDay: true },
-        network: { id: "network", arrival: "days", days: 1, source: "network", presence: false, timeOfDay: false },
-        reputation: { id: "reputation", arrival: "days", days: 7, source: "reputation", presence: false, timeOfDay: false }
-      };
-      var CHANNEL_IDS = Object.keys(CHANNELS);
-      var NPC_CHANNELS = {
-        yalonda: ["direct", "household", "neighborhood"],
-        juan: ["direct", "household", "neighborhood"],
-        mina: ["direct", "neighborhood", "network"],
-        curtis: ["direct", "network", "reputation"],
-        dre: ["direct", "network"],
-        simone: ["direct", "network"]
-      };
-      var CURTIS_NETWORK_CATEGORIES = /* @__PURE__ */ new Set(["violence", "defiance", "growth"]);
-      var CURTIS_VOLUME_THRESHOLD = 200;
-      var HEAT_CHANNEL_THRESHOLDS = [
-        { above: 12, channel: "network" },
-        { above: 10, channel: "neighborhood" },
-        { above: 8, channel: "household" }
-      ];
-      var NPC_PRESENCE_SLOTS = {
-        yalonda: [0, 2, 3],
-        juan: [0, 2, 3],
-        mina: [2, 3],
-        curtis: [1, 2, 3],
-        dre: [1, 2, 3],
-        simone: [1, 2, 3]
-      };
-      var NPC_PRESENCE_AREAS = {
-        yalonda: ["north_star_lot"],
-        juan: ["north_star_lot"],
-        mina: ["north_star_lot"],
-        curtis: ["north_star_lot", "downtown"],
-        dre: ["north_star_lot", "downtown"],
-        simone: ["north_star_lot", "downtown"]
-      };
-      function channelFor(id) {
-        return CHANNELS[id] || CHANNELS.direct;
-      }
-      function listensOn(npcId, channelId) {
-        return (NPC_CHANNELS[npcId] || ["direct"]).includes(channelId);
-      }
-      function clearsCurtisFilter(observation) {
-        if (CURTIS_NETWORK_CATEGORIES.has(observation.type)) return true;
-        if (observation.type === "financial") return Math.abs(Number(observation.value) || 0) >= CURTIS_VOLUME_THRESHOLD;
-        return false;
-      }
-      function heatChannel(heat) {
-        const value = Number(heat) || 0;
-        for (const entry of HEAT_CHANNEL_THRESHOLDS) if (value > entry.above) return entry.channel;
-        return null;
-      }
-      module.exports = {
-        CHANNELS,
-        CHANNEL_IDS,
-        NPC_CHANNELS,
-        CURTIS_NETWORK_CATEGORIES,
-        CURTIS_VOLUME_THRESHOLD,
-        HEAT_CHANNEL_THRESHOLDS,
-        NPC_PRESENCE_SLOTS,
-        NPC_PRESENCE_AREAS,
-        OBSERVATION_CATEGORIES,
-        channelFor,
-        listensOn,
-        clearsCurtisFilter,
-        heatChannel
-      };
-    }
-  });
-
-  // src/exposure/engine.js
-  var require_engine = __commonJS({
-    "src/exposure/engine.js"(exports, module) {
-      var { slotNumber } = require_selectors();
-      var { stringHash } = require_random();
-      var { createObservation, addObservation, effectiveCount } = require_observations();
-      var { resolveLens, EXPOSURE_NPC_IDS } = require_npc_lenses();
-      var { BANDS, bandFor, bandId, bandLabel } = require_disposition_bands();
-      var {
-        channelFor,
-        listensOn,
-        clearsCurtisFilter,
-        heatChannel,
-        NPC_PRESENCE_SLOTS,
-        NPC_PRESENCE_AREAS
-      } = require_propagation();
-      function ledgerOf(state, npcId) {
-        const record = state && state.npc && state.npc[npcId];
-        if (!record) return [];
-        if (!Array.isArray(record.ledger)) record.ledger = [];
-        return record.ledger;
-      }
-      function rowWeight(lens, row) {
-        const base = row.event && row.event in lens.eventWeights ? lens.eventWeights[row.event] : lens.weights[row.type];
-        const multiplier = lens.sourceMultipliers[row.source] || 1;
-        return base * multiplier * effectiveCount(row);
-      }
-      function getDisposition(npcId, state) {
-        const lens = resolveLens(npcId);
-        if (!lens) return 0;
-        let score = 0;
-        for (const row of ledgerOf(state, npcId)) score += rowWeight(lens, row);
-        return Math.round(score * 100) / 100;
-      }
-      function getDispositionBand(npcId, state) {
-        return bandFor(getDisposition(npcId, state));
-      }
-      function recordObservation(state, npcId, spec) {
-        if (!state || !state.npc || !state.npc[npcId]) return null;
-        const observation = createObservation({ ...spec, day: spec.day || state.run.day });
-        if (!observation) return null;
-        return addObservation(ledgerOf(state, npcId), observation);
-      }
-      function couldObserve(npcId, { slot, location }) {
-        const slots = NPC_PRESENCE_SLOTS[npcId];
-        if (slots && slot != null && !slots.includes(slot)) return false;
-        const areas = NPC_PRESENCE_AREAS[npcId];
-        if (areas && location && !areas.includes(location)) return false;
-        return true;
-      }
-      var LAST_SLOT = 3;
-      function deliverySlot(state, channel, observation, { day, slot }) {
-        if (channel.arrival === "now") return slotNumber(day, slot);
-        if (channel.arrival === "end_of_day") return slotNumber(day, LAST_SLOT);
-        let days = channel.days || 1;
-        if (channel.maxExtraDays) {
-          const key = `${state.run.seed}:gossip:${observation.type}:${observation.event || ""}:${observation.location || ""}:${day}`;
-          days += stringHash(key) % (channel.maxExtraDays + 1);
-        }
-        return slotNumber(day + days, 0);
-      }
-      function receives(npcId, channelId, observation, context) {
-        if (!listensOn(npcId, channelId)) return false;
-        const channel = channelFor(channelId);
-        if (channel.presence && !couldObserve(npcId, context)) return false;
-        if (channel.timeOfDay && !channel.presence && context.slot != null) {
-          const slots = NPC_PRESENCE_SLOTS[npcId];
-          if (slots && !slots.includes(context.slot)) return false;
-        }
-        if (npcId === "curtis" && channelId === "network" && !clearsCurtisFilter(observation)) return false;
-        return true;
-      }
-      function broadcastObservation(state, spec) {
-        const channelId = spec.channel || "direct";
-        const channel = channelFor(channelId);
-        const day = spec.day || state.run.day;
-        const slot = spec.slot == null ? state.run.slot : spec.slot;
-        const observation = createObservation({ ...spec, day, source: channel.source });
-        if (!observation) return [];
-        const context = { slot, location: spec.location || state.world.currentNeighborhoodId };
-        const reached = [];
-        for (const npcId of EXPOSURE_NPC_IDS) {
-          if (!state.npc[npcId]) continue;
-          if (!receives(npcId, channelId, observation, context)) continue;
-          reached.push(npcId);
-          const deliverAtSlot = deliverySlot(state, channel, observation, { day, slot });
-          if (deliverAtSlot <= slotNumber(day, slot)) {
-            addObservation(ledgerOf(state, npcId), { ...observation });
-            continue;
-          }
-          state.run.pendingObservations.push({ npcId, observation: { ...observation }, deliverAtSlot });
-        }
-        return reached;
-      }
-      function resolveObservationQueue(state) {
-        const queue = state.run.pendingObservations;
-        if (!Array.isArray(queue) || !queue.length) return 0;
-        const now = slotNumber(state.run.day, state.run.slot);
-        const waiting = [];
-        let delivered = 0;
-        for (const entry of queue) {
-          if (!entry || !state.npc[entry.npcId] || !entry.observation) continue;
-          if (now < entry.deliverAtSlot) {
-            waiting.push(entry);
-            continue;
-          }
-          addObservation(ledgerOf(state, entry.npcId), entry.observation);
-          delivered += 1;
-        }
-        state.run.pendingObservations = waiting;
-        return delivered;
-      }
-      function propagateHeat(state) {
-        const channel = heatChannel(state.player.heat);
-        if (!channel) return null;
-        broadcastObservation(state, {
-          type: "heat_exposure",
-          event: `heat_${channel}`,
-          value: state.player.heat,
-          channel,
-          day: state.run.day,
-          slot: state.run.slot
-        });
-        return channel;
-      }
-      function describeDisposition(state, npcId) {
-        const lens = resolveLens(npcId);
-        if (!lens) return null;
-        const rows = ledgerOf(state, npcId).map((row) => ({
-          type: row.type,
-          event: row.event,
-          location: row.location,
-          source: row.source,
-          count: row.count,
-          day: row.day,
-          baseWeight: row.event && row.event in lens.eventWeights ? lens.eventWeights[row.event] : lens.weights[row.type],
-          sourceMultiplier: lens.sourceMultipliers[row.source] || 1,
-          effectiveCount: Math.round(effectiveCount(row) * 100) / 100,
-          contribution: Math.round(rowWeight(lens, row) * 100) / 100
-        })).sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
-        const score = getDisposition(npcId, state);
-        const band = bandFor(score);
-        return {
-          npcId,
-          archetype: lens.archetype,
-          inverted: lens.inverted,
-          score,
-          band,
-          bandId: bandId(band),
-          bandLabel: bandLabel(band),
-          rows,
-          pending: (state.run.pendingObservations || []).filter((entry) => entry.npcId === npcId).map((entry) => ({ type: entry.observation.type, event: entry.observation.event, deliverAtSlot: entry.deliverAtSlot }))
-        };
-      }
-      module.exports = {
-        BANDS,
-        EXPOSURE_NPC_IDS,
-        getDisposition,
-        getDispositionBand,
-        recordObservation,
-        broadcastObservation,
-        resolveObservationQueue,
-        propagateHeat,
-        describeDisposition,
-        couldObserve,
-        ledgerOf
-      };
-    }
-  });
-
   // src/data/market.js
   var require_market = __commonJS({
     "src/data/market.js"(exports, module) {
@@ -2120,6 +2616,11 @@
       var FLAKE_CHANCE = 0.15;
       var SNIPE_CHANCE = 0.15;
       var PRICE_VOLATILITY = 0.2;
+      var INTELLIGENCE_VOLATILITY = [
+        { floor: 6, volatility: 0.1 },
+        { floor: 3, volatility: 0.15 },
+        { floor: 0, volatility: PRICE_VOLATILITY }
+      ];
       var BULK_DEAL = { items: 3, discount: 0.3, chance: 0.22 };
       var BUYER_NPCS = [
         { id: "renata", name: "Renata", category: "electronics" },
@@ -2162,6 +2663,7 @@
         FLAKE_CHANCE,
         SNIPE_CHANCE,
         PRICE_VOLATILITY,
+        INTELLIGENCE_VOLATILITY,
         BULK_DEAL,
         BUYER_NPCS,
         BUYER_REQUEST_TEMPLATES,
@@ -2192,6 +2694,7 @@
         FLAKE_CHANCE,
         SNIPE_CHANCE,
         PRICE_VOLATILITY,
+        INTELLIGENCE_VOLATILITY,
         BULK_DEAL,
         BUYER_NPCS,
         BUYER_REQUEST_TEMPLATES,
@@ -2251,13 +2754,19 @@
         if (value < 0.82) return "mixed";
         return "flaky";
       }
+      function priceVolatility(state) {
+        var _a, _b;
+        const intelligence = Number((_b = (_a = state == null ? void 0 : state.player) == null ? void 0 : _a.attributes) == null ? void 0 : _b.intelligence) || 0;
+        const band = INTELLIGENCE_VOLATILITY.find((entry) => intelligence >= entry.floor);
+        return band ? band.volatility : PRICE_VOLATILITY;
+      }
       function salePrice(state, item, { condition, nonce = 0, district, quickSell = false, request = false } = {}) {
         const listing = typeof item === "string" ? LISTING_ITEM_BY_ID[item] : item;
         if (!listing) return 0;
         const band = CONDITIONS[condition || listing.condition] || CONDITIONS.good;
         const [low, high] = listing.trueValue;
         const anchor = low + (high - low) * band.position;
-        const swing = (roll(state.run.seed, `volatility:${state.run.day}:${state.run.slot}:${listing.id}:${nonce}`) * 2 - 1) * PRICE_VOLATILITY;
+        const swing = (roll(state.run.seed, `volatility:${state.run.day}:${state.run.slot}:${listing.id}:${nonce}`) * 2 - 1) * priceVolatility(state);
         let price = anchor * (1 + swing);
         if (district === "downtown") price += Math.max(0, price - listing.buy) * DOWNTOWN_MARGIN_BONUS;
         if (quickSell) price *= 1 - QUICK_SELL_MARKDOWN;
@@ -2314,6 +2823,7 @@
         };
       }
       module.exports = {
+        priceVolatility,
         roll,
         rollRange,
         robberyRisk,
@@ -2651,27 +3161,28 @@
         const { NPC_CHANNELS } = require_propagation();
         const Market = require_market();
         const MarketEvents = require_market_events();
-        const VERSION = 7;
+        const AttributeData = require_attributes();
+        const Attributes = require_attributes2();
+        const VERSION = 8;
         const RUN_DAYS = 7;
         const PRESSURE_DAYS = 7;
         const MAX_ENERGY = 4;
         const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
-        const SAVE_KEY = "907ogr_v7";
-        const LEGACY_SAVE_KEYS = ["907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"];
+        const SAVE_KEY = "907ogr_v8";
+        const LEGACY_SAVE_KEYS = ["907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"];
         const PHONE_BILL = 75;
         const WEEKLY_RENT = 150;
         const WORKING_CAPITAL_RESERVE = 150;
         const STREET_NAME_MAX = 16;
         const GARAGE_DEPOSIT = 650;
-        const ATTRIBUTE_THRESHOLDS = { 2: 10, 3: 18, 4: 28 };
         const DEFAULT_STREET_NAMES = { shooter: "Steady", hustler: "Silver", strategist: "Quiet", neutral: "Rookie" };
-        const ATTRIBUTE_DEFAULTS = { strength: 2, endurance: 2, reflexes: 2, presence: 2, insight: 2, discipline: 2 };
-        const LEGACY_ATTRIBUTES = {
-          shooter: { strength: 3, endurance: 3, reflexes: 3, presence: 1, insight: 2, discipline: 1 },
-          hustler: { strength: 1, endurance: 1, reflexes: 1, presence: 3, insight: 2, discipline: 2 },
-          strategist: { strength: 2, endurance: 2, reflexes: 2, presence: 1, insight: 3, discipline: 2 }
+        const { ATTRIBUTE_DEFAULTS, ATTRIBUTE_IDS, ATTRIBUTE_MIN, ATTRIBUTE_MAX } = AttributeData;
+        const LEGACY_ATTRIBUTE_GROUPS = {
+          combat: ["strength", "endurance", "reflexes"],
+          charisma: ["presence", "discipline"],
+          intelligence: ["insight", "discipline"]
         };
-        const STREET_IDENTITIES = {
+        const LEGACY_STREET_IDENTITIES = {
           unproven: { label: "Unproven", description: "The block is still deciding." },
           mover: { label: "The Mover", description: "People notice the way you read a market and keep product moving." },
           earner: { label: "The Earner", description: "People notice that your promises turn into payments and plans." },
@@ -2691,6 +3202,7 @@
           { id: "strategist", name: "Strategist", combat: 2, charisma: 1, intelligence: 3, cash: 375, heat: 1, description: "Best at reading danger, intimidation, and judging territory strength." }
         ];
         const STARTING_EDGES = BACKGROUNDS.filter((item) => item.id !== "strategist");
+        const BACKGROUND_BY_ID = Object.fromEntries(BACKGROUNDS.map((item) => [item.id, item]));
         const { GEAR, BASE_UPGRADES, GEAR_BY_ID, LISTING_ITEMS, LISTING_ITEM_BY_ID } = require_items();
         const { CREW, CREW_BY_ID, DEALERS, DEALER_BY_ID, PLUGS, PLUG_BY_ID, HOUSEHOLD_NPCS, NIGHT_OWL_REGULARS } = require_npcs();
         const SOLDIER_RECRUIT_COST = 140;
@@ -3186,23 +3698,40 @@
           return true;
         }
         function normalizedAttributes(state) {
-          var _a;
-          return { ...ATTRIBUTE_DEFAULTS, ...((_a = state == null ? void 0 : state.player) == null ? void 0 : _a.attributes) || {} };
+          return Attributes.normalizedAttributes(state);
         }
         function combatRating(state) {
-          const a = normalizedAttributes(state);
-          return clamp(Math.round(a.strength * 0.4 + a.reflexes * 0.35 + a.endurance * 0.25), 1, 5);
+          return normalizedAttributes(state).combat;
         }
         function charismaRating(state) {
-          const a = normalizedAttributes(state);
-          return clamp(Math.round(a.presence * 0.7 + a.discipline * 0.3), 1, 5);
+          return normalizedAttributes(state).charisma;
         }
         function intelligenceRating(state) {
-          const a = normalizedAttributes(state);
-          return clamp(Math.round(a.insight * 0.7 + a.discipline * 0.3), 1, 5);
+          return normalizedAttributes(state).intelligence;
         }
         function derivedRatings(state) {
-          return { combat: combatRating(state), charisma: charismaRating(state), intelligence: intelligenceRating(state) };
+          return normalizedAttributes(state);
+        }
+        function combatCompat(state) {
+          return Attributes.compatibilityRating(state, "combat");
+        }
+        function charismaCompat(state) {
+          return Attributes.compatibilityRating(state, "charisma");
+        }
+        function intelligenceCompat(state) {
+          return Attributes.compatibilityRating(state, "intelligence");
+        }
+        function attributeOf(state, attribute) {
+          return Attributes.effectiveAttribute(state, attribute);
+        }
+        function normalizedAttributeProgress(progress) {
+          const source = progress && typeof progress === "object" ? progress : {};
+          const out = {};
+          for (const id of ATTRIBUTE_IDS) {
+            const value = Number(source[id]);
+            out[id] = Number.isFinite(value) && value > 0 ? Math.min(1, value) : 0;
+          }
+          return out;
         }
         function streetReadIsHydrated(read) {
           return !!read && !!read.categories && Object.values(read.categories).every((value) => value instanceof Set);
@@ -3236,8 +3765,16 @@
               waiting.push(application);
               continue;
             }
-            if (application.jobId !== state.jobs.activeJobId && !state.jobs.offers.includes(application.jobId)) state.jobs.offers.push(application.jobId);
             const job = SPENARD_JOB_BY_ID[application.jobId];
+            const chance = clamp(0.62 - Math.max(0, state.player.heat - 4) * 0.04, 0.25, 0.95);
+            const outcome = resolveOutcome(state, "job_interview", chance, `${state.run.seed}:job_interview:${application.jobId}:${application.appliedAtDay}:${application.appliedAtSlot}`);
+            broadcastOutcome(state, "job_interview", outcome.tier);
+            if (!Attributes.isSuccessTier(outcome.tier)) {
+              pushPhoneMessage(state, job.name, "We went with someone else this time. You can try again.");
+              logEntry(state, `${job.name} passed. Nothing stops you applying again.`, "bad");
+              continue;
+            }
+            if (application.jobId !== state.jobs.activeJobId && !state.jobs.offers.includes(application.jobId)) state.jobs.offers.push(application.jobId);
             pushPhoneMessage(state, job.name, `We have an offer for you. Call back when you're ready to commit.`);
             logEntry(state, `${job.name} calls back with an offer. It waits for your answer.`, "good");
           }
@@ -3264,54 +3801,54 @@
           };
           return summaries[category] || "Made a choice the neighborhood will remember.";
         }
-        function identityCandidate(scores) {
-          const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
-          const [first, second] = ranked;
-          if (!first || first[1] <= 0) return "unproven";
-          const close = second && first[1] - second[1] < 3 && second[1] >= first[1] * 0.75;
-          return close ? "wild_card" : first[0];
+        function broadcastOutcome(state, actionType, tier, value) {
+          var _a, _b;
+          const specs = ((_a = AttributeData.OUTCOME_OBSERVATIONS[actionType]) == null ? void 0 : _a[tier]) || [];
+          for (const spec of specs) {
+            Exposure.broadcastObservation(state, {
+              ...spec,
+              location: spec.location || state.world.currentNeighborhoodId,
+              value: value == null ? (_b = spec.value) != null ? _b : null : value,
+              day: state.run.day
+            });
+          }
+          return specs.length;
         }
-        function assignIdentity(state, identity, reasonSummary) {
-          state.player.streetIdentity = identity;
-          state.player.identityAssignedDay = state.run.day;
-          state.player.identityHistory.push({ identity, day: state.run.day, reasonSummary });
-          state.player.behavior.pendingIdentity = null;
-          state.player.behavior.pendingIdentityNights = 0;
-          logEntry(state, `People around ${AREA_BY_ID[state.world.currentNeighborhoodId].name} have started calling you ${STREET_IDENTITIES[identity].label}.`, "good");
+        function resolveOutcome(state, actionType, chance, key) {
+          const outcome = Attributes.resolveAction(state, actionType, chance, key);
+          const attribute = AttributeData.ACTION_ATTRIBUTE_MAP[actionType];
+          if (Attributes.gymStreakBonus(state, attribute)) {
+            state.player.gymStreak = 0;
+            state.player.gymStreakDay = null;
+          }
+          return outcome;
         }
-        function evaluateStreetIdentity(state, nightly) {
-          const behavior = state.player.behavior;
-          if (!behavior || behavior.lastEvaluatedDay === state.run.day && nightly) return;
-          if (nightly) behavior.lastEvaluatedDay = state.run.day;
-          const firstReady = behavior.meaningfulActions >= 6 && nightly && state.run.day >= 2;
-          const delayedReady = behavior.meaningfulActions >= 8;
-          if (state.player.streetIdentity === "unproven") {
-            if (!firstReady && !delayedReady) return;
-            const candidate2 = identityCandidate(behavior.scores);
-            if (candidate2 !== "unproven") assignIdentity(state, candidate2, candidate2 === "wild_card" ? "The week has stayed deliberately mixed." : `Your recent choices consistently point toward ${STREET_IDENTITIES[candidate2].label}.`);
-            return;
+        function standingGain(record, current, rawGain, ladder) {
+          return Attributes.bankStandingGain(record, current, rawGain, ladder);
+        }
+        function standingGainFloat(current, rawGain, ladder) {
+          return Attributes.adjustedStandingGain(current, rawGain, ladder);
+        }
+        function failedPurchase(state, productId, source) {
+          logEntry(state, "Transaction failed. Try again.", "bad");
+          pushConsequence(state, "Transaction failed. Try again.", "bad");
+          if (typeof console !== "undefined" && console.warn) {
+            console.warn("[907] purchase resolved to zero units", {
+              source,
+              productId,
+              day: state.run.day,
+              slot: state.run.slot,
+              catalog: PRODUCTS.map((item) => item.id),
+              access: { ...state.world.productAccess }
+            });
           }
-          if (!nightly) return;
-          const candidate = identityCandidate(behavior.scores);
-          if (candidate === state.player.streetIdentity || candidate === "unproven") {
-            behavior.pendingIdentity = null;
-            behavior.pendingIdentityNights = 0;
-            return;
-          }
-          const currentScore = state.player.streetIdentity === "wild_card" ? 0 : behavior.scores[state.player.streetIdentity] || 0;
-          const candidateScore = candidate === "wild_card" ? Math.max(...Object.values(behavior.scores)) : behavior.scores[candidate] || 0;
-          const clearsLead = candidate === "wild_card" || candidateScore >= currentScore * 1.25 && candidateScore - currentScore >= 3;
-          if (!clearsLead) {
-            behavior.pendingIdentity = null;
-            behavior.pendingIdentityNights = 0;
-            return;
-          }
-          if (behavior.pendingIdentity === candidate) behavior.pendingIdentityNights += 1;
-          else {
-            behavior.pendingIdentity = candidate;
-            behavior.pendingIdentityNights = 1;
-          }
-          if (behavior.pendingIdentityNights >= 2) assignIdentity(state, candidate, `Two nights of choices changed what the neighborhood expects from you.`);
+          return state;
+        }
+        function streetIdentity(state) {
+          return Attributes.getStreetIdentity(state);
+        }
+        function streetIdentityView(state) {
+          return Attributes.describeStreetIdentity(state);
         }
         function recordBehavior(state, category, points, sourceId, type) {
           const behavior = state.player.behavior;
@@ -3328,7 +3865,6 @@
           behavior.meaningfulActions += 1;
           behavior.history.push(entry);
           behavior.history = behavior.history.slice(-50);
-          if (behavior.meaningfulActions >= 8 && state.player.streetIdentity === "unproven") evaluateStreetIdentity(state, false);
           return true;
         }
         const STREET_READ_CATEGORIES = {
@@ -3458,13 +3994,16 @@
           CONTACT_VISIT: { type: "presence", event: "keeps_in_touch", channel: "neighborhood" },
           TRAIN_ATTRIBUTE: { type: "growth", event: "training", channel: "neighborhood" },
           LAY_LOW: { type: "discretion", event: "kept_quiet", channel: "neighborhood" },
-          ROB: { type: "violence", event: "robbery", channel: "neighborhood" },
-          ROB_DEALER: { type: "violence", event: "robbery", channel: "neighborhood" },
           TAKEOVER: { type: "defiance", event: "territory_claim", channel: "network" },
           CLAIM_BLOCK: { type: "defiance", event: "territory_claim", channel: "network" },
           SHOPLIFT: { type: "financial", event: "petty_theft", channel: "neighborhood" },
           BOOST: { type: "financial", event: "boosting", channel: "network" },
           GAMBLE: { type: "financial", event: "gambling", channel: "neighborhood" }
+          // ROB and ROB_DEALER used to live here as one flat row apiece. They are
+          // tiered now (see OUTCOME_OBSERVATIONS in src/data/attributes.js), which says
+          // the same thing with more fidelity - keeping both would record every
+          // robbery twice and inflate every disposition that heard about it. GAMBLE
+          // stays because its tiers only describe the night that went badly.
         };
         const STREET_READ_INTEL = {
           north_star_lot: [
@@ -3760,6 +4299,9 @@
             lastScheduledShiftDay: null,
             lastDeliveryDay: null,
             lastWorked: null,
+            // How many times an employer has pulled you aside about the heat. Keyed by
+            // employer id; day labor never appears here.
+            warnings: {},
             records: Object.fromEntries(SPENARD_JOBS.map((job) => [job.id, {
               xp: 0,
               rank: 0,
@@ -3829,12 +4371,14 @@
               legacyBackground: null,
               streetName: "",
               streetNameChosen: false,
-              streetIdentity: "unproven",
-              identityAssignedDay: null,
-              identityHistory: [],
+              historicalIdentity: null,
               attributes: { ...ATTRIBUTE_DEFAULTS },
-              attributeProgress: { strength: 0, endurance: 0, reflexes: 0, presence: 0, insight: 0, discipline: 0 },
-              behavior: { scores: { mover: 0, earner: 0, stickup: 0, connector: 0 }, meaningfulActions: 0, history: [], pendingIdentity: null, pendingIdentityNights: 0, lastEvaluatedDay: null, caps: {} },
+              // Fractional. Growth returns a partial level; a whole point is banked
+              // when the accumulator crosses 1.
+              attributeProgress: { combat: 0, charisma: 0, intelligence: 0 },
+              gymStreak: 0,
+              gymStreakDay: null,
+              behavior: { scores: { mover: 0, earner: 0, stickup: 0, connector: 0 }, meaningfulActions: 0, history: [], caps: {} },
               cash: 0,
               dirtyCash: 0,
               cleanCash: 0,
@@ -3843,7 +4387,6 @@
               heat: 0,
               cargoCapacity: 10,
               energy: MAX_ENERGY,
-              stats: { combat: 0, charisma: 0, intelligence: 0 },
               inventory,
               gear: { owned: [], equipped: { weapon: null, armor: null, utility: null, tool: null }, consumables: { medical_kit: 0 } }
             },
@@ -3864,7 +4407,7 @@
                 discoveries: [],
                 gamblingKnown: false,
                 downtownAmbientSeen: [],
-                gym: { sessionDay: null, sessionsToday: 0 },
+                gym: { sessionDay: null, sessionsToday: 0, activitySessions: { bag_work: 0, cardio: 0, sparring: 0 } },
                 gambling: { plays: 0, wins: 0, losses: 0, net: 0 },
                 discountStore: { name: "Northern Value", suspicion: 0, lastAttemptDay: null },
                 employer: { name: "Ship Creek Freight", standing: 0, lastShiftDay: null, keptCommitments: 0, missedCommitments: 0 }
@@ -4036,10 +4579,10 @@
           return { attempts, successes, failures, totalPayout, lastAttemptedDay, attempted: attempts > 0, success: successes > 0, payout: totalPayout };
         }
         function migrateSave(value) {
-          var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v;
+          var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w;
           if (!value || typeof value !== "object") return null;
           if (value.version === VERSION) return value;
-          if (![3, 4, 5, 6].includes(value.version) || !value.run || !value.world || !value.player) return null;
+          if (![3, 4, 5, 6, 7].includes(value.version) || !value.run || !value.world || !value.player) return null;
           const migrated = JSON.parse(JSON.stringify(value));
           const oldHousehold = ((_a = migrated.people) == null ? void 0 : _a.household) || {};
           const legacyNpc = migrated.npc || {};
@@ -4130,6 +4673,34 @@
             legacyList.buyerRequests = Array.isArray(legacyList.buyerRequests) ? legacyList.buyerRequests : [];
             legacyList.flipCount = Math.max(0, Math.floor(Number((_v = legacyList.flipCount) != null ? _v : legacyList.sales) || 0));
           }
+          const player = migrated.player;
+          const legacyAttributes = player.attributes && typeof player.attributes === "object" ? player.attributes : null;
+          const hasLegacySix = legacyAttributes && LEGACY_ATTRIBUTE_GROUPS.combat.some((key) => key in legacyAttributes);
+          if (hasLegacySix) {
+            const converted = {};
+            for (const [attribute, sources] of Object.entries(LEGACY_ATTRIBUTE_GROUPS)) {
+              const best = Math.max(...sources.map((key) => Number(legacyAttributes[key]) || 0));
+              converted[attribute] = clamp(Math.round(best), ATTRIBUTE_MIN, ATTRIBUTE_MAX);
+            }
+            player.attributes = converted;
+          } else if (legacyAttributes) {
+            const converted = {};
+            for (const id of ATTRIBUTE_IDS) converted[id] = clamp(Math.round(Number(legacyAttributes[id]) || ATTRIBUTE_DEFAULTS[id]), ATTRIBUTE_MIN, ATTRIBUTE_MAX);
+            player.attributes = converted;
+          }
+          delete player.attributeProgress;
+          delete player.stats;
+          if (player.streetIdentity) {
+            player.historicalIdentity = ((_w = LEGACY_STREET_IDENTITIES[player.streetIdentity]) == null ? void 0 : _w.label) || null;
+            delete player.streetIdentity;
+          }
+          delete player.identityAssignedDay;
+          delete player.identityHistory;
+          if (player.behavior && typeof player.behavior === "object") {
+            delete player.behavior.pendingIdentity;
+            delete player.behavior.pendingIdentityNights;
+            delete player.behavior.lastEvaluatedDay;
+          }
           migrated.version = VERSION;
           return migrated;
         }
@@ -4178,11 +4749,14 @@
             state.base.acquiredDay = value.run.day || 1;
           }
           const legacy = ["shooter", "hustler", "strategist"].includes(value.player.background) ? value.player.background : value.player.legacyBackground;
-          if (!value.player.attributes && legacy && LEGACY_ATTRIBUTES[legacy]) state.player.attributes = { ...LEGACY_ATTRIBUTES[legacy] };
+          const legacyBackground = BACKGROUND_BY_ID[legacy];
+          if (!value.player.attributes && legacyBackground) {
+            state.player.attributes = { combat: legacyBackground.combat, charisma: legacyBackground.charisma, intelligence: legacyBackground.intelligence };
+          }
           state.player.legacyBackground = legacy || null;
           state.player.background = null;
-          state.player.stats = derivedRatings(state);
-          state.player.streetIdentity = STREET_IDENTITIES[state.player.streetIdentity] ? state.player.streetIdentity : "unproven";
+          state.player.attributes = normalizedAttributes(state);
+          state.player.attributeProgress = normalizedAttributeProgress(state.player.attributeProgress);
           state.player.behavior.history = Array.isArray(state.player.behavior.history) ? state.player.behavior.history.slice(-50) : [];
           state.player.behavior.caps = state.player.behavior.caps && typeof state.player.behavior.caps === "object" ? state.player.behavior.caps : {};
           state.stats.robbery = normalizeRobberyStats((_c = value.stats) == null ? void 0 : _c.robbery, state);
@@ -4462,8 +5036,7 @@
           return 0.4 + value * 0.05;
         }
         function boostChance(state, target) {
-          const a = normalizedAttributes(state);
-          const skill = target.tier === 1 ? (a.reflexes + a.insight) / 2 : target.tier === 2 ? (a.reflexes + a.discipline) / 2 : (a.discipline + a.presence) / 2;
+          const skill = target.tier === 1 ? (combatCompat(state) + intelligenceCompat(state)) / 2 : target.tier === 2 ? (combatCompat(state) + intelligenceCompat(state)) / 2 : (intelligenceCompat(state) + charismaCompat(state)) / 2;
           const base = target.tier === 1 ? 0.8 : target.tier === 2 ? 0.55 : 0.4;
           const windowBonus = target.tier === 2 && state.run.slot === target.windowSlot ? 0.2 : 0;
           return clamp(base + (skill - 2) * 0.1 + windowBonus, 0.1, 0.95);
@@ -4495,7 +5068,7 @@
             if (target.tier === 3) {
               state.boost.merchandise += take;
               const crew = state.people.crew[state.boost.crewAssigned];
-              if (crew) crew.loyalty += 1;
+              if (crew) crew.loyalty += standingGain(crew, crew.loyalty, 1, "open");
               logEntry(state, `${target.name} lands. $${take} in merchandise is waiting for the fence.`, "good");
             } else {
               addDirtyCash(state, take);
@@ -4511,7 +5084,7 @@
             logEntry(state, "Security grabbed your arm. You dropped it and walked out.", "bad");
           } else if (target.tier === 2) {
             const chaseRoll = Number.isFinite(options == null ? void 0 : options.chaseRoll) ? options.chaseRoll : random.next();
-            const escaped = chaseRoll < clamp(0.45 + normalizedAttributes(state).reflexes * 0.08, 0.25, 0.85);
+            const escaped = chaseRoll < clamp(0.45 + combatCompat(state) * 0.08, 0.25, 0.85);
             state.player.heat = clamp(state.player.heat + (escaped ? 1 : 2), 0, 15);
             if (!escaped) {
               if (!state.boost.storeBans.includes(target.id)) state.boost.storeBans.push(target.id);
@@ -4657,14 +5230,57 @@
         function transitCovered(state) {
           return !!(state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day);
         }
-        function gymSessionDetails(state) {
-          var _a;
+        function gymSessionDetails(state, activityId) {
+          var _a, _b;
           const gym = state.world.locations.gym;
           const sessionsToday = gym.sessionDay === state.run.day ? gym.sessionsToday : 0;
           const index = Math.min(3, sessionsToday);
           const sessionCost = [25, 45, 75, 120][index];
           const membershipFee = ((_a = state.memberships) == null ? void 0 : _a.gym) ? 0 : 30;
-          return { cost: sessionCost + membershipFee, sessionCost, membershipFee, progress: [3, 2, 1, 1][index], sessionsToday };
+          const activity = AttributeData.GYM_ACTIVITY_BY_ID[activityId] || AttributeData.GYM_ACTIVITIES[0];
+          const priorSessions = ((_b = gym.activitySessions) == null ? void 0 : _b[activity.id]) || 0;
+          const current = normalizedAttributes(state)[activity.attribute];
+          const growth = Attributes.attributeGrowth(current, priorSessions, activity.id);
+          return {
+            cost: sessionCost + membershipFee,
+            sessionCost,
+            membershipFee,
+            sessionsToday,
+            activity,
+            growth,
+            priorSessions,
+            unlocked: Attributes.gymActivityAvailable(state, activity.id)
+          };
+        }
+        function registerGymDay(state) {
+          const day = state.run.day;
+          if (state.player.gymStreakDay === day) return;
+          state.player.gymStreak = state.player.gymStreakDay === day - 1 ? (state.player.gymStreak || 0) + 1 : 1;
+          state.player.gymStreakDay = day;
+          if (state.player.gymStreak !== AttributeData.GYM_STREAK_REQUIREMENT) return;
+          for (const channel of ["household", "neighborhood"]) {
+            Exposure.broadcastObservation(state, {
+              type: "growth",
+              event: "gym_consistent",
+              location: "spenard",
+              channel
+            });
+          }
+          logEntry(state, "Three days straight. Juan noticed the bag gloves by the door.", "good");
+        }
+        function gymActivityOptions(state) {
+          return AttributeData.GYM_ACTIVITIES.map((activity) => {
+            const details = gymSessionDetails(state, activity.id);
+            return {
+              id: activity.id,
+              label: activity.label,
+              blurb: activity.blurb,
+              attribute: activity.attribute,
+              cost: details.cost,
+              unlocked: details.unlocked,
+              reason: details.unlocked ? null : "Sparring opens once you can handle yourself."
+            };
+          });
         }
         function resolveDistrictCost(definition, field, state, params) {
           const value = typeof definition[field] === "function" ? definition[field](state, params || {}) : definition[field];
@@ -4715,7 +5331,7 @@
           if (actionId === "spenard_gym") {
             const gym = gymSessionDetails(state);
             result.available = true;
-            result.reason = gym.sessionsToday ? "Same-day training costs more and gives less progress." : "The first session gives the best progress.";
+            result.reason = gym.sessionsToday ? "Coming back the same day costs more and does less." : "The first session of the day is the one that counts.";
             return result;
           }
           if (actionId === "spenard_gambling") {
@@ -4805,7 +5421,8 @@
           const takenIds = new Set(((_a = list.taken) == null ? void 0 : _a.day) === day ? list.taken.ids : []);
           const pool = LISTING_ITEMS.filter((item) => item.tier <= tier && !heldIds.has(item.id) && !takenIds.has(item.id));
           const order = seededShuffle(pool, state.run.seed, stringHash(`907list:${day}:${tier}`));
-          const picked = order.slice(0, config.listings);
+          const extraListing = normalizedAttributes(state).intelligence >= AttributeData.ADVANTAGE_THRESHOLD ? 1 : 0;
+          const picked = order.slice(0, config.listings + extraListing);
           const specialist = specialistCategory(state);
           if (specialist) {
             const bonus = order.find((item) => item.category === specialist && !picked.includes(item));
@@ -4879,7 +5496,11 @@
         function marketMeetupRobbery(state, nonce) {
           const district = marketMeetupDistrict(state) || state.world.currentNeighborhoodId;
           const carriedValue = marketCarriedValue(state);
-          if (!MarketEvents.rollRobbery(state, { carriedValue, district, slot: state.run.slot, nonce })) return false;
+          if (!MarketEvents.rollRobbery(state, { carriedValue, district, slot: state.run.slot, nonce })) {
+            const outcome = resolveOutcome(state, "market_meetup", 0.75, `${state.run.seed}:meetup:${state.run.day}:${state.run.slot}:${nonce}`);
+            broadcastOutcome(state, "market_meetup", outcome.tier);
+            return false;
+          }
           const list = state.nineZeroSevenList;
           const lost = list.inventory.length;
           list.inventory = [];
@@ -4888,13 +5509,7 @@
           const damage = MarketEvents.robberyHealthLoss(state, nonce);
           state.player.health = clamp(state.player.health - damage, 0, 100);
           state.player.heat = clamp(state.player.heat + Market.ROBBERY.heatGain, 0, 15);
-          Exposure.broadcastObservation(state, {
-            type: "violence",
-            event: "robbery_victim",
-            location: district,
-            value: carriedValue,
-            channel: "neighborhood"
-          });
+          broadcastOutcome(state, "market_meetup", "catastrophic", carriedValue);
           logEntry(state, lost ? `Two of them work the meetup. You lose ${lost === 1 ? "the item" : `all ${lost} items`} and ${damage} health, and the block will hear about it.` : `Two of them work the meetup and find nothing worth taking. You lose ${damage} health.`, "bad");
           return true;
         }
@@ -5060,7 +5675,7 @@
             explore: { available: explore.available, reason: explore.visible ? explore.reason : "Return to Spenard first.", cost: 0 },
             busDowntown: { available: downtown.available, reason: downtown.reason, cost: downtown.cashCost },
             industrial: { available: industrial.available, reason: industrial.reason, cost: industrial.cashCost },
-            gym: { available: gymAccess.available, reason: gymAccess.visible ? gymAccess.reason : "Return to Spenard to use the gym.", cost: gym.cost, progress: gym.progress, sessionsToday: gym.sessionsToday },
+            gym: { available: gymAccess.available, reason: gymAccess.visible ? gymAccess.reason : "Return to Spenard to use the gym.", cost: gym.cost, sessionsToday: gym.sessionsToday, activities: gymActivityOptions(state), streak: state.player.gymStreak || 0 },
             gambling: state.world.currentNeighborhoodId !== HOME_DISTRICT_ID ? { available: false, reason: "Return to Spenard for the game." } : !state.world.locations.gamblingKnown ? { available: false, reason: "Nobody has trusted you with the game's address yet." } : { available: gamblingAccess.available, reason: gamblingAccess.reason },
             shoplifting: state.world.currentNeighborhoodId !== HOME_DISTRICT_ID ? { available: false, reason: "Return to Spenard first." } : ((_a = state.boost) == null ? void 0 : _a.visible) ? { available: false, reason: "Use the Boost tab for known targets." } : store.lastAttemptDay === state.run.day ? { available: false, reason: "Northern Value is watching for you today." } : { available: true, reason: "One attempt per day. Reflexes lead; Insight, Heat, and suspicion matter." }
           };
@@ -5153,7 +5768,58 @@
           }
           if (job.scheduled && state.jobs.lastScheduledShiftDay === state.run.day) return { available: false, reason: "You already worked a scheduled shift today." };
           if (!job.scheduled && state.jobs.lastDeliveryDay === state.run.day) return { available: false, reason: "You already ran a delivery today." };
+          if (jobId === "night_owl" && state.player.heat >= JOB_HEAT_FIRING) {
+            return { available: false, reason: "Mina cannot put you on the schedule this week. You can still come in." };
+          }
           return { available: true, reason: "Choose a shift approach. Uses one part of day." };
+        }
+        const JOB_HEAT_FIRST_WARNING = 8;
+        const JOB_HEAT_FINAL_WARNING = 10;
+        const JOB_HEAT_FIRING = 12;
+        function applyHeatEmployment(state, jobId) {
+          const job = SPENARD_JOB_BY_ID[jobId];
+          if (!job || job.dayLabor) return null;
+          const heat = state.player.heat;
+          if (heat < JOB_HEAT_FIRST_WARNING) {
+            delete state.jobs.warnings[jobId];
+            return null;
+          }
+          if (heat >= JOB_HEAT_FIRING && jobId !== "night_owl") {
+            state.jobs.activeJobId = null;
+            state.jobs.hired = ["day_labor"];
+            state.jobs.offers = state.jobs.offers.filter((id) => id !== jobId);
+            const record = state.jobs.records[jobId];
+            if (record) {
+              record.xp = 0;
+              record.rank = 0;
+              record.relationship = 0;
+            }
+            delete state.jobs.warnings[jobId];
+            pushPhoneMessage(state, job.name, "Don't come in tomorrow. We'll mail the last check.");
+            logEntry(state, "You got let go. They didn't say why but you know.", "bad");
+            pushConsequence(state, `${job.name} let you go. Day labor is still there.`, "bad");
+            for (const channel of ["household", "neighborhood"]) {
+              Exposure.broadcastObservation(state, {
+                type: "financial",
+                event: "job_lost",
+                location: state.world.currentNeighborhoodId,
+                channel
+              });
+            }
+            return "fired";
+          }
+          const rung = heat >= JOB_HEAT_FINAL_WARNING ? 2 : 1;
+          const given = state.jobs.warnings[jobId] || 0;
+          if (given >= rung) return null;
+          state.jobs.warnings[jobId] = rung;
+          if (rung === 1) {
+            pushPhoneMessage(state, job.name, "People are talking. Keep your head down.");
+            logEntry(state, "Your boss pulled you aside. 'People are talking. Keep your head down.'", "warn");
+            return "warned";
+          }
+          pushPhoneMessage(state, job.name, "Final warning. Next problem and you're done here.");
+          logEntry(state, "Final warning. Next problem and you're done here.", "bad");
+          return "final_warning";
         }
         function relationshipLabel(value) {
           if (value >= 8) return "Trusted";
@@ -5279,15 +5945,17 @@
           logEntry(state, "You catch part of a hiring conversation, but not enough to know who is taking names.", "");
           return false;
         }
-        function improveAttribute(state, attribute, progress) {
-          if (!["strength", "endurance", "reflexes"].includes(attribute) || state.player.attributes[attribute] >= 5) return false;
-          state.player.attributeProgress[attribute] += progress;
-          const threshold = ATTRIBUTE_THRESHOLDS[state.player.attributes[attribute]];
-          if (state.player.attributeProgress[attribute] < threshold) return false;
-          state.player.attributeProgress[attribute] -= threshold;
-          state.player.attributes[attribute] += 1;
-          state.player.stats = derivedRatings(state);
-          logEntry(state, `${attribute[0].toUpperCase()}${attribute.slice(1)} rises to ${state.player.attributes[attribute]}. The work is showing.`, "good");
+        function improveAttribute(state, attribute, growth) {
+          if (!ATTRIBUTE_IDS.includes(attribute)) return false;
+          const gained = Number(growth) || 0;
+          if (gained <= 0) return false;
+          if (state.player.attributes[attribute] >= ATTRIBUTE_MAX) return false;
+          state.player.attributeProgress[attribute] += gained;
+          if (state.player.attributeProgress[attribute] < 1) return false;
+          state.player.attributeProgress[attribute] -= 1;
+          state.player.attributes[attribute] = clamp(state.player.attributes[attribute] + 1, ATTRIBUTE_MIN, ATTRIBUTE_MAX);
+          const label = Attributes.attributeLabel(state.player.attributes[attribute]);
+          logEntry(state, `Something has changed in how you carry yourself. People read you as ${label} now.`, "good");
           return true;
         }
         function announceFeatureUnlocks(state, before) {
@@ -5325,7 +5993,7 @@
         function recruitmentCost(state, crewId) {
           const person = CREW_BY_ID[crewId];
           if (!person) return 0;
-          const charismaDiscount = Math.max(0, charismaRating(state) - 1) * 0.05;
+          const charismaDiscount = Math.max(0, charismaCompat(state) - 1) * 0.05;
           const territoryDiscount = controlled(state, "north_star_lot") ? 0.1 : 0;
           return Math.max(1, Math.round(person.recruitCost * (1 - charismaDiscount - territoryDiscount)));
         }
@@ -5370,7 +6038,7 @@
             if (person.id === "tone" && crew.tier >= 2) power += crew.tier === 3 ? 4 : 2;
           }
           if (includePlayer) {
-            power += combatRating(state) * 2 + charismaRating(state) + intelligenceRating(state);
+            power += combatCompat(state) * 2 + charismaCompat(state) + intelligenceCompat(state);
             if (state.player.health > 80) power += 1;
             if (state.player.health < 50) power -= 2;
           }
@@ -5379,7 +6047,7 @@
         function territoryPowerEstimate(state, areaId) {
           var _a;
           const exact = ((_a = state.world.territories[areaId]) == null ? void 0 : _a.power) || 0;
-          const intelligence = intelligenceRating(state);
+          const intelligence = intelligenceCompat(state);
           const spread = intelligence >= 3 ? 0 : intelligence === 2 ? 1 : 3;
           return { exact: spread === 0, min: Math.max(0, exact - spread), max: exact + spread, label: spread ? `${Math.max(0, exact - spread)}\u2013${exact + spread}` : String(exact) };
         }
@@ -5448,7 +6116,7 @@
           const marketPriceValue = ((_a = state.world.markets[areaId]) == null ? void 0 : _a.prices[productId]) || 0;
           const control = controlled(state, areaId);
           const buy = Math.round(marketPriceValue * (control ? 0.96 : 1) * plugPriceModifier(state, productId));
-          const charismaBonus = Math.max(0, charismaRating(state) - 1) * 0.015;
+          const charismaBonus = Math.max(0, charismaCompat(state) - 1) * 0.015;
           const influenceBonus = Math.min(0.02, state.world.influence[areaId] * 5e-3);
           const curtisPremium = state.npc.curtis.friendship === "accepted" && state.npc.curtis.protectionUntilDay >= state.run.day ? 0.1 : 0;
           const pherrisPremium = areaId === "downtown" && ((_b = state.people.crew.pherris) == null ? void 0 : _b.recruited) && state.people.crew.pherris.tier >= 1 ? 0.1 : 0;
@@ -5620,7 +6288,7 @@
           const weaponBonus = equippedWeapon(state) ? 0.05 : 0;
           const crewBonus = Math.min(0.08, recruitedCrew(state).length * 0.04);
           const repeatPenalty = robbery.attempts * 0.035;
-          const chance = clamp(0.3 + combatRating(state) * 0.065 + intelligenceRating(state) * 0.035 + weaponBonus + crewBonus - state.player.heat * 0.015 - repeatPenalty, 0.22, 0.72);
+          const chance = clamp(0.43 + intelligenceCompat(state) * 0.035 + weaponBonus + crewBonus - state.player.heat * 0.015 - repeatPenalty, 0.22, 0.72);
           return { available: true, reason: "One attempt is available today. It uses one part of day.", chance, chanceLabel: `${Math.round(chance * 100)}%`, workingCapital: capital, attempts: robbery.attempts };
         }
         function dealerSupplyFactor(state, areaId, productId) {
@@ -5676,7 +6344,7 @@
           const weapon = equippedWeapon(state);
           const weaponBonus = weapon ? weapon.type === "firearm" ? 0.12 : 0.06 : 0;
           return clamp(
-            0.38 + combatRating(state) * 0.07 + weaponBonus + Math.min(0.1, recruitedCrew(state).length * 0.05) + intelligenceRating(state) * 0.02 - state.player.heat * 0.012 - record.robbedCount * 0.1 - (record.retaliated ? 0.08 : 0),
+            0.52 + weaponBonus + Math.min(0.1, recruitedCrew(state).length * 0.05) + intelligenceCompat(state) * 0.02 - state.player.heat * 0.012 - record.robbedCount * 0.1 - (record.retaliated ? 0.08 : 0),
             0.2,
             0.78
           );
@@ -5767,7 +6435,7 @@
         function sharkRiskLabel(state, borrower, amount, term) {
           const amountPressure = amount >= 500 ? 2 : amount >= 250 ? 1 : 0;
           const termRelief = term >= 7 ? 2 : term >= 4 ? 1 : 0;
-          const score = borrower.risk + amountPressure - termRelief - Math.floor((normalizedAttributes(state).insight - 1) / 2) - (atLeastBand(state, "dre", BANDS.BONDED) ? 1 : 0);
+          const score = borrower.risk + amountPressure - termRelief - Math.floor((intelligenceCompat(state) - 1) / 2) - (atLeastBand(state, "dre", BANDS.BONDED) ? 1 : 0);
           return score <= 0 ? "Low" : score <= 2 ? "Guarded" : score <= 4 ? "High" : "Severe";
         }
         function sharkLoanAvailability(state, borrowerId, amount, term) {
@@ -5840,7 +6508,7 @@
             crew.assignment = null;
             const loyaltyBonus = clamp(crew.loyalty, -2, 4) * 0.04;
             if (person.id === "eli") {
-              const success = random.next() < 0.58 + intelligenceRating(state) * 0.05 + loyaltyBonus - (assignment === "outer_run" ? 0.14 : 0);
+              const success = random.next() < 0.58 + intelligenceCompat(state) * 0.05 + loyaltyBonus - (assignment === "outer_run" ? 0.14 : 0);
               if (success) {
                 const gain = random.int(85, assignment === "outer_run" ? 210 : 145);
                 state.player.cash += gain;
@@ -5858,7 +6526,7 @@
               const area = assignment === "source_meth" ? AREA_BY_ID.airport_industrial : AREA_BY_ID.downtown;
               const product = assignment === "source_meth" ? PRODUCT_BY_ID.meth : PRODUCT_BY_ID.cocaine;
               state.effects.rumors.push({ id: `pherris_${state.run.day}_${state.run.slot}`, text: `Pherris says ${product.name} is moving through ${area.name}, but the window will not stay open.`, areaId: area.id, productId: product.id, reliable: true, expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
-              crew.loyalty += 1;
+              crew.loyalty += standingGain(crew, crew.loyalty, 1, "open");
               logEntry(state, "Pherris circles one name on her list and tears the rest of the page away.", "good");
             } else if (person.id === "tone") {
               if (assignment === "guard_base") {
@@ -6101,8 +6769,8 @@
             finishAfter: !!finishAfter,
             ...template
           };
-          const identity = state.player.streetIdentity;
-          const preview = identity === "stickup" ? "They arrived expecting you to make this physical." : identity === "connector" ? "They keep looking past you for whoever might answer your call." : identity === "mover" ? "They chose the hour when they think your business will hurt most." : identity === "earner" ? "They know you have obligations you intend to reach." : identity === "wild_card" ? "They prepared for two different versions of you and may have guessed wrong." : "Nobody here knows yet what kind of answer you give.";
+          const identity = Attributes.identityProfile(state);
+          const preview = identity.dominant === "combat" ? "They arrived expecting you to make this physical." : identity.dominant === "charisma" ? "They keep looking past you for whoever might answer your call." : identity.dominant === "intelligence" ? "They chose the hour they think costs you most." : "They prepared for two different versions of you and may have guessed wrong.";
           state.run.pendingEncounter.description += ` ${preview}`;
           state.run.pendingEncounter.feedback = state.run.pendingEncounter.description;
           if (id === "mina_sedan_night") {
@@ -7504,7 +8172,7 @@
           for (const loan of state.hustle.shark.loans) {
             if (!["active", "extended"].includes(loan.status) || state.run.day < loan.dueDay) continue;
             const borrower = SHARK_BORROWERS.find((item) => item.id === loan.borrowerId);
-            const probability = clamp(borrower.risk + (loan.amount >= 500 ? 0.18 : loan.amount >= 250 ? 0.08 : 0) + (loan.term === 2 ? 0.12 : loan.term === 4 ? 0.04 : -0.04) - normalizedAttributes(state).insight * 0.025 - (atLeastBand(state, "dre", BANDS.BONDED) ? 0.08 : 0), 0.03, 0.82);
+            const probability = clamp(borrower.risk + (loan.amount >= 500 ? 0.18 : loan.amount >= 250 ? 0.08 : 0) + (loan.term === 2 ? 0.12 : loan.term === 4 ? 0.04 : -0.04) - intelligenceCompat(state) * 0.025 - (atLeastBand(state, "dre", BANDS.BONDED) ? 0.08 : 0), 0.03, 0.82);
             const roll = stringHash(`${state.run.seed}:shark:${loan.id}:${loan.dueDay}`) % 1e4 / 1e4;
             if (roll < probability) {
               loan.status = "defaulted";
@@ -7552,7 +8220,10 @@
           state.run.dayEndPending = false;
           state.run.overtimeArmed = false;
           state.run.slot = 3;
-          evaluateStreetIdentity(state, true);
+          if (state.player.gymStreakDay !== oldDay) {
+            state.player.gymStreak = 0;
+            state.player.gymStreakDay = null;
+          }
           recalculateStreetRead(state);
           checkHomeContraband(state, random);
           resolveSoldierOperations(state, random, true);
@@ -7600,9 +8271,9 @@
           if (state.player.cash >= encounter.pay) choices.push({ id: "pay", label: `Pay $${encounter.pay}`, description: "Keep the bag and accept the cost." });
           if (cargoUsed(state) > 0) choices.push({ id: "surrender", label: "Surrender product", description: "Protect health by giving up part of the bag." });
           const weapon = equippedWeapon(state);
-          if ((weapon == null ? void 0 : weapon.type) === "close" || combatRating(state) >= 3) choices.push({ id: "fight", label: weapon ? `Fight with ${weapon.name}` : "Stand and fight", description: "Combat, health, armor, and close protection matter." });
+          if ((weapon == null ? void 0 : weapon.type) === "close" || combatCompat(state) >= 3) choices.push({ id: "fight", label: weapon ? `Fight with ${weapon.name}` : "Stand and fight", description: "Combat, health, armor, and close protection matter." });
           if ((weapon == null ? void 0 : weapon.type) === "firearm") choices.push({ id: "draw", label: `Draw ${weapon.name}`, description: "Combat and weapon accuracy matter. Firing raises heat." });
-          if (intelligenceRating(state) >= 3) choices.push({ id: "intimidate", label: "Name their weak position", description: "Use Intelligence to make the threat feel too expensive." });
+          if (intelligenceCompat(state) >= 3) choices.push({ id: "intimidate", label: "Name their weak position", description: "Use Intelligence to make the threat feel too expensive." });
           const tone = state.people.crew.tone;
           if (tone.recruited && tone.loyalty >= 0) choices.push({ id: "call_tone", label: "Call Tone", description: "Spend crew loyalty to end this on his terms." });
           if (encounter.id === "mina_sedan_night" && state.npc.mina.met) choices.push({ id: "call_mina", label: "Signal Mina", description: "Trust Mina to trigger the Night Owl alarm. This spends some of the trust between you." });
@@ -7642,7 +8313,7 @@
           const encounter = state.run.pendingEncounter;
           const armor = ((_a = GEAR_BY_ID[state.player.gear.equipped.armor]) == null ? void 0 : _a.armor) || 0;
           const raw = random.int(encounter.attack[0], encounter.attack[1]);
-          const damage = Math.max(1, raw - armor - Math.floor(combatRating(state) / 2));
+          const damage = Math.max(1, raw - armor - Math.floor(combatCompat(state) / 2));
           state.player.health = clamp(state.player.health - damage, 0, 100);
           encounter.step += 1;
           encounter.feedback = `${action} fails. ${encounter.enemyName} closes the distance and you lose ${damage} health.`;
@@ -7722,34 +8393,42 @@
             encounter.step += 1;
             encounter.feedback = "You seal the worst injury and force your hands steady. One decision remains.";
           } else if (choice === "intimidate") {
-            const chance = clamp(0.38 + intelligenceRating(state) * 0.1 + Math.max(0, dispositionOf(state, "curtis")) * 0.03 - encounter.guard, 0.15, 0.9);
-            if (random.next() < chance) finishEncounter(state, "talk", "You name the cameras, exits, and people they failed to count. Their threat collapses under its own cost.");
+            const chance = clamp(0.58 + Math.max(0, dispositionOf(state, "curtis")) * 0.03 - encounter.guard, 0.15, 0.9);
+            const outcome = resolveOutcome(state, "negotiation", chance, `${state.run.seed}:intimidate:${state.run.day}:${state.run.slot}:${encounter.id}`);
+            broadcastOutcome(state, "negotiation", outcome.tier);
+            if (Attributes.isSuccessTier(outcome.tier)) finishEncounter(state, "talk", "You name the cameras, exits, and people they failed to count. Their threat collapses under its own cost.");
             else failEncounterStep(state, random, "The calculation");
           } else if (choice === "talk") {
             const influence = state.world.influence[state.world.currentNeighborhoodId] * 0.04;
             const relationship = encounter.id === "mid" ? Math.max(0, dispositionOf(state, "curtis")) * 0.035 : encounter.id === "mina_sedan_night" ? Math.max(0, dispositionOf(state, "mina")) * 0.02 : 0;
-            const chance = clamp(0.28 + charismaRating(state) * 0.08 + influence + relationship - encounter.guard, 0.1, 0.9);
-            if (random.next() < chance) {
+            const chance = clamp(0.44 + influence + relationship - encounter.guard, 0.1, 0.9);
+            const outcome = resolveOutcome(state, "negotiation", chance, `${state.run.seed}:talk:${state.run.day}:${state.run.slot}:${encounter.id}`);
+            broadcastOutcome(state, "negotiation", outcome.tier);
+            if (Attributes.isSuccessTier(outcome.tier)) {
               if (encounter.id === "mid") Exposure.recordObservation(state, "curtis", { type: "submission", event: "held_the_line", source: "witnessed" });
               finishEncounter(state, "talk", "You name the people and consequences they forgot to count. The lane opens without anybody reaching for a weapon.");
             } else failEncounterStep(state, random, "The explanation");
           } else if (choice === "run") {
             const gearBonus = ((_e = GEAR_BY_ID[state.player.gear.equipped.utility]) == null ? void 0 : _e.escape) || 0;
-            const chance = clamp(0.24 + intelligenceRating(state) * 0.09 + gearBonus + 0.18 * freeCargoRatio(state) + healthModifier(state.player.health) - encounter.pursuit, 0.1, 0.9);
-            if (random.next() < chance) {
+            const chance = clamp(0.42 + gearBonus + 0.18 * freeCargoRatio(state) + healthModifier(state.player.health) - encounter.pursuit, 0.1, 0.9);
+            const outcome = resolveOutcome(state, "escape", chance, `${state.run.seed}:escape:${state.run.day}:${state.run.slot}:${encounter.id}`);
+            broadcastOutcome(state, "escape", outcome.tier);
+            if (Attributes.isSuccessTier(outcome.tier)) {
               const lost = encounter.id === "mina_sedan_night" || encounter.id === "early_street" ? null : loseInventory(state, 1);
               finishEncounter(state, "escape", lost ? `You clear the lane but drop ${lost.lost} ${lost.product.name} under the fence.` : "You saw the open lane before they did and reach the street with the bag intact.");
             } else failEncounterStep(state, random, "The escape");
           } else if (choice === "fight" || choice === "draw") {
             const weapon = equippedWeapon(state);
             const firearm = choice === "draw";
-            const chance = clamp((firearm ? 0.28 + combatRating(state) * 0.09 : 0.3 + combatRating(state) * 0.09) + ((weapon == null ? void 0 : weapon.accuracy) || 0) + healthModifier(state.player.health) - (firearm ? encounter.evasion : encounter.guard), 0.1, 0.9);
+            const chance = clamp((firearm ? 0.46 : 0.48) + ((weapon == null ? void 0 : weapon.accuracy) || 0) + healthModifier(state.player.health) - (firearm ? encounter.evasion : encounter.guard), 0.1, 0.9);
             if (firearm) {
               state.player.heat = clamp(state.player.heat + weapon.heat, 0, 15);
               state.flags.firedWeaponDowntown = state.world.currentNeighborhoodId === "downtown";
             }
-            if (random.next() < chance) {
-              const damage = weapon ? random.int(weapon.damage[0], weapon.damage[1]) + (firearm ? 0 : Math.floor(combatRating(state) / 2)) : random.int(4, 8) + combatRating(state);
+            const outcome = resolveOutcome(state, "confrontation", chance, `${state.run.seed}:confrontation:${state.run.day}:${state.run.slot}:${encounter.id}:${encounter.step}`);
+            broadcastOutcome(state, "confrontation", outcome.tier);
+            if (Attributes.isSuccessTier(outcome.tier)) {
+              const damage = weapon ? random.int(weapon.damage[0], weapon.damage[1]) + (firearm ? 0 : Math.floor(combatCompat(state) / 2)) : random.int(4, 8) + combatCompat(state);
               encounter.enemyHealth -= damage;
               if (encounter.enemyHealth <= 0) {
                 if (firearm || encounter.id === "late") state.flags.seriousViolence = true;
@@ -7785,18 +8464,20 @@
           reconcileCash(state);
           state.stats.robbery = normalizeRobberyStats(state.stats.robbery, state);
           const random = makeRandom(state.run.rngState);
-          const success = random.next() < availability.chance;
           const attemptNumber = state.stats.robbery.attempts + 1;
+          const outcome = resolveOutcome(state, "robbery", availability.chance, `${state.run.seed}:robbery:${state.run.day}:${state.run.slot}:${attemptNumber}`);
+          const success = Attributes.isSuccessTier(outcome.tier);
           state.stats.robbery.attempts = attemptNumber;
           state.stats.robbery.lastAttemptedDay = state.run.day;
           state.stats.robbery.attempted = true;
           let result;
           if (success) {
+            const clean = outcome.tier === "clean";
             const payout = random.int(115, 210);
-            const addedHeat = 2 + Math.floor((attemptNumber - 1) / 2);
+            const addedHeat = clean ? 1 : 2 + Math.floor((attemptNumber - 1) / 2);
             state.player.cash += payout;
             state.player.heat = clamp(state.player.heat + addedHeat, 0, 15);
-            Exposure.recordObservation(state, "curtis", { type: "violence", event: "stickup", count: Math.min(3, attemptNumber), source: "network" });
+            if (!clean) Exposure.recordObservation(state, "curtis", { type: "violence", event: "stickup", count: Math.min(3, attemptNumber), source: "network" });
             state.stats.robbery.successes += 1;
             addStreetReadEntry(state, "risk", `rob:${state.world.currentNeighborhoodId}`);
             state.stats.robbery.totalPayout += payout;
@@ -7805,17 +8486,19 @@
             result = {
               kind: "robbery",
               tone: "good",
-              title: "The Rob Pays",
-              summary: `A contractor leaves a cash envelope in an idling truck off the service road. You clear $${payout}, but the driver and nearby cameras get a useful description.`,
-              effects: [`+$${payout} cash`, `+${addedHeat} Heat`, `+${Math.min(3, attemptNumber)} Curtis pressure`, `Attempt ${attemptNumber} this week`]
+              title: clean ? "The Rob Goes Clean" : "The Rob Pays",
+              summary: clean ? `A contractor leaves a cash envelope in an idling truck off the service road. You clear $${payout} and nobody ever looks up.` : `A contractor leaves a cash envelope in an idling truck off the service road. You clear $${payout}, but there is a struggle and the cameras get a useful description.`,
+              effects: [`+$${payout} cash`, `+${addedHeat} Heat`, `Attempt ${attemptNumber} this week`]
             };
+            broadcastOutcome(state, "robbery", outcome.tier, payout);
             if (!state.rob.visible) {
               state.rob.visible = true;
               queueUnlock(state, "rob");
             }
           } else {
-            const damage = random.int(10 + Math.min(6, attemptNumber - 1), 17 + Math.min(8, attemptNumber - 1));
-            const addedHeat = Math.min(5, 3 + Math.floor((attemptNumber - 1) / 2));
+            const severe = outcome.tier === "catastrophic";
+            const damage = random.int(10 + Math.min(6, attemptNumber - 1), 17 + Math.min(8, attemptNumber - 1)) + (severe ? 8 : 0);
+            const addedHeat = Math.min(6, (severe ? 5 : 3) + Math.floor((attemptNumber - 1) / 2));
             state.player.health = clamp(state.player.health - damage, 0, 100);
             state.player.heat = clamp(state.player.heat + addedHeat, 0, 15);
             Exposure.recordObservation(state, "curtis", { type: "violence", event: "dealer_stickup", count: Math.min(4, attemptNumber + 1), source: "network" });
@@ -7824,12 +8507,13 @@
             result = {
               kind: "robbery",
               tone: "bad",
-              title: "The Rob Falls Apart",
-              summary: "The truck is empty and the driver returns with help. You get away hurt and recognized, but another attempt can open on a later day.",
-              effects: [`-${damage} Health`, `+${addedHeat} Heat`, `+${Math.min(4, attemptNumber + 1)} Curtis pressure`, "$0 payout", `Attempt ${attemptNumber} this week`]
+              title: severe ? "The Rob Goes Wrong" : "The Rob Falls Apart",
+              summary: severe ? "The truck is not empty and the driver is not alone. You get out hurt, and somebody called it in before you cleared the lot." : "The truck is empty and the driver returns with help. You get away hurt and recognized, but another attempt can open on a later day.",
+              effects: [`-${damage} Health`, `+${addedHeat} Heat`, "$0 payout", `Attempt ${attemptNumber} this week`]
             };
+            broadcastOutcome(state, "robbery", outcome.tier);
           }
-          state.stats.majorDecisions.push(`Rob ${attemptNumber}: ${success ? "success" : "failure"}`);
+          state.stats.majorDecisions.push(`Rob ${attemptNumber}: ${outcome.tier}`);
           recordBehavior(state, "stickup", 2, `rob:${state.run.day}:${attemptNumber}`, "rob");
           state.run.rngState = random.state;
           logEntry(state, result.summary, result.tone);
@@ -7846,7 +8530,8 @@
           reconcileCash(state);
           const record = state.people.dealers[dealerId];
           const random = makeRandom(state.run.rngState);
-          const success = random.next() < actions.rob.chance;
+          const outcome = resolveOutcome(state, "dealer_robbery", actions.rob.chance, `${state.run.seed}:dealer_robbery:${state.run.day}:${state.run.slot}:${dealerId}`);
+          const success = Attributes.isSuccessTier(outcome.tier);
           record.robbedCount += success ? 1 : 0;
           record.lastRobbedDay = state.run.day;
           Exposure.recordObservation(state, "curtis", { type: "defiance", event: "took_ground", source: "network" });
@@ -7861,10 +8546,12 @@
             state.player.cash += payout;
             addStreetReadEntry(state, "risk", `robbery:${state.world.currentNeighborhoodId}`);
             applyEventEffect(state, { addProduct: { id: productId, qty: units, unitCost: 0 } }, random);
-            state.player.heat = clamp(state.player.heat + 2, 0, 15);
+            const takenHeat = outcome.tier === "clean" ? 1 : 2;
+            state.player.heat = clamp(state.player.heat + takenHeat, 0, 15);
             record.standing = Math.max(-5, record.standing - 3);
             record.supplyChoked = 2;
-            effects.push(`+$${payout} cash`, `+${units} ${PRODUCTS.find((item) => item.id === productId).name} at no cost`, "+2 Heat", "Spenard supply tightens for two days");
+            effects.push(`+$${payout} cash`, `+${units} ${PRODUCTS.find((item) => item.id === productId).name} at no cost`, `+${takenHeat} Heat`, "Spenard supply tightens for two days");
+            broadcastOutcome(state, "dealer_robbery", outcome.tier, payout);
             if (record.robbedCount >= 2) {
               record.gone = true;
               effects.push(`${first} is finished on this block`);
@@ -7878,12 +8565,15 @@
             };
           } else {
             const armed = !!equippedWeapon(state);
-            const damage = random.int(armed ? 12 : 20, 26);
+            const severe = outcome.tier === "catastrophic";
+            const damage = random.int(armed ? 12 : 20, 26) + (severe ? 8 : 0);
+            const takenHeat = severe ? 5 : 3;
             state.player.health = clamp(state.player.health - damage, 0, 100);
-            state.player.heat = clamp(state.player.heat + 3, 0, 15);
+            state.player.heat = clamp(state.player.heat + takenHeat, 0, 15);
             record.standing = Math.max(-5, record.standing - 3);
             record.retaliated = true;
-            effects.push(`-${damage} Health`, "+3 Heat", "$0 taken", `${first} will be ready next time`);
+            effects.push(`-${damage} Health`, `+${takenHeat} Heat`, "$0 taken", `${first} will be ready next time`);
+            broadcastOutcome(state, "dealer_robbery", outcome.tier);
             result = {
               kind: "dealer_robbery",
               tone: "bad",
@@ -7917,13 +8607,13 @@
           const random = makeRandom(state.run.rngState);
           state.player.cash -= availability.cost;
           state.stats.moneySpent.crew += availability.cost;
-          const successChance = clamp(0.52 + intelligenceRating(state) * 0.06 + Math.max(0, state.people.crew.eli.loyalty) * 0.03 - state.player.heat * 0.01, 0.42, 0.78);
+          const successChance = clamp(0.52 + intelligenceCompat(state) * 0.06 + Math.max(0, state.people.crew.eli.loyalty) * 0.03 - state.player.heat * 0.01, 0.42, 0.78);
           const success = random.next() < successChance;
           let result;
           if (success) {
             const payout = random.int(50, 80);
             state.player.cash += payout;
-            state.people.crew.eli.loyalty += 1;
+            state.people.crew.eli.loyalty += standingGain(state.people.crew.eli, state.people.crew.eli.loyalty, 1, "open");
             result = { kind: "eli_test_route", tone: "good", title: "Eli Clears the Test Route", summary: `Eli uses the warehouse access road, delivers the package, and returns with $${payout}. He is now available to recruit at North Star Garage.`, effects: [`-$${availability.cost} route cost`, `+$${payout} delivery cash`, "+1 Eli loyalty", "Eli is recruitable"] };
           } else {
             const damage = random.int(5, 9);
@@ -8079,6 +8769,7 @@
           const state = copyState(inputState);
           const dreWasEligible = state.onboarding.dreEligible;
           reconcileCash(state);
+          if (applyHeatEmployment(state, job.id) === "fired") return advanceRun(state, { reason: "WORK_JOB" });
           const random = makeRandom(state.run.rngState);
           const record = state.jobs.records[job.id];
           const coworker = coworkerForShift(state, job);
@@ -8088,7 +8779,7 @@
           addCleanCash(state, payout);
           state.player.health = clamp(state.player.health + approach.health, 1, 100);
           record.xp += approach.xp;
-          record.relationship += approach.relationship;
+          record.relationship += standingGainFloat(record.relationship, approach.relationship, "open");
           record.shifts += 1;
           record.lastWorkedDay = state.run.day;
           record.rank = jobRankForXp(record.xp);
@@ -8122,7 +8813,7 @@
           if (job.id === "ship_creek") {
             const employer = state.world.locations.employer;
             employer.lastShiftDay = state.run.day;
-            employer.standing = clamp(employer.standing + 1, 0, 5);
+            employer.standing = clamp(employer.standing + standingGain(employer, employer.standing, 1, "capped"), 0, 5);
             employer.keptCommitments += 1;
             if (employer.standing >= 3) state.flags.legalCover = true;
           }
@@ -8197,7 +8888,7 @@
             if (action.type === "START_RUN" && !chosenName) return inputState;
             state2.player.background = null;
             state2.player.legacyBackground = action.type === "CHOOSE_BACKGROUND" ? background.id : null;
-            state2.player.attributes = action.type === "CHOOSE_BACKGROUND" ? { ...LEGACY_ATTRIBUTES[background.id] } : { ...ATTRIBUTE_DEFAULTS };
+            state2.player.attributes = action.type === "CHOOSE_BACKGROUND" ? { combat: background.combat, charisma: background.charisma, intelligence: background.intelligence } : { ...ATTRIBUTE_DEFAULTS };
             state2.player.streetName = chosenName || DEFAULT_STREET_NAMES[background.id];
             state2.player.streetNameChosen = !!chosenName;
             state2.player.cash = action.type === "CHOOSE_BACKGROUND" ? 375 : 100;
@@ -8225,7 +8916,6 @@
               state2.world.transport.downtownKnown = true;
               state2.world.transport.industrialRouteKnown = true;
             }
-            state2.player.stats = derivedRatings(state2);
             state2.run.status = "playing";
             state2.run.openingPending = action.type === "START_RUN";
             state2.stats.startingNetWorth = state2.player.cash - state2.lender.balance;
@@ -8330,7 +9020,9 @@
             const product = PRODUCT_BY_ID[action.productId], market = state.world.markets[state.world.currentNeighborhoodId];
             const qty = Math.max(0, Math.floor(action.qty || 0));
             const plug = product ? unlockedPlugForProduct(state, product.id) : null;
-            if (!((_g = state.market) == null ? void 0 : _g.visible) || !product || !plug || qty < 1 || qty > plugMaxUnits(state, product.id)) return inputState;
+            if (!((_g = state.market) == null ? void 0 : _g.visible) || !plug) return inputState;
+            if (!product || qty < 1) return failedPurchase(state, action.productId, "market");
+            if (qty > plugMaxUnits(state, product.id)) return inputState;
             const projection = tradeProjection(state, product.id, qty, "buy");
             const cost = projection.purchaseCost, available = market.availability[product.id] || 0;
             if (qty > available || cost > state.player.cash || cargoUsed(state) + qty > cargoCapacity(state)) return inputState;
@@ -8348,7 +9040,7 @@
             const record = plugRecord(state, plug.id);
             if (record && record.lastPurchaseDay !== state.run.day) {
               record.lastPurchaseDay = state.run.day;
-              record.standing = Math.min(5, record.standing + 1);
+              record.standing = Math.min(5, record.standing + standingGain(record, record.standing, 1, "capped"));
               if (plug.id === "goodie" && ((_h = state.people.dealers) == null ? void 0 : _h.goodie)) {
                 state.people.dealers.goodie.standing = record.standing;
                 state.people.dealers.goodie.lastTradedDay = state.run.day;
@@ -8520,7 +9212,7 @@
             const amount = crew.wageDue;
             state.player.cash -= amount;
             crew.wageDue = 0;
-            crew.loyalty += 1;
+            crew.loyalty += standingGain(crew, crew.loyalty, 1, "open");
             state.stats.moneySpent.crew += amount;
             recordBehavior(state, "earner", 2, `crew_pay:${action.crewId}:${state.run.day}`, "crew_pay");
             logEntry(state, `${CREW_BY_ID[action.crewId].name.split(" ")[0]} folds the full $${amount} into a pocket and stays for the next plan.`, "good");
@@ -8795,9 +9487,12 @@
             const present = nightOwlRegularFor(state);
             const relationship = regular && base.nightOwl.regulars[regular.id];
             if (!regular || present.id !== regular.id || relationship.lastTalkDay === base.run.day) return inputState;
+            const outcome = resolveOutcome(base, "night_owl", 0.78, `${base.run.seed}:night_owl:${base.run.day}:${regular.id}`);
+            const landed = Attributes.isSuccessTier(outcome.tier);
             relationship.met = true;
-            relationship.relationship += 1;
+            if (landed) relationship.relationship += 1;
             relationship.lastTalkDay = base.run.day;
+            broadcastOutcome(base, "night_owl", outcome.tier);
             base.contacts[regular.id].known = true;
             base.contacts[regular.id].relationshipLevel = Math.max(base.contacts[regular.id].relationshipLevel, relationship.relationship);
             recordVisitedLocation(base, "night_owl");
@@ -8806,6 +9501,8 @@
             if (regular.id === "nia" && relationship.relationship >= 2 && !base.flags.niaCourierHint) {
               base.flags.niaCourierHint = true;
               logEntry(base, "Nia says a courier who can keep a route quiet never stays short of work. She leaves the next part for later.", "good");
+            } else if (!landed) {
+              logEntry(base, outcome.tier === "catastrophic" ? "You push the joke one beat too far and the counter goes quiet. Everybody in the room clocks it." : `${regular.name.split(" ")[0]} is polite about it, but the conversation never finds a second gear.`, outcome.tier === "catastrophic" ? "bad" : "");
             } else {
               logEntry(base, regular.id === "cal" ? "Cal turns a loud story into a conversation and remembers that you stayed for the ending." : "Nia closes her paperback and trades one careful detail about the roads.", "good");
             }
@@ -8961,21 +9658,32 @@
             return advanceRun(base, { reason: "LEASE_GARAGE" });
           }
           if (action.type === "TRAIN_ATTRIBUTE") {
-            const attribute = action.attribute;
+            const activityId = AttributeData.GYM_ACTIVITY_BY_ID[action.activity] ? action.activity : "bag_work";
             const available = activityAvailability(state).gym;
-            if (!available.available || !["strength", "endurance", "reflexes"].includes(attribute) || state.player.attributes[attribute] >= 5) return inputState;
+            if (!available.available || !Attributes.gymActivityAvailable(state, activityId)) return inputState;
+            const details = gymSessionDetails(state, activityId);
+            if (state.player.cash < details.cost) return inputState;
             const gym = base.world.locations.gym;
             recordVisitedLocation(base, "spenard_gym");
             if (gym.sessionDay !== base.run.day) {
               gym.sessionDay = base.run.day;
               gym.sessionsToday = 0;
             }
-            base.player.cash -= available.cost;
+            base.player.cash -= details.cost;
             base.memberships.gym = true;
             gym.sessionsToday += 1;
-            const improved = improveAttribute(base, attribute, available.progress);
+            gym.activitySessions[activityId] = (gym.activitySessions[activityId] || 0) + 1;
+            const improved = improveAttribute(base, details.activity.attribute, details.growth);
             if (improved) addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:training`);
-            logEntry(base, `Gym session: $${available.cost}, +${available.progress} hidden ${attribute} progress${improved ? ", milestone reached" : ""}.`, "good");
+            logEntry(base, `${details.activity.label} at the gym, $${details.cost}.`, "good");
+            if (activityId === "sparring") {
+              const injuryRoll = stringHash(`${base.run.seed}:sparring:${base.run.day}:${base.run.slot}`) % 1e3 / 1e3;
+              if (injuryRoll < AttributeData.SPARRING_INJURY_CHANCE) {
+                base.player.health = clamp(base.player.health - AttributeData.SPARRING_INJURY_HEALTH, 0, 100);
+                logEntry(base, "You caught one you did not see. Ice on the way home.", "bad");
+              }
+            }
+            registerGymDay(base);
             return advanceRun(base, { reason: "TRAIN_ATTRIBUTE" });
           }
           if (action.type === "GAMBLE") {
@@ -8984,19 +9692,23 @@
             if (!available.available || ![20, 50, 100].includes(stake) || state.player.cash < stake) return inputState;
             const random2 = makeRandom(base.run.rngState);
             const approach = ["read", "steady", "press"].includes(action.approach) ? action.approach : "read";
-            const skill = approach === "read" ? base.player.attributes.insight : approach === "steady" ? base.player.attributes.discipline : base.player.attributes.presence;
-            const chance = clamp(0.35 + skill * 0.035 - stake / 2e3, 0.32, 0.54);
-            const won = random2.next() < chance;
+            const approachEdge = approach === "read" ? 0.05 : approach === "steady" ? 0.03 : 0;
+            const chance = clamp(0.35 + approachEdge - stake / 2e3, 0.32, 0.54);
+            const outcome = resolveOutcome(base, "gambling", chance, `${base.run.seed}:gambling:${base.run.day}:${base.run.slot}:${stake}`);
+            const won = Attributes.isSuccessTier(outcome.tier);
             base.player.cash -= stake;
-            if (won) base.player.cash += stake * 2;
+            const payout = !won ? 0 : outcome.tier === "clean" ? stake * 2 : Math.round(stake * 1.5);
+            base.player.cash += payout;
             const game = base.world.locations.gambling;
             game.plays += 1;
             game[won ? "wins" : "losses"] += 1;
-            game.net += won ? stake : -stake;
+            game.net += payout - stake;
             if (game.plays === 1) recordBehavior(base, "connector", 1, "gambling:first_contact", "gambling_contact");
             addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:gambling`);
+            broadcastOutcome(base, "gambling", outcome.tier, payout - stake);
+            if (outcome.tier === "catastrophic") base.player.financialHeat = clamp(base.player.financialHeat + 1, 0, 10);
             base.run.rngState = random2.state;
-            logEntry(base, won ? `The ${approach} approach holds. You leave the game $${stake} ahead.` : `The room takes your $${stake}. Nobody offers credit, and the next choice is yours.`, won ? "good" : "bad");
+            logEntry(base, won ? `The ${approach} approach holds. You leave the game $${payout - stake} ahead.` : outcome.tier === "catastrophic" ? `The room takes your $${stake} and watches you decide whether to stay. Everybody sees which way you lean.` : `The room takes your $${stake}. Nobody offers credit, and the next choice is yours.`, won ? "good" : "bad");
             return advanceRun(base, { reason: "GAMBLE" });
           }
           if (action.type === "ASSIGN_BOOST_CREW") {
@@ -9414,14 +10126,14 @@
             const random2 = makeRandom(base.run.rngState);
             const availableProducts = definition.products.filter((productId2) => !!unlockedPlugForProduct(state, productId2));
             const productId = random2.pick(availableProducts);
-            if (!productId) return inputState;
+            if (!productId) return failedPurchase(base, null, "dealer");
             const unitPrice = Math.max(1, Math.round(tradeUnitPrices(state, productId).buy * (1 - actions.buy.discount)));
             const room = cargoCapacity(state) - cargoUsed(state);
             const units = Math.min(actions.buy.units, room, Math.floor(state.player.cash / unitPrice));
-            if (units <= 0) return inputState;
+            if (units <= 0) return failedPurchase(base, productId, "dealer");
             base.player.cash -= unitPrice * units;
             applyEventEffect(base, { addProduct: { id: productId, qty: units, unitCost: unitPrice } }, random2);
-            record.standing = Math.min(5, record.standing + 1);
+            record.standing = Math.min(5, record.standing + standingGain(record, record.standing, 1, "capped"));
             record.lastTradedDay = base.run.day;
             const plug = PLUG_BY_ID[action.dealerId];
             const plugState = plugRecord(base, action.dealerId);
@@ -9495,7 +10207,6 @@
           return inputState;
         }
         function selectRunSummary(state) {
-          var _a;
           const territories = TERRITORIES.map((definition) => ({
             ...definition,
             owner: state.world.territories[definition.areaId].owner,
@@ -9507,8 +10218,8 @@
             endingLabel: endingLabel(state.run.ending),
             cash: state.player.cash,
             streetName: state.player.streetName || "Unnamed run",
-            streetIdentity: state.player.streetIdentity,
-            streetIdentityLabel: ((_a = STREET_IDENTITIES[state.player.streetIdentity]) == null ? void 0 : _a.label) || STREET_IDENTITIES.unproven.label,
+            streetIdentity: streetIdentity(state),
+            streetIdentityLabel: streetIdentity(state),
             storedCash: state.base.storedCash,
             debt: state.lender.balance,
             inventoryValue: inventoryValue(state),
@@ -9621,7 +10332,7 @@
               note: !balance ? "Paid in full" : daysLeft < 0 ? "Past due" : daysLeft === 0 ? "Due tonight" : daysLeft === 1 ? "Due tomorrow" : `Due Day ${state.lender.dueDay}`,
               tone: !balance ? "good" : daysLeft <= 0 ? "bad" : daysLeft === 1 ? "warn" : ""
             },
-            identity: STREET_IDENTITIES[state.player.streetIdentity] || STREET_IDENTITIES.unproven,
+            identity: streetIdentityView(state),
             summary: homeSummary(state),
             priorities: homePriorities(state),
             unlocks: homeUnlocks(state),
@@ -9759,7 +10470,6 @@
           DISTRICT_ACTIONS,
           WORKING_CAPITAL_RESERVE,
           GARAGE_DEPOSIT,
-          ATTRIBUTE_THRESHOLDS,
           PRODUCTS,
           NEIGHBORHOODS,
           BACKGROUNDS,
@@ -9771,8 +10481,8 @@
           STREET_NAME_MAX,
           DEFAULT_STREET_NAMES,
           ATTRIBUTE_DEFAULTS,
-          LEGACY_ATTRIBUTES,
-          STREET_IDENTITIES,
+          ATTRIBUTES: AttributeData,
+          attributeSystem: Attributes,
           sanitizeStreetName,
           CLASSIFICATIONS,
           EVENT_CHAINS,
@@ -9816,7 +10526,6 @@
           buildEventForTest: activeEvent,
           storyCandidatesForTest: storyCandidates,
           recordBehaviorForTest: recordBehavior,
-          evaluateStreetIdentityForTest: evaluateStreetIdentity,
           // Street Read is invisible to the player but has to be reachable by tests.
           // Nothing here is imported by ui.jsx.
           streetRead: {
@@ -9868,6 +10577,13 @@
             charismaRating,
             intelligenceRating,
             derivedRatings,
+            // Attribute reads. Players see attributeLabels; the raw numbers are for
+            // the dev inspector only.
+            attributes: (state) => normalizedAttributes(state),
+            attributeLabels: (state) => Object.fromEntries(ATTRIBUTE_IDS.map((id) => [id, Attributes.attributeLabel(normalizedAttributes(state)[id])])),
+            streetIdentity,
+            streetIdentityView,
+            identityProfile: (state) => Attributes.identityProfile(state),
             operationScore,
             baseValue,
             gearValue,
@@ -10007,9 +10723,11 @@
         try {
           const current = C.inspectSave(localStorage.getItem(C.SAVE_KEY));
           if (current.valid) return current;
-          const v4 = C.inspectSave(localStorage.getItem("907ogr_v4"));
-          if (v4.valid) return v4;
-          return C.inspectSave(localStorage.getItem("907ogr_v3"));
+          for (const key of C.LEGACY_SAVE_KEYS) {
+            const legacy = C.inspectSave(localStorage.getItem(key));
+            if (legacy.valid) return legacy;
+          }
+          return C.inspectSave(localStorage.getItem(C.LEGACY_SAVE_KEYS[C.LEGACY_SAVE_KEYS.length - 1]));
         } catch {
           return { exists: false, valid: false, state: null, preview: null, error: "Local saves are unavailable in this browser." };
         }
@@ -10083,7 +10801,7 @@
         const showRespect = state.npc.curtis.respect > 0;
         const showCrew = C.selectors.recruitedCrew(state).length > 0;
         const showCurtis = state.npc.curtis.relationship !== "unaware";
-        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.9b"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", value: /* @__PURE__ */ React.createElement(React.Fragment, null, `${state.run.day}${state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""} \xB7 ${C.SLOTS[state.run.slot]} \xB7 ${area.name}`, /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })), good: true }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "" })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
+        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.10"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", value: /* @__PURE__ */ React.createElement(React.Fragment, null, `${state.run.day}${state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""} \xB7 ${C.SLOTS[state.run.slot]} \xB7 ${area.name}`, /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })), good: true }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "" })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
       }
       var NAV_ICONS = {
         home: "M12 3 3 10.4V21h6v-6h6v6h6V10.4z",
@@ -10235,8 +10953,9 @@
         return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Personal"), personalCards, /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Social"), socialCards.length ? socialCards : /* @__PURE__ */ React.createElement("div", { className: "card locked" }, /* @__PURE__ */ React.createElement("p", { className: "compact muted" }, "Work shifts and late-night conversations add people here.")));
       }
       function GymCard({ state, dispatch }) {
+        var _a;
         const gym = C.selectors.activityAvailability(state).gym;
-        return /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Spenard Community Gym", /* @__PURE__ */ React.createElement("small", null, money(gym.cost), " \xB7 +", gym.progress, " progress")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, state.memberships.gym ? "Membership active." : "$30 first membership plus today's session.", " Training uses one part of day."), /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, [["strength", "Strength"], ["endurance", "Endurance"], ["reflexes", "Reflexes"]].map(([id, label]) => /* @__PURE__ */ React.createElement("button", { className: "btn secondary", key: id, disabled: !gym.available || state.player.attributes[id] >= 5, onClick: () => dispatch({ type: "TRAIN_ATTRIBUTE", attribute: id }) }, label, " ", state.player.attributes[id]))), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "Session ", gym.sessionsToday + 1, " today \xB7 cost ", money(gym.cost), " \xB7 one part of day"));
+        return /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Spenard Community Gym", /* @__PURE__ */ React.createElement("small", null, money(gym.cost))), /* @__PURE__ */ React.createElement("p", { className: "compact" }, state.memberships.gym ? "Membership active." : "$30 first membership plus today's session.", " Training uses one part of day."), /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, gym.activities.map((activity) => /* @__PURE__ */ React.createElement("button", { className: "btn secondary", key: activity.id, disabled: !gym.available || !activity.unlocked, onClick: () => dispatch({ type: "TRAIN_ATTRIBUTE", activity: activity.id }) }, activity.label))), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, ((_a = gym.activities.find((activity) => !activity.unlocked)) == null ? void 0 : _a.reason) || "Sparring moves fastest and can leave a mark."), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "Session ", gym.sessionsToday + 1, " today \xB7 cost ", money(gym.cost), " \xB7 one part of day", gym.streak >= 3 ? " \xB7 the routine is showing" : ""));
       }
       function ExploreSpenard({ state, dispatch, page, setPage, onBack }) {
         const jobs = C.selectors.discoveredJobs(state);
@@ -10297,7 +11016,7 @@
         if (effectivePage === "intel") return /* @__PURE__ */ React.createElement(LocalIntel, { state, dispatch, onBack: () => setPage("root") });
         if (effectivePage !== "root") return /* @__PURE__ */ React.createElement(ExploreSpenard, { state, dispatch, page: effectivePage, setPage, onBack: () => setPage("root") });
         const localActions = actions.filter((entry) => !["return_spenard", "walk_spenard"].includes(entry.id));
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: `Around ${area.name}`, sub: "What you can do without leaving the neighborhood", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(ReturnToSpenardActions, { state, dispatch }), actionOf("explore_spenard") && /* @__PURE__ */ React.createElement(MenuRow, { title: "Explore Spenard", status: state.world.locations.explorationCount ? `${state.world.locations.explorationCount} walks` : "New arrival", description: "Jobs, wandering, and people you meet through work.", onClick: () => setPage("explore") }), actionOf("local_intel") && /* @__PURE__ */ React.createElement(MenuRow, { title: "Local Intel", status: `${state.world.locations.explorationCount} walks`, description: "Routes, discoveries, and word collected around Spenard.", onClick: () => setPage("intel") }), actionOf("spenard_gambling") && /* @__PURE__ */ React.createElement("div", { className: `card${available.gambling.available ? "" : " locked"}` }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Informal Game", /* @__PURE__ */ React.createElement("small", null, "EVENING / NIGHT")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Choose an approach, then risk $20, $50, or $100. Attributes inform the seeded result but never guarantee profit. No debt is offered."), /* @__PURE__ */ React.createElement("select", { "aria-label": "Gambling approach", value: gambleApproach, onChange: (event) => setGambleApproach(event.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "read" }, "Read the room \xB7 Insight"), /* @__PURE__ */ React.createElement("option", { value: "steady" }, "Play disciplined \xB7 Discipline"), /* @__PURE__ */ React.createElement("option", { value: "press" }, "Work the table \xB7 Presence")), /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, [20, 50, 100].map((stake) => /* @__PURE__ */ React.createElement("button", { className: "btn secondary", key: stake, disabled: !available.gambling.available || state.player.cash < stake, onClick: () => dispatch({ type: "GAMBLE", stake, approach: gambleApproach }) }, "Risk $", stake))), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, available.gambling.reason)), area.id === "downtown" && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Downtown", /* @__PURE__ */ React.createElement("small", null, "EARLY SCAFFOLD")), /* @__PURE__ */ React.createElement("p", { className: "compact muted" }, "No local jobs, people, or activities are available here yet.")), !localActions.length && area.id !== "downtown" && /* @__PURE__ */ React.createElement("div", { className: "card locked" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "No local actions"), /* @__PURE__ */ React.createElement("p", { className: "compact muted" }, "Only the route back to Spenard is available here."))));
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: `Around ${area.name}`, sub: "What you can do without leaving the neighborhood", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(ReturnToSpenardActions, { state, dispatch }), actionOf("explore_spenard") && /* @__PURE__ */ React.createElement(MenuRow, { title: "Explore Spenard", status: state.world.locations.explorationCount ? `${state.world.locations.explorationCount} walks` : "New arrival", description: "Jobs, wandering, and people you meet through work.", onClick: () => setPage("explore") }), actionOf("local_intel") && /* @__PURE__ */ React.createElement(MenuRow, { title: "Local Intel", status: `${state.world.locations.explorationCount} walks`, description: "Routes, discoveries, and word collected around Spenard.", onClick: () => setPage("intel") }), actionOf("spenard_gambling") && /* @__PURE__ */ React.createElement("div", { className: `card${available.gambling.available ? "" : " locked"}` }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Informal Game", /* @__PURE__ */ React.createElement("small", null, "EVENING / NIGHT")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Choose an approach, then risk $20, $50, or $100. Attributes inform the seeded result but never guarantee profit. No debt is offered."), /* @__PURE__ */ React.createElement("select", { "aria-label": "Gambling approach", value: gambleApproach, onChange: (event) => setGambleApproach(event.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "read" }, "Read the room"), /* @__PURE__ */ React.createElement("option", { value: "steady" }, "Play disciplined"), /* @__PURE__ */ React.createElement("option", { value: "press" }, "Work the table")), /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, [20, 50, 100].map((stake) => /* @__PURE__ */ React.createElement("button", { className: "btn secondary", key: stake, disabled: !available.gambling.available || state.player.cash < stake, onClick: () => dispatch({ type: "GAMBLE", stake, approach: gambleApproach }) }, "Risk $", stake))), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, available.gambling.reason)), area.id === "downtown" && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Downtown", /* @__PURE__ */ React.createElement("small", null, "EARLY SCAFFOLD")), /* @__PURE__ */ React.createElement("p", { className: "compact muted" }, "No local jobs, people, or activities are available here yet.")), !localActions.length && area.id !== "downtown" && /* @__PURE__ */ React.createElement("div", { className: "card locked" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "No local actions"), /* @__PURE__ */ React.createElement("p", { className: "compact muted" }, "Only the route back to Spenard is available here."))));
       }
       function Household({ state, dispatch, onBack }) {
         var _a;
@@ -10606,19 +11325,11 @@
       }
       function Character({ state, onBack }) {
         var _a;
-        const identity = C.STREET_IDENTITIES[state.player.streetIdentity] || C.STREET_IDENTITIES.unproven;
-        const ratings = C.selectors.derivedRatings(state);
-        const attributes = [
-          ["strength", "Strength", "Close combat, carrying, and hard physical actions."],
-          ["endurance", "Endurance", "Health, recovery, and repeated physical stress."],
-          ["reflexes", "Reflexes", "Escaping, firearm handling, and avoiding searches."],
-          ["presence", "Presence", "Negotiation, recruitment, and relationships."],
-          ["insight", "Insight", "Trading reads, scouting, and detecting setups."],
-          ["discipline", "Discipline", "Reliability, planning, and crew leadership."]
-        ];
+        const identity = C.selectors.streetIdentityView(state);
+        const labels = C.selectors.attributeLabels(state);
         const legacy = C.BACKGROUNDS.find((item) => item.id === state.player.legacyBackground);
         const recent = (((_a = state.player.behavior) == null ? void 0 : _a.history) || []).slice(-5).reverse();
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Character", sub: "What you brought in, and what the neighborhood currently sees", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, state.player.streetName, /* @__PURE__ */ React.createElement("small", null, identity.label)), /* @__PURE__ */ React.createElement("p", null, identity.description)), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Attributes"), attributes.map(([id, label, purpose]) => /* @__PURE__ */ React.createElement("div", { className: "card compact", key: id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, label, /* @__PURE__ */ React.createElement("small", null, state.player.attributes[id])), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, purpose))), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Derived ratings"), /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, /* @__PURE__ */ React.createElement(Outcome, { label: "Combat", value: ratings.combat }), /* @__PURE__ */ React.createElement(Outcome, { label: "Charisma", value: ratings.charisma }), /* @__PURE__ */ React.createElement(Outcome, { label: "Intelligence", value: ratings.intelligence })), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "Each rating combines multiple attributes; no single number defines what you can do."), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Recent reputation"), recent.length ? recent.map((entry, index) => /* @__PURE__ */ React.createElement("div", { className: "card compact", key: `${entry.sourceId}:${index}` }, entry.summary)) : /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "No choice has traveled far enough to become a story yet."), legacy && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Save history", /* @__PURE__ */ React.createElement("small", null, "Compatibility")), /* @__PURE__ */ React.createElement("p", null, "This run began with the ", legacy.name, " edge before the neighborhood identity system was introduced."))));
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Character", sub: "What you brought in, and what the neighborhood currently sees", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, state.player.streetName, /* @__PURE__ */ React.createElement("small", null, identity.label)), /* @__PURE__ */ React.createElement("p", null, identity.description)), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Attributes"), C.ATTRIBUTES.ATTRIBUTES.map((attribute) => /* @__PURE__ */ React.createElement("div", { className: "card compact", key: attribute.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, attribute.label, /* @__PURE__ */ React.createElement("small", null, labels[attribute.id])), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, attribute.purpose))), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "Nobody in Spenard reads you as a number. Training, work, and the nights you survive move these on their own."), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Recent reputation"), recent.length ? recent.map((entry, index) => /* @__PURE__ */ React.createElement("div", { className: "card compact", key: `${entry.sourceId}:${index}` }, entry.summary)) : /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "No choice has traveled far enough to become a story yet."), state.player.historicalIdentity && /* @__PURE__ */ React.createElement("div", { className: "card compact" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Formerly", /* @__PURE__ */ React.createElement("small", null, "Save history")), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "The block used to call you ", state.player.historicalIdentity, ".")), legacy && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Save history", /* @__PURE__ */ React.createElement("small", null, "Compatibility")), /* @__PURE__ */ React.createElement("p", null, "This run began with the ", legacy.name, " edge before the neighborhood identity system was introduced."))));
       }
       function PhoneScreen({ state, dispatch, onBack, openList }) {
         const today = `Day ${state.run.day} \xB7`;
@@ -10636,12 +11347,12 @@
         if (page === "phone") return /* @__PURE__ */ React.createElement(PhoneScreen, { state, dispatch, onBack: () => setPage("root"), openList: () => setPage("907list") });
         if (page === "907list") return /* @__PURE__ */ React.createElement(NineOhSevenList, { state, dispatch, surface: sub === "home" ? "home" : "phone", onBack: () => setPage("root") });
         if (page === "help") return /* @__PURE__ */ React.createElement(Help, { marketVisible: state.market.visible, onBack: () => setPage("root") });
-        const identity = (C.STREET_IDENTITIES[state.player.streetIdentity] || C.STREET_IDENTITIES.unproven).label;
+        const identity = C.selectors.streetIdentity(state);
         const opsSummary = features.operations.available ? `${C.selectors.controlledBlockCount(state)} blocks \xB7 ${C.selectors.activeSoldierCount(state)} soldiers` : "Locked";
         const hasDreDebt = state.lender.status === "active" || state.lender.status === "cleared";
         const daysLeft = hasDreDebt ? state.lender.dueDay - state.run.day : null;
         const financeSummary = !hasDreDebt ? `${money(state.player.cleanCash)} clean` : !state.lender.balance ? "Debt clear" : daysLeft <= 0 ? "Debt due" : `Debt Day ${state.lender.dueDay}`;
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "More", sub: "Character, progress, finances, and help stay available; property unlocks operations" }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(MenuRow, { title: "Finances", status: financeSummary, description: hasDreDebt ? "Cash, debt, Shark notes, and financial risk." : "Cash and financial risk.", onClick: () => setPage("finances") }), state.knowledge.knows907List && /* @__PURE__ */ React.createElement(MenuRow, { title: "907List", status: `${state.nineZeroSevenList.inventory.length}/${C.selectors.marketCapacity(state)} held`, description: `${C.selectors.marketOverview(state).name} tier. Buy low, read the listing, find the next buyer.`, disabled: !C.selectors.nineZeroSevenListAccess(state, "phone").available && !C.selectors.nineZeroSevenListAccess(state, "home").available, onClick: () => setPage("907list") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Operations", status: opsSummary, description: features.operations.available ? "Safehouse, territory, soldiers, gear, and Rob." : features.operations.hint, disabled: !features.operations.available, onClick: () => setPage("operations") }), features.recovery.available && /* @__PURE__ */ React.createElement(MenuRow, { title: "Recovery", status: `Health ${state.player.health}`, description: "Treat injuries or lay low to reduce Heat.", onClick: () => setPage("recovery") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Character", status: `${identity} \xB7 Respect ${state.npc.curtis.respect}`, description: "Street Identity, attributes, derived ratings, and reputation.", onClick: () => setPage("character") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Help", status: "Available", description: "Time, trading, major actions, and the dynamic checkpoint.", onClick: () => setPage("help") })));
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "More", sub: "Character, progress, finances, and help stay available; property unlocks operations" }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(MenuRow, { title: "Finances", status: financeSummary, description: hasDreDebt ? "Cash, debt, Shark notes, and financial risk." : "Cash and financial risk.", onClick: () => setPage("finances") }), state.knowledge.knows907List && /* @__PURE__ */ React.createElement(MenuRow, { title: "907List", status: `${state.nineZeroSevenList.inventory.length}/${C.selectors.marketCapacity(state)} held`, description: `${C.selectors.marketOverview(state).name} tier. Buy low, read the listing, find the next buyer.`, disabled: !C.selectors.nineZeroSevenListAccess(state, "phone").available && !C.selectors.nineZeroSevenListAccess(state, "home").available, onClick: () => setPage("907list") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Operations", status: opsSummary, description: features.operations.available ? "Safehouse, territory, soldiers, gear, and Rob." : features.operations.hint, disabled: !features.operations.available, onClick: () => setPage("operations") }), features.recovery.available && /* @__PURE__ */ React.createElement(MenuRow, { title: "Recovery", status: `Health ${state.player.health}`, description: "Treat injuries or lay low to reduce Heat.", onClick: () => setPage("recovery") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Character", status: identity, description: "Street Identity, what you are good at, and what the block remembers.", onClick: () => setPage("character") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Help", status: "Available", description: "Time, trading, major actions, and the dynamic checkpoint.", onClick: () => setPage("help") })));
       }
       var disclosureSeq = 0;
       function useDomId(prefix) {
@@ -10777,7 +11488,13 @@
         if (!exposureDebugEnabled()) return null;
         const read = C.selectors.describeDisposition(state, who);
         if (!read) return null;
-        return /* @__PURE__ */ React.createElement("div", { className: "exposure-debug" }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: () => setOpen(!open) }, "Ledger: ", who, " ", read.bandLabel, " (", read.score, ")"), open && /* @__PURE__ */ React.createElement("div", { className: "exposure-debug-body" }, /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, C.EXPOSURE_NPC_IDS.map((id) => /* @__PURE__ */ React.createElement("button", { key: id, className: `btn ${id === who ? "primary" : "secondary"}`, onClick: () => setWho(id) }, id))), /* @__PURE__ */ React.createElement("p", { className: "compact" }, read.archetype, read.inverted ? " (inverted: lower is more hostile)" : "", " \xB7 score ", read.score, " \xB7 ", read.bandLabel), /* @__PURE__ */ React.createElement("table", { className: "exposure-debug-table" }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", null, "category"), /* @__PURE__ */ React.createElement("th", null, "event"), /* @__PURE__ */ React.createElement("th", null, "src"), /* @__PURE__ */ React.createElement("th", null, "n"), /* @__PURE__ */ React.createElement("th", null, "eff"), /* @__PURE__ */ React.createElement("th", null, "w"), /* @__PURE__ */ React.createElement("th", null, "total"))), /* @__PURE__ */ React.createElement("tbody", null, read.rows.map((row, index) => /* @__PURE__ */ React.createElement("tr", { key: index }, /* @__PURE__ */ React.createElement("td", null, row.type), /* @__PURE__ */ React.createElement("td", null, row.event), /* @__PURE__ */ React.createElement("td", null, row.source), /* @__PURE__ */ React.createElement("td", null, row.count), /* @__PURE__ */ React.createElement("td", null, row.effectiveCount), /* @__PURE__ */ React.createElement("td", null, row.baseWeight), /* @__PURE__ */ React.createElement("td", null, row.contribution))))), read.pending.length > 0 && /* @__PURE__ */ React.createElement("p", { className: "compact" }, "pending: ", read.pending.map((entry) => `${entry.type}/${entry.event}@${entry.deliverAtSlot}`).join(", "))));
+        const attributes = C.selectors.attributes(state);
+        const labels = C.selectors.attributeLabels(state);
+        const profile = C.selectors.identityProfile(state);
+        return /* @__PURE__ */ React.createElement("div", { className: "exposure-debug" }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: () => setOpen(!open) }, "Ledger: ", who, " ", read.bandLabel, " (", read.score, ")"), open && /* @__PURE__ */ React.createElement("div", { className: "exposure-debug-body" }, /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, C.EXPOSURE_NPC_IDS.map((id) => /* @__PURE__ */ React.createElement("button", { key: id, className: `btn ${id === who ? "primary" : "secondary"}`, onClick: () => setWho(id) }, id))), /* @__PURE__ */ React.createElement("p", { className: "compact" }, read.archetype, read.inverted ? " (inverted: lower is more hostile)" : "", " \xB7 score ", read.score, " \xB7 ", read.bandLabel), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "attributes: ", C.ATTRIBUTES.ATTRIBUTE_IDS.map((id) => `${id} ${attributes[id]} (${labels[id]})`).join(" \xB7 "), " \xB7 progress ", C.ATTRIBUTES.ATTRIBUTE_IDS.map((id) => {
+          var _a;
+          return (((_a = state.player.attributeProgress) == null ? void 0 : _a[id]) || 0).toFixed(2);
+        }).join("/"), " \xB7 gym streak ", state.player.gymStreak || 0), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "identity: ", profile.label, " (dominant ", profile.dominant, ", recent ", profile.behavior, ")"), /* @__PURE__ */ React.createElement("table", { className: "exposure-debug-table" }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", null, "category"), /* @__PURE__ */ React.createElement("th", null, "event"), /* @__PURE__ */ React.createElement("th", null, "src"), /* @__PURE__ */ React.createElement("th", null, "n"), /* @__PURE__ */ React.createElement("th", null, "eff"), /* @__PURE__ */ React.createElement("th", null, "w"), /* @__PURE__ */ React.createElement("th", null, "total"))), /* @__PURE__ */ React.createElement("tbody", null, read.rows.map((row, index) => /* @__PURE__ */ React.createElement("tr", { key: index }, /* @__PURE__ */ React.createElement("td", null, row.type), /* @__PURE__ */ React.createElement("td", null, row.event), /* @__PURE__ */ React.createElement("td", null, row.source), /* @__PURE__ */ React.createElement("td", null, row.count), /* @__PURE__ */ React.createElement("td", null, row.effectiveCount), /* @__PURE__ */ React.createElement("td", null, row.baseWeight), /* @__PURE__ */ React.createElement("td", null, row.contribution))))), read.pending.length > 0 && /* @__PURE__ */ React.createElement("p", { className: "compact" }, "pending: ", read.pending.map((entry) => `${entry.type}/${entry.event}@${entry.deliverAtSlot}`).join(", "))));
       }
       function CharacterCreation({ dispatch }) {
         const [streetName, setStreetName] = useState("");
@@ -10788,7 +11505,7 @@
           if (!validName) return;
           dispatch({ type: "START_RUN", streetName });
         }
-        return /* @__PURE__ */ React.createElement("div", { className: "edge-screen" }, /* @__PURE__ */ React.createElement("form", { className: "edge-panel", onSubmit: start }, /* @__PURE__ */ React.createElement("div", { className: "eyebrow" }, "New run"), /* @__PURE__ */ React.createElement("h1", null, "Start from the Bottom"), /* @__PURE__ */ React.createElement("p", null, "Bring a Street Name. The neighborhood decides what it means."), /* @__PURE__ */ React.createElement("div", { className: "street-name" }, /* @__PURE__ */ React.createElement("label", { htmlFor: "street-name-input" }, "Street Name"), /* @__PURE__ */ React.createElement("input", { id: "street-name-input", className: "street-name-field", type: "text", autoComplete: "off", maxLength: C.STREET_NAME_MAX, placeholder: "What do they call you?", value: streetName, onChange: (event) => setStreetName(event.target.value), "aria-invalid": rejected || void 0, "aria-describedby": rejected ? "street-name-error" : void 0 }), /* @__PURE__ */ React.createElement("small", null, "Required. Letters, numbers, spaces, apostrophes, periods, and hyphens are accepted."), rejected && /* @__PURE__ */ React.createElement("div", { className: "save-error", id: "street-name-error", role: "alert" }, "Nothing in that name survives. Use letters or numbers.")), /* @__PURE__ */ React.createElement("button", { className: "edge-card", type: "submit", disabled: !validName }, /* @__PURE__ */ React.createElement("b", null, "Start"), /* @__PURE__ */ React.createElement("span", null, "$100 clean cash. No debt. Six equal attributes. The neighborhood decides what comes next."), /* @__PURE__ */ React.createElement("small", null, "Strength \xB7 Endurance \xB7 Reflexes \xB7 Presence \xB7 Insight \xB7 Discipline"), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, validName ? `The block will call you ${validName}.` : "Enter a Street Name to begin."))));
+        return /* @__PURE__ */ React.createElement("div", { className: "edge-screen" }, /* @__PURE__ */ React.createElement("form", { className: "edge-panel", onSubmit: start }, /* @__PURE__ */ React.createElement("div", { className: "eyebrow" }, "New run"), /* @__PURE__ */ React.createElement("h1", null, "Start from the Bottom"), /* @__PURE__ */ React.createElement("p", null, "Bring a Street Name. The neighborhood decides what it means."), /* @__PURE__ */ React.createElement("div", { className: "street-name" }, /* @__PURE__ */ React.createElement("label", { htmlFor: "street-name-input" }, "Street Name"), /* @__PURE__ */ React.createElement("input", { id: "street-name-input", className: "street-name-field", type: "text", autoComplete: "off", maxLength: C.STREET_NAME_MAX, placeholder: "What do they call you?", value: streetName, onChange: (event) => setStreetName(event.target.value), "aria-invalid": rejected || void 0, "aria-describedby": rejected ? "street-name-error" : void 0 }), /* @__PURE__ */ React.createElement("small", null, "Required. Letters, numbers, spaces, apostrophes, periods, and hyphens are accepted."), rejected && /* @__PURE__ */ React.createElement("div", { className: "save-error", id: "street-name-error", role: "alert" }, "Nothing in that name survives. Use letters or numbers.")), /* @__PURE__ */ React.createElement("button", { className: "edge-card", type: "submit", disabled: !validName }, /* @__PURE__ */ React.createElement("b", null, "Start"), /* @__PURE__ */ React.createElement("span", null, "$100 clean cash. No debt. Nothing you are good at yet. The neighborhood decides what comes next."), /* @__PURE__ */ React.createElement("small", null, "Combat \xB7 Charisma \xB7 Intelligence"), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, validName ? `The block will call you ${validName}.` : "Enter a Street Name to begin."))));
       }
       function EventModal({ event, dispatch }) {
         const detail = /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, /* @__PURE__ */ React.createElement(Outcome, { label: "Who", value: event.who }), /* @__PURE__ */ React.createElement(Outcome, { label: "Where", value: event.where })), /* @__PURE__ */ React.createElement("p", { className: "warn" }, /* @__PURE__ */ React.createElement("b", null, "Stakes:"), " ", event.stakes), event.flavor && /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, /* @__PURE__ */ React.createElement(EntityText, { text: event.flavor })));
@@ -10826,7 +11543,7 @@
           ExpandableMoreSection,
           {
             collapsedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-lead" }, "Autosave is on. This run saves to your browser after every action."),
-            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.9b \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
+            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.10 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
             moreLabel: "Save detail",
             lessLabel: "Hide detail"
           }

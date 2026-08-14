@@ -14,28 +14,34 @@
   const { NPC_CHANNELS } = require("./src/data/propagation.js");
   const Market = require("./src/data/market.js");
   const MarketEvents = require("./src/events/market-events.js");
+  const AttributeData = require("./src/data/attributes.js");
+  const Attributes = require("./src/systems/attributes.js");
 
-  const VERSION = 7;
+  const VERSION = 8;
   const RUN_DAYS = 7;
   const PRESSURE_DAYS = 7;
   const MAX_ENERGY = 4;
   const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
-  const SAVE_KEY = "907ogr_v7";
-  const LEGACY_SAVE_KEYS = ["907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"];
+  const SAVE_KEY = "907ogr_v8";
+  const LEGACY_SAVE_KEYS = ["907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"];
   const PHONE_BILL = 75;
   const WEEKLY_RENT = 150;
   const WORKING_CAPITAL_RESERVE = 150;
   const STREET_NAME_MAX = 16;
   const GARAGE_DEPOSIT = 650;
-  const ATTRIBUTE_THRESHOLDS = { 2: 10, 3: 18, 4: 28 };
   const DEFAULT_STREET_NAMES = { shooter: "Steady", hustler: "Silver", strategist: "Quiet", neutral: "Rookie" };
-  const ATTRIBUTE_DEFAULTS = { strength: 2, endurance: 2, reflexes: 2, presence: 2, insight: 2, discipline: 2 };
-  const LEGACY_ATTRIBUTES = {
-    shooter: { strength: 3, endurance: 3, reflexes: 3, presence: 1, insight: 2, discipline: 1 },
-    hustler: { strength: 1, endurance: 1, reflexes: 1, presence: 3, insight: 2, discipline: 2 },
-    strategist: { strength: 2, endurance: 2, reflexes: 2, presence: 1, insight: 3, discipline: 2 },
+  const { ATTRIBUTE_DEFAULTS, ATTRIBUTE_IDS, ATTRIBUTE_MIN, ATTRIBUTE_MAX } = AttributeData;
+  // The six-attribute era. Kept only so migrateSave knows which old keys merge
+  // into which new attribute; see the mapping comment in src/data/attributes.js.
+  const LEGACY_ATTRIBUTE_GROUPS = {
+    combat: ["strength", "endurance", "reflexes"],
+    charisma: ["presence", "discipline"],
+    intelligence: ["insight", "discipline"],
   };
-  const STREET_IDENTITIES = {
+  // Street Identity used to be assigned nightly from a behavior score and stored.
+  // v1.10 derives it on read instead. This table survives so a migrated save can
+  // keep its old label as player.historicalIdentity, which is display-only.
+  const LEGACY_STREET_IDENTITIES = {
     unproven: { label: "Unproven", description: "The block is still deciding." },
     mover: { label: "The Mover", description: "People notice the way you read a market and keep product moving." },
     earner: { label: "The Earner", description: "People notice that your promises turn into payments and plans." },
@@ -61,6 +67,7 @@
     { id: "strategist", name: "Strategist", combat: 2, charisma: 1, intelligence: 3, cash: 375, heat: 1, description: "Best at reading danger, intimidation, and judging territory strength." },
   ];
   const STARTING_EDGES = BACKGROUNDS.filter((item) => item.id !== "strategist");
+  const BACKGROUND_BY_ID = Object.fromEntries(BACKGROUNDS.map((item) => [item.id, item]));
 
   const { GEAR, BASE_UPGRADES, GEAR_BY_ID, LISTING_ITEMS, LISTING_ITEM_BY_ID } = require("./src/data/items.js");
 
@@ -451,11 +458,34 @@
     state.player.cleanCash -= value;
     return true;
   }
-  function normalizedAttributes(state) { return { ...ATTRIBUTE_DEFAULTS, ...(state?.player?.attributes || {}) }; }
-  function combatRating(state) { const a = normalizedAttributes(state); return clamp(Math.round(a.strength * 0.40 + a.reflexes * 0.35 + a.endurance * 0.25), 1, 5); }
-  function charismaRating(state) { const a = normalizedAttributes(state); return clamp(Math.round(a.presence * 0.70 + a.discipline * 0.30), 1, 5); }
-  function intelligenceRating(state) { const a = normalizedAttributes(state); return clamp(Math.round(a.insight * 0.70 + a.discipline * 0.30), 1, 5); }
-  function derivedRatings(state) { return { combat: combatRating(state), charisma: charismaRating(state), intelligence: intelligenceRating(state) }; }
+  // Combat, Charisma, and Intelligence are stored now, not derived. The *Rating
+  // helpers survive as the compatibility scale - see compatibilityRating in
+  // src/systems/attributes.js for why the offset is there - so crew power,
+  // takeover odds, boost difficulty, and trade pricing behave on Day 1 exactly
+  // as they did before the consolidation. Anything wired to resolveWithAttribute
+  // reads the raw value through attributeOf instead and carries no inline term.
+  function normalizedAttributes(state) { return Attributes.normalizedAttributes(state); }
+  // What a reader gets: the stored attributes themselves.
+  function combatRating(state) { return normalizedAttributes(state).combat; }
+  function charismaRating(state) { return normalizedAttributes(state).charisma; }
+  function intelligenceRating(state) { return normalizedAttributes(state).intelligence; }
+  function derivedRatings(state) { return normalizedAttributes(state); }
+  // What the pre-v1.10 formulas get: the 1-5 scale they were tuned against, with
+  // the starting attribute mapped onto the old starting value. See
+  // compatibilityRating in src/systems/attributes.js for why the offset exists.
+  function combatCompat(state) { return Attributes.compatibilityRating(state, "combat"); }
+  function charismaCompat(state) { return Attributes.compatibilityRating(state, "charisma"); }
+  function intelligenceCompat(state) { return Attributes.compatibilityRating(state, "intelligence"); }
+  function attributeOf(state, attribute) { return Attributes.effectiveAttribute(state, attribute); }
+  function normalizedAttributeProgress(progress) {
+    const source = progress && typeof progress === "object" ? progress : {};
+    const out = {};
+    for (const id of ATTRIBUTE_IDS) {
+      const value = Number(source[id]);
+      out[id] = Number.isFinite(value) && value > 0 ? Math.min(1, value) : 0;
+    }
+    return out;
+  }
   // Street Read is the only Set-bearing branch of state, and state reaches the
   // reducer by more than one route: hydrateRun, structuredClone, and - in the
   // autosave-reload path a test pins - a raw JSON.parse with no hydration at
@@ -491,8 +521,19 @@
     for (const application of state.jobs.applications) {
       const applied = slotNumber(application.appliedAtDay, application.appliedAtSlot);
       if (now - applied < 2 || !state.phone.active) { waiting.push(application); continue; }
-      if (application.jobId !== state.jobs.activeJobId && !state.jobs.offers.includes(application.jobId)) state.jobs.offers.push(application.jobId);
       const job = SPENARD_JOB_BY_ID[application.jobId];
+      // Applying used to be a formality - every application became an offer.
+      // It is a real interview now, read through Charisma. Heat costs you here
+      // too: a manager who has heard things is a harder room.
+      const chance = clamp(0.62 - Math.max(0, state.player.heat - 4) * 0.04, 0.25, 0.95);
+      const outcome = resolveOutcome(state, "job_interview", chance, `${state.run.seed}:job_interview:${application.jobId}:${application.appliedAtDay}:${application.appliedAtSlot}`);
+      broadcastOutcome(state, "job_interview", outcome.tier);
+      if (!Attributes.isSuccessTier(outcome.tier)) {
+        pushPhoneMessage(state, job.name, "We went with someone else this time. You can try again.");
+        logEntry(state, `${job.name} passed. Nothing stops you applying again.`, "bad");
+        continue;
+      }
+      if (application.jobId !== state.jobs.activeJobId && !state.jobs.offers.includes(application.jobId)) state.jobs.offers.push(application.jobId);
       pushPhoneMessage(state, job.name, `We have an offer for you. Call back when you're ready to commit.`);
       logEntry(state, `${job.name} calls back with an offer. It waits for your answer.`, "good");
     }
@@ -520,46 +561,65 @@
     };
     return summaries[category] || "Made a choice the neighborhood will remember.";
   }
-  function identityCandidate(scores) {
-    const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
-    const [first, second] = ranked;
-    if (!first || first[1] <= 0) return "unproven";
-    const close = second && first[1] - second[1] < 3 && second[1] >= first[1] * 0.75;
-    return close ? "wild_card" : first[0];
-  }
-  function assignIdentity(state, identity, reasonSummary) {
-    state.player.streetIdentity = identity;
-    state.player.identityAssignedDay = state.run.day;
-    state.player.identityHistory.push({ identity, day: state.run.day, reasonSummary });
-    state.player.behavior.pendingIdentity = null;
-    state.player.behavior.pendingIdentityNights = 0;
-    logEntry(state, `People around ${AREA_BY_ID[state.world.currentNeighborhoodId].name} have started calling you ${STREET_IDENTITIES[identity].label}.`, "good");
-  }
-  function evaluateStreetIdentity(state, nightly) {
-    const behavior = state.player.behavior;
-    if (!behavior || behavior.lastEvaluatedDay === state.run.day && nightly) return;
-    if (nightly) behavior.lastEvaluatedDay = state.run.day;
-    const firstReady = behavior.meaningfulActions >= 6 && nightly && state.run.day >= 2;
-    const delayedReady = behavior.meaningfulActions >= 8;
-    if (state.player.streetIdentity === "unproven") {
-      if (!firstReady && !delayedReady) return;
-      const candidate = identityCandidate(behavior.scores);
-      if (candidate !== "unproven") assignIdentity(state, candidate, candidate === "wild_card" ? "The week has stayed deliberately mixed." : `Your recent choices consistently point toward ${STREET_IDENTITIES[candidate].label}.`);
-      return;
+  // Street Identity is derived on read now - see Attributes.getStreetIdentity.
+  // The nightly assignment loop, its two-night hysteresis, and the stored label
+  // are gone; what survives is the behavior ledger below, which still feeds the
+  // Character screen's recent-reputation list and nothing else.
+  // The keystone of the unified pipeline: an outcome's tier decides what the
+  // neighborhood ends up knowing. Better outcomes are not invisible, they are
+  // quiet - a clean job still writes its row, it just travels on `direct`
+  // instead of going out to the network.
+  //
+  // Adding a new action is two entries and no new code: a tier shape in
+  // OUTCOME_SHAPES and an observation map in OUTCOME_OBSERVATIONS.
+  function broadcastOutcome(state, actionType, tier, value) {
+    const specs = AttributeData.OUTCOME_OBSERVATIONS[actionType]?.[tier] || [];
+    for (const spec of specs) {
+      Exposure.broadcastObservation(state, {
+        ...spec,
+        location: spec.location || state.world.currentNeighborhoodId,
+        value: value == null ? spec.value ?? null : value,
+        day: state.run.day,
+      });
     }
-    if (!nightly) return;
-    const candidate = identityCandidate(behavior.scores);
-    if (candidate === state.player.streetIdentity || candidate === "unproven") {
-      behavior.pendingIdentity = null; behavior.pendingIdentityNights = 0; return;
-    }
-    const currentScore = state.player.streetIdentity === "wild_card" ? 0 : (behavior.scores[state.player.streetIdentity] || 0);
-    const candidateScore = candidate === "wild_card" ? Math.max(...Object.values(behavior.scores)) : (behavior.scores[candidate] || 0);
-    const clearsLead = candidate === "wild_card" || (candidateScore >= currentScore * 1.25 && candidateScore - currentScore >= 3);
-    if (!clearsLead) { behavior.pendingIdentity = null; behavior.pendingIdentityNights = 0; return; }
-    if (behavior.pendingIdentity === candidate) behavior.pendingIdentityNights += 1;
-    else { behavior.pendingIdentity = candidate; behavior.pendingIdentityNights = 1; }
-    if (behavior.pendingIdentityNights >= 2) assignIdentity(state, candidate, `Two nights of choices changed what the neighborhood expects from you.`);
+    return specs.length;
   }
+  // A check that reads an attribute spends the gym streak if one is banked.
+  function resolveOutcome(state, actionType, chance, key) {
+    const outcome = Attributes.resolveAction(state, actionType, chance, key);
+    const attribute = AttributeData.ACTION_ATTRIBUTE_MAP[actionType];
+    if (Attributes.gymStreakBonus(state, attribute)) { state.player.gymStreak = 0; state.player.gymStreakDay = null; }
+    return outcome;
+  }
+  // Standing gains slow down as they climb, so nobody is maxed out with most of
+  // the week still ahead of them. Integer standings take the braked value as a
+  // hashed chance of a whole point rather than growing a decimal the UI would
+  // have to explain; floats (job coworker relationship) take it directly.
+  function standingGain(record, current, rawGain, ladder) {
+    return Attributes.bankStandingGain(record, current, rawGain, ladder);
+  }
+  function standingGainFloat(current, rawGain, ladder) {
+    return Attributes.adjustedStandingGain(current, rawGain, ladder);
+  }
+  // A purchase that resolves to nothing must not resolve to a silent no-op.
+  //
+  // This is a guard, not a root-cause fix: the reducer already returned early
+  // without deducting cash, so the money was never at risk - what was missing
+  // was any signal to the player that the tap they made did nothing.
+  function failedPurchase(state, productId, source) {
+    logEntry(state, "Transaction failed. Try again.", "bad");
+    pushConsequence(state, "Transaction failed. Try again.", "bad");
+    if (typeof console !== "undefined" && console.warn) {
+      console.warn("[907] purchase resolved to zero units", {
+        source, productId, day: state.run.day, slot: state.run.slot,
+        catalog: PRODUCTS.map((item) => item.id),
+        access: { ...state.world.productAccess },
+      });
+    }
+    return state;
+  }
+  function streetIdentity(state) { return Attributes.getStreetIdentity(state); }
+  function streetIdentityView(state) { return Attributes.describeStreetIdentity(state); }
   function recordBehavior(state, category, points, sourceId, type) {
     const behavior = state.player.behavior;
     if (!behavior || !Object.hasOwn(behavior.scores, category) || !sourceId) return false;
@@ -575,7 +635,6 @@
     behavior.meaningfulActions += 1;
     behavior.history.push(entry);
     behavior.history = behavior.history.slice(-50);
-    if (behavior.meaningfulActions >= 8 && state.player.streetIdentity === "unproven") evaluateStreetIdentity(state, false);
     return true;
   }
   // Street Read is deliberately invisible. It measures how much of the city a
@@ -696,13 +755,16 @@
     CONTACT_VISIT: { type: "presence", event: "keeps_in_touch", channel: "neighborhood" },
     TRAIN_ATTRIBUTE: { type: "growth", event: "training", channel: "neighborhood" },
     LAY_LOW: { type: "discretion", event: "kept_quiet", channel: "neighborhood" },
-    ROB: { type: "violence", event: "robbery", channel: "neighborhood" },
-    ROB_DEALER: { type: "violence", event: "robbery", channel: "neighborhood" },
     TAKEOVER: { type: "defiance", event: "territory_claim", channel: "network" },
     CLAIM_BLOCK: { type: "defiance", event: "territory_claim", channel: "network" },
     SHOPLIFT: { type: "financial", event: "petty_theft", channel: "neighborhood" },
     BOOST: { type: "financial", event: "boosting", channel: "network" },
     GAMBLE: { type: "financial", event: "gambling", channel: "neighborhood" },
+    // ROB and ROB_DEALER used to live here as one flat row apiece. They are
+    // tiered now (see OUTCOME_OBSERVATIONS in src/data/attributes.js), which says
+    // the same thing with more fidelity - keeping both would record every
+    // robbery twice and inflate every disposition that heard about it. GAMBLE
+    // stays because its tiers only describe the night that went badly.
   };
 
   // Tier 2 pays out as a contact volunteering something once a day. The line is
@@ -1009,6 +1071,9 @@
     return {
       discoveryOrder: seededShuffle(STARTER_JOB_IDS, seed, 0x15a907),
       discovered: ["day_labor"], hired: ["day_labor"], activeJobId: null, offers: [], applications: [], discoveryChance: 0.30, lastScheduledShiftDay: null, lastDeliveryDay: null, lastWorked: null,
+      // How many times an employer has pulled you aside about the heat. Keyed by
+      // employer id; day labor never appears here.
+      warnings: {},
       records: Object.fromEntries(SPENARD_JOBS.map((job) => [job.id, {
         xp: 0, rank: 0, shifts: 0, lastWorkedDay: null, relationship: 0, contactMet: false,
         coworkersMet: [], currentCoworkerId: null, learnedDetails: [],
@@ -1040,13 +1105,16 @@
       },
       player: {
         background: null, legacyBackground: null, streetName: "", streetNameChosen: false,
-        streetIdentity: "unproven", identityAssignedDay: null, identityHistory: [],
+        historicalIdentity: null,
         attributes: { ...ATTRIBUTE_DEFAULTS },
-        attributeProgress: { strength: 0, endurance: 0, reflexes: 0, presence: 0, insight: 0, discipline: 0 },
-        behavior: { scores: { mover: 0, earner: 0, stickup: 0, connector: 0 }, meaningfulActions: 0, history: [], pendingIdentity: null, pendingIdentityNights: 0, lastEvaluatedDay: null, caps: {} },
+        // Fractional. Growth returns a partial level; a whole point is banked
+        // when the accumulator crosses 1.
+        attributeProgress: { combat: 0, charisma: 0, intelligence: 0 },
+        gymStreak: 0, gymStreakDay: null,
+        behavior: { scores: { mover: 0, earner: 0, stickup: 0, connector: 0 }, meaningfulActions: 0, history: [], caps: {} },
         cash: 0, dirtyCash: 0, cleanCash: 0, financialHeat: 0, health: 100, heat: 0, cargoCapacity: 10,
         energy: MAX_ENERGY,
-        stats: { combat: 0, charisma: 0, intelligence: 0 }, inventory,
+        inventory,
         gear: { owned: [], equipped: { weapon: null, armor: null, utility: null, tool: null }, consumables: { medical_kit: 0 } },
       },
       inventory: { laptop: false },
@@ -1062,7 +1130,7 @@
         transport: { dayPassDay: null, weekPass: false, busRides: 0, downtownKnown: false, industrialRouteKnown: false },
         locations: {
           explorationCount: 0, discoveries: [], gamblingKnown: false, downtownAmbientSeen: [],
-          gym: { sessionDay: null, sessionsToday: 0 },
+          gym: { sessionDay: null, sessionsToday: 0, activitySessions: { bag_work: 0, cardio: 0, sparring: 0 } },
           gambling: { plays: 0, wins: 0, losses: 0, net: 0 },
           discountStore: { name: "Northern Value", suspicion: 0, lastAttemptDay: null },
           employer: { name: "Ship Creek Freight", standing: 0, lastShiftDay: null, keptCommitments: 0, missedCommitments: 0 },
@@ -1176,7 +1244,7 @@
   function migrateSave(value) {
     if (!value || typeof value !== "object") return null;
     if (value.version === VERSION) return value;
-    if (![3, 4, 5, 6].includes(value.version) || !value.run || !value.world || !value.player) return null;
+    if (![3, 4, 5, 6, 7].includes(value.version) || !value.run || !value.world || !value.player) return null;
     const migrated = JSON.parse(JSON.stringify(value));
     const oldHousehold = migrated.people?.household || {};
     const legacyNpc = migrated.npc || {};
@@ -1271,6 +1339,42 @@
       // standing. Sales carry over as the flip count they would have been.
       legacyList.flipCount = Math.max(0, Math.floor(Number(legacyList.flipCount ?? legacyList.sales) || 0));
     }
+    // v8: six attributes collapse into three, and Street Identity stops being
+    // stored. Both need an explicit hand here rather than a default merge:
+    // mergeDefaults carries source keys that the defaults no longer own, so a
+    // retired field survives forever unless it is deleted on the way through.
+    const player = migrated.player;
+    const legacyAttributes = player.attributes && typeof player.attributes === "object" ? player.attributes : null;
+    const hasLegacySix = legacyAttributes && LEGACY_ATTRIBUTE_GROUPS.combat.some((key) => key in legacyAttributes);
+    if (hasLegacySix) {
+      // Highest of each merged group, so nothing a player earned is lost.
+      const converted = {};
+      for (const [attribute, sources] of Object.entries(LEGACY_ATTRIBUTE_GROUPS)) {
+        const best = Math.max(...sources.map((key) => Number(legacyAttributes[key]) || 0));
+        converted[attribute] = clamp(Math.round(best), ATTRIBUTE_MIN, ATTRIBUTE_MAX);
+      }
+      player.attributes = converted;
+    } else if (legacyAttributes) {
+      const converted = {};
+      for (const id of ATTRIBUTE_IDS) converted[id] = clamp(Math.round(Number(legacyAttributes[id]) || ATTRIBUTE_DEFAULTS[id]), ATTRIBUTE_MIN, ATTRIBUTE_MAX);
+      player.attributes = converted;
+    }
+    // Hidden progress was counted in whole points against a threshold table and
+    // is now a fractional accumulator. There is no honest conversion, so it
+    // resets; the attribute levels it already bought are what carried over.
+    delete player.attributeProgress;
+    delete player.stats;
+    if (player.streetIdentity) {
+      player.historicalIdentity = LEGACY_STREET_IDENTITIES[player.streetIdentity]?.label || null;
+      delete player.streetIdentity;
+    }
+    delete player.identityAssignedDay;
+    delete player.identityHistory;
+    if (player.behavior && typeof player.behavior === "object") {
+      delete player.behavior.pendingIdentity;
+      delete player.behavior.pendingIdentityNights;
+      delete player.behavior.lastEvaluatedDay;
+    }
     migrated.version = VERSION;
     return migrated;
   }
@@ -1314,11 +1418,14 @@
       state.base.acquiredDay = value.run.day || 1;
     }
     const legacy = ["shooter", "hustler", "strategist"].includes(value.player.background) ? value.player.background : value.player.legacyBackground;
-    if (!value.player.attributes && legacy && LEGACY_ATTRIBUTES[legacy]) state.player.attributes = { ...LEGACY_ATTRIBUTES[legacy] };
+    const legacyBackground = BACKGROUND_BY_ID[legacy];
+    if (!value.player.attributes && legacyBackground) {
+      state.player.attributes = { combat: legacyBackground.combat, charisma: legacyBackground.charisma, intelligence: legacyBackground.intelligence };
+    }
     state.player.legacyBackground = legacy || null;
     state.player.background = null;
-    state.player.stats = derivedRatings(state);
-    state.player.streetIdentity = STREET_IDENTITIES[state.player.streetIdentity] ? state.player.streetIdentity : "unproven";
+    state.player.attributes = normalizedAttributes(state);
+    state.player.attributeProgress = normalizedAttributeProgress(state.player.attributeProgress);
     state.player.behavior.history = Array.isArray(state.player.behavior.history) ? state.player.behavior.history.slice(-50) : [];
     state.player.behavior.caps = state.player.behavior.caps && typeof state.player.behavior.caps === "object" ? state.player.behavior.caps : {};
     state.stats.robbery = normalizeRobberyStats(value.stats?.robbery, state);
@@ -1621,10 +1728,11 @@
     return 0.40 + value * 0.05;
   }
   function boostChance(state, target) {
-    const a = normalizedAttributes(state);
-    const skill = target.tier === 1 ? (a.reflexes + a.insight) / 2
-      : target.tier === 2 ? (a.reflexes + a.discipline) / 2
-        : (a.discipline + a.presence) / 2;
+    // Was reflexes/insight/discipline/presence blends before the consolidation.
+    // Read through the 1-5 compatibility scale so the tier curve is unchanged.
+    const skill = target.tier === 1 ? (combatCompat(state) + intelligenceCompat(state)) / 2
+      : target.tier === 2 ? (combatCompat(state) + intelligenceCompat(state)) / 2
+        : (intelligenceCompat(state) + charismaCompat(state)) / 2;
     const base = target.tier === 1 ? 0.80 : target.tier === 2 ? 0.55 : 0.40;
     const windowBonus = target.tier === 2 && state.run.slot === target.windowSlot ? 0.20 : 0;
     return clamp(base + (skill - 2) * 0.10 + windowBonus, 0.10, 0.95);
@@ -1655,7 +1763,7 @@
       if (target.tier === 3) {
         state.boost.merchandise += take;
         const crew = state.people.crew[state.boost.crewAssigned];
-        if (crew) crew.loyalty += 1;
+        if (crew) crew.loyalty += standingGain(crew, crew.loyalty, 1, "open");
         logEntry(state, `${target.name} lands. $${take} in merchandise is waiting for the fence.`, "good");
       } else {
         addDirtyCash(state, take);
@@ -1671,7 +1779,7 @@
       logEntry(state, "Security grabbed your arm. You dropped it and walked out.", "bad");
     } else if (target.tier === 2) {
       const chaseRoll = Number.isFinite(options?.chaseRoll) ? options.chaseRoll : random.next();
-      const escaped = chaseRoll < clamp(0.45 + normalizedAttributes(state).reflexes * 0.08, 0.25, 0.85);
+      const escaped = chaseRoll < clamp(0.45 + combatCompat(state) * 0.08, 0.25, 0.85);
       state.player.heat = clamp(state.player.heat + (escaped ? 1 : 2), 0, 15);
       if (!escaped) {
         if (!state.boost.storeBans.includes(target.id)) state.boost.storeBans.push(target.id);
@@ -1769,13 +1877,53 @@
   function transitCovered(state) {
     return !!(state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day);
   }
-  function gymSessionDetails(state) {
+  // The cash ladder is unchanged: the gym charges more for the second and third
+  // hour of the same day. What changed in v1.10 is what the hour buys - growth
+  // now comes from Attributes.attributeGrowth, which taper on lifetime sessions
+  // of that activity rather than on sessions today.
+  function gymSessionDetails(state, activityId) {
     const gym = state.world.locations.gym;
     const sessionsToday = gym.sessionDay === state.run.day ? gym.sessionsToday : 0;
     const index = Math.min(3, sessionsToday);
     const sessionCost = [25, 45, 75, 120][index];
     const membershipFee = state.memberships?.gym ? 0 : 30;
-    return { cost: sessionCost + membershipFee, sessionCost, membershipFee, progress: [3, 2, 1, 1][index], sessionsToday };
+    const activity = AttributeData.GYM_ACTIVITY_BY_ID[activityId] || AttributeData.GYM_ACTIVITIES[0];
+    const priorSessions = gym.activitySessions?.[activity.id] || 0;
+    const current = normalizedAttributes(state)[activity.attribute];
+    const growth = Attributes.attributeGrowth(current, priorSessions, activity.id);
+    return {
+      cost: sessionCost + membershipFee, sessionCost, membershipFee, sessionsToday,
+      activity, growth, priorSessions,
+      unlocked: Attributes.gymActivityAvailable(state, activity.id),
+    };
+  }
+  // Consecutive days, not consecutive sessions - three visits in one afternoon
+  // is not discipline. The streak is read as +1 effective Combat on the next
+  // check that wants it, and the day it breaks is handled in confirmDayEnd.
+  function registerGymDay(state) {
+    const day = state.run.day;
+    if (state.player.gymStreakDay === day) return;
+    state.player.gymStreak = state.player.gymStreakDay === day - 1 ? (state.player.gymStreak || 0) + 1 : 1;
+    state.player.gymStreakDay = day;
+    if (state.player.gymStreak !== AttributeData.GYM_STREAK_REQUIREMENT) return;
+    // Showing up three days running is the kind of thing the people you live
+    // with notice, and it reads well to every civilian lens.
+    for (const channel of ["household", "neighborhood"]) {
+      Exposure.broadcastObservation(state, {
+        type: "growth", event: "gym_consistent", location: "spenard", channel,
+      });
+    }
+    logEntry(state, "Three days straight. Juan noticed the bag gloves by the door.", "good");
+  }
+  function gymActivityOptions(state) {
+    return AttributeData.GYM_ACTIVITIES.map((activity) => {
+      const details = gymSessionDetails(state, activity.id);
+      return {
+        id: activity.id, label: activity.label, blurb: activity.blurb,
+        attribute: activity.attribute, cost: details.cost, unlocked: details.unlocked,
+        reason: details.unlocked ? null : "Sparring opens once you can handle yourself.",
+      };
+    });
   }
   function resolveDistrictCost(definition, field, state, params) {
     const value = typeof definition[field] === "function" ? definition[field](state, params || {}) : definition[field];
@@ -1828,7 +1976,7 @@
     if (actionId === "spenard_gym") {
       const gym = gymSessionDetails(state);
       result.available = true;
-      result.reason = gym.sessionsToday ? "Same-day training costs more and gives less progress." : "The first session gives the best progress.";
+      result.reason = gym.sessionsToday ? "Coming back the same day costs more and does less." : "The first session of the day is the one that counts.";
       return result;
     }
     if (actionId === "spenard_gambling") {
@@ -1956,7 +2104,11 @@
     const takenIds = new Set(list.taken?.day === day ? list.taken.ids : []);
     const pool = LISTING_ITEMS.filter((item) => item.tier <= tier && !heldIds.has(item.id) && !takenIds.has(item.id));
     const order = seededShuffle(pool, state.run.seed, stringHash(`907list:${day}:${tier}`));
-    const picked = order.slice(0, config.listings);
+    // Intelligence is knowing where to look. A Scrapper who reads the board
+    // well sees one more listing a day than one who does not - the same board,
+    // just more of it noticed.
+    const extraListing = normalizedAttributes(state).intelligence >= AttributeData.ADVANTAGE_THRESHOLD ? 1 : 0;
+    const picked = order.slice(0, config.listings + extraListing);
     const specialist = specialistCategory(state);
     if (specialist) {
       const bonus = order.find((item) => item.category === specialist && !picked.includes(item));
@@ -2050,7 +2202,14 @@
   function marketMeetupRobbery(state, nonce) {
     const district = marketMeetupDistrict(state) || state.world.currentNeighborhoodId;
     const carriedValue = marketCarriedValue(state);
-    if (!MarketEvents.rollRobbery(state, { carriedValue, district, slot: state.run.slot, nonce })) return false;
+    if (!MarketEvents.rollRobbery(state, { carriedValue, district, slot: state.run.slot, nonce })) {
+      // The meetup went ahead. How visible it was is an Intelligence read -
+      // picking the hour and the lot. The robbery roll itself is deliberately
+      // left alone so the risk number the page shows stays honest.
+      const outcome = resolveOutcome(state, "market_meetup", 0.75, `${state.run.seed}:meetup:${state.run.day}:${state.run.slot}:${nonce}`);
+      broadcastOutcome(state, "market_meetup", outcome.tier);
+      return false;
+    }
     const list = state.nineZeroSevenList;
     const lost = list.inventory.length;
     list.inventory = [];
@@ -2059,13 +2218,7 @@
     const damage = MarketEvents.robberyHealthLoss(state, nonce);
     state.player.health = clamp(state.player.health - damage, 0, 100);
     state.player.heat = clamp(state.player.heat + Market.ROBBERY.heatGain, 0, 15);
-    Exposure.broadcastObservation(state, {
-      type: "violence",
-      event: "robbery_victim",
-      location: district,
-      value: carriedValue,
-      channel: "neighborhood",
-    });
+    broadcastOutcome(state, "market_meetup", "catastrophic", carriedValue);
     logEntry(state, lost
       ? `Two of them work the meetup. You lose ${lost === 1 ? "the item" : `all ${lost} items`} and ${damage} health, and the block will hear about it.`
       : `Two of them work the meetup and find nothing worth taking. You lose ${damage} health.`, "bad");
@@ -2238,7 +2391,7 @@
       explore: { available: explore.available, reason: explore.visible ? explore.reason : "Return to Spenard first.", cost: 0 },
       busDowntown: { available: downtown.available, reason: downtown.reason, cost: downtown.cashCost },
       industrial: { available: industrial.available, reason: industrial.reason, cost: industrial.cashCost },
-      gym: { available: gymAccess.available, reason: gymAccess.visible ? gymAccess.reason : "Return to Spenard to use the gym.", cost: gym.cost, progress: gym.progress, sessionsToday: gym.sessionsToday },
+      gym: { available: gymAccess.available, reason: gymAccess.visible ? gymAccess.reason : "Return to Spenard to use the gym.", cost: gym.cost, sessionsToday: gym.sessionsToday, activities: gymActivityOptions(state), streak: state.player.gymStreak || 0 },
       gambling: state.world.currentNeighborhoodId !== HOME_DISTRICT_ID ? { available: false, reason: "Return to Spenard for the game." }
         : !state.world.locations.gamblingKnown ? { available: false, reason: "Nobody has trusted you with the game's address yet." }
           : { available: gamblingAccess.available, reason: gamblingAccess.reason },
@@ -2338,7 +2491,61 @@
     }
     if (job.scheduled && state.jobs.lastScheduledShiftDay === state.run.day) return { available: false, reason: "You already worked a scheduled shift today." };
     if (!job.scheduled && state.jobs.lastDeliveryDay === state.run.day) return { available: false, reason: "You already ran a delivery today." };
+    // The Night Owl does not fire you, it just stops putting you on the
+    // schedule. Mina is still there, and that relationship is not employment.
+    if (jobId === "night_owl" && state.player.heat >= JOB_HEAT_FIRING) {
+      return { available: false, reason: "Mina cannot put you on the schedule this week. You can still come in." };
+    }
     return { available: true, reason: "Choose a shift approach. Uses one part of day." };
+  }
+
+  // Heat costs you work.
+  //
+  // A ladder, not a coin flip, and shaped like Yalonda's housing warnings: the
+  // employer says something before they do something, and the rung you are on
+  // is legible. Day labor is exempt at every rung - it is the floor the run
+  // stands on, and taking it away turns a bad week into an unrecoverable one.
+  const JOB_HEAT_FIRST_WARNING = 8;
+  const JOB_HEAT_FINAL_WARNING = 10;
+  const JOB_HEAT_FIRING = 12;
+  function applyHeatEmployment(state, jobId) {
+    const job = SPENARD_JOB_BY_ID[jobId];
+    if (!job || job.dayLabor) return null;
+    const heat = state.player.heat;
+    // Cooling off un-arms the ladder. Nothing else clears a warning, which is
+    // why laying low is the answer to the first one.
+    if (heat < JOB_HEAT_FIRST_WARNING) { delete state.jobs.warnings[jobId]; return null; }
+    if (heat >= JOB_HEAT_FIRING && jobId !== "night_owl") {
+      state.jobs.activeJobId = null;
+      state.jobs.hired = ["day_labor"];
+      state.jobs.offers = state.jobs.offers.filter((id) => id !== jobId);
+      // Same reset ACCEPT_JOB uses when you quit: the standing was with them,
+      // not with you.
+      const record = state.jobs.records[jobId];
+      if (record) { record.xp = 0; record.rank = 0; record.relationship = 0; }
+      delete state.jobs.warnings[jobId];
+      pushPhoneMessage(state, job.name, "Don't come in tomorrow. We'll mail the last check.");
+      logEntry(state, "You got let go. They didn't say why but you know.", "bad");
+      pushConsequence(state, `${job.name} let you go. Day labor is still there.`, "bad");
+      for (const channel of ["household", "neighborhood"]) {
+        Exposure.broadcastObservation(state, {
+          type: "financial", event: "job_lost", location: state.world.currentNeighborhoodId, channel,
+        });
+      }
+      return "fired";
+    }
+    const rung = heat >= JOB_HEAT_FINAL_WARNING ? 2 : 1;
+    const given = state.jobs.warnings[jobId] || 0;
+    if (given >= rung) return null;
+    state.jobs.warnings[jobId] = rung;
+    if (rung === 1) {
+      pushPhoneMessage(state, job.name, "People are talking. Keep your head down.");
+      logEntry(state, "Your boss pulled you aside. 'People are talking. Keep your head down.'", "warn");
+      return "warned";
+    }
+    pushPhoneMessage(state, job.name, "Final warning. Next problem and you're done here.");
+    logEntry(state, "Final warning. Next problem and you're done here.", "bad");
+    return "final_warning";
   }
   function relationshipLabel(value) {
     if (value >= 8) return "Trusted";
@@ -2453,15 +2660,20 @@
     return false;
   }
 
-  function improveAttribute(state, attribute, progress) {
-    if (!["strength", "endurance", "reflexes"].includes(attribute) || state.player.attributes[attribute] >= 5) return false;
-    state.player.attributeProgress[attribute] += progress;
-    const threshold = ATTRIBUTE_THRESHOLDS[state.player.attributes[attribute]];
-    if (state.player.attributeProgress[attribute] < threshold) return false;
-    state.player.attributeProgress[attribute] -= threshold;
-    state.player.attributes[attribute] += 1;
-    state.player.stats = derivedRatings(state);
-    logEntry(state, `${attribute[0].toUpperCase()}${attribute.slice(1)} rises to ${state.player.attributes[attribute]}. The work is showing.`, "good");
+  // Growth arrives fractionally and banks a whole point when the accumulator
+  // crosses one. The player is told they got better, never by how much - the
+  // number lives behind the debug flag.
+  function improveAttribute(state, attribute, growth) {
+    if (!ATTRIBUTE_IDS.includes(attribute)) return false;
+    const gained = Number(growth) || 0;
+    if (gained <= 0) return false;
+    if (state.player.attributes[attribute] >= ATTRIBUTE_MAX) return false;
+    state.player.attributeProgress[attribute] += gained;
+    if (state.player.attributeProgress[attribute] < 1) return false;
+    state.player.attributeProgress[attribute] -= 1;
+    state.player.attributes[attribute] = clamp(state.player.attributes[attribute] + 1, ATTRIBUTE_MIN, ATTRIBUTE_MAX);
+    const label = Attributes.attributeLabel(state.player.attributes[attribute]);
+    logEntry(state, `Something has changed in how you carry yourself. People read you as ${label} now.`, "good");
     return true;
   }
   function announceFeatureUnlocks(state, before) {
@@ -2499,7 +2711,7 @@
   function recruitmentCost(state, crewId) {
     const person = CREW_BY_ID[crewId];
     if (!person) return 0;
-    const charismaDiscount = Math.max(0, charismaRating(state) - 1) * 0.05;
+    const charismaDiscount = Math.max(0, charismaCompat(state) - 1) * 0.05;
     const territoryDiscount = controlled(state, "north_star_lot") ? 0.10 : 0;
     return Math.max(1, Math.round(person.recruitCost * (1 - charismaDiscount - territoryDiscount)));
   }
@@ -2543,7 +2755,7 @@
       if (person.id === "tone" && crew.tier >= 2) power += crew.tier === 3 ? 4 : 2;
     }
     if (includePlayer) {
-      power += combatRating(state) * 2 + charismaRating(state) + intelligenceRating(state);
+      power += combatCompat(state) * 2 + charismaCompat(state) + intelligenceCompat(state);
       if (state.player.health > 80) power += 1;
       if (state.player.health < 50) power -= 2;
     }
@@ -2551,7 +2763,7 @@
   }
   function territoryPowerEstimate(state, areaId) {
     const exact = state.world.territories[areaId]?.power || 0;
-    const intelligence = intelligenceRating(state);
+    const intelligence = intelligenceCompat(state);
     const spread = intelligence >= 3 ? 0 : intelligence === 2 ? 1 : 3;
     return { exact: spread === 0, min: Math.max(0, exact - spread), max: exact + spread, label: spread ? `${Math.max(0, exact - spread)}–${exact + spread}` : String(exact) };
   }
@@ -2614,7 +2826,7 @@
     const marketPriceValue = state.world.markets[areaId]?.prices[productId] || 0;
     const control = controlled(state, areaId);
     const buy = Math.round(marketPriceValue * (control ? 0.96 : 1) * plugPriceModifier(state, productId));
-    const charismaBonus = Math.max(0, charismaRating(state) - 1) * 0.015;
+    const charismaBonus = Math.max(0, charismaCompat(state) - 1) * 0.015;
     const influenceBonus = Math.min(0.02, state.world.influence[areaId] * 0.005);
     const curtisPremium = state.npc.curtis.friendship === "accepted" && state.npc.curtis.protectionUntilDay >= state.run.day ? 0.10 : 0;
     const pherrisPremium = areaId === "downtown" && state.people.crew.pherris?.recruited && state.people.crew.pherris.tier >= 1 ? 0.10 : 0;
@@ -2778,7 +2990,13 @@
     const weaponBonus = equippedWeapon(state) ? 0.05 : 0;
     const crewBonus = Math.min(0.08, recruitedCrew(state).length * 0.04);
     const repeatPenalty = robbery.attempts * 0.035;
-    const chance = clamp(0.30 + combatRating(state) * 0.065 + intelligenceRating(state) * 0.035 + weaponBonus + crewBonus - state.player.heat * 0.015 - repeatPenalty, 0.22, 0.72);
+    // The Combat term used to live here. It is gone because resolveWithAttribute
+    // owns it now, and the constant is the old formula evaluated at the old
+    // *starting* attribute of 2 - not at 1. A fresh player therefore faces
+    // exactly the odds they always did, and everything above that is advantage
+    // rather than a bonus. Anchoring at 1 instead cost about a third of the run
+    // economy, which is what the simulator caught.
+    const chance = clamp(0.43 + intelligenceCompat(state) * 0.035 + weaponBonus + crewBonus - state.player.heat * 0.015 - repeatPenalty, 0.22, 0.72);
     return { available: true, reason: "One attempt is available today. It uses one part of day.", chance, chanceLabel: `${Math.round(chance * 100)}%`, workingCapital: capital, attempts: robbery.attempts };
   }
   // A robbed corner stops supplying the block. Losing him for good leaves a
@@ -2846,8 +3064,8 @@
     const weapon = equippedWeapon(state);
     const weaponBonus = weapon ? (weapon.type === "firearm" ? 0.12 : 0.06) : 0;
     return clamp(
-      0.38 + combatRating(state) * 0.07 + weaponBonus + Math.min(0.10, recruitedCrew(state).length * 0.05)
-      + intelligenceRating(state) * 0.02 - state.player.heat * 0.012 - record.robbedCount * 0.10 - (record.retaliated ? 0.08 : 0),
+      0.52 + weaponBonus + Math.min(0.10, recruitedCrew(state).length * 0.05)
+      + intelligenceCompat(state) * 0.02 - state.player.heat * 0.012 - record.robbedCount * 0.10 - (record.retaliated ? 0.08 : 0),
       0.20, 0.78);
   }
 
@@ -2957,7 +3175,7 @@
   function sharkRiskLabel(state, borrower, amount, term) {
     const amountPressure = amount >= 500 ? 2 : amount >= 250 ? 1 : 0;
     const termRelief = term >= 7 ? 2 : term >= 4 ? 1 : 0;
-    const score = borrower.risk + amountPressure - termRelief - Math.floor((normalizedAttributes(state).insight - 1) / 2) - (atLeastBand(state, "dre", BANDS.BONDED) ? 1 : 0);
+    const score = borrower.risk + amountPressure - termRelief - Math.floor((intelligenceCompat(state) - 1) / 2) - (atLeastBand(state, "dre", BANDS.BONDED) ? 1 : 0);
     return score <= 0 ? "Low" : score <= 2 ? "Guarded" : score <= 4 ? "High" : "Severe";
   }
   function sharkLoanAvailability(state, borrowerId, amount, term) {
@@ -3038,7 +3256,7 @@
       crew.assignment = null;
       const loyaltyBonus = clamp(crew.loyalty, -2, 4) * 0.04;
       if (person.id === "eli") {
-        const success = random.next() < 0.58 + intelligenceRating(state) * 0.05 + loyaltyBonus - (assignment === "outer_run" ? 0.14 : 0);
+        const success = random.next() < 0.58 + intelligenceCompat(state) * 0.05 + loyaltyBonus - (assignment === "outer_run" ? 0.14 : 0);
         if (success) {
           const gain = random.int(85, assignment === "outer_run" ? 210 : 145);
           state.player.cash += gain;
@@ -3056,7 +3274,7 @@
         const area = assignment === "source_meth" ? AREA_BY_ID.airport_industrial : AREA_BY_ID.downtown;
         const product = assignment === "source_meth" ? PRODUCT_BY_ID.meth : PRODUCT_BY_ID.cocaine;
         state.effects.rumors.push({ id: `pherris_${state.run.day}_${state.run.slot}`, text: `Pherris says ${product.name} is moving through ${area.name}, but the window will not stay open.`, areaId: area.id, productId: product.id, reliable: true, expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
-        crew.loyalty += 1;
+        crew.loyalty += standingGain(crew, crew.loyalty, 1, "open");
         logEntry(state, "Pherris circles one name on her list and tears the rest of the page away.", "good");
       } else if (person.id === "tone") {
         if (assignment === "guard_base") {
@@ -3337,12 +3555,12 @@
       resolved: false, choicesMade: [], result: null, loot: null, engine: "legacy_authored",
       enemyHealth: template.enemyHealth, feedback: template.description, finishAfter: !!finishAfter, ...template,
     };
-    const identity = state.player.streetIdentity;
-    const preview = identity === "stickup" ? "They arrived expecting you to make this physical."
-      : identity === "connector" ? "They keep looking past you for whoever might answer your call."
-      : identity === "mover" ? "They chose the hour when they think your business will hurt most."
-      : identity === "earner" ? "They know you have obligations you intend to reach."
-      : identity === "wild_card" ? "They prepared for two different versions of you and may have guessed wrong." : "Nobody here knows yet what kind of answer you give.";
+    // What they expect from you, read off the identity the block has derived.
+    const identity = Attributes.identityProfile(state);
+    const preview = identity.dominant === "combat" ? "They arrived expecting you to make this physical."
+      : identity.dominant === "charisma" ? "They keep looking past you for whoever might answer your call."
+      : identity.dominant === "intelligence" ? "They chose the hour they think costs you most."
+      : "They prepared for two different versions of you and may have guessed wrong.";
     state.run.pendingEncounter.description += ` ${preview}`;
     state.run.pendingEncounter.feedback = state.run.pendingEncounter.description;
     if (id === "mina_sedan_night") {
@@ -4082,7 +4300,7 @@
     for (const loan of state.hustle.shark.loans) {
       if (!["active", "extended"].includes(loan.status) || state.run.day < loan.dueDay) continue;
       const borrower = SHARK_BORROWERS.find((item) => item.id === loan.borrowerId);
-      const probability = clamp(borrower.risk + (loan.amount >= 500 ? 0.18 : loan.amount >= 250 ? 0.08 : 0) + (loan.term === 2 ? 0.12 : loan.term === 4 ? 0.04 : -0.04) - normalizedAttributes(state).insight * 0.025 - (atLeastBand(state, "dre", BANDS.BONDED) ? 0.08 : 0), 0.03, 0.82);
+      const probability = clamp(borrower.risk + (loan.amount >= 500 ? 0.18 : loan.amount >= 250 ? 0.08 : 0) + (loan.term === 2 ? 0.12 : loan.term === 4 ? 0.04 : -0.04) - intelligenceCompat(state) * 0.025 - (atLeastBand(state, "dre", BANDS.BONDED) ? 0.08 : 0), 0.03, 0.82);
       const roll = (stringHash(`${state.run.seed}:shark:${loan.id}:${loan.dueDay}`) % 10000) / 10000;
       if (roll < probability) {
         loan.status = "defaulted";
@@ -4131,7 +4349,9 @@
     state.run.dayEndPending = false;
     state.run.overtimeArmed = false;
     state.run.slot = 3;
-    evaluateStreetIdentity(state, true);
+    // A day that ends without a gym visit ends the streak. Checked here rather
+    // than on the next visit so the bonus cannot survive a rest day.
+    if (state.player.gymStreakDay !== oldDay) { state.player.gymStreak = 0; state.player.gymStreakDay = null; }
     recalculateStreetRead(state);
     checkHomeContraband(state, random);
     resolveSoldierOperations(state, random, true);
@@ -4183,9 +4403,9 @@
     if (state.player.cash >= encounter.pay) choices.push({ id: "pay", label: `Pay $${encounter.pay}`, description: "Keep the bag and accept the cost." });
     if (cargoUsed(state) > 0) choices.push({ id: "surrender", label: "Surrender product", description: "Protect health by giving up part of the bag." });
     const weapon = equippedWeapon(state);
-    if (weapon?.type === "close" || combatRating(state) >= 3) choices.push({ id: "fight", label: weapon ? `Fight with ${weapon.name}` : "Stand and fight", description: "Combat, health, armor, and close protection matter." });
+    if (weapon?.type === "close" || combatCompat(state) >= 3) choices.push({ id: "fight", label: weapon ? `Fight with ${weapon.name}` : "Stand and fight", description: "Combat, health, armor, and close protection matter." });
     if (weapon?.type === "firearm") choices.push({ id: "draw", label: `Draw ${weapon.name}`, description: "Combat and weapon accuracy matter. Firing raises heat." });
-    if (intelligenceRating(state) >= 3) choices.push({ id: "intimidate", label: "Name their weak position", description: "Use Intelligence to make the threat feel too expensive." });
+    if (intelligenceCompat(state) >= 3) choices.push({ id: "intimidate", label: "Name their weak position", description: "Use Intelligence to make the threat feel too expensive." });
     const tone = state.people.crew.tone;
     if (tone.recruited && tone.loyalty >= 0) choices.push({ id: "call_tone", label: "Call Tone", description: "Spend crew loyalty to end this on his terms." });
     if (encounter.id === "mina_sedan_night" && state.npc.mina.met) choices.push({ id: "call_mina", label: "Signal Mina", description: "Trust Mina to trigger the Night Owl alarm. This spends some of the trust between you." });
@@ -4225,7 +4445,7 @@
     const encounter = state.run.pendingEncounter;
     const armor = GEAR_BY_ID[state.player.gear.equipped.armor]?.armor || 0;
     const raw = random.int(encounter.attack[0], encounter.attack[1]);
-    const damage = Math.max(1, raw - armor - Math.floor(combatRating(state) / 2));
+    const damage = Math.max(1, raw - armor - Math.floor(combatCompat(state) / 2));
     state.player.health = clamp(state.player.health - damage, 0, 100);
     encounter.step += 1;
     encounter.feedback = `${action} fails. ${encounter.enemyName} closes the distance and you lose ${damage} health.`;
@@ -4300,34 +4520,45 @@
       encounter.step += 1;
       encounter.feedback = "You seal the worst injury and force your hands steady. One decision remains.";
     } else if (choice === "intimidate") {
-      const chance = clamp(0.38 + intelligenceRating(state) * 0.1 + Math.max(0, dispositionOf(state, "curtis")) * 0.03 - encounter.guard, 0.15, 0.9);
-      if (random.next() < chance) finishEncounter(state, "talk", "You name the cameras, exits, and people they failed to count. Their threat collapses under its own cost.");
+      const chance = clamp(0.58 + Math.max(0, dispositionOf(state, "curtis")) * 0.03 - encounter.guard, 0.15, 0.9);
+      const outcome = resolveOutcome(state, "negotiation", chance, `${state.run.seed}:intimidate:${state.run.day}:${state.run.slot}:${encounter.id}`);
+      broadcastOutcome(state, "negotiation", outcome.tier);
+      if (Attributes.isSuccessTier(outcome.tier)) finishEncounter(state, "talk", "You name the cameras, exits, and people they failed to count. Their threat collapses under its own cost.");
       else failEncounterStep(state, random, "The calculation");
     } else if (choice === "talk") {
       const influence = state.world.influence[state.world.currentNeighborhoodId] * 0.04;
       const relationship = encounter.id === "mid" ? Math.max(0, dispositionOf(state, "curtis")) * 0.035 : encounter.id === "mina_sedan_night" ? Math.max(0, dispositionOf(state, "mina")) * 0.02 : 0;
-      const chance = clamp(0.28 + charismaRating(state) * 0.08 + influence + relationship - encounter.guard, 0.10, 0.90);
-      if (random.next() < chance) {
+      const chance = clamp(0.44 + influence + relationship - encounter.guard, 0.10, 0.90);
+      const outcome = resolveOutcome(state, "negotiation", chance, `${state.run.seed}:talk:${state.run.day}:${state.run.slot}:${encounter.id}`);
+      broadcastOutcome(state, "negotiation", outcome.tier);
+      if (Attributes.isSuccessTier(outcome.tier)) {
         if (encounter.id === "mid") Exposure.recordObservation(state, "curtis", { type: "submission", event: "held_the_line", source: "witnessed" });
         finishEncounter(state, "talk", "You name the people and consequences they forgot to count. The lane opens without anybody reaching for a weapon.");
       } else failEncounterStep(state, random, "The explanation");
     } else if (choice === "run") {
       const gearBonus = GEAR_BY_ID[state.player.gear.equipped.utility]?.escape || 0;
-      const chance = clamp(0.24 + intelligenceRating(state) * 0.09 + gearBonus + 0.18 * freeCargoRatio(state) + healthModifier(state.player.health) - encounter.pursuit, 0.10, 0.90);
-      if (random.next() < chance) {
+      const chance = clamp(0.42 + gearBonus + 0.18 * freeCargoRatio(state) + healthModifier(state.player.health) - encounter.pursuit, 0.10, 0.90);
+      const outcome = resolveOutcome(state, "escape", chance, `${state.run.seed}:escape:${state.run.day}:${state.run.slot}:${encounter.id}`);
+      broadcastOutcome(state, "escape", outcome.tier);
+      if (Attributes.isSuccessTier(outcome.tier)) {
         const lost = encounter.id === "mina_sedan_night" || encounter.id === "early_street" ? null : loseInventory(state, 1);
         finishEncounter(state, "escape", lost ? `You clear the lane but drop ${lost.lost} ${lost.product.name} under the fence.` : "You saw the open lane before they did and reach the street with the bag intact.");
       } else failEncounterStep(state, random, "The escape");
     } else if (choice === "fight" || choice === "draw") {
       const weapon = equippedWeapon(state);
       const firearm = choice === "draw";
-      const chance = clamp((firearm ? 0.28 + combatRating(state) * 0.09 : 0.30 + combatRating(state) * 0.09) + (weapon?.accuracy || 0) + healthModifier(state.player.health) - (firearm ? encounter.evasion : encounter.guard), 0.10, 0.90);
+      // The combat term is gone from the chance on purpose: the attribute acts
+      // through resolveWithAttribute below, and carrying it in both places would
+      // pay the player twice for the same number.
+      const chance = clamp((firearm ? 0.46 : 0.48) + (weapon?.accuracy || 0) + healthModifier(state.player.health) - (firearm ? encounter.evasion : encounter.guard), 0.10, 0.90);
       if (firearm) {
         state.player.heat = clamp(state.player.heat + weapon.heat, 0, 15);
         state.flags.firedWeaponDowntown = state.world.currentNeighborhoodId === "downtown";
       }
-      if (random.next() < chance) {
-        const damage = weapon ? random.int(weapon.damage[0], weapon.damage[1]) + (firearm ? 0 : Math.floor(combatRating(state) / 2)) : random.int(4, 8) + combatRating(state);
+      const outcome = resolveOutcome(state, "confrontation", chance, `${state.run.seed}:confrontation:${state.run.day}:${state.run.slot}:${encounter.id}:${encounter.step}`);
+      broadcastOutcome(state, "confrontation", outcome.tier);
+      if (Attributes.isSuccessTier(outcome.tier)) {
+        const damage = weapon ? random.int(weapon.damage[0], weapon.damage[1]) + (firearm ? 0 : Math.floor(combatCompat(state) / 2)) : random.int(4, 8) + combatCompat(state);
         encounter.enemyHealth -= damage;
         if (encounter.enemyHealth <= 0) {
           if (firearm || encounter.id === "late") state.flags.seriousViolence = true;
@@ -4365,44 +4596,55 @@
     reconcileCash(state);
     state.stats.robbery = normalizeRobberyStats(state.stats.robbery, state);
     const random = makeRandom(state.run.rngState);
-    const success = random.next() < availability.chance;
     const attemptNumber = state.stats.robbery.attempts + 1;
+    const outcome = resolveOutcome(state, "robbery", availability.chance, `${state.run.seed}:robbery:${state.run.day}:${state.run.slot}:${attemptNumber}`);
+    const success = Attributes.isSuccessTier(outcome.tier);
     state.stats.robbery.attempts = attemptNumber;
     state.stats.robbery.lastAttemptedDay = state.run.day;
     state.stats.robbery.attempted = true;
     let result;
     if (success) {
+      const clean = outcome.tier === "clean";
       const payout = random.int(115, 210);
-      const addedHeat = 2 + Math.floor((attemptNumber - 1) / 2);
+      // A clean job is worth the same money and half the attention. That is the
+      // whole payoff for training: not a bigger number, a smaller footprint.
+      const addedHeat = clean ? 1 : 2 + Math.floor((attemptNumber - 1) / 2);
       state.player.cash += payout;
       state.player.heat = clamp(state.player.heat + addedHeat, 0, 15);
-      Exposure.recordObservation(state, "curtis", { type: "violence", event: "stickup", count: Math.min(3, attemptNumber), source: "network" });
+      if (!clean) Exposure.recordObservation(state, "curtis", { type: "violence", event: "stickup", count: Math.min(3, attemptNumber), source: "network" });
       state.stats.robbery.successes += 1;
       addStreetReadEntry(state, "risk", `rob:${state.world.currentNeighborhoodId}`);
       state.stats.robbery.totalPayout += payout;
       state.stats.robbery.success = true;
       state.stats.robbery.payout = state.stats.robbery.totalPayout;
       result = {
-        kind: "robbery", tone: "good", title: "The Rob Pays",
-        summary: `A contractor leaves a cash envelope in an idling truck off the service road. You clear $${payout}, but the driver and nearby cameras get a useful description.`,
-        effects: [`+$${payout} cash`, `+${addedHeat} Heat`, `+${Math.min(3, attemptNumber)} Curtis pressure`, `Attempt ${attemptNumber} this week`],
+        kind: "robbery", tone: "good", title: clean ? "The Rob Goes Clean" : "The Rob Pays",
+        summary: clean
+          ? `A contractor leaves a cash envelope in an idling truck off the service road. You clear $${payout} and nobody ever looks up.`
+          : `A contractor leaves a cash envelope in an idling truck off the service road. You clear $${payout}, but there is a struggle and the cameras get a useful description.`,
+        effects: [`+$${payout} cash`, `+${addedHeat} Heat`, `Attempt ${attemptNumber} this week`],
       };
+      broadcastOutcome(state, "robbery", outcome.tier, payout);
       if (!state.rob.visible) { state.rob.visible = true; queueUnlock(state, "rob"); }
     } else {
-      const damage = random.int(10 + Math.min(6, attemptNumber - 1), 17 + Math.min(8, attemptNumber - 1));
-      const addedHeat = Math.min(5, 3 + Math.floor((attemptNumber - 1) / 2));
+      const severe = outcome.tier === "catastrophic";
+      const damage = random.int(10 + Math.min(6, attemptNumber - 1), 17 + Math.min(8, attemptNumber - 1)) + (severe ? 8 : 0);
+      const addedHeat = Math.min(6, (severe ? 5 : 3) + Math.floor((attemptNumber - 1) / 2));
       state.player.health = clamp(state.player.health - damage, 0, 100);
       state.player.heat = clamp(state.player.heat + addedHeat, 0, 15);
       Exposure.recordObservation(state, "curtis", { type: "violence", event: "dealer_stickup", count: Math.min(4, attemptNumber + 1), source: "network" });
       state.stats.robbery.failures += 1;
       state.stats.robbery.success = state.stats.robbery.successes > 0;
       result = {
-        kind: "robbery", tone: "bad", title: "The Rob Falls Apart",
-        summary: "The truck is empty and the driver returns with help. You get away hurt and recognized, but another attempt can open on a later day.",
-        effects: [`-${damage} Health`, `+${addedHeat} Heat`, `+${Math.min(4, attemptNumber + 1)} Curtis pressure`, "$0 payout", `Attempt ${attemptNumber} this week`],
+        kind: "robbery", tone: "bad", title: severe ? "The Rob Goes Wrong" : "The Rob Falls Apart",
+        summary: severe
+          ? "The truck is not empty and the driver is not alone. You get out hurt, and somebody called it in before you cleared the lot."
+          : "The truck is empty and the driver returns with help. You get away hurt and recognized, but another attempt can open on a later day.",
+        effects: [`-${damage} Health`, `+${addedHeat} Heat`, "$0 payout", `Attempt ${attemptNumber} this week`],
       };
+      broadcastOutcome(state, "robbery", outcome.tier);
     }
-    state.stats.majorDecisions.push(`Rob ${attemptNumber}: ${success ? "success" : "failure"}`);
+    state.stats.majorDecisions.push(`Rob ${attemptNumber}: ${outcome.tier}`);
     recordBehavior(state, "stickup", 2, `rob:${state.run.day}:${attemptNumber}`, "rob");
     state.run.rngState = random.state;
     logEntry(state, result.summary, result.tone);
@@ -4420,7 +4662,8 @@
     reconcileCash(state);
     const record = state.people.dealers[dealerId];
     const random = makeRandom(state.run.rngState);
-    const success = random.next() < actions.rob.chance;
+    const outcome = resolveOutcome(state, "dealer_robbery", actions.rob.chance, `${state.run.seed}:dealer_robbery:${state.run.day}:${state.run.slot}:${dealerId}`);
+    const success = Attributes.isSuccessTier(outcome.tier);
     record.robbedCount += success ? 1 : 0;
     record.lastRobbedDay = state.run.day;
     Exposure.recordObservation(state, "curtis", { type: "defiance", event: "took_ground", source: "network" });
@@ -4436,10 +4679,12 @@
       state.player.cash += payout;
       addStreetReadEntry(state, "risk", `robbery:${state.world.currentNeighborhoodId}`);
       applyEventEffect(state, { addProduct: { id: productId, qty: units, unitCost: 0 } }, random);
-      state.player.heat = clamp(state.player.heat + 2, 0, 15);
+      const takenHeat = outcome.tier === "clean" ? 1 : 2;
+      state.player.heat = clamp(state.player.heat + takenHeat, 0, 15);
       record.standing = Math.max(-5, record.standing - 3);
       record.supplyChoked = 2;
-      effects.push(`+$${payout} cash`, `+${units} ${PRODUCTS.find((item) => item.id === productId).name} at no cost`, "+2 Heat", "Spenard supply tightens for two days");
+      effects.push(`+$${payout} cash`, `+${units} ${PRODUCTS.find((item) => item.id === productId).name} at no cost`, `+${takenHeat} Heat`, "Spenard supply tightens for two days");
+      broadcastOutcome(state, "dealer_robbery", outcome.tier, payout);
       if (record.robbedCount >= 2) {
         record.gone = true;
         effects.push(`${first} is finished on this block`);
@@ -4451,12 +4696,15 @@
       };
     } else {
       const armed = !!equippedWeapon(state);
-      const damage = random.int(armed ? 12 : 20, 26);
+      const severe = outcome.tier === "catastrophic";
+      const damage = random.int(armed ? 12 : 20, 26) + (severe ? 8 : 0);
+      const takenHeat = severe ? 5 : 3;
       state.player.health = clamp(state.player.health - damage, 0, 100);
-      state.player.heat = clamp(state.player.heat + 3, 0, 15);
+      state.player.heat = clamp(state.player.heat + takenHeat, 0, 15);
       record.standing = Math.max(-5, record.standing - 3);
       record.retaliated = true;
-      effects.push(`-${damage} Health`, "+3 Heat", "$0 taken", `${first} will be ready next time`);
+      effects.push(`-${damage} Health`, `+${takenHeat} Heat`, "$0 taken", `${first} will be ready next time`);
+      broadcastOutcome(state, "dealer_robbery", outcome.tier);
       result = {
         kind: "dealer_robbery", tone: "bad", title: `${first} Was Waiting`,
         summary: `He is not alone and he is not surprised. You come out of the Wash & Go lot with ${damage} less health, nothing in your hands, and a face he will describe accurately to anyone who asks.`,
@@ -4492,13 +4740,13 @@
     const random = makeRandom(state.run.rngState);
     state.player.cash -= availability.cost;
     state.stats.moneySpent.crew += availability.cost;
-    const successChance = clamp(0.52 + intelligenceRating(state) * 0.06 + Math.max(0, state.people.crew.eli.loyalty) * 0.03 - state.player.heat * 0.01, 0.42, 0.78);
+    const successChance = clamp(0.52 + intelligenceCompat(state) * 0.06 + Math.max(0, state.people.crew.eli.loyalty) * 0.03 - state.player.heat * 0.01, 0.42, 0.78);
     const success = random.next() < successChance;
     let result;
     if (success) {
       const payout = random.int(50, 80);
       state.player.cash += payout;
-      state.people.crew.eli.loyalty += 1;
+      state.people.crew.eli.loyalty += standingGain(state.people.crew.eli, state.people.crew.eli.loyalty, 1, "open");
       result = { kind: "eli_test_route", tone: "good", title: "Eli Clears the Test Route", summary: `Eli uses the warehouse access road, delivers the package, and returns with $${payout}. He is now available to recruit at North Star Garage.`, effects: [`-$${availability.cost} route cost`, `+$${payout} delivery cash`, "+1 Eli loyalty", "Eli is recruitable"] };
     } else {
       const damage = random.int(5, 9);
@@ -4657,6 +4905,9 @@
     const state = copyState(inputState);
     const dreWasEligible = state.onboarding.dreEligible;
     reconcileCash(state);
+    // Checked as the shift starts, so the conversation happens before the work
+    // and a firing costs you the shift you came in for.
+    if (applyHeatEmployment(state, job.id) === "fired") return advanceRun(state, { reason: "WORK_JOB" });
     const random = makeRandom(state.run.rngState);
     const record = state.jobs.records[job.id];
     const coworker = coworkerForShift(state, job);
@@ -4667,7 +4918,7 @@
     addCleanCash(state, payout);
     state.player.health = clamp(state.player.health + approach.health, 1, 100);
     record.xp += approach.xp;
-    record.relationship += approach.relationship;
+    record.relationship += standingGainFloat(record.relationship, approach.relationship, "open");
     record.shifts += 1;
     record.lastWorkedDay = state.run.day;
     record.rank = jobRankForXp(record.xp);
@@ -4702,7 +4953,7 @@
     if (job.id === "ship_creek") {
       const employer = state.world.locations.employer;
       employer.lastShiftDay = state.run.day;
-      employer.standing = clamp(employer.standing + 1, 0, 5);
+      employer.standing = clamp(employer.standing + standingGain(employer, employer.standing, 1, "capped"), 0, 5);
       employer.keptCommitments += 1;
       if (employer.standing >= 3) state.flags.legalCover = true;
     }
@@ -4777,7 +5028,9 @@
       if (action.type === "START_RUN" && !chosenName) return inputState;
       state.player.background = null;
       state.player.legacyBackground = action.type === "CHOOSE_BACKGROUND" ? background.id : null;
-      state.player.attributes = action.type === "CHOOSE_BACKGROUND" ? { ...LEGACY_ATTRIBUTES[background.id] } : { ...ATTRIBUTE_DEFAULTS };
+      state.player.attributes = action.type === "CHOOSE_BACKGROUND"
+        ? { combat: background.combat, charisma: background.charisma, intelligence: background.intelligence }
+        : { ...ATTRIBUTE_DEFAULTS };
       state.player.streetName = chosenName || DEFAULT_STREET_NAMES[background.id];
       state.player.streetNameChosen = !!chosenName;
       state.player.cash = action.type === "CHOOSE_BACKGROUND" ? 375 : 100;
@@ -4805,7 +5058,6 @@
         state.world.transport.downtownKnown = true;
         state.world.transport.industrialRouteKnown = true;
       }
-      state.player.stats = derivedRatings(state);
       state.run.status = "playing";
       state.run.openingPending = action.type === "START_RUN";
       state.stats.startingNetWorth = state.player.cash - state.lender.balance;
@@ -4903,7 +5155,11 @@
       const product = PRODUCT_BY_ID[action.productId], market = state.world.markets[state.world.currentNeighborhoodId];
       const qty = Math.max(0, Math.floor(action.qty || 0));
       const plug = product ? unlockedPlugForProduct(state, product.id) : null;
-      if (!state.market?.visible || !product || !plug || qty < 1 || qty > plugMaxUnits(state, product.id)) return inputState;
+      if (!state.market?.visible || !plug) return inputState;
+      // A missing product or a quantity that came through as NaN used to fall
+      // out here without a word. Same guard, now with a receipt.
+      if (!product || qty < 1) return failedPurchase(state, action.productId, "market");
+      if (qty > plugMaxUnits(state, product.id)) return inputState;
       const projection = tradeProjection(state, product.id, qty, "buy");
       const cost = projection.purchaseCost, available = market.availability[product.id] || 0;
       if (qty > available || cost > state.player.cash || cargoUsed(state) + qty > cargoCapacity(state)) return inputState;
@@ -4921,7 +5177,7 @@
       const record = plugRecord(state, plug.id);
       if (record && record.lastPurchaseDay !== state.run.day) {
         record.lastPurchaseDay = state.run.day;
-        record.standing = Math.min(5, record.standing + 1);
+        record.standing = Math.min(5, record.standing + standingGain(record, record.standing, 1, "capped"));
         if (plug.id === "goodie" && state.people.dealers?.goodie) {
           state.people.dealers.goodie.standing = record.standing;
           state.people.dealers.goodie.lastTradedDay = state.run.day;
@@ -5078,7 +5334,7 @@
       const crew = state.people.crew[action.crewId];
       if (!crew.recruited || crew.wageDue <= 0 || state.player.cash < crew.wageDue) return inputState;
       const amount = crew.wageDue;
-      state.player.cash -= amount; crew.wageDue = 0; crew.loyalty += 1; state.stats.moneySpent.crew += amount;
+      state.player.cash -= amount; crew.wageDue = 0; crew.loyalty += standingGain(crew, crew.loyalty, 1, "open"); state.stats.moneySpent.crew += amount;
       recordBehavior(state, "earner", 2, `crew_pay:${action.crewId}:${state.run.day}`, "crew_pay");
       logEntry(state, `${CREW_BY_ID[action.crewId].name.split(" ")[0]} folds the full $${amount} into a pocket and stays for the next plan.`, "good");
       reconcileCash(state);
@@ -5328,9 +5584,15 @@
       const present = nightOwlRegularFor(state);
       const relationship = regular && base.nightOwl.regulars[regular.id];
       if (!regular || present.id !== regular.id || relationship.lastTalkDay === base.run.day) return inputState;
+      // How a night at the counter lands is a Charisma read. The conversation
+      // always happens - only whether it moves the relationship is in question,
+      // and a bad read is a flat night rather than a locked door.
+      const outcome = resolveOutcome(base, "night_owl", 0.78, `${base.run.seed}:night_owl:${base.run.day}:${regular.id}`);
+      const landed = Attributes.isSuccessTier(outcome.tier);
       relationship.met = true;
-      relationship.relationship += 1;
+      if (landed) relationship.relationship += 1;
       relationship.lastTalkDay = base.run.day;
+      broadcastOutcome(base, "night_owl", outcome.tier);
       base.contacts[regular.id].known = true;
       base.contacts[regular.id].relationshipLevel = Math.max(base.contacts[regular.id].relationshipLevel, relationship.relationship);
       recordVisitedLocation(base, "night_owl");
@@ -5339,6 +5601,10 @@
       if (regular.id === "nia" && relationship.relationship >= 2 && !base.flags.niaCourierHint) {
         base.flags.niaCourierHint = true;
         logEntry(base, "Nia says a courier who can keep a route quiet never stays short of work. She leaves the next part for later.", "good");
+      } else if (!landed) {
+        logEntry(base, outcome.tier === "catastrophic"
+          ? "You push the joke one beat too far and the counter goes quiet. Everybody in the room clocks it."
+          : `${regular.name.split(" ")[0]} is polite about it, but the conversation never finds a second gear.`, outcome.tier === "catastrophic" ? "bad" : "");
       } else {
         logEntry(base, regular.id === "cal" ? "Cal turns a loud story into a conversation and remembers that you stayed for the ending." : "Nia closes her paperback and trades one careful detail about the roads.", "good");
       }
@@ -5515,18 +5781,33 @@
       return advanceRun(base, { reason: "LEASE_GARAGE" });
     }
     if (action.type === "TRAIN_ATTRIBUTE") {
-      const attribute = action.attribute;
+      // `attribute` is the pre-v1.10 argument name. The gym now dispatches an
+      // activity, and bag work is the sensible default for anything that still
+      // asks for a bare workout.
+      const activityId = AttributeData.GYM_ACTIVITY_BY_ID[action.activity] ? action.activity : "bag_work";
       const available = activityAvailability(state).gym;
-      if (!available.available || !["strength", "endurance", "reflexes"].includes(attribute) || state.player.attributes[attribute] >= 5) return inputState;
+      if (!available.available || !Attributes.gymActivityAvailable(state, activityId)) return inputState;
+      const details = gymSessionDetails(state, activityId);
+      if (state.player.cash < details.cost) return inputState;
       const gym = base.world.locations.gym;
       recordVisitedLocation(base, "spenard_gym");
       if (gym.sessionDay !== base.run.day) { gym.sessionDay = base.run.day; gym.sessionsToday = 0; }
-      base.player.cash -= available.cost;
+      base.player.cash -= details.cost;
       base.memberships.gym = true;
       gym.sessionsToday += 1;
-      const improved = improveAttribute(base, attribute, available.progress);
+      gym.activitySessions[activityId] = (gym.activitySessions[activityId] || 0) + 1;
+      const improved = improveAttribute(base, details.activity.attribute, details.growth);
       if (improved) addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:training`);
-      logEntry(base, `Gym session: $${available.cost}, +${available.progress} hidden ${attribute} progress${improved ? ", milestone reached" : ""}.`, "good");
+      logEntry(base, `${details.activity.label} at the gym, $${details.cost}.`, "good");
+      // Sparring is the fast lane and the only one that can send you home hurt.
+      if (activityId === "sparring") {
+        const injuryRoll = (stringHash(`${base.run.seed}:sparring:${base.run.day}:${base.run.slot}`) % 1000) / 1000;
+        if (injuryRoll < AttributeData.SPARRING_INJURY_CHANCE) {
+          base.player.health = clamp(base.player.health - AttributeData.SPARRING_INJURY_HEALTH, 0, 100);
+          logEntry(base, "You caught one you did not see. Ice on the way home.", "bad");
+        }
+      }
+      registerGymDay(base);
       return advanceRun(base, { reason: "TRAIN_ATTRIBUTE" });
     }
     if (action.type === "GAMBLE") {
@@ -5535,17 +5816,30 @@
       if (!available.available || ![20, 50, 100].includes(stake) || state.player.cash < stake) return inputState;
       const random = makeRandom(base.run.rngState);
       const approach = ["read", "steady", "press"].includes(action.approach) ? action.approach : "read";
-      const skill = approach === "read" ? base.player.attributes.insight : approach === "steady" ? base.player.attributes.discipline : base.player.attributes.presence;
-      const chance = clamp(0.35 + skill * 0.035 - stake / 2000, 0.32, 0.54);
-      const won = random.next() < chance;
+      // The approach still moves the odds; how well you read the table is
+      // Charisma, and it acts through the resolver rather than as a bonus.
+      const approachEdge = approach === "read" ? 0.05 : approach === "steady" ? 0.03 : 0;
+      const chance = clamp(0.35 + approachEdge - stake / 2000, 0.32, 0.54);
+      const outcome = resolveOutcome(base, "gambling", chance, `${base.run.seed}:gambling:${base.run.day}:${base.run.slot}:${stake}`);
+      const won = Attributes.isSuccessTier(outcome.tier);
       base.player.cash -= stake;
-      if (won) base.player.cash += stake * 2;
+      // A clean read walks with the whole pot. A messy one wins back the stake
+      // and not much more, which is what "you got lucky" looks like as a number.
+      const payout = !won ? 0 : outcome.tier === "clean" ? stake * 2 : Math.round(stake * 1.5);
+      base.player.cash += payout;
       const game = base.world.locations.gambling;
-      game.plays += 1; game[won ? "wins" : "losses"] += 1; game.net += won ? stake : -stake;
+      game.plays += 1; game[won ? "wins" : "losses"] += 1; game.net += payout - stake;
       if (game.plays === 1) recordBehavior(base, "connector", 1, "gambling:first_contact", "gambling_contact");
       addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:gambling`);
+      broadcastOutcome(base, "gambling", outcome.tier, payout - stake);
+      // A catastrophic night is the one people remember: you kept playing.
+      if (outcome.tier === "catastrophic") base.player.financialHeat = clamp(base.player.financialHeat + 1, 0, 10);
       base.run.rngState = random.state;
-      logEntry(base, won ? `The ${approach} approach holds. You leave the game $${stake} ahead.` : `The room takes your $${stake}. Nobody offers credit, and the next choice is yours.`, won ? "good" : "bad");
+      logEntry(base, won
+        ? `The ${approach} approach holds. You leave the game $${payout - stake} ahead.`
+        : outcome.tier === "catastrophic"
+          ? `The room takes your $${stake} and watches you decide whether to stay. Everybody sees which way you lean.`
+          : `The room takes your $${stake}. Nobody offers credit, and the next choice is yours.`, won ? "good" : "bad");
       return advanceRun(base, { reason: "GAMBLE" });
     }
     if (action.type === "ASSIGN_BOOST_CREW") {
@@ -5927,14 +6221,14 @@
       const random = makeRandom(base.run.rngState);
       const availableProducts = definition.products.filter((productId) => !!unlockedPlugForProduct(state, productId));
       const productId = random.pick(availableProducts);
-      if (!productId) return inputState;
+      if (!productId) return failedPurchase(base, null, "dealer");
       const unitPrice = Math.max(1, Math.round(tradeUnitPrices(state, productId).buy * (1 - actions.buy.discount)));
       const room = cargoCapacity(state) - cargoUsed(state);
       const units = Math.min(actions.buy.units, room, Math.floor(state.player.cash / unitPrice));
-      if (units <= 0) return inputState;
+      if (units <= 0) return failedPurchase(base, productId, "dealer");
       base.player.cash -= unitPrice * units;
       applyEventEffect(base, { addProduct: { id: productId, qty: units, unitCost: unitPrice } }, random);
-      record.standing = Math.min(5, record.standing + 1);
+      record.standing = Math.min(5, record.standing + standingGain(record, record.standing, 1, "capped"));
       record.lastTradedDay = base.run.day;
       const plug = PLUG_BY_ID[action.dealerId];
       const plugState = plugRecord(base, action.dealerId);
@@ -6014,7 +6308,7 @@
     return {
       ending: state.run.ending, endingLabel: endingLabel(state.run.ending), cash: state.player.cash,
       streetName: state.player.streetName || "Unnamed run",
-      streetIdentity: state.player.streetIdentity, streetIdentityLabel: STREET_IDENTITIES[state.player.streetIdentity]?.label || STREET_IDENTITIES.unproven.label,
+      streetIdentity: streetIdentity(state), streetIdentityLabel: streetIdentity(state),
       storedCash: state.base.storedCash, debt: state.lender.balance, inventoryValue: inventoryValue(state),
       netWorth: netWorth(state), operationScore: operationScore(state), baseValue: baseValue(state), gearValue: gearValue(state),
       baseTracks: { ...state.base.tracks }, crew: recruitedCrew(state).map((person) => ({ id: person.id, name: person.name, loyalty: state.people.crew[person.id].loyalty, status: state.people.crew[person.id].status })),
@@ -6130,7 +6424,7 @@
         note: !balance ? "Paid in full" : daysLeft < 0 ? "Past due" : daysLeft === 0 ? "Due tonight" : daysLeft === 1 ? "Due tomorrow" : `Due Day ${state.lender.dueDay}`,
         tone: !balance ? "good" : daysLeft <= 0 ? "bad" : daysLeft === 1 ? "warn" : "",
       },
-      identity: STREET_IDENTITIES[state.player.streetIdentity] || STREET_IDENTITIES.unproven,
+      identity: streetIdentityView(state),
       summary: homeSummary(state),
       priorities: homePriorities(state),
       unlocks: homeUnlocks(state),
@@ -6230,15 +6524,15 @@
 
   return {
     BANDS, bandFor, bandId, bandLabel, EXPOSURE_NPC_IDS,
-    VERSION, RUN_DAYS, PRESSURE_DAYS, MAX_ENERGY, SLOTS, SAVE_KEY, LEGACY_SAVE_KEYS, PHONE_BILL, WEEKLY_RENT, HOME_DISTRICT_ID, DISTRICT_ACTIONS, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, ATTRIBUTE_THRESHOLDS, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
-    STREET_NAME_MAX, DEFAULT_STREET_NAMES, ATTRIBUTE_DEFAULTS, LEGACY_ATTRIBUTES, STREET_IDENTITIES, sanitizeStreetName,
+    VERSION, RUN_DAYS, PRESSURE_DAYS, MAX_ENERGY, SLOTS, SAVE_KEY, LEGACY_SAVE_KEYS, PHONE_BILL, WEEKLY_RENT, HOME_DISTRICT_ID, DISTRICT_ACTIONS, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
+    STREET_NAME_MAX, DEFAULT_STREET_NAMES, ATTRIBUTE_DEFAULTS, ATTRIBUTES: AttributeData, attributeSystem: Attributes, sanitizeStreetName,
     CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS, ENTITY_REGISTRY, ENTITY_MATCH_ORDER, PLUGS, BOOST_TARGETS, SPENARD_JOBS, STARTER_JOB_IDS, JOB_APPROACHES, JOB_RANK_THRESHOLDS,
     LISTING_ITEMS, LISTING_CAPACITY, MARKET: Market, marketEvents: MarketEvents, NIGHT_OWL_REGULARS, NIGHT_OWL_BOARD, HOUSEHOLD_NPCS, SOCIAL_CONTACTS, STORY_CONTACTS, PHONE_INTEL, DOWNTOWN_CONTENT_STUBS, DOWNTOWN_AMBIENT,
     SPENARD_BLOCKS, SOLDIER_RECRUIT_COST, SOLDIER_BASE_CAPACITY, SOLDIER_CAPACITY_PER_BLOCK, SOLDIERS_PER_BLOCK_CAP,
     SHARK_BORROWERS, SHARK_TERMS, DRE_MISSIONS, DRE_COLLECTOR_TIERS, ELI_LIEUTENANT_UNLOCK, RESPECT_STAGE_THRESHOLDS,
     DISTRICT_CONTROL_TIERS, DISTRICT_CONTROL_CAPSTONE_BLOCKS, DISTRICT_CONTROL_LABEL, ELI_OPERATION_POLICIES,
     buildEventForTest: activeEvent, storyCandidatesForTest: storyCandidates,
-    recordBehaviorForTest: recordBehavior, evaluateStreetIdentityForTest: evaluateStreetIdentity,
+    recordBehaviorForTest: recordBehavior,
     // Street Read is invisible to the player but has to be reachable by tests.
     // Nothing here is imported by ui.jsx.
     streetRead: {
@@ -6260,6 +6554,11 @@
       describeDisposition: (state, npcId) => Exposure.describeDisposition(state, npcId),
       cargoUsed, cargoCapacity, storedCargoUsed, storageCapacity, storedCashCapacity, inventoryValue, netWorth,
       combatRating, charismaRating, intelligenceRating, derivedRatings,
+      // Attribute reads. Players see attributeLabels; the raw numbers are for
+      // the dev inspector only.
+      attributes: (state) => normalizedAttributes(state),
+      attributeLabels: (state) => Object.fromEntries(ATTRIBUTE_IDS.map((id) => [id, Attributes.attributeLabel(normalizedAttributes(state)[id])])),
+      streetIdentity, streetIdentityView, identityProfile: (state) => Attributes.identityProfile(state),
       operationScore, baseValue, gearValue, heatBand, priceSignal, influenceLabel, encounterChoices, endingLabel,
       crewCapacityFor, gearShopStock, gearPrice, treatmentCost, debtGuidanceAvailable,
       recruitedCrew, workingCapital, safeDebtPayment, debtPaymentPreview, featureAvailability, activityAvailability, layLowPreview, controlled, recruitmentCost, operationGearPower, crewPower,

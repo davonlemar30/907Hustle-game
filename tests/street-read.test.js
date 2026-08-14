@@ -532,19 +532,15 @@ test("the score updates on the nightly tick, not on the action that earned it", 
   assert.ok(state.streetRead.score > 0, "the night crossing scored it");
 });
 
-test("street read is recalculated after the identity pass, never before", () => {
-  // The two systems are deliberately non-interacting, so there is no behavioural
-  // difference to observe from outside, and advanceRun clones state on every
-  // tick (structuredClone drops accessors), so the calls cannot be instrumented
-  // either. The ordering is therefore pinned where it is actually expressed:
-  // both calls sit in advanceRun's day-crossing block, in this order.
+test("the day-crossing tick still scores street read, and no identity pass runs beside it", () => {
+  // v1.10 retired the nightly identity assignment: Street Identity is derived on
+  // read now, so there is no longer an ordering to pin here. What remains worth
+  // guarding is that nothing reintroduced an assignment pass into the tick.
   const core = fs.readFileSync(path.join(__dirname, "..", "game-core.js"), "utf8");
   const block = core.slice(core.indexOf("function confirmDayEnd("));
-  const identityAt = block.indexOf("evaluateStreetIdentity(state, true)");
-  const readAt = block.indexOf("recalculateStreetRead(state)");
-  assert.ok(identityAt >= 0, "identity is evaluated on the day-crossing tick");
-  assert.ok(readAt >= 0, "street read is recalculated on the day-crossing tick");
-  assert.ok(identityAt < readAt, "street read must be recalculated after the identity pass");
+  assert.ok(block.indexOf("recalculateStreetRead(state)") >= 0, "street read is recalculated on the day-crossing tick");
+  assert.equal(block.indexOf("evaluateStreetIdentity"), -1, "the nightly identity assignment loop must stay gone");
+  assert.equal(core.indexOf("assignIdentity"), -1, "nothing may write a stored street identity");
 
   // And the tick does in fact score the run.
   let state = fresh(3302);
@@ -557,7 +553,12 @@ test("identity and street read do not read each other's data", () => {
   const state = fresh(3303);
   for (const key of fill("t", 8)) SR.addStreetReadEntry(state, "trading", key);
   SR.recalculateStreetRead(state);
-  assert.equal(state.player.streetIdentity, "unproven", "breadth alone never assigns an identity");
+  // Breadth is not behavior. Street Read moving cannot move the identity, which
+  // reads attributes and the observation ledgers and nothing else.
+  const before = C.selectors.streetIdentity(state);
+  for (const key of fill("u", 8)) SR.addStreetReadEntry(state, "trading", key);
+  SR.recalculateStreetRead(state);
+  assert.equal(C.selectors.streetIdentity(state), before, "breadth alone never changes the label");
 
   const identityDriven = fresh(3304);
   C.recordBehaviorForTest(identityDriven, "mover", 3, "test:mover:1", "sale");

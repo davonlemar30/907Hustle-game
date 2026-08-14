@@ -236,8 +236,12 @@ test("Day 1 yields one discovered employer and Day Labor remains an always-hired
   assert.equal(state.jobs.discovered.filter((id) => id !== "day_labor").length, 1);
 });
 
-test("applications consume one part and mature into explicit offers", () => {
-  let state = fresh(1710);
+// v1.10 made the callback a real Charisma check, so "applied" no longer means
+// "hired eventually". What the application still guarantees is that it costs a
+// part of day, clears the queue in two slots, and always ends in a phone call
+// one way or the other.
+function applyAndWait(seed) {
+  let state = fresh(seed);
   state.jobs.discovered.push("wash_go");
   state = C.reduceGame(state, { type: "APPLY_JOB", jobId: "wash_go" });
   assert.equal(state.run.slot, 1);
@@ -246,11 +250,23 @@ test("applications consume one part and mature into explicit offers", () => {
   clearSurfaces(state);
   state = C.advanceRun(state, { reason: "END_MARKET", suppressStory: true });
   clearSurfaces(state);
-  state = C.advanceRun(state, { reason: "END_MARKET", suppressStory: true });
-  assert.equal(state.jobs.applications.length, 0);
-  assert.equal(state.jobs.offers.includes("wash_go"), true);
-  assert.equal(state.jobs.hired.includes("wash_go"), false);
-  assert.equal(state.phone.inbox.some((message) => message.from === "Wash & Go Attendant"), true);
+  return C.advanceRun(state, { reason: "END_MARKET", suppressStory: true });
+}
+
+test("applications consume one part and always resolve into a phone call", () => {
+  for (const seed of [1710, 1711, 1712, 1713]) {
+    const state = applyAndWait(seed);
+    assert.equal(state.jobs.applications.length, 0, `seed ${seed} left the application pending`);
+    assert.equal(state.jobs.hired.includes("wash_go"), false);
+    assert.equal(state.phone.inbox.some((message) => message.from === "Wash & Go Attendant"), true, `seed ${seed} never called back`);
+  }
+});
+
+test("the interview is a real check: some seeds hire and some pass you over", () => {
+  const outcomes = new Set();
+  for (let seed = 1710; seed < 1760; seed += 1) outcomes.add(applyAndWait(seed).jobs.offers.includes("wash_go"));
+  assert.ok(outcomes.has(true), "no seed in fifty produced an offer");
+  assert.ok(outcomes.has(false), "no seed in fifty was turned down, so this is not a check");
 });
 
 test("a dead phone holds an application callback until service returns", () => {
@@ -336,7 +352,7 @@ test("v3 saves migrate jobs, household trust, listing knowledge, and terminal st
     delete raw.memberships;
     delete raw.obligations;
     const loaded = C.hydrateRun(raw);
-    assert.equal(loaded.version, 7);
+    assert.equal(loaded.version, 8);
     assert.equal(loaded.run.status, status);
     assert.equal(loaded.npc.yalonda.trust, 4);
     assert.equal(loaded.knowledge.knows907List, true);

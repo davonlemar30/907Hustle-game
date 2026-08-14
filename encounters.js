@@ -5,6 +5,11 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
+  // Attribute resolution lives in src/systems/attributes.js. It is pure and
+  // requires nothing from here or from game-core, so this is a safe one-way
+  // edge; the bundle inlines it the same way it inlines game-core's requires.
+  const Attributes = require("./src/systems/attributes.js");
+
   const AUTHORED_ENCOUNTERS = {
     mini_mart_parking_lot: {
       id: "mini_mart_parking_lot", type: "authored", enabled: true,
@@ -78,8 +83,26 @@
   }
   function equippedWeapon(state) { return WEAPONS[state.player.gear?.equipped?.weapon] || null; }
   function armorValue(state) { return state.player.gear?.equipped?.armor === "protective_vest" ? 4 : 0; }
-  function attributes(state) { return state.player.attributes || {}; }
-  function combat(state) { return state.player.stats?.combat || 2; }
+  function attributes(state) { return Attributes.normalizedAttributes(state); }
+  // Damage mitigation is not a resolved outcome, so it keeps reading the
+  // attribute through the 1-5 compatibility scale the formula was written
+  // against rather than the raw value.
+  function combat(state) { return Attributes.compatibilityRating(state, "combat"); }
+  // Every encounter resolver routes through resolveWithAttribute, so the key it
+  // needs is built once here. Hashed off the run seed rather than drawn from
+  // run.rngState: replaying the same encounter must resolve the same way.
+  function outcomeKey(state, encounter, action) {
+    return `${state.run.seed}:${action}:${state.run.day}:${state.run.slot}:${encounter.id || encounter.type}`;
+  }
+  // A banked gym streak is worth one effective level on the next check that
+  // reads the attribute, and it is spent when it is used - the same contract
+  // game-core's resolveOutcome honours for the reducer's own checks.
+  function resolve(state, encounter, actionType, chance, choice) {
+    const outcome = Attributes.resolveAction(state, actionType, chance, outcomeKey(state, encounter, choice));
+    if (Attributes.gymStreakBonus(state, "combat")) { state.player.gymStreak = 0; state.player.gymStreakDay = null; }
+    state.run.lastOutcomeTier = outcome.tier;
+    return outcome;
+  }
   function influence(state, areaId) { return state.world.influence?.[areaId] || 0; }
   function addHeat(state, amount) { state.player.heat = clamp((state.player.heat || 0) + amount, 0, 15); }
   function addDirtyCash(state, amount) {
@@ -249,19 +272,19 @@
     const a = attributes(state);
     const choices = [];
     if (encounter.phase === 0) {
-      if (encounter.type === "authored" || (a.presence || 0) >= 4) choices.push(choice("talk", "Talk", "Read the pressure and try to lower it without showing odds."));
+      if (encounter.type === "authored" || (a.charisma || 0) >= 3) choices.push(choice("talk", "Talk", "Read the pressure and try to lower it without showing odds."));
       choices.push(choice("run", "Run", "You will survive the attempt, but the street always collects something."));
       const demand = encounter.type === "random" ? encounter.npc.demand : encounter.pay;
       if (state.player.cash >= demand) choices.push(choice("pay", `Pay $${demand}`, "Lose cash and leave without violence."));
       for (const product of held) choices.push(choice(`surrender:${product.id}`, `Surrender ${productName(product.id)}`, "Give up selected product and protect your health."));
-      if (weapon || (a.strength || 0) >= 4 || toneNearby(state, areaId)) choices.push(choice("fight", "Fight", "Combat, health, protection, and nearby backup shape the result."));
+      if (weapon || (a.combat || 0) >= 3 || toneNearby(state, areaId)) choices.push(choice("fight", "Fight", "Combat, health, protection, and nearby backup shape the result."));
       if (weapon) choices.push(choice("draw", `Draw ${weapon.name}`, "Escalate first, then commit or find another exit."));
       if (hasNearbyCrew(state, areaId)) choices.push(choice("call_crew", "Call Crew", "Nearby crew can end this, but the response will be visible."));
       if (encounter.type === "authored" && (state.flags?.curtisArrangement || state.npc.curtis?.respect >= 3)) choices.push(choice("use_relationship", "Invoke Curtis's Arrangement", "Spend relationship leverage instead of blood or money."));
       if (state.player.gear?.consumables?.medical_kit > 0 && state.player.health < 100) choices.push(choice("medical_kit", "Use Medical Kit", "Recover now, but the confrontation keeps moving."));
       if (state.player.gear?.equipped?.tool === "burner_phone") choices.push(choice("burner_phone", "Burn the Phone", "Create a fast distraction; the phone will be gone afterward."));
     } else {
-      if (weapon || (a.strength || 0) >= 4 || toneNearby(state, areaId)) choices.push(choice("fight", "Commit to the Fight", "The escalation is already visible."));
+      if (weapon || (a.combat || 0) >= 3 || toneNearby(state, areaId)) choices.push(choice("fight", "Commit to the Fight", "The escalation is already visible."));
       choices.push(choice("run", "Take the Opening", "Leave something behind and get clear."));
       for (const product of held) choices.push(choice(`surrender:${product.id}`, `Drop ${productName(product.id)}`, "Trade selected product for a clean exit."));
       if (hasNearbyCrew(state, areaId)) choices.push(choice("call_crew", "Call Crew", "Bring nearby backup into the confrontation."));
@@ -311,15 +334,23 @@
     const firearm = weapon?.type === "firearm";
     const tone = toneNearby(state, encounter.areaId) ? 0.10 : 0;
     const threat = encounter.type === "random" ? encounter.npc.threat : encounter.threat;
-    const chance = clamp(0.28 + combat(state) * 0.10 + (weapon?.accuracy || 0) + tone - threat * 0.045, 0.12, 0.88);
+    // No combat term here any more. Gear, backup, and the threat still set the
+    // chance; the attribute shapes the outcome through resolveWithAttribute
+    // instead, which is the one entry point for an attribute-modified roll. The
+    // constant is the old formula at the old starting attribute of 2, so a fresh
+    // player's odds are unchanged and training is what buys the improvement.
+    const chance = clamp(0.48 + (weapon?.accuracy || 0) + tone - threat * 0.045, 0.12, 0.88);
     if (encounter.type === "random") state.encounterLog.randomFights += 1;
     if (firearm) {
       addHeat(state, weapon.heat || 0);
       if (encounter.type === "authored" && encounter.areaId === "downtown") state.flags.firedWeaponDowntown = true;
     }
-    if (next(rng) < chance) {
+    const outcome = resolve(state, encounter, "confrontation", chance, "fight");
+    if (Attributes.isSuccessTier(outcome.tier)) {
+      // A clean win is one you walk away from. Only the messy kind turns lethal,
+      // which is why a high-Combat player is quieter, not just luckier.
       const lethalChance = firearm ? 0.35 : weapon?.type === "close" ? 0.08 : 0.02;
-      const killed = next(rng) < lethalChance;
+      const killed = outcome.tier === "messy" && next(rng) < lethalChance;
       if (encounter.type === "random") {
         addHeat(state, killed ? 5 : 2);
         if (killed) state.encounterLog.randomKills += 1;
@@ -336,17 +367,21 @@
       }
     } else {
       const attack = encounter.type === "random" ? encounter.npc.attack : [10, 19];
-      const damage = applyDamage(state, int(rng, attack[0], attack[1]), false);
+      const severe = outcome.tier === "catastrophic";
+      const damage = applyDamage(state, int(rng, attack[0], attack[1]) + (severe ? 6 : 0), false);
       const loss = escapeCost(state, encounter, rng, true);
-      finish(state, encounter, "lost", `The answer comes back harder. You lose ${damage} health and ${loss} before the street gives you room to leave.`);
+      if (severe) { addHeat(state, 3); setFlag(state, "seriousViolence", true); }
+      finish(state, encounter, "lost", severe
+        ? `It goes badly in front of people. You lose ${damage} health and ${loss}, and somebody was already on the phone.`
+        : `The answer comes back harder. You lose ${damage} health and ${loss} before the street gives you room to leave.`);
     }
   }
   function resolveRun(state, encounter, rng) {
-    const a = attributes(state);
     const shoes = state.player.gear?.equipped?.utility === "running_shoes" ? 0.10 : 0;
     const threat = encounter.type === "random" ? encounter.npc.threat : encounter.threat;
-    const chance = clamp(0.35 + (a.reflexes || 0) * 0.09 + (a.endurance || 0) * 0.05 + shoes - cargoRatio(state) * 0.25 - threat * 0.035, 0.18, 0.90);
-    const success = next(rng) < chance;
+    const chance = clamp(0.63 + shoes - cargoRatio(state) * 0.25 - threat * 0.035, 0.18, 0.90);
+    const outcome = resolve(state, encounter, "escape", chance, "run");
+    const success = Attributes.isSuccessTier(outcome.tier);
     const cost = escapeCost(state, encounter, rng, !success);
     let damage = 0;
     if (!success) {
@@ -357,11 +392,11 @@
     finish(state, encounter, success ? "escaped" : "escaped_hurt", success ? `You find the open lane first. ${cost} stays behind, but you do not.` : `They catch you once before you clear the lot. You lose ${damage} health and ${cost}, but the escape does not take your life.`);
   }
   function resolveTalk(state, encounter, rng) {
-    const a = attributes(state);
     const arrangement = state.flags.curtisArrangement ? 0.12 : 0;
     const aggression = encounter.type === "random" ? encounter.npc.aggression : 0.20;
-    const chance = clamp(0.28 + (a.presence || 0) * 0.08 + (a.insight || 0) * 0.05 + arrangement + influence(state, encounter.areaId) * 0.025 - aggression, 0.12, 0.90);
-    if (next(rng) < chance) {
+    const chance = clamp(0.54 + arrangement + influence(state, encounter.areaId) * 0.025 - aggression, 0.12, 0.90);
+    const outcome = resolve(state, encounter, "negotiation", chance, "talk");
+    if (Attributes.isSuccessTier(outcome.tier)) {
       if (encounter.type === "authored") { setFlag(state, "negotiatedCurtisPassage", true); state.npc.curtis.respect += 1; }
       finish(state, encounter, "talked", "You name the people, the cameras, and the cost of making this messy. The red gloves disappear into a pocket and the lane opens.");
     } else {

@@ -4,6 +4,42 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
+## Shipped — v1.10 Unified Stat Architecture
+
+Branch: `codex/v1-10-stat-architecture`.
+
+- Six attributes became three (Combat, Charisma, Intelligence) and stopped being
+  decorative. `resolveWithAttribute` is the only entry point for an
+  attribute-modified roll: single roll at 0-2, roll twice and take the better at
+  3-5, catastrophic tier removed from the pool at 6+. No percentage bonuses.
+- Outcome quality now decides the observation footprint, which closes the
+  pipeline the Exposure System was missing: act → attribute shapes the outcome →
+  the outcome decides what is seen → observations propagate → NPCs react.
+- The Spenard gym grows Combat on a `log2` curve through bag work, cardio, and
+  sparring (gated at Combat 3, 15% injury). Three consecutive days banks a
+  discipline bonus worth a level on the next check.
+- Street Identity is derived on read from a 4×4 matrix instead of assigned
+  nightly and stored. Sixteen labels, cosmetic only, gates nothing.
+- Heat grew teeth in employment: warning at 8, final warning at 10, fired at 12,
+  matching Yalonda's housing ladder. Day labor exempt; the Night Owl restricts
+  hours rather than firing so Mina's arc survives.
+- Reputation settled as a design decision rather than a feature: there is no
+  global reputation stat and there will not be one.
+- Intelligence narrows the 907List sell swing and surfaces an extra listing;
+  standing gains brake as they climb; the zero-unit buy guard now says so.
+- Save schema v8; v3 through v7 migrate, folding the six attributes into three by
+  taking the highest of each merged group.
+
+Balance moved on purpose and is reported rather than tuned around: the economy is
+down 15.5% against v1.9b across 2,000 seeded runs, concentrated in `trainer`
+(-49%), `mixed_freedom`/`operator` (-29%), and `thief` (-26%), against `stickup`
+at +24%. Story pacing is unmoved (9.5 beats a run against 9.7) and the 907List
+tier ladder holds its band. 437 tests pass, 2,000 seeded runs finish with zero
+dead ends. New baselines: `--total 200` `77b09d7b…`, `--total 2000` `8f68db01…`.
+
+**Next:** growth sources for Charisma and Intelligence — the gym only trains
+Combat, so two thirds of the attribute system currently has no way up.
+
 ## Shipped — v1.9b 907List Tiered Broker System
 
 Branch: `codex/v1-9b-907list-broker`.

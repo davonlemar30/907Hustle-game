@@ -85,12 +85,24 @@ test("plug standing increases once per day and unlocks products at threshold", (
   assert.ok(state.log.some((entry) => entry.text === "Goodie says he can get you shrooms now too."));
 });
 
+// v1.10 brakes standing gains as they climb: above 3 a day's business is worth
+// half a point, so the fourth point takes two days of buying rather than one.
+// The brake banks the remainder deterministically - it is pacing, not a roll.
+function buyOn(state, productId) {
+  state.plugs.records.goodie.lastPurchaseDay = state.run.day - 1;
+  for (const record of Object.values(state.plugs.records)) if (record.lastPurchaseDay != null) record.lastPurchaseDay = state.run.day - 1;
+  return C.reduceGame(state, { type: "BUY", productId, qty: 1 });
+}
+
 test("standing four triggers the next plug introduction and reveals that plug's products", () => {
   let state = stock(meetGoodie(), "weed");
   state.plugs.records.goodie.standing = 3;
   state.people.dealers.goodie.standing = 3;
-  state.plugs.records.goodie.lastPurchaseDay = state.run.day - 1;
-  state = C.reduceGame(state, { type: "BUY", productId: "weed", qty: 1 });
+  state = buyOn(state, "weed");
+  assert.equal(state.plugs.records.goodie.standing, 3, "the first braked day banks half a point");
+  stock(state, "weed");
+  state.run.day += 1;
+  state = buyOn(state, "weed");
   assert.equal(state.plugs.records.goodie.standing, 4);
   assert.equal(state.run.pendingEvent?.id, "tasha_plug_intro");
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
@@ -102,13 +114,17 @@ test("linear introductions continue from Tasha to Malik in order", () => {
   let state = stock(meetGoodie(), "weed");
   state.plugs.records.goodie.standing = 3;
   state.people.dealers.goodie.standing = 3;
-  state.plugs.records.goodie.lastPurchaseDay = state.run.day - 1;
-  state = C.reduceGame(state, { type: "BUY", productId: "weed", qty: 1 });
+  state = buyOn(state, "weed");
+  stock(state, "weed");
+  state.run.day += 1;
+  state = buyOn(state, "weed");
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
   stock(state, "pills");
   state.plugs.records.tasha.standing = 3;
-  state.plugs.records.tasha.lastPurchaseDay = state.run.day - 1;
-  state = C.reduceGame(state, { type: "BUY", productId: "pills", qty: 1 });
+  state = buyOn(state, "pills");
+  stock(state, "pills");
+  state.run.day += 1;
+  state = buyOn(state, "pills");
   assert.equal(state.run.pendingEvent?.id, "malik_plug_intro");
   state = C.reduceGame(state, { type: "RESOLVE_EVENT", choiceIndex: 0 });
   assert.deepEqual(state.plugs.unlocked, ["goodie", "tasha", "malik"]);

@@ -55,7 +55,7 @@ function driveTo(state, id, limit = 90) {
 }
 
 test("v3 run keeps legacy migration data without exposing a starting class", () => {
-  assert.equal(C.VERSION, 7); assert.equal(C.SAVE_KEY, "907ogr_v7");
+  assert.equal(C.VERSION, 8); assert.equal(C.SAVE_KEY, "907ogr_v8");
   assert.equal(C.BACKGROUNDS.length, 3);
   assert.deepEqual(C.BACKGROUNDS.map((item) => item.name), ["Steady-Hand Shooter", "Silver-Tongued Hustler", "Strategist"]);
   assert.deepEqual(C.STARTING_EDGES.map((item) => item.id), ["shooter", "hustler"]);
@@ -73,13 +73,17 @@ test("legacy backgrounds hydrate to the approved derived identities", () => {
   }
 });
 
-test("classless new runs start balanced, Unproven, and use the neutral name", () => {
+test("classless new runs start green across all three attributes and use the neutral name", () => {
   const state = C.reduceGame(C.createRun({ seed: 8 }), { type: "START_RUN", streetName: "Rookie" });
   assert.equal(state.run.status, "playing");
   assert.equal(state.player.background, null); assert.equal(state.player.legacyBackground, null);
-  assert.equal(state.player.streetName, "Rookie"); assert.equal(state.player.streetIdentity, "unproven");
+  assert.equal(state.player.streetName, "Rookie");
+  assert.deepEqual(state.player.attributes, { combat: 1, charisma: 1, intelligence: 1 });
   assert.deepEqual(state.player.attributes, C.ATTRIBUTE_DEFAULTS);
-  assert.deepEqual(C.selectors.derivedRatings(state), { combat: 2, charisma: 2, intelligence: 2 });
+  // No attribute leads, so the matrix reads Balanced and the label comes from
+  // what the household has already seen rather than from a stat.
+  assert.deepEqual(C.selectors.attributeLabels(state), { combat: "Green", charisma: "Green", intelligence: "Green" });
+  assert.equal(C.selectors.identityProfile(state).dominant, "balanced");
 });
 
 test("meaningful behavior is deduplicated, capped, and bounded", () => {
@@ -92,25 +96,28 @@ test("meaningful behavior is deduplicated, capped, and bounded", () => {
   assert.equal(state.player.behavior.history.length, 50);
 });
 
-test("Street Identity assigns at Day 2 Night and mixed behavior becomes Wild Card", () => {
-  const mover = C.reduceGame(C.createRun({ seed: 8 }), { type: "START_RUN", streetName: "Rookie" });
-  for (let i = 0; i < 6; i += 1) C.recordBehaviorForTest(mover, "mover", 1, `move:${i}`, "market_read");
-  mover.run.day = 2; mover.run.slot = 3; C.evaluateStreetIdentityForTest(mover, true);
-  assert.equal(mover.player.streetIdentity, "mover"); assert.equal(mover.player.identityHistory.length, 1);
-  const mixed = C.reduceGame(C.createRun({ seed: 9 }), { type: "START_RUN", streetName: "Rookie" });
-  for (let i = 0; i < 3; i += 1) C.recordBehaviorForTest(mixed, "mover", 1, `m:${i}`, "market_read");
-  for (let i = 0; i < 3; i += 1) C.recordBehaviorForTest(mixed, "connector", 1, `c:${i}`, "relationship");
-  mixed.run.day = 2; mixed.run.slot = 3; C.evaluateStreetIdentityForTest(mixed, true);
-  assert.equal(mixed.player.streetIdentity, "wild_card");
+test("Street Identity is derived from the dominant attribute and recent behavior", () => {
+  const state = C.reduceGame(C.createRun({ seed: 8 }), { type: "START_RUN", streetName: "Rookie" });
+  // A three-point lead is what it takes to stop reading as Balanced.
+  state.player.attributes = { combat: 5, charisma: 1, intelligence: 1 };
+  state.npc.curtis.ledger = [{ type: "violence", event: "stickup", location: null, value: null, day: state.run.day, count: 4, source: "network" }];
+  assert.equal(C.selectors.streetIdentity(state), "Shooter");
+  // Same attributes, different week: the label follows what people saw.
+  state.npc.curtis.ledger = [{ type: "financial", event: "907list_profit", location: null, value: 200, day: state.run.day, count: 4, source: "network" }];
+  assert.equal(C.selectors.streetIdentity(state), "Collector");
+  state.player.attributes = { combat: 1, charisma: 5, intelligence: 1 };
+  assert.equal(C.selectors.streetIdentity(state), "Broker");
 });
 
-test("identity changes require the lead to persist for two nights", () => {
+test("Street Identity is a pure read and the nightly assignment loop is gone", () => {
   const state = C.reduceGame(C.createRun({ seed: 10 }), { type: "START_RUN", streetName: "Rookie" });
-  for (let i = 0; i < 6; i += 1) C.recordBehaviorForTest(state, "mover", 1, `move:${i}`, "market_read");
-  state.run.day = 2; C.evaluateStreetIdentityForTest(state, true); assert.equal(state.player.streetIdentity, "mover");
-  for (let i = 0; i < 9; i += 1) C.recordBehaviorForTest(state, "stickup", 1, `stick:${i}`, "confrontation");
-  state.run.day = 3; C.evaluateStreetIdentityForTest(state, true); assert.equal(state.player.streetIdentity, "mover");
-  state.run.day = 4; C.evaluateStreetIdentityForTest(state, true); assert.equal(state.player.streetIdentity, "stickup");
+  const before = JSON.stringify(state);
+  const first = C.selectors.streetIdentity(state);
+  const second = C.selectors.streetIdentity(state);
+  assert.equal(first, second, "the same state must produce the same label");
+  assert.equal(JSON.stringify(state), before, "reading an identity must not write anything");
+  assert.equal(state.player.streetIdentity, undefined, "the stored label is retired");
+  assert.equal(typeof C.evaluateStreetIdentityForTest, "undefined");
 });
 
 test("buy and sell stay in one locked market visit", () => {
@@ -261,9 +268,12 @@ test("all three territories start under Curtis with exact approved values", () =
 });
 
 test("Intelligence controls territory estimate precision", () => {
-  const state = run(); state.player.attributes.insight = 1; state.player.attributes.discipline = 1; assert.equal(C.selectors.territoryPowerEstimate(state, "north_star_lot").label, "9–15");
-  state.player.attributes.insight = 2; state.player.attributes.discipline = 2; assert.equal(C.selectors.territoryPowerEstimate(state, "north_star_lot").label, "11–13");
-  state.player.attributes.insight = 3; state.player.attributes.discipline = 3; assert.equal(C.selectors.territoryPowerEstimate(state, "north_star_lot").label, "12");
+  // Scouting was never converted to resolveWithAttribute, so it reads the 1-5
+  // compatibility scale: attribute 0 is the old floor and attribute 2 the old
+  // ceiling for this readout.
+  const state = run(); state.player.attributes.intelligence = 0; assert.equal(C.selectors.territoryPowerEstimate(state, "north_star_lot").label, "9–15");
+  state.player.attributes.intelligence = 1; assert.equal(C.selectors.territoryPowerEstimate(state, "north_star_lot").label, "11–13");
+  state.player.attributes.intelligence = 2; assert.equal(C.selectors.territoryPowerEstimate(state, "north_star_lot").label, "12");
 });
 
 test("takeover consumes one slot and records automatic narrated rounds", () => {
@@ -448,9 +458,9 @@ test("a pre-v0.7 save migrates to v5 and gains the new fields", () => {
 
   const inspection = C.inspectSave(JSON.stringify(legacy));
   assert.equal(inspection.valid, true, inspection.error || "legacy save rejected");
-  assert.equal(C.VERSION, 7); assert.equal(C.SAVE_KEY, "907ogr_v7");
+  assert.equal(C.VERSION, 8); assert.equal(C.SAVE_KEY, "907ogr_v8");
   const hydrated = inspection.state;
-  assert.equal(hydrated.version, 7);
+  assert.equal(hydrated.version, 8);
   assert.deepEqual(hydrated.run.eventHistory, {});
   assert.equal(hydrated.run.chainStreak, 0);
   assert.equal(hydrated.npc.mina.chainStage, 0);
@@ -616,7 +626,9 @@ test("a successful dealer robbery pays out and chokes the block's supply", () =>
   assert.equal(goodie.robbedCount, 1);
   assert.equal(goodie.supplyChoked, 2);
   assert.ok(goodie.standing < 0, "standing is spent");
-  assert.ok(found.player.heat >= 3, "the robbery is visible");
+  // A clean take costs 1 Heat and a messy one costs 2. Being good at this makes
+  // you quieter, not invisible, so the floor is "more than none".
+  assert.ok(found.player.heat >= 1, "the robbery is still visible");
   assert.equal(C.selectors.dealerSupplyFactor(found, "north_star_lot", "weed"), 0.6);
   assert.equal(C.selectors.dealerSupplyFactor(found, "downtown", "weed"), 1, "only his own block is affected");
 });
@@ -681,7 +693,7 @@ test("a pre-v0.7.1 save hydrates and gains the dealer record", () => {
   delete legacy.people.dealers;
   const inspection = C.inspectSave(JSON.stringify(legacy));
   assert.equal(inspection.valid, true, inspection.error || "rejected");
-  assert.equal(inspection.state.version, 7);
+  assert.equal(inspection.state.version, 8);
   assert.equal(inspection.state.people.dealers.goodie.known, false);
   assert.equal(inspection.state.people.dealers.goodie.robbedCount, 0);
   assert.equal(C.selectors.dealerSupplyFactor(inspection.state, "north_star_lot", "weed"), 1);
@@ -718,14 +730,51 @@ test("work is Morning-only, once daily, seeded, and builds legal standing", () =
   assert.equal(a.world.locations.employer.standing, 1); assert.equal(C.selectors.jobAvailability(a, "ship_creek").available, false);
 });
 
-test("gym membership is paid once, then session costs escalate and progress diminishes", () => {
-  let state = fresh(9004); state.discovered.spenardGym = true; state.player.cash = 1000; state.player.cleanCash = 1000; const spent = [];
-  for (let i = 0; i < 4; i += 1) { state.run.pendingEvent = null; const before = state.player.cash; state = C.reduceGame(state, { type: "TRAIN_ATTRIBUTE", attribute: "strength" }); spent.push(before - state.player.cash); }
-  assert.deepEqual(spent, [55, 45, 75, 120]); assert.equal(state.player.attributes.strength, 2); assert.equal(state.player.attributeProgress.strength, 7);
-  state.run.pendingEvent = null; state.run.pendingEncounter = null; state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
-  state.player.attributeProgress.strength = 9; state.world.locations.gym.sessionDay = null; state.run.pendingEvent = null; state.run.slot = 0;
-  state = C.reduceGame(state, { type: "TRAIN_ATTRIBUTE", attribute: "strength" });
-  assert.equal(state.player.attributes.strength, 3); assert.equal(state.player.attributeProgress.strength, 2);
+test("gym membership is paid once, then session costs escalate and growth diminishes", () => {
+  let state = fresh(9004); state.discovered.spenardGym = true; state.player.cash = 1000; state.player.cleanCash = 1000; const spent = []; const growth = [];
+  for (let i = 0; i < 4; i += 1) {
+    state.run.pendingEvent = null;
+    const before = state.player.cash;
+    const banked = state.player.attributes.combat + state.player.attributeProgress.combat;
+    state = C.reduceGame(state, { type: "TRAIN_ATTRIBUTE", activity: "bag_work" });
+    spent.push(before - state.player.cash);
+    growth.push(state.player.attributes.combat + state.player.attributeProgress.combat - banked);
+  }
+  // The cash ladder is unchanged from v0.9. What changed is the payout curve.
+  assert.deepEqual(spent, [55, 45, 75, 120]);
+  assert.ok(growth[0] > growth[1] && growth[1] > growth[2] && growth[2] > growth[3], "each session must be worth less than the one before it");
+  assert.equal(state.player.attributes.combat, 1, "four sessions is not a whole point");
+  assert.ok(state.player.attributeProgress.combat > 0.7 && state.player.attributeProgress.combat < 1);
+  let sessions = 4;
+  while (state.player.attributes.combat < 2 && sessions < 12) {
+    state.world.locations.gym.sessionDay = null; state.run.pendingEvent = null; state.run.pendingEncounter = null;
+    state.run.slot = 0; state.run.dayEndPending = false; state.player.energy = 4; state.run.day += 1;
+    state = C.reduceGame(state, { type: "TRAIN_ATTRIBUTE", activity: "bag_work" });
+    sessions += 1;
+  }
+  // Seven sessions for the first point, and the curve only gets flatter.
+  assert.equal(sessions, 7);
+  assert.equal(state.player.attributes.combat, 2);
+  assert.ok(state.player.attributeProgress.combat < 1);
+});
+
+test("sparring is gated on Combat 3 and the gym alone cannot make anyone Dangerous", () => {
+  let state = fresh(9014); state.discovered.spenardGym = true; state.player.cash = 100000; state.player.cleanCash = 100000;
+  const activities = () => C.selectors.activityAvailability(state).gym.activities;
+  state.player.attributes.combat = 2;
+  assert.equal(activities().find((item) => item.id === "sparring").unlocked, false);
+  const blocked = C.reduceGame(state, { type: "TRAIN_ATTRIBUTE", activity: "sparring" });
+  assert.equal(blocked, state, "a sparring dispatch below Combat 3 must be refused outright");
+  state.player.attributes.combat = 3;
+  assert.equal(activities().find((item) => item.id === "sparring").unlocked, true);
+  // Thirty sessions on the bag and nobody is Dangerous. Growth past Solid needs
+  // the kind of experience a gym cannot sell you.
+  let value = 1, progress = 0;
+  for (let session = 0; session < 30; session += 1) {
+    progress += C.attributeSystem.attributeGrowth(value, session, "bag_work");
+    if (progress >= 1) { progress -= 1; value += 1; }
+  }
+  assert.ok(value < 6, `thirty bag-work sessions reached ${value}, which should stay under 6`);
 });
 
 test("Day 2 exploration guarantees Goodie's transactional supplier encounter", () => {
@@ -1217,14 +1266,16 @@ test("a fully paid Dre debt prevents any collector enforcement at all", () => {
 test("killing a Dre collector increases collectorsKilled and future enforcement cost", () => {
   let state = fresh(100011);
   state.lender.balance = 1200; state.lender.collectorTier = 2;
-  state.player.attributes = { strength: 5, endurance: 5, reflexes: 5, presence: 5, insight: 5, discipline: 5 };
+  state.player.attributes = { combat: 5, charisma: 5, intelligence: 5 };
   state.player.gear.owned = ["reliable_handgun"];
   state.player.gear.equipped.weapon = "reliable_handgun";
   state.run.status = "playing";
   const interestBefore = state.lender.interestMultiplier;
   let won = false;
   for (let seed = 1; seed <= 60 && !won; seed += 1) {
-    let attempt = { ...state, run: { ...state.run, rngState: seed } };
+    // The resolver keys off run.seed, not the RNG stream, so varying rngState
+    // alone would replay the same outcome sixty times.
+    let attempt = { ...state, run: { ...state.run, seed, rngState: seed } };
     attempt.run.pendingEncounter = null;
     C.buildEventForTest; // no-op reference to keep imports honest
     let encounterState = JSON.parse(JSON.stringify(attempt));
@@ -1285,7 +1336,7 @@ test("homeSituation answers the Home questions from live state and hides locked 
   assert.equal(view.debt.balance, state.lender.balance);
   assert.equal(view.debt.note, "Paid in full");
   assert.equal(view.heat.label, "Low");
-  assert.equal(view.identity.label, "Unproven");
+  assert.equal(view.identity.label, C.selectors.streetIdentity(state));
   assert.ok(view.summary.length > 40, "the situation summary is authored prose, not a stat dump");
   assert.match(view.summary, /learning Spenard/);
   assert.match(view.summary, /Most of Spenard is still unfamiliar/);

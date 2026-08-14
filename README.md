@@ -2,10 +2,62 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-The current playable build is **v1.9b: 907List Tiered Broker System**.
+The current playable build is **v1.10: Unified Stat Architecture**.
 
 New here? Read [ARCHITECTURE.md](ARCHITECTURE.md) — file map, state shape, event
 card schema, and the rules a change has to hold to.
+
+## What changed in v1.10
+
+**Attributes stopped being decorative.** Six numbers became three — **Combat**,
+**Charisma**, **Intelligence** — and they are now the invisible engine behind
+every outcome the game resolves. A player who trains robs cleaner, generates
+fewer negative observations, and keeps the people around them better disposed
+without ever seeing the math.
+
+- **Advantage, not percentages.** `resolveWithAttribute` is the one entry point
+  for an attribute-modified roll. Attribute 0–2 is a single roll; 3–5 rolls twice
+  and takes the better; 6+ removes the catastrophic outcome from the pool
+  entirely. The chance a roll starts from still comes from heat, gear, health,
+  disposition, and district — the attribute shapes the *quality* of what happens,
+  not the odds of a coin flip.
+- **Quality decides who hears about it.** A clean robbery writes one financial row
+  that goes nowhere; a messy one reaches the neighborhood; a catastrophe reaches
+  the network with the heat attached. Being good at crime makes you quiet, not
+  invisible.
+- **The gym actually builds something.** Bag work, cardio, and sparring (Combat 3+,
+  and it can send you home hurt) grow Combat on a `log2` curve. Sessions one
+  through three matter, four through seven taper, and past that the gym alone
+  cannot carry you. Three consecutive days is worth a level on the next check.
+- **Street Identity is derived, not assigned.** Sixteen labels from a matrix of
+  your strongest attribute against what you have actually been seen doing. Pure
+  read, no nightly loop, no stored value, and it gates nothing.
+- **Heat costs you work.** A warning at 8, a final warning at 10, fired at 12 —
+  matching Yalonda's housing ladder. Day labor is exempt. The Night Owl stops
+  scheduling you rather than firing you, so Mina survives a bad week.
+- **Reputation is settled as a design decision.** There is no global reputation
+  stat and there will not be one; see ARCHITECTURE.md.
+
+Applying for a job is a real Charisma check now rather than a formality, and
+Intelligence narrows the 907List sell swing from ±20% to ±15% at 3 and ±10% at 6.
+
+**Balance moved on purpose, and it is reported rather than hidden.** Standing
+gains brake as they climb, gambling pays a full pot only on a clean read, and a
+gym session buys less than the old flat progress did. Across 2,000 seeded runs
+the economy is down **15.5%** overall against v1.9b, concentrated where those
+three changes land: `trainer` −49%, `mixed_freedom`/`operator` −29%, `thief` −26%,
+`trader` −21%, against `stickup` **+24%** (a clean robbery draws a third of the
+heat a messy one does, so violent runs survive longer). Story pacing is unmoved
+at 9.5 beats a run against 9.7, and the 907List tier ladder holds its band:
+tier 1 **$38.3/day** and tier 2 **$73.2/day** both in target, tier 3 still short
+at **$30.5/day** for the reasons v1.9b documented.
+
+437 tests pass and 2,000 seeded runs finish with zero dead ends.
+
+| Run | SHA-256 |
+|---|---|
+| `--total 200` | `77b09d7bb1ea9be7440bccac517175679fce3008e83f02923e3cb0a3f4c573ac` |
+| `--total 2000` | `8f68db014f0fe466f38edad05454f632fb90ca2eef0c9c8af4707bb30714990b` |
 
 ## What changed in v1.9b
 
@@ -216,7 +268,7 @@ All primary controls target a minimum 44px touch area. The shell is designed for
 
 ## Save compatibility
 
-v1.9b saves use schema version **7** and local-storage key `907ogr_v7`.
+v1.10 saves use schema version **8** and local-storage key `907ogr_v8`.
 
 The loader continues to read `907ogr_v6`, `907ogr_v5`, `907ogr_v4`, and `907ogr_v3` once, migrate them to v7, and preserve:
 
@@ -286,9 +338,9 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 - Node tests: **401 passing**
 - Deterministic simulations: **2,000 runs, zero crashes or dead ends**
-- Simulation SHA-256: `ddd7669506d2e85cbcb1c5a1c9a7617211af928fcb2fbf09033a75c8c8af1d8f`
+- Simulation SHA-256: `8f68db014f0fe466f38edad05454f632fb90ca2eef0c9c8af4707bb30714990b`
   (`--total 2000`) and
-  `d4474787bd02ce5b08c3a24bb10c3e738616c5367843bbc641e9b8026a0a8a25`
+  `77b09d7bb1ea9be7440bccac517175679fce3008e83f02923e3cb0a3f4c573ac`
   (`--total 200`). Both moved from v1.9a on purpose: 907List gameplay changed and
   two strategies were added. The eleven pre-existing strategies stay within 3.5%
   of their v1.9a averages, and the economy overall within 0.34%.

@@ -31,7 +31,14 @@ function TitleScreen({ saveInfo, onLoad, onNew }) {
   const preview = saveInfo.preview;
   return <div className="title-screen">
     <div className="title-backdrop" aria-hidden="true" />
-    <img className="title-art" src="./assets/907hustle-title.png" alt="907Hustle: One Good Run over a rain-dark Spenard street" />
+    {/* The PNG is 1.9MB, which is the single heaviest thing the game loads.
+        Phones take the 600px WebP (68KB), wider screens the full WebP (145KB),
+        and anything without WebP support falls back to the original PNG. */}
+    <picture>
+      <source type="image/webp" media="(max-width: 600px)" srcSet="./assets/907hustle-title-600.webp" />
+      <source type="image/webp" srcSet="./assets/907hustle-title.webp" />
+      <img className="title-art" src="./assets/907hustle-title.png" width="941" height="1672" alt="907Hustle: One Good Run over a rain-dark Spenard street" />
+    </picture>
     <div className="title-shade" />
     <div className="title-content">
       <div className="sr-only"><h1>907Hustle: One Good Run</h1><p>Find your footing. Face the week you create.</p></div>

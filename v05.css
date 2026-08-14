@@ -22,7 +22,12 @@
    max-height rule above on short landscape windows. */
 .title-backdrop{display:none}
 @media(min-aspect-ratio:3/4) and (max-aspect-ratio:1/1){.title-art{object-position:center 30%}.title-content{padding-top:34vh}}
-@media(min-aspect-ratio:1/1){.title-backdrop{display:block;position:fixed;inset:0;background:url(./assets/907hustle-title.png) center/cover no-repeat;filter:blur(40px) saturate(.65) brightness(.4);transform:scale(1.1)}.title-art{object-fit:contain;object-position:center;max-height:100dvh}.title-shade{background:linear-gradient(180deg,rgba(0,0,0,0) 0 58%,rgba(0,0,0,.35) 74%,rgba(0,0,0,.9) 100%)}.title-content{padding-top:0;align-items:center;justify-content:flex-end;max-width:min(94vw,1200px)}.title-actions{max-width:420px;margin-left:auto;padding:16px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(4,4,4,0),rgba(4,4,4,.88) 20%)}}
+/* The backdrop is the same art as .title-art, blurred behind it, and it only
+   renders on wide screens where <picture> has already fetched the full WebP.
+   Pointing both at that one file keeps this to a single download. The plain
+   url() below is the fallback browsers without image-set() use; those that
+   support it never fetch the PNG. */
+@media(min-aspect-ratio:1/1){.title-backdrop{display:block;position:fixed;inset:0;background:url(./assets/907hustle-title.png) center/cover no-repeat;background:image-set(url(./assets/907hustle-title.webp) type("image/webp"),url(./assets/907hustle-title.png) type("image/png")) center/cover no-repeat;filter:blur(40px) saturate(.65) brightness(.4);transform:scale(1.1)}.title-art{object-fit:contain;object-position:center;max-height:100dvh}.title-shade{background:linear-gradient(180deg,rgba(0,0,0,0) 0 58%,rgba(0,0,0,.35) 74%,rgba(0,0,0,.9) 100%)}.title-content{padding-top:0;align-items:center;justify-content:flex-end;max-width:min(94vw,1200px)}.title-actions{max-width:420px;margin-left:auto;padding:16px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(4,4,4,0),rgba(4,4,4,.88) 20%)}}
 
 /* ==========================================================================
    v1.1 — design tokens and shared organization-layer components.

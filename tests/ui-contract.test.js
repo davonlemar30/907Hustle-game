@@ -391,9 +391,15 @@ test("the ambient ticker is decorative, location-aware, and never overlaps the n
 });
 
 test("ambient flavor copy follows the house writing rules", () => {
-  const core = fs.readFileSync(path.join(root, "game-core.js"), "utf8");
-  const registry = core.slice(core.indexOf("const AMBIENT_FLAVOR = {"), core.indexOf("function ambientFlavor(state)"));
-  const lines = [...registry.matchAll(/^\s*"([^"]+)",$/gm)].map((match) => match[1]);
+  // Walks the real registry rather than the source text. The old version
+  // sliced game-core.js between two string markers, which broke the moment
+  // AMBIENT_FLAVOR moved to src/events/registry.js and only caught lines that
+  // happened to be formatted one-per-line.
+  const { AMBIENT_FLAVOR } = require("../src/events/registry.js");
+  const lines = Object.values(AMBIENT_FLAVOR)
+    .flatMap((area) => (Array.isArray(area) ? area : Object.values(area)))
+    .flat()
+    .filter((line) => typeof line === "string");
   assert.ok(lines.length >= 90, `expected a full registry, found ${lines.length} lines`);
   for (const line of lines) {
     assert.doesNotMatch(line, /[—–]/, `em dash: ${line}`);

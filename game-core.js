@@ -42,38 +42,9 @@
     return String(input).replace(/[^A-Za-z0-9 '\-.]/g, "").replace(/\s+/g, " ").trim().slice(0, STREET_NAME_MAX).trim();
   }
 
-  const PRODUCTS = [
-    { id: "weed", name: "Weed", role: "Dependable", base: 34, min: 18, max: 68, volatility: 0.12, heat: 0, access: "open" },
-    { id: "shrooms", name: "Shrooms", role: "Volatile", base: 82, min: 35, max: 180, volatility: 0.25, heat: 0, access: "open" },
-    { id: "pills", name: "Pills", role: "Steady margin", base: 105, min: 55, max: 220, volatility: 0.18, heat: 1, access: "plug" },
-    { id: "lean", name: "Lean", role: "Premium", base: 155, min: 80, max: 330, volatility: 0.22, heat: 1, access: "plug" },
-    { id: "coke", name: "Coke", role: "High margin", base: 290, min: 145, max: 690, volatility: 0.30, heat: 1, access: "plug" },
-    { id: "molly", name: "Molly", role: "Club demand", base: 215, min: 105, max: 480, volatility: 0.28, heat: 1, access: "plug" },
-    { id: "cocaine", name: "Cocaine", role: "Premium", base: 290, min: 145, max: 690, volatility: 0.30, heat: 1, access: "supplier" },
-    { id: "meth", name: "Meth", role: "Extreme Risk", base: 185, min: 70, max: 560, volatility: 0.38, heat: 2, access: "industrial" },
-  ];
+  const { PRODUCTS, PRODUCT_BY_ID } = require("./src/data/products.js");
 
-  const HOME_DISTRICT_ID = "north_star_lot";
-  const NEIGHBORHOODS = [
-    {
-      id: "north_star_lot", name: "Spenard", role: "Home", travelAction: "TRAVEL", risk: 1, police: 1, rival: 0,
-      accent: "#d7d7d7", blurb: "North Star Garage, the Night Owl Mini-Mart, and familiar blocks that offer the week's safest footing.",
-      bias: { weed: 0.78, shrooms: 0.88, cocaine: 1.02, meth: 0.95 },
-      availability: { weed: 1, shrooms: 0.88, pills: 0.82, lean: 0.7, coke: 0.62, molly: 0.68, cocaine: 0.55, meth: 0.48 },
-    },
-    {
-      id: "downtown", name: "Downtown", role: "Commercial", travelAction: "BUS_TRAVEL", risk: 2, police: 3, rival: 1,
-      accent: "#e14332", blurb: "Nightlife money moves fast under cameras and through Curtis's buyers.",
-      bias: { weed: 1.08, shrooms: 1.32, cocaine: 1.46, meth: 1.08 },
-      availability: { weed: 0.9, shrooms: 0.9, pills: 0.82, lean: 0.78, coke: 0.8, molly: 0.86, cocaine: 0.78, meth: 0.58 },
-    },
-    {
-      id: "airport_industrial", name: "Industrial Service Roads", role: "Outer", travelAction: "TRAVEL", risk: 4, police: 2, rival: 3,
-      accent: "#9a1d18", blurb: "Loading yards, warehouses, service roads, rare supply, and expensive mistakes.",
-      bias: { weed: 1.12, shrooms: 1.18, cocaine: 1.32, meth: 1.62 },
-      availability: { weed: 0.72, shrooms: 0.7, pills: 0.7, lean: 0.74, coke: 0.78, molly: 0.72, cocaine: 0.7, meth: 0.86 },
-    },
-  ];
+  const { HOME_DISTRICT_ID, NEIGHBORHOODS, TERRITORIES, SPENARD_BLOCKS, SPENARD_BLOCK_BY_ID, AREA_BY_ID } = require("./src/data/locations.js");
 
   const BACKGROUNDS = [
     { id: "shooter", name: "Steady-Hand Shooter", combat: 3, charisma: 1, intelligence: 2, cash: 375, heat: 1, description: "Weapons, direct confrontation, survival, and joining territory attacks are your strongest opening tools." },
@@ -82,47 +53,14 @@
   ];
   const STARTING_EDGES = BACKGROUNDS.filter((item) => item.id !== "strategist");
 
-  const GEAR = [
-    { id: "utility_knife", name: "Utility Knife", cost: 90, slot: "weapon", type: "close", accuracy: 0.04, damage: [8, 14], heat: 0, description: "Concealable close-range protection." },
-    { id: "cheap_handgun", name: "Cheap Handgun", cost: 230, slot: "weapon", type: "firearm", accuracy: -0.06, damage: [14, 24], heat: 2, description: "Affordable stopping power with unreliable aim." },
-    { id: "reliable_handgun", name: "Reliable Handgun", cost: 430, slot: "weapon", type: "firearm", accuracy: 0.08, damage: [18, 30], heat: 2, description: "Accurate, costly, and difficult to explain." },
-    { id: "protective_vest", name: "Protective Vest", cost: 300, slot: "armor", armor: 4, description: "Cuts incoming damage but marks you as prepared for trouble." },
-    { id: "running_shoes", name: "Running Shoes", cost: 160, slot: "utility", escape: 0.10, description: "A real advantage when the bag is not overloaded." },
-    { id: "medical_kit", name: "Medical Kit", cost: 95, slot: "consumable", heal: 24, description: "One use during an encounter or at the garage." },
-    { id: "larger_bag", name: "Larger Bag", cost: 260, slot: "gear", cargo: 5, description: "Five more carried units, with more weight to escape with." },
-    { id: "burner_phone", name: "Burner Phone", cost: 180, slot: "tool", call: true, description: "Unlocks selected warnings, calls, and remote coordination." },
-  ];
+  const { GEAR, BASE_UPGRADES, GEAR_BY_ID, LISTING_ITEMS, LISTING_ITEM_BY_ID } = require("./src/data/items.js");
 
-  const BASE_UPGRADES = [
-    { track: "security", level: 1, id: "better_locks", name: "Better Locks", cost: 140, description: "Protects stored goods from the first intrusion." },
-    { track: "security", level: 2, id: "camera_door", name: "Camera + Reinforced Door", cost: 360, description: "Reveals surveillance and changes raid choices." },
-    { track: "storage", level: 1, id: "hidden_compartment", name: "Hidden Compartment", cost: 120, description: "Adds protected product space and a small cash stash." },
-    { track: "storage", level: 2, id: "secure_lockbox", name: "Secure Lockbox", cost: 300, description: "Expands protected inventory and off-street cash." },
-    { track: "operations", level: 1, id: "burner_station", name: "Burner Station", cost: 180, description: "Improves coordination and unlocks crew assignments." },
-    { track: "operations", level: 2, id: "market_table", name: "Market Board + Packaging Table", cost: 420, description: "Improves rumors and opens harder supply lanes." },
-    { track: "recovery", level: 1, id: "first_aid_setup", name: "First-Aid Setup", cost: 150, description: "Makes garage recovery cheaper and safer." },
-    { track: "recovery", level: 2, id: "safe_room", name: "Safe Room + Medical Contact", cost: 380, description: "Protects one person and can prevent a fatal ending." },
-  ];
 
   // Capability flags drive UI/reducer behavior instead of person-ID checks,
   // so a new crew member's role determines what it can do without touching
   // Safehouse/Operations rendering logic.
-  const CREW = [
-    { id: "eli", name: "Eli ‘Shortcut’ Ward", role: "Runner", power: 3, recruitCost: 120, wage: 45, description: "Moves small bundles and knows service-road exits.",
-      canFieldAssign: true, canRunTerritory: true, lieutenantRole: "operations" },
-    { id: "pherris", name: "Pherris Dickens", role: "Connector / Territory Manager", power: 2, recruitCost: 180, wage: 60, description: "Turns a living Downtown contact list into buyers, rumors, and social control.",
-      canFieldAssign: true, canRunTerritory: true, lieutenantRole: null },
-    { id: "tone", name: "Anton ‘Tone’ Bell", role: "Enforcer / Lookout", power: 5, recruitCost: 250, wage: 85, description: "Protects the garage and changes confrontation choices.",
-      canFieldAssign: true, canRunTerritory: true, lieutenantRole: null },
-    { id: "deshawn", name: "Deshawn", role: "Fixer / Recruiter", power: 1, recruitCost: 100, wage: 50, description: "De-escalates conflicts, recruits through trust, and keeps Spenard talking.",
-      canFieldAssign: true, canRunTerritory: true, lieutenantRole: null },
-  ];
+  const { CREW, CREW_BY_ID, DEALERS, DEALER_BY_ID, PLUGS, PLUG_BY_ID, HOUSEHOLD_NPCS, NIGHT_OWL_REGULARS } = require("./src/data/npcs.js");
 
-  const TERRITORIES = [
-    { areaId: "north_star_lot", power: 12, attackCost: 100, dailyIncome: 45, special: "Recruitment costs 10% less." },
-    { areaId: "downtown", power: 18, attackCost: 150, dailyIncome: 75, special: "Cocaine access opens." },
-    { areaId: "airport_industrial", power: 24, attackCost: 200, dailyIncome: 110, special: "Meth access opens." },
-  ];
 
   // --- v1.0 Soldier / Territory / Lieutenant tunables -----------------------
   // Kept centralized so balance passes touch one block, not every call site.
@@ -206,21 +144,8 @@
   const DISTRICT_CONTROL_LABEL = "District Control";
   const DISTRICT_CONTROL_DISCOUNT_BONUS = 0.02; // stacks on top of the existing block-owner trade discount at Dominant+
 
-  const SPENARD_BLOCKS = [
-    { id: "wash_and_go_lot", name: "Wash & Go Lot", earningPotential: 55, heatExposure: 1, curtisVisibility: 1, patrolFrequency: 1, claimCost: 220 },
-    { id: "fourth_ave_strip", name: "Fourth Avenue Strip", earningPotential: 80, heatExposure: 2, curtisVisibility: 2, patrolFrequency: 2, claimCost: 320 },
-    { id: "minnesota_offramp", name: "Minnesota Off-Ramp", earningPotential: 65, heatExposure: 2, curtisVisibility: 1, patrolFrequency: 1, claimCost: 260 },
-    { id: "spenard_rec_lot", name: "Spenard Rec Center Lot", earningPotential: 45, heatExposure: 1, curtisVisibility: 0, patrolFrequency: 1, claimCost: 180 },
-    { id: "northern_lights_motels", name: "Northern Lights Motel Row", earningPotential: 100, heatExposure: 3, curtisVisibility: 3, patrolFrequency: 2, claimCost: 400 },
-    { id: "service_road_chokepoint", name: "Service Road Chokepoint", earningPotential: 70, heatExposure: 2, curtisVisibility: 2, patrolFrequency: 3, claimCost: 300 },
-  ];
 
-  const SPENARD_BLOCK_BY_ID = Object.fromEntries(SPENARD_BLOCKS.map((item) => [item.id, item]));
 
-  const PRODUCT_BY_ID = Object.fromEntries(PRODUCTS.map((item) => [item.id, item]));
-  const AREA_BY_ID = Object.fromEntries(NEIGHBORHOODS.map((item) => [item.id, item]));
-  const GEAR_BY_ID = Object.fromEntries(GEAR.map((item) => [item.id, item]));
-  const CREW_BY_ID = Object.fromEntries(CREW.map((item) => [item.id, item]));
 
   const BOOST_TARGETS = [
     { id: "night_owl", name: "Night Owl Mini-Mart", areaId: "north_star_lot", tier: 1, take: [15, 40] },
@@ -238,112 +163,9 @@
   ];
   const BOOST_TARGET_BY_ID = Object.fromEntries(BOOST_TARGETS.map((target) => [target.id, target]));
 
-  const JOB_RANK_THRESHOLDS = [4, 8, 14];
-  const JOB_APPROACHES = {
-    work_hard: { id: "work_hard", label: "Work Hard", xp: 2, relationship: 0.5, payMultiplier: 1.10, health: -2, description: "+10% pay · 2 XP · −2 Health" },
-    socialize: { id: "socialize", label: "Socialize", xp: 1, relationship: 1, payMultiplier: 1, health: 0, description: "+1 relationship · 1 XP" },
-    take_it_easy: { id: "take_it_easy", label: "Take It Easy", xp: 0, relationship: 0.5, payMultiplier: 1, health: 1, description: "+1 Health · no XP" },
-    learn_job: { id: "learn_job", label: "Learn the Job", xp: 1.5, relationship: 0.5, payMultiplier: 1, health: 0, description: "1.5 XP · learn one workplace detail" },
-  };
-  const SPENARD_JOBS = [
-    {
-      id: "wash_go", name: "Wash & Go Attendant", areaId: HOME_DISTRICT_ID, pay: [40, 60], slots: [0, 1, 2, 3], scheduled: true, risk: "None",
-      starter: true,
-      coworkers: [
-        { id: "lena", name: "Lena Aguchak", introduction: "Lena Aguchak shows you the towel shelves, then points out which machines shake during the spin cycle." },
-        { id: "andre", name: "Andre Price", introduction: "Andre Price slides you the spare key and shows you how to reset the change machine without calling the owner." },
-      ],
-      discovery: "You notice a 'Help Wanted' sign taped to the Wash & Go window.",
-      details: ["Lena says the quiet hour starts after the school buses clear Spenard.", "The change machine jams when the temperature drops below zero."],
-      shiftDialogue: ["The dryers thump through another load while the counter stays steady.", "A line forms at the change machine. You keep it moving.", "Salt dries white across the floor. The last basket leaves clean."],
-    },
-    {
-      id: "spenard_chevron", name: "Spenard Chevron Clerk", areaId: HOME_DISTRICT_ID, pay: [48, 60], slots: [0, 1, 2, 3], scheduled: true, risk: "None", starter: true,
-      coworkers: [
-        { id: "tiana", name: "Tiana Cole", introduction: "Tiana Cole shows you the cigarette count and the camera angles behind the counter." },
-        { id: "owen", name: "Owen Park", introduction: "Owen Park hands you a register code and points toward the rush that follows every airport shift." },
-      ],
-      discovery: "A handwritten card at Spenard Chevron says the counter needs another reliable clerk.",
-      details: ["Tiana says the coffee rush lands before the pumps get busy.", "Owen keeps the snow shovel beside the freezer door."],
-      shiftDialogue: ["Pump numbers blink while you count change under the counter light.", "A cab line fills the lot. Coffee and fuel move together.", "The doors hiss open all shift. You keep the register square."],
-    },
-    {
-      id: "rebel_convenience", name: "Rebel Convenience Clerk", areaId: HOME_DISTRICT_ID, pay: [48, 60], slots: [0, 1, 2, 3], scheduled: true, risk: "None", starter: true,
-      coworkers: [
-        { id: "rochelle", name: "Rochelle King", introduction: "Rochelle King walks you through the cooler count and the stack of delivery slips." },
-        { id: "jae", name: "Jae Park", introduction: "Jae Park gives you the register drawer and shows you which regulars pay in exact change." },
-      ],
-      discovery: "Rebel Convenience has a counter opening posted beside the lottery display.",
-      details: ["Rochelle checks the cooler seals before every handoff.", "Jae says the late bus brings the cleanest rush."],
-      shiftDialogue: ["The cooler doors knock shut while the register keeps ringing.", "A delivery blocks one aisle. You clear boxes between customers.", "Lottery slips curl beside the till. Your drawer stays even."],
-    },
-    {
-      id: "northern_value", name: "Northern Value Floor Staff", areaId: HOME_DISTRICT_ID, pay: [48, 60], slots: [0, 1, 2], scheduled: true, risk: "None", starter: true,
-      coworkers: [
-        { id: "isaiah", name: "Isaiah Green", introduction: "Isaiah Green hands you a rolling rack and shows you how the floor gets reset before lunch." },
-        { id: "ana", name: "Ana Sosa", introduction: "Ana Sosa marks the sorting bins and points out the donations worth moving first." },
-      ],
-      discovery: "Northern Value needs floor staff. The paper application sits beside a row of winter coats.",
-      details: ["Isaiah saves the strongest hangers for heavy parkas.", "Ana says tool donations sell before they reach the back wall."],
-      shiftDialogue: ["Coats move from the rack before you finish tagging the next row.", "Donation carts crowd the back door. You sort a path through them.", "The floor clears by closing. One last rack rolls into place."],
-    },
-    {
-      id: "night_owl", name: "Night Owl counter shift", areaId: HOME_DISTRICT_ID, pay: [55, 75], slots: [2], scheduled: true, risk: "None",
-      coworkers: [{ id: "mina", name: "Mina Vale", introduction: "Mina points out the closing list, the regulars, and which register sticks. Then she hands you an apron." }],
-      discovery: "The Night Owl has a cardboard sign by the register: 'Counter help needed, evenings.'",
-      details: ["Mina says the coffee rush ends ten minutes after the last airport shift bus.", "The owner counts cigarettes before cash and checks the back door twice."],
-      shiftDialogue: ["The counter light catches every face that comes through after dusk.", "Coffee burns low while Mina counts the last cigarettes.", "The door keeps opening until the city finally settles."],
-    },
-    {
-      id: "delivery", name: "Delivery run", areaId: HOME_DISTRICT_ID, pay: [60, 120], slots: [0, 1, 2, 3], scheduled: false, risk: "None",
-      coworkers: [{ id: "minh", name: "Minh Tran", introduction: "Minh Tran keeps the courier route moving with two phones and a paper map." }],
-      discovery: "Guy loading a van on Spenard Road asks if you drive. Says he needs runners.",
-      details: ["Minh marks apartment entrances that stay clear when the snow berms narrow the road.", "The airport hotels accept deliveries fastest between housekeeping rounds."],
-      shiftDialogue: ["The route folds across Spenard and back before the next call lands.", "Hotel doors open, packages change hands, and the van keeps moving.", "Snow narrows the curb. You finish every stop without losing the route."],
-    },
-    {
-      id: "ship_creek", name: "Ship Creek Freight", areaId: HOME_DISTRICT_ID, pay: [110, 140], slots: [0], scheduled: true, risk: "None",
-      coworkers: [{ id: "marcus", name: "Marcus Bell", introduction: "Marcus Bell checks your gloves, points at the freight line, and says payday is at the door." }],
-      discovery: "Flyer stapled to a phone pole: 'FREIGHT HELP NEEDED. Same day pay. AM only.'",
-      details: ["Marcus says the first truck after sunrise is the one that decides whether the dock falls behind.", "The yard office keeps a short list of workers who show up before the gate opens."],
-      shiftDialogue: ["Pallets scrape concrete before the sun clears the yard.", "The first truck lands heavy. You keep the freight line moving.", "Cold metal bites through the gloves. The last load clears on time."],
-    },
-    {
-      id: "juan_warehouse", name: "Spenard Warehouse Dock", areaId: HOME_DISTRICT_ID, pay: [70, 95], slots: [0, 1], scheduled: true, risk: "None",
-      coworkers: [{ id: "juan", name: "Juan Hernandez", introduction: "Juan Hernandez meets you at the loading door and shows you which pallets move first." }],
-      discovery: "Juan says his warehouse dock needs another loader.",
-      details: ["Juan says the receiving truck is easiest before lunch.", "The dock supervisor keeps callbacks short and notices early arrivals."],
-      shiftDialogue: ["Pallet wrap snaps while the loading door rattles open.", "Juan calls the order and you keep the dock moving.", "The last pallet lands square before the truck pulls away."],
-    },
-    {
-      id: "day_labor", name: "Day Labor Pickup", areaId: HOME_DISTRICT_ID, pay: [40, 60], slots: [0, 1], scheduled: true, risk: "None", dayLabor: true,
-      coworkers: [], discovery: "The day-labor pickup takes walk-ons every morning.", details: [],
-      shiftDialogue: ["You shovel, haul, and take the cash when the truck returns.", "A short crew clears the job before the weather turns.", "The foreman counts bills into your palm at the curb."],
-    },
-  ];
-  const SPENARD_JOB_BY_ID = Object.fromEntries(SPENARD_JOBS.map((job) => [job.id, job]));
-  const STARTER_JOB_IDS = SPENARD_JOBS.filter((job) => job.starter).map((job) => job.id);
+  const { JOB_RANK_THRESHOLDS, JOB_APPROACHES, SPENARD_JOBS, SPENARD_JOB_BY_ID, STARTER_JOB_IDS } = require("./src/data/jobs.js");
 
   const LISTING_CAPACITY = 3;
-  const LISTING_ITEMS = [
-    { id: "space_heater", name: "Space heater", buy: 25, resale: [45, 65] },
-    { id: "used_tv", name: "Used television", buy: 55, resale: [85, 120] },
-    { id: "dresser", name: "Solid dresser", buy: 40, resale: [65, 95] },
-    { id: "tool_set", name: "Mechanic tool set", buy: 70, resale: [100, 140] },
-    { id: "snow_tires", name: "Set of snow tires", buy: 80, resale: [120, 160] },
-    { id: "shop_vac", name: "Shop vacuum", buy: 45, resale: [70, 100] },
-    { id: "winter_coat", name: "Winter coat bundle", buy: 35, resale: [55, 85] },
-    { id: "camp_stove", name: "Camp stove", buy: 60, resale: [90, 125] },
-  ];
-  const LISTING_ITEM_BY_ID = Object.fromEntries(LISTING_ITEMS.map((item) => [item.id, item]));
-  const NIGHT_OWL_REGULARS = [
-    { id: "cal", name: "Cal Brooks", role: "The loud regular", hint: "Cal talks like every room is already listening." },
-    { id: "nia", name: "Nia Park", role: "The quiet courier", hint: "Nia keeps route notes folded inside a paperback." },
-  ];
-  const HOUSEHOLD_NPCS = [
-    { id: "yalonda", name: "Yalonda Hernandez", role: "Landlord", location: "home", startsKnown: true, hint: "She rents the spare room weekly and keeps the house steady." },
-    { id: "juan", name: "Juan Hernandez", role: "Yalonda's son", location: "home", startsKnown: true, hint: "He works a warehouse loading dock and knows who is hiring." },
-  ];
   const NIGHT_OWL_BOARD = [
     { id: "jobs", title: "Help wanted", body: "Two counters need reliable hands this week." },
     { id: "list", title: "907List", body: "Buy it cheap. Clean it up. Find the next buyer." },
@@ -897,134 +719,7 @@
   // so a menu reads as a corner rather than a form. Keyed by neighborhood and
   // part of day. Nothing here is state, nothing here is a hint, and nothing
   // here writes anything back.
-  const AMBIENT_FLAVOR = {
-    north_star_lot: {
-      0: [
-        "A bus rattles past on Spenard Road.",
-        "Somebody scrapes frost off a windshield with a debit card.",
-        "The laundromat sign flickers on, an hour late.",
-        "Two crows work over a dropped bag of fries.",
-        "A man in a Carhartt jacket counts change on the curb.",
-        "Steam off a grate. The smell of somebody else's breakfast.",
-        "A truck idles outside the pawn shop with nobody in it.",
-        "The light at Thirty-Sixth stays red a long time.",
-      ],
-      1: [
-        "Kids cut through the lot behind the strip mall.",
-        "A woman argues into her phone by the ice machine.",
-        "Sun comes off the wet asphalt hard enough to squint.",
-        "Somebody's car alarm goes off down the block. Nobody flinches.",
-        "The barber props his door open with a paint can.",
-        "A flatbed rolls by carrying a snowmachine in July.",
-        "Two guys shake hands too long outside the check cashing place.",
-        "A shopping cart sits upright in the middle of the lot.",
-      ],
-      2: [
-        "Neon comes on above the bar before the sun is done.",
-        "A dog barks itself hoarse behind a chain link fence.",
-        "Somebody is grilling in a parking space.",
-        "The bus shelter glass has a new crack in it.",
-        "Music from a passing car, one bar of it, then gone.",
-        "A woman waits by the payphone that has not worked in years.",
-        "Somebody sweeps the same square of sidewalk twice.",
-        "The liquor store door chimes and keeps chiming.",
-      ],
-      3: [
-        "The Night Owl sign hums over an empty lot.",
-        "A cab idles at the corner with its light off.",
-        "Somebody laughs two blocks over. It carries.",
-        "Frost on the hoods already, and it is not even late.",
-        "A window upstairs goes dark, then comes back on.",
-        "Tires on wet road, going too fast for the corner.",
-        "The dumpster lid drops and echoes off the buildings.",
-        "Somebody is asleep in a parked car with the engine running.",
-      ],
-    },
-    downtown: {
-      0: [
-        "Delivery trucks stack up on Fourth Ave.",
-        "A tour bus unloads people in brand new rain jackets.",
-        "Somebody hoses off the sidewalk in front of a hotel.",
-        "Office windows catch the light all the way up.",
-        "A street sweeper takes the whole lane and nobody passes it.",
-        "Coffee cups in every hand at the crosswalk.",
-        "The gift shop rolls its shutter up on carved bears.",
-        "Gulls work the trash cans by the transit center.",
-      ],
-      1: [
-        "Construction noise on Fourth. Nothing else pulls.",
-        "Suits eat lunch on a low concrete wall.",
-        "A guy with a cardboard sign works the light patiently.",
-        "Somebody films the mountains with their phone held sideways.",
-        "The parking garage gate sticks halfway and somebody swears.",
-        "A courier chains a bike to a sign that says no bikes.",
-        "Shadows come off the towers and cut the street in half.",
-        "Two cops stand talking outside a coffee place, unhurried.",
-      ],
-      2: [
-        "Bar doors open and the noise comes out in a slab.",
-        "Somebody in a wedding dress crosses against the light.",
-        "The hotel valet stand fills up with idling SUVs.",
-        "A busker packs a guitar into a case lined with dollars.",
-        "Windows go orange floor by floor as the sun drops.",
-        "Somebody hands out flyers nobody takes.",
-        "The smell of fryer oil from a place with no sign.",
-        "A pedicab driver waits, one foot up on the curb.",
-      ],
-      3: [
-        "Downtown at this hour belongs to the bar crowd.",
-        "A squad car rolls slow past the same block twice.",
-        "Somebody sits on the curb holding their own shoes.",
-        "The transit center is locked and lit and empty.",
-        "Glass in the gutter catches the streetlight.",
-        "Two guys square up outside a club and then do not.",
-        "A cleaner runs a vacuum past a dark lobby window.",
-        "The last bus pulls out with three people on it.",
-      ],
-    },
-    airport_industrial: {
-      0: [
-        "A cargo plane comes in low enough to feel.",
-        "Forklifts working somewhere behind a fence.",
-        "Frost on the gravel where the trucks have not been yet.",
-        "A gate rolls open on a yard full of containers.",
-        "Somebody in a vest waves a semi backward.",
-        "Diesel and cold air. The road out here has no curb.",
-        "A pallet jack squeals across a loading dock.",
-        "Two men drink coffee on the bumper of a box truck.",
-      ],
-      1: [
-        "Belly of a jet passes over the service road.",
-        "A yard dog barks at every truck and means none of it.",
-        "Somebody eats lunch sitting in an open trailer.",
-        "Heat shimmer off a hundred yards of parked semis.",
-        "The scale house window slides open and shut.",
-        "A radio plays country from inside a warehouse.",
-        "Tarps snap on a flatbed in the crosswind.",
-        "Nothing out here has a sidewalk or needs one.",
-      ],
-      2: [
-        "Sodium lights come on over the freight yards.",
-        "A shift lets out and the lot empties in ten minutes.",
-        "Somebody chains a gate and tests it twice.",
-        "Landing lights stack up in a line toward the runway.",
-        "The last truck of the day pulls out heavy.",
-        "A security pickup idles with its parking lights on.",
-        "Wind comes off the inlet with nothing to stop it.",
-        "Cigarette smoke by a door marked no entry.",
-      ],
-      3: [
-        "Between the lights out here, the dark is total.",
-        "A conveyor runs somewhere with nobody watching it.",
-        "Headlights sweep a fence and keep going.",
-        "The cold gets into the gravel and comes back up.",
-        "A hangar door stands open on nothing.",
-        "Something metal moves in the wind, over and over.",
-        "One window lit in a building the size of a block.",
-        "The road out is the road in. Nobody is on it.",
-      ],
-    },
-  };
+  const { AMBIENT_FLAVOR, ENTITY_REGISTRY, ENTITY_MATCH_ORDER, EVENT_FLAVOR, EVENT_CONTEXT } = require("./src/events/registry.js");
 
   // The pool for where the player is standing and what part of day it is.
   // Falls back to Spenard so a new neighborhood never renders an empty bar.
@@ -1212,16 +907,6 @@
 
   // Goodie runs a corner rather than a market stall: the same person can be bought
   // from, asked for word, or robbed, and he remembers which one you picked.
-  const DEALERS = [
-    { id: "goodie", name: "Goodie", where: "the Wash & Go lot on Spenard Road", areaId: "north_star_lot", products: ["weed", "shrooms"] },
-  ];
-  const DEALER_BY_ID = Object.fromEntries(DEALERS.map((item) => [item.id, item]));
-  const PLUGS = [
-    { id: "goodie", name: "Goodie", products: [{ id: "weed", standing: 0 }, { id: "shrooms", standing: 2 }], priceModifier: 1, maxUnits: 3, introducesNext: "tasha" },
-    { id: "tasha", name: "Tasha", products: [{ id: "pills", standing: 0 }, { id: "lean", standing: 0 }], priceModifier: 0.90, maxUnits: 5, introducesNext: "malik" },
-    { id: "malik", name: "Malik", products: [{ id: "coke", standing: 0 }, { id: "molly", standing: 0 }], priceModifier: 0.82, maxUnits: 8, introducesNext: null, bulkStanding: 3 },
-  ];
-  const PLUG_BY_ID = Object.fromEntries(PLUGS.map((plug) => [plug.id, plug]));
   function createPlugState() {
     return {
       unlocked: [],
@@ -3116,144 +2801,11 @@
   //
   // `aliases` are matched longest-first with word boundaries, so "Curtis Foyer"
   // wins over "Curtis" and a name inside another word never matches.
-  const ENTITY_REGISTRY = {
-    dre: { id: "dre", name: "Dre", kind: "person", title: "Dre Smooth", aliases: ["Dre Smooth", "Dre"],
-      text: "A lender who approaches after you establish yourself. If you accept, $1,200 is due at the run's checkpoint. He names the terms once." },
-    yalonda: { id: "yalonda", name: "Yalonda", kind: "person", title: "Yalonda Hernandez", aliases: ["Yalonda Hernandez", "Yalonda"],
-      text: "Dominican, early forties, and the landlord of the spare room. The first week is free; every week after is cash." },
-    juan: { id: "juan", name: "Juan", kind: "person", title: "Juan Hernandez", aliases: ["Juan Hernandez", "Juan"],
-      text: "Yalonda's eighteen-year-old son. He loads a warehouse dock and turns ordinary workplace talk into useful names." },
-    mina: { id: "mina", name: "Mina", kind: "person", title: "Mina Vale", aliases: ["Mina Vale", "Mina"],
-      text: "Night Owl Mini-Mart clerk in Spenard. She is building an exit into a Ship Creek dispatch job, and public association with your operation would close it." },
-    curtis: { id: "curtis", name: "Curtis", kind: "person", title: "Curtis Foyer", aliases: ["Curtis Foyer", "Curtis"],
-      text: "Runs the established operation you are growing next to. Concrete exposure builds attention from zero to eight; respect changes what he offers once he notices." },
-    goodie: { id: "goodie", name: "Goodie", kind: "person", title: "Goodie", aliases: ["Goodie", "Goodie"],
-      text: "Dealer working a corner out of a gym bag at the Wash & Go. He sells once daily, shares reliable rumors with regulars, and never joins the field crew." },
-    eli: { id: "eli", name: "Eli", kind: "person", title: "Eli 'Shortcut' Ward", aliases: ["Eli Ward", "Eli"],
-      text: "Driver who knows the loading yards, the service roads, and which gates chain up at what hour. Promoted, he places and rotates soldiers for you." },
-    pherris: { id: "pherris", name: "Pherris", kind: "person", title: "Pherris Dickens", aliases: ["Pherris Dickens", "Pherris"],
-      text: "Connector working an aging Downtown list. She opens buyers and supply, and she prices access in ownership." },
-    simone: { id: "simone", name: "Simone", kind: "person", title: "Simone Hart", aliases: ["Simone Hart", "Simone"],
-      text: "Anchorage-born former hotel night auditor who built an independent worker-screening and protection network. Respecting her autonomy builds trust; poaching, threats, and leverage raise threat." },
-    tone: { id: "tone", name: "Tone", kind: "person", title: "Anton 'Tone' Bell", aliases: ["Anton Bell", "Tone"],
-      text: "Former security worker who lost his last job to Curtis's people. He protects the garage and changes how confrontations resolve." },
-    deshawn: { id: "deshawn", name: "Deshawn", kind: "person", title: "Deshawn", aliases: ["Deshawn"],
-      text: "He put your name in front of Goodie when you were nobody on this block. What your word is worth here runs through him." },
-    lena: { id: "lena", name: "Lena", kind: "person", title: "Lena Aguchak", aliases: ["Lena Aguchak", "Lena"],
-      text: "Late-forties Yup'ik manager at the Wash & Go. She is saving to turn years of cleaning work into a business of her own." },
-    minh: { id: "minh", name: "Minh", kind: "person", title: "Minh Tran", aliases: ["Minh Tran", "Minh"],
-      text: "Mid-thirties Vietnamese Alaskan dispatcher. He keeps a local courier route staffed with two phones, paper maps, and exact delivery windows." },
-    marcus: { id: "marcus", name: "Marcus", kind: "person", title: "Marcus Bell", aliases: ["Marcus Bell", "Marcus"],
-      text: "Early-forties Black Alaskan foreman at Ship Creek Freight. He remembers who arrives before the gate opens and pays at the loading-office door." },
-    spenard: { id: "spenard", name: "Spenard", kind: "place", title: "Spenard", aliases: ["Spenard Road", "Spenard"],
-      text: "Your home district. The Night Owl, North Star Garage, and the Wash & Go all sit on this stretch, and Curtis watches all three." },
-    north_star: { id: "north_star", name: "North Star Garage", kind: "place", title: "North Star Garage", aliases: ["North Star Garage", "North Star"],
-      text: "The garage you can lease as a base. It holds stored product and protected cash, and it unlocks crew assignments and safehouse upgrades." },
-    night_owl: { id: "night_owl", name: "Night Owl", kind: "place", title: "Night Owl Mini-Mart", aliases: ["Night Owl Mini-Mart", "Night Owl"],
-      text: "The corner mini-mart where Mina works and Dre collects. Business done in this lot lands on her shift." },
-    wash_go: { id: "wash_go", name: "Wash & Go", kind: "place", title: "The Wash & Go", aliases: ["Wash & Go"],
-      text: "Laundromat lot on Spenard Road. Goodie runs the block's nearest supply from it, and the dryer vents are the only warm air on the street." },
-    downtown: { id: "downtown", name: "Downtown", kind: "place", title: "Downtown", aliases: ["Downtown"],
-      text: "Highest prices and highest police attention. Pherris's list lives here, and so does Curtis's exit lane." },
-    ship_creek: { id: "ship_creek", name: "Ship Creek", kind: "place", title: "Ship Creek Freight", aliases: ["Ship Creek"],
-      text: "Freight dock hiring dispatch and night unload work. It pays cash the same shift and writes nothing down." },
-    industrial: { id: "industrial", name: "Industrial Service Roads", kind: "place", title: "Industrial Service Roads", aliases: ["Industrial Service Roads", "Industrial"],
-      text: "Loading bays and unlit service roads by the airport. Cheap weight moves here, and so does everyone who wants to catch you carrying it." },
-  };
-  const ENTITY_MATCH_ORDER = Object.values(ENTITY_REGISTRY)
-    .flatMap((entity) => entity.aliases.map((alias) => ({ alias, id: entity.id })))
-    .sort((a, b) => b.alias.length - a.alias.length);
 
   // Situational backstory cut from each collapsed description. Rendered behind
   // the "More" toggle. Events with several description variants pass their own
   // flavor positionally instead of reading this table.
-  const EVENT_FLAVOR = {
-    mina_intro: "The heater clicks louder than the drink cooler. You study the coffee machine without pretending you know the routine. She watched from behind the register a little longer than professionalism requires.",
-    eli_offer: "He waits outside the garage with an impound notice folded into his jacket, the crease worn soft from being taken out and put back. He has clearly rehearsed that last sentence.",
-    eli_callback: "He comes up beside the garage without knocking, which is new. He wanted you to hear about the other driver from him first. Repeating his terms word for word is how he shows the price has not moved.",
-    pherris_offer: "She took the corner booth Downtown before you arrived and ordered for both of you, which tells you how the conversation is going to go.",
-    tone_offer: "He stands under the broken security light, far enough back that he is out of the doorway. He leaves the part about Curtis for last.",
-    mina_shift_change: "The heater ticks over the door. The owner drinks his coffee here every Thursday and knows every face on this block. On this street a name is the first thing anyone trades.",
-    mina_invitation: "She is outside when you come around the corner, coat already on. The lot's sodium light makes the slush look orange. She is asking what you can build in four hours, on foot, in Spenard.",
-    mina_boundary: "She meets you behind the store with the keys already in her hand and the lights already off. \"I am not asking you to fix it,\" she says first. She wants enough information to decide for herself.",
-    courier: "He is conscious and saying nothing at all. Drivers who slow down instead of speeding up have already been told where to stop.",
-    dre_after_payoff: "He counts the final stack across the hood and it comes out right. Staying afterward is new. He lays the options out like a man reading from a menu he wrote himself.",
-    base_watch: "In this weather a running engine means somebody is sitting in the car rather than watching from somewhere warm. Being obvious appears to be the point of it.",
-    crew_crisis: "The message carries no name, no explanation, and no request. The phone vibrates itself half off the garage table. Six is when the booking desk changes hands and the price of quiet goes up.",
-    buyer_hurry: "The hurry is his. Two customers wait by the door for the cigarette line to clear. This is Mina's lot, and her shift is the reason anyone here recognizes you.",
-    checkpoint: "Orange cones and a tow truck sit at the head of the lane. The officer looks inside nothing. He taps, moves on, and taps the next one.",
-    curtis_cut: "The angle of the car is deliberate. He is unhurried about all of it, and the line of vehicles behind you does the pressuring for him.",
-    rough_night: "They let the arithmetic happen on its own, which is most of the work. Silence costs them nothing and buys them the first move.",
-    dre_warning: "He parks with the engine off and hurries neither count. He never comments on the amount. Handing money back is worse than being short, and he knows it.",
-    eli_missed_turn: "He took a lap around the freight yard before circling back in from the other side. He is watching your face to learn whether you want a driver who thinks.",
-    eli_service_map: "It is drawn to no scale at all and it beats anything you could buy. The two crossings appear on no map because they are technically somebody's parking lot. He has never shown it to anyone.",
-    eli_last_run: "He asks it in the middle of a conversation about fuel prices, the way people ask questions they have been carrying around. He would rather find out now than in eight days.",
-    dre_terms: "The meeting is already arranged, and Dre still makes you read the paper again. \"People make it complicated after. Not me.\"",
-    dre_first_payment: "The back light is out again, so he counts by the glow of the open car door. He takes his time, and he keeps whatever he decided while counting.",
-    curtis_mark: "Same wall, same spot, different hand. Whatever the tag says now, it is not what it said on Monday. Nobody has spoken to you directly, which is how this stage of Curtis's attention works.",
-    curtis_tax: "He is unhurried and entirely unthreatening, and he stands close enough that the two people at the corner hear none of the words. A number set low is a number set to end the argument early.",
-    goodie_corner_intro: "The vents push warm lint-smelling air across the lot, the only warm thing on this stretch of road. Lifting his chin instead of looking away is an opening he can still take back.",
-    goodie_recognized: "Four people have already given him their version. He wants yours from you. Calm is worse than angry, because calm means he has already finished the arithmetic.",
-    wet_bricks: "He is not the man who packed it. The seals look intact. Some of them look intact. He will not be here tomorrow to discuss the difference.",
-    door_knock: "A plow berm blocks the walk behind the second officer, so the stairs are the only way down. Whatever is in the unit with you is on a clock now.",
-    stranded_wagon: "The hood has been up long enough that she has stopped expecting anything. She waves the way people wave after forty cars have already gone past.",
-    found_phone: "Face-down, still warm, left in a hurry at the transit shelter on Fourth Avenue. Six days of somebody's schedule sits in your hand, and somebody wants it back before you finish reading.",
-    careful_customer: "Nobody else in the line looks at either of you, which is its own kind of information. People who buy here watch a sale happen. These people watch something else.",
-    dock_shift: "He stands in the door light while the wind comes up the channel hard enough to swing the sodium lamps on their arms. It is honest work, and it pays the way honest work pays.",
-    garage_furnace: "The answering machine on the sticker does not say when anyone calls back. Six hours of Anchorage winter against a cold wall decides how much of the stock still sells.",
-    sedan_rumor: "The story reaches you third-hand and improves on the way. The person telling you did not see it. The person who told them did not see it either.",
-    midtown_lights: "The queue crawls at ten miles an hour on the Seward Highway at Thirty-Sixth. A collision closes lanes and gathers uniforms in one place for an hour at a time.",
-    eli_lieutenant_offer: "He leans against the bay door while he says it. \"Routes are fine\" is his opening line, which is how he tells you he has outgrown them.",
-    spenard_block_scouted: "The dates matter more than the circles. Three colors of ink mean three passes on foot, at different hours, across more than one week.",
-    curtis_respect_notice: "The word reaches you secondhand, the way it always does. Respect and pressure are separate accounts with Curtis, and this one just moved.",
-    soldier_raid_aftermath: "The regular buyers work it out on the spot, on the sidewalk, in front of each other. That decision gets made once and then it holds.",
-  };
 
-  const EVENT_CONTEXT = {
-    mina_intro: { who: "Mina Vale, the Night Owl clerk meeting you for the first time", where: "Night Owl Mini-Mart, Spenard", stakes: "Choose the tone of a first conversation with someone who has no prior history with you." },
-    eli_offer: { who: "Eli Ward, a local driver looking for work", where: "Outside North Star Garage, Spenard", stakes: "Decide whether Eli gets a test route, only shares road information, or remembers being turned away." },
-    eli_callback: { who: "Eli Ward, still working the service roads", where: "North Star Garage, Spenard", stakes: "Reopen the door to a test route or confirm that Eli should look elsewhere." },
-    pherris_offer: { who: "Pherris Cole, a connected supplier", where: "Downtown corner booth", stakes: "Supplier access, loyalty, and how much ownership you are willing to share." },
-    tone_offer: { who: "Anton Bell, a former security worker", where: "North Star Garage", stakes: "Protection against Curtis at the cost of another wage." },
-    mina_shift_change: { who: "Mina Vale, twenty minutes past close", where: "Night Owl Mini-Mart, Spenard", stakes: "Mina is building an exit that public association with your operation would close. How much you tell her sets the terms." },
-    mina_invitation: { who: "Mina, off shift early and without a car", where: "The Night Owl lot, Spenard", stakes: "Four hours away from the block, or four hours she spends near your operation. Both cost time." },
-    mina_boundary: { who: "Mina and the question a customer left behind", where: "Behind the Night Owl after closing", stakes: "Her job, her consent, and whether she gets to decide with accurate information." },
-    mina_after: { who: "Mina, at the end of your week and the start of hers", where: "Night Owl Mini-Mart, Spenard", stakes: "What the week cost her, and what is left to say about it." },
-    eli_missed_turn: { who: "Eli Ward, back an hour later than the route allows", where: "North Star Garage, Spenard", stakes: "Whether you want a driver who thinks, or one who does what the clock says." },
-    eli_service_map: { who: "Eli and a map he drew himself", where: "Passenger seat outside North Star Garage", stakes: "Route knowledge nobody else on this block has, and what he wants for it." },
-    eli_last_run: { who: "Eli, asking a rehearsed question", where: "North Star Garage, Spenard", stakes: "Whether the operation has a place for him after the checkpoint." },
-    dre_terms: { who: "Dre Smooth and one folded sheet of paper", where: "Behind the Night Owl Mini-Mart", stakes: "The amount, the date, and what he expects between now and then." },
-    dre_first_payment: { who: "Dre, counting the first money you have brought him", where: "Behind the Night Owl Mini-Mart", stakes: "The shape of the rest of the week's arrangement." },
-    dre_due_day: { who: "Dre on the day the note comes due", where: "Behind the Night Owl Mini-Mart", stakes: "What happens to the balance, and to his patience." },
-    dre_day7: { who: "Dre, closing the week's account", where: "Behind the Night Owl Mini-Mart", stakes: "What your name is worth to him after seven days." },
-    curtis_mark: { who: "Curtis's people, working through somebody else", where: "Your usual corner", stakes: "Confirmation that you are being watched, and by whom." },
-    curtis_tax: { who: "Curtis Foyer, in person, which is the message", where: "The Downtown exit lane", stakes: "A cut, a favor, or a public no." },
-    curtis_day7: { who: "Curtis, deciding what you were", where: "Wherever he finds you at the checkpoint", stakes: "Whether the pressure phase ends as a partnership, a truce, or a problem." },
-    goodie_corner_intro: { who: "Goodie, running a corner out of a gym bag", where: "The Wash & Go lot, Spenard Road", stakes: "Whether the block's nearest supply becomes a contact, a mark, or neither." },
-    goodie_recognized: { who: "Deshawn, who vouched for you before you robbed Goodie", where: "Outside the Wash & Go, Spenard", stakes: "What your word is worth on the block after you spent it." },
-    wet_bricks: { who: "A driver unstrapping someone else's mistake", where: "Loading Bay Seven, Industrial Service Roads", stakes: "Cheap weight of unverified condition, and a seller who will not be here tomorrow." },
-    door_knock: { who: "Two APD officers working the row", where: "The fourplex two doors from North Star Garage", stakes: "What is in the unit with you, and how long the knocking takes to reach this door." },
-    stranded_wagon: { who: "A woman with two kids and a dead battery", where: "The Minnesota Drive off-ramp shoulder", stakes: "Twenty minutes of your week against a stranger's night." },
-    found_phone: { who: "Whoever left it, and whoever keeps calling it", where: "The transit shelter on Fourth Avenue", stakes: "Six days of somebody's pickup schedule, and whether you take it." },
-    careful_customer: { who: "A buyer asking better questions than he should", where: "The corner you are standing on", stakes: "One sale, and who hears about it afterward." },
-    dock_shift: { who: "A foreman short two people on a night unload", where: "Ship Creek freight dock", stakes: "Four hours you do not have, for money nobody writes down." },
-    garage_furnace: { who: "The garage, and everything stored along the cold wall", where: "North Star Garage, back bay", stakes: "A repair bill, an afternoon, or whatever six hours of outside temperature did to the stock." },
-    sedan_rumor: { who: "Somebody's cousin, two conversations removed", where: "Wherever you happened to be standing", stakes: "A story nobody has confirmed, and what you are willing to spend on it." },
-    midtown_lights: { who: "Four cruisers and a closed left lane", where: "The Seward Highway at Thirty-Sixth", stakes: "Half a mile at walking speed in front of every officer in Midtown." },
-    courier: { who: "An injured courier and approaching drivers", where: "Industrial Service Roads, Bay Twelve", stakes: "Cash, Heat, and who controls the courier's route information." },
-    dre_after_payoff: { who: "Dre Smooth", where: "Behind the Mini-Mart", stakes: "A new debt, premium supply access, or independence." },
-    base_watch: { who: "Curtis's watcher and a possible plainclothes officer", where: "Across from North Star Garage", stakes: "Your stored operation and whether the watcher identifies its value." },
-    crew_crisis: { who: "A jailed crew member and APD", where: "North Star Garage burner line", stakes: "$180 or the loyalty of everyone working for you." },
-    buyer_hurry: { who: "A hurried buyer, Mina, and an observer", where: "Mini-Mart parking lot", stakes: "Fast cash against Heat and exposure near Mina's job." },
-    checkpoint: { who: "APD officers and a tow driver", where: "Airport service road", stakes: "$90 or a risky inspection of your vehicle and cargo." },
-    curtis_cut: { who: "Curtis's driver", where: "Downtown exit lane", stakes: "$120, physical injury, and Curtis's respect." },
-    rough_night: { who: "Three people tied to Curtis", where: "Industrial Bay Nine", stakes: "$80 or a dangerous attempt to hold your ground." },
-    dre_warning: { who: "Dre Smooth", where: "Behind the Mini-Mart", stakes: "Dre's patience and the pressure attached to the unpaid balance." },
-    eli_lieutenant_offer: { who: "Eli Ward, with a second phone in his jacket", where: "North Star Garage, Spenard", stakes: "Whether Eli starts running soldiers and corners instead of only routes." },
-    spenard_block_scouted: { who: "Eli, with a hand-marked map of Spenard", where: "North Star Garage, Spenard", stakes: "Counted numbers on every block, in place of a guess." },
-    curtis_respect_notice: { who: "Word from two blocks over", where: "Spenard", stakes: "What Curtis thinks of an operation that is starting to look like his." },
-    soldier_raid_aftermath: { who: "The block, the morning after", where: "Spenard", stakes: "Nothing to decide here. Just what it cost." },
-  };
   function effectPreview(effect) {
     const parts = [];
     if (effect.cash) parts.push(`${effect.cash > 0 ? "+" : "−"}$${Math.abs(effect.cash)} cash`);

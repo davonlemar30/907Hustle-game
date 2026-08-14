@@ -596,6 +596,896 @@
     }
   });
 
+  // src/events/random.js
+  var require_random = __commonJS({
+    "src/events/random.js"(exports, module) {
+      function normalizeSeed(seed) {
+        const numeric = Number(seed);
+        const fallback = 151461926;
+        return (Number.isFinite(numeric) ? numeric : fallback) >>> 0 || fallback;
+      }
+      function stringHash(value) {
+        let hash = 2166136261;
+        for (const char of String(value || "")) {
+          hash ^= char.charCodeAt(0);
+          hash = Math.imul(hash, 16777619);
+        }
+        return hash >>> 0;
+      }
+      function makeRandom(seed) {
+        let value = normalizeSeed(seed);
+        return {
+          next() {
+            value ^= value << 13;
+            value ^= value >>> 17;
+            value ^= value << 5;
+            value >>>= 0;
+            return value / 4294967296;
+          },
+          int(min, max) {
+            return Math.floor(this.next() * (max - min + 1)) + min;
+          },
+          pick(items) {
+            return items[Math.floor(this.next() * items.length)];
+          },
+          get state() {
+            return value >>> 0;
+          }
+        };
+      }
+      function seededShuffle(items, seed, salt) {
+        const random = makeRandom(stringHash(`${normalizeSeed(seed)}:${normalizeSeed(salt)}`));
+        const out = items.slice();
+        for (let index = out.length - 1; index > 0; index -= 1) {
+          const swap = random.int(0, index);
+          [out[index], out[swap]] = [out[swap], out[index]];
+        }
+        return out;
+      }
+      module.exports = {
+        normalizeSeed,
+        stringHash,
+        makeRandom,
+        seededShuffle
+      };
+    }
+  });
+
+  // src/events/registry.js
+  var require_registry = __commonJS({
+    "src/events/registry.js"(exports, module) {
+      var AMBIENT_FLAVOR = {
+        north_star_lot: {
+          0: [
+            "A bus rattles past on Spenard Road.",
+            "Somebody scrapes frost off a windshield with a debit card.",
+            "The laundromat sign flickers on, an hour late.",
+            "Two crows work over a dropped bag of fries.",
+            "A man in a Carhartt jacket counts change on the curb.",
+            "Steam off a grate. The smell of somebody else's breakfast.",
+            "A truck idles outside the pawn shop with nobody in it.",
+            "The light at Thirty-Sixth stays red a long time."
+          ],
+          1: [
+            "Kids cut through the lot behind the strip mall.",
+            "A woman argues into her phone by the ice machine.",
+            "Sun comes off the wet asphalt hard enough to squint.",
+            "Somebody's car alarm goes off down the block. Nobody flinches.",
+            "The barber props his door open with a paint can.",
+            "A flatbed rolls by carrying a snowmachine in July.",
+            "Two guys shake hands too long outside the check cashing place.",
+            "A shopping cart sits upright in the middle of the lot."
+          ],
+          2: [
+            "Neon comes on above the bar before the sun is done.",
+            "A dog barks itself hoarse behind a chain link fence.",
+            "Somebody is grilling in a parking space.",
+            "The bus shelter glass has a new crack in it.",
+            "Music from a passing car, one bar of it, then gone.",
+            "A woman waits by the payphone that has not worked in years.",
+            "Somebody sweeps the same square of sidewalk twice.",
+            "The liquor store door chimes and keeps chiming."
+          ],
+          3: [
+            "The Night Owl sign hums over an empty lot.",
+            "A cab idles at the corner with its light off.",
+            "Somebody laughs two blocks over. It carries.",
+            "Frost on the hoods already, and it is not even late.",
+            "A window upstairs goes dark, then comes back on.",
+            "Tires on wet road, going too fast for the corner.",
+            "The dumpster lid drops and echoes off the buildings.",
+            "Somebody is asleep in a parked car with the engine running."
+          ]
+        },
+        downtown: {
+          0: [
+            "Delivery trucks stack up on Fourth Ave.",
+            "A tour bus unloads people in brand new rain jackets.",
+            "Somebody hoses off the sidewalk in front of a hotel.",
+            "Office windows catch the light all the way up.",
+            "A street sweeper takes the whole lane and nobody passes it.",
+            "Coffee cups in every hand at the crosswalk.",
+            "The gift shop rolls its shutter up on carved bears.",
+            "Gulls work the trash cans by the transit center."
+          ],
+          1: [
+            "Construction noise on Fourth. Nothing else pulls.",
+            "Suits eat lunch on a low concrete wall.",
+            "A guy with a cardboard sign works the light patiently.",
+            "Somebody films the mountains with their phone held sideways.",
+            "The parking garage gate sticks halfway and somebody swears.",
+            "A courier chains a bike to a sign that says no bikes.",
+            "Shadows come off the towers and cut the street in half.",
+            "Two cops stand talking outside a coffee place, unhurried."
+          ],
+          2: [
+            "Bar doors open and the noise comes out in a slab.",
+            "Somebody in a wedding dress crosses against the light.",
+            "The hotel valet stand fills up with idling SUVs.",
+            "A busker packs a guitar into a case lined with dollars.",
+            "Windows go orange floor by floor as the sun drops.",
+            "Somebody hands out flyers nobody takes.",
+            "The smell of fryer oil from a place with no sign.",
+            "A pedicab driver waits, one foot up on the curb."
+          ],
+          3: [
+            "Downtown at this hour belongs to the bar crowd.",
+            "A squad car rolls slow past the same block twice.",
+            "Somebody sits on the curb holding their own shoes.",
+            "The transit center is locked and lit and empty.",
+            "Glass in the gutter catches the streetlight.",
+            "Two guys square up outside a club and then do not.",
+            "A cleaner runs a vacuum past a dark lobby window.",
+            "The last bus pulls out with three people on it."
+          ]
+        },
+        airport_industrial: {
+          0: [
+            "A cargo plane comes in low enough to feel.",
+            "Forklifts working somewhere behind a fence.",
+            "Frost on the gravel where the trucks have not been yet.",
+            "A gate rolls open on a yard full of containers.",
+            "Somebody in a vest waves a semi backward.",
+            "Diesel and cold air. The road out here has no curb.",
+            "A pallet jack squeals across a loading dock.",
+            "Two men drink coffee on the bumper of a box truck."
+          ],
+          1: [
+            "Belly of a jet passes over the service road.",
+            "A yard dog barks at every truck and means none of it.",
+            "Somebody eats lunch sitting in an open trailer.",
+            "Heat shimmer off a hundred yards of parked semis.",
+            "The scale house window slides open and shut.",
+            "A radio plays country from inside a warehouse.",
+            "Tarps snap on a flatbed in the crosswind.",
+            "Nothing out here has a sidewalk or needs one."
+          ],
+          2: [
+            "Sodium lights come on over the freight yards.",
+            "A shift lets out and the lot empties in ten minutes.",
+            "Somebody chains a gate and tests it twice.",
+            "Landing lights stack up in a line toward the runway.",
+            "The last truck of the day pulls out heavy.",
+            "A security pickup idles with its parking lights on.",
+            "Wind comes off the inlet with nothing to stop it.",
+            "Cigarette smoke by a door marked no entry."
+          ],
+          3: [
+            "Between the lights out here, the dark is total.",
+            "A conveyor runs somewhere with nobody watching it.",
+            "Headlights sweep a fence and keep going.",
+            "The cold gets into the gravel and comes back up.",
+            "A hangar door stands open on nothing.",
+            "Something metal moves in the wind, over and over.",
+            "One window lit in a building the size of a block.",
+            "The road out is the road in. Nobody is on it."
+          ]
+        }
+      };
+      var ENTITY_REGISTRY = {
+        dre: {
+          id: "dre",
+          name: "Dre",
+          kind: "person",
+          title: "Dre Smooth",
+          aliases: ["Dre Smooth", "Dre"],
+          text: "A lender who approaches after you establish yourself. If you accept, $1,200 is due at the run's checkpoint. He names the terms once."
+        },
+        yalonda: {
+          id: "yalonda",
+          name: "Yalonda",
+          kind: "person",
+          title: "Yalonda Hernandez",
+          aliases: ["Yalonda Hernandez", "Yalonda"],
+          text: "Dominican, early forties, and the landlord of the spare room. The first week is free; every week after is cash."
+        },
+        juan: {
+          id: "juan",
+          name: "Juan",
+          kind: "person",
+          title: "Juan Hernandez",
+          aliases: ["Juan Hernandez", "Juan"],
+          text: "Yalonda's eighteen-year-old son. He loads a warehouse dock and turns ordinary workplace talk into useful names."
+        },
+        mina: {
+          id: "mina",
+          name: "Mina",
+          kind: "person",
+          title: "Mina Vale",
+          aliases: ["Mina Vale", "Mina"],
+          text: "Night Owl Mini-Mart clerk in Spenard. She is building an exit into a Ship Creek dispatch job, and public association with your operation would close it."
+        },
+        curtis: {
+          id: "curtis",
+          name: "Curtis",
+          kind: "person",
+          title: "Curtis Foyer",
+          aliases: ["Curtis Foyer", "Curtis"],
+          text: "Runs the established operation you are growing next to. Concrete exposure builds attention from zero to eight; respect changes what he offers once he notices."
+        },
+        goodie: {
+          id: "goodie",
+          name: "Goodie",
+          kind: "person",
+          title: "Goodie",
+          aliases: ["Goodie", "Goodie"],
+          text: "Dealer working a corner out of a gym bag at the Wash & Go. He sells once daily, shares reliable rumors with regulars, and never joins the field crew."
+        },
+        eli: {
+          id: "eli",
+          name: "Eli",
+          kind: "person",
+          title: "Eli 'Shortcut' Ward",
+          aliases: ["Eli Ward", "Eli"],
+          text: "Driver who knows the loading yards, the service roads, and which gates chain up at what hour. Promoted, he places and rotates soldiers for you."
+        },
+        pherris: {
+          id: "pherris",
+          name: "Pherris",
+          kind: "person",
+          title: "Pherris Dickens",
+          aliases: ["Pherris Dickens", "Pherris"],
+          text: "Connector working an aging Downtown list. She opens buyers and supply, and she prices access in ownership."
+        },
+        simone: {
+          id: "simone",
+          name: "Simone",
+          kind: "person",
+          title: "Simone Hart",
+          aliases: ["Simone Hart", "Simone"],
+          text: "Anchorage-born former hotel night auditor who built an independent worker-screening and protection network. Respecting her autonomy builds trust; poaching, threats, and leverage raise threat."
+        },
+        tone: {
+          id: "tone",
+          name: "Tone",
+          kind: "person",
+          title: "Anton 'Tone' Bell",
+          aliases: ["Anton Bell", "Tone"],
+          text: "Former security worker who lost his last job to Curtis's people. He protects the garage and changes how confrontations resolve."
+        },
+        deshawn: {
+          id: "deshawn",
+          name: "Deshawn",
+          kind: "person",
+          title: "Deshawn",
+          aliases: ["Deshawn"],
+          text: "He put your name in front of Goodie when you were nobody on this block. What your word is worth here runs through him."
+        },
+        lena: {
+          id: "lena",
+          name: "Lena",
+          kind: "person",
+          title: "Lena Aguchak",
+          aliases: ["Lena Aguchak", "Lena"],
+          text: "Late-forties Yup'ik manager at the Wash & Go. She is saving to turn years of cleaning work into a business of her own."
+        },
+        minh: {
+          id: "minh",
+          name: "Minh",
+          kind: "person",
+          title: "Minh Tran",
+          aliases: ["Minh Tran", "Minh"],
+          text: "Mid-thirties Vietnamese Alaskan dispatcher. He keeps a local courier route staffed with two phones, paper maps, and exact delivery windows."
+        },
+        marcus: {
+          id: "marcus",
+          name: "Marcus",
+          kind: "person",
+          title: "Marcus Bell",
+          aliases: ["Marcus Bell", "Marcus"],
+          text: "Early-forties Black Alaskan foreman at Ship Creek Freight. He remembers who arrives before the gate opens and pays at the loading-office door."
+        },
+        spenard: {
+          id: "spenard",
+          name: "Spenard",
+          kind: "place",
+          title: "Spenard",
+          aliases: ["Spenard Road", "Spenard"],
+          text: "Your home district. The Night Owl, North Star Garage, and the Wash & Go all sit on this stretch, and Curtis watches all three."
+        },
+        north_star: {
+          id: "north_star",
+          name: "North Star Garage",
+          kind: "place",
+          title: "North Star Garage",
+          aliases: ["North Star Garage", "North Star"],
+          text: "The garage you can lease as a base. It holds stored product and protected cash, and it unlocks crew assignments and safehouse upgrades."
+        },
+        night_owl: {
+          id: "night_owl",
+          name: "Night Owl",
+          kind: "place",
+          title: "Night Owl Mini-Mart",
+          aliases: ["Night Owl Mini-Mart", "Night Owl"],
+          text: "The corner mini-mart where Mina works and Dre collects. Business done in this lot lands on her shift."
+        },
+        wash_go: {
+          id: "wash_go",
+          name: "Wash & Go",
+          kind: "place",
+          title: "The Wash & Go",
+          aliases: ["Wash & Go"],
+          text: "Laundromat lot on Spenard Road. Goodie runs the block's nearest supply from it, and the dryer vents are the only warm air on the street."
+        },
+        downtown: {
+          id: "downtown",
+          name: "Downtown",
+          kind: "place",
+          title: "Downtown",
+          aliases: ["Downtown"],
+          text: "Highest prices and highest police attention. Pherris's list lives here, and so does Curtis's exit lane."
+        },
+        ship_creek: {
+          id: "ship_creek",
+          name: "Ship Creek",
+          kind: "place",
+          title: "Ship Creek Freight",
+          aliases: ["Ship Creek"],
+          text: "Freight dock hiring dispatch and night unload work. It pays cash the same shift and writes nothing down."
+        },
+        industrial: {
+          id: "industrial",
+          name: "Industrial Service Roads",
+          kind: "place",
+          title: "Industrial Service Roads",
+          aliases: ["Industrial Service Roads", "Industrial"],
+          text: "Loading bays and unlit service roads by the airport. Cheap weight moves here, and so does everyone who wants to catch you carrying it."
+        }
+      };
+      var ENTITY_MATCH_ORDER = Object.values(ENTITY_REGISTRY).flatMap((entity) => entity.aliases.map((alias) => ({ alias, id: entity.id }))).sort((a, b) => b.alias.length - a.alias.length);
+      var EVENT_FLAVOR = {
+        mina_intro: "The heater clicks louder than the drink cooler. You study the coffee machine without pretending you know the routine. She watched from behind the register a little longer than professionalism requires.",
+        eli_offer: "He waits outside the garage with an impound notice folded into his jacket, the crease worn soft from being taken out and put back. He has clearly rehearsed that last sentence.",
+        eli_callback: "He comes up beside the garage without knocking, which is new. He wanted you to hear about the other driver from him first. Repeating his terms word for word is how he shows the price has not moved.",
+        pherris_offer: "She took the corner booth Downtown before you arrived and ordered for both of you, which tells you how the conversation is going to go.",
+        tone_offer: "He stands under the broken security light, far enough back that he is out of the doorway. He leaves the part about Curtis for last.",
+        mina_shift_change: "The heater ticks over the door. The owner drinks his coffee here every Thursday and knows every face on this block. On this street a name is the first thing anyone trades.",
+        mina_invitation: "She is outside when you come around the corner, coat already on. The lot's sodium light makes the slush look orange. She is asking what you can build in four hours, on foot, in Spenard.",
+        mina_boundary: 'She meets you behind the store with the keys already in her hand and the lights already off. "I am not asking you to fix it," she says first. She wants enough information to decide for herself.',
+        courier: "He is conscious and saying nothing at all. Drivers who slow down instead of speeding up have already been told where to stop.",
+        dre_after_payoff: "He counts the final stack across the hood and it comes out right. Staying afterward is new. He lays the options out like a man reading from a menu he wrote himself.",
+        base_watch: "In this weather a running engine means somebody is sitting in the car rather than watching from somewhere warm. Being obvious appears to be the point of it.",
+        crew_crisis: "The message carries no name, no explanation, and no request. The phone vibrates itself half off the garage table. Six is when the booking desk changes hands and the price of quiet goes up.",
+        buyer_hurry: "The hurry is his. Two customers wait by the door for the cigarette line to clear. This is Mina's lot, and her shift is the reason anyone here recognizes you.",
+        checkpoint: "Orange cones and a tow truck sit at the head of the lane. The officer looks inside nothing. He taps, moves on, and taps the next one.",
+        curtis_cut: "The angle of the car is deliberate. He is unhurried about all of it, and the line of vehicles behind you does the pressuring for him.",
+        rough_night: "They let the arithmetic happen on its own, which is most of the work. Silence costs them nothing and buys them the first move.",
+        dre_warning: "He parks with the engine off and hurries neither count. He never comments on the amount. Handing money back is worse than being short, and he knows it.",
+        eli_missed_turn: "He took a lap around the freight yard before circling back in from the other side. He is watching your face to learn whether you want a driver who thinks.",
+        eli_service_map: "It is drawn to no scale at all and it beats anything you could buy. The two crossings appear on no map because they are technically somebody's parking lot. He has never shown it to anyone.",
+        eli_last_run: "He asks it in the middle of a conversation about fuel prices, the way people ask questions they have been carrying around. He would rather find out now than in eight days.",
+        dre_terms: 'The meeting is already arranged, and Dre still makes you read the paper again. "People make it complicated after. Not me."',
+        dre_first_payment: "The back light is out again, so he counts by the glow of the open car door. He takes his time, and he keeps whatever he decided while counting.",
+        curtis_mark: "Same wall, same spot, different hand. Whatever the tag says now, it is not what it said on Monday. Nobody has spoken to you directly, which is how this stage of Curtis's attention works.",
+        curtis_tax: "He is unhurried and entirely unthreatening, and he stands close enough that the two people at the corner hear none of the words. A number set low is a number set to end the argument early.",
+        goodie_corner_intro: "The vents push warm lint-smelling air across the lot, the only warm thing on this stretch of road. Lifting his chin instead of looking away is an opening he can still take back.",
+        goodie_recognized: "Four people have already given him their version. He wants yours from you. Calm is worse than angry, because calm means he has already finished the arithmetic.",
+        wet_bricks: "He is not the man who packed it. The seals look intact. Some of them look intact. He will not be here tomorrow to discuss the difference.",
+        door_knock: "A plow berm blocks the walk behind the second officer, so the stairs are the only way down. Whatever is in the unit with you is on a clock now.",
+        stranded_wagon: "The hood has been up long enough that she has stopped expecting anything. She waves the way people wave after forty cars have already gone past.",
+        found_phone: "Face-down, still warm, left in a hurry at the transit shelter on Fourth Avenue. Six days of somebody's schedule sits in your hand, and somebody wants it back before you finish reading.",
+        careful_customer: "Nobody else in the line looks at either of you, which is its own kind of information. People who buy here watch a sale happen. These people watch something else.",
+        dock_shift: "He stands in the door light while the wind comes up the channel hard enough to swing the sodium lamps on their arms. It is honest work, and it pays the way honest work pays.",
+        garage_furnace: "The answering machine on the sticker does not say when anyone calls back. Six hours of Anchorage winter against a cold wall decides how much of the stock still sells.",
+        sedan_rumor: "The story reaches you third-hand and improves on the way. The person telling you did not see it. The person who told them did not see it either.",
+        midtown_lights: "The queue crawls at ten miles an hour on the Seward Highway at Thirty-Sixth. A collision closes lanes and gathers uniforms in one place for an hour at a time.",
+        eli_lieutenant_offer: 'He leans against the bay door while he says it. "Routes are fine" is his opening line, which is how he tells you he has outgrown them.',
+        spenard_block_scouted: "The dates matter more than the circles. Three colors of ink mean three passes on foot, at different hours, across more than one week.",
+        curtis_respect_notice: "The word reaches you secondhand, the way it always does. Respect and pressure are separate accounts with Curtis, and this one just moved.",
+        soldier_raid_aftermath: "The regular buyers work it out on the spot, on the sidewalk, in front of each other. That decision gets made once and then it holds."
+      };
+      var EVENT_CONTEXT = {
+        mina_intro: { who: "Mina Vale, the Night Owl clerk meeting you for the first time", where: "Night Owl Mini-Mart, Spenard", stakes: "Choose the tone of a first conversation with someone who has no prior history with you." },
+        eli_offer: { who: "Eli Ward, a local driver looking for work", where: "Outside North Star Garage, Spenard", stakes: "Decide whether Eli gets a test route, only shares road information, or remembers being turned away." },
+        eli_callback: { who: "Eli Ward, still working the service roads", where: "North Star Garage, Spenard", stakes: "Reopen the door to a test route or confirm that Eli should look elsewhere." },
+        pherris_offer: { who: "Pherris Cole, a connected supplier", where: "Downtown corner booth", stakes: "Supplier access, loyalty, and how much ownership you are willing to share." },
+        tone_offer: { who: "Anton Bell, a former security worker", where: "North Star Garage", stakes: "Protection against Curtis at the cost of another wage." },
+        mina_shift_change: { who: "Mina Vale, twenty minutes past close", where: "Night Owl Mini-Mart, Spenard", stakes: "Mina is building an exit that public association with your operation would close. How much you tell her sets the terms." },
+        mina_invitation: { who: "Mina, off shift early and without a car", where: "The Night Owl lot, Spenard", stakes: "Four hours away from the block, or four hours she spends near your operation. Both cost time." },
+        mina_boundary: { who: "Mina and the question a customer left behind", where: "Behind the Night Owl after closing", stakes: "Her job, her consent, and whether she gets to decide with accurate information." },
+        mina_after: { who: "Mina, at the end of your week and the start of hers", where: "Night Owl Mini-Mart, Spenard", stakes: "What the week cost her, and what is left to say about it." },
+        eli_missed_turn: { who: "Eli Ward, back an hour later than the route allows", where: "North Star Garage, Spenard", stakes: "Whether you want a driver who thinks, or one who does what the clock says." },
+        eli_service_map: { who: "Eli and a map he drew himself", where: "Passenger seat outside North Star Garage", stakes: "Route knowledge nobody else on this block has, and what he wants for it." },
+        eli_last_run: { who: "Eli, asking a rehearsed question", where: "North Star Garage, Spenard", stakes: "Whether the operation has a place for him after the checkpoint." },
+        dre_terms: { who: "Dre Smooth and one folded sheet of paper", where: "Behind the Night Owl Mini-Mart", stakes: "The amount, the date, and what he expects between now and then." },
+        dre_first_payment: { who: "Dre, counting the first money you have brought him", where: "Behind the Night Owl Mini-Mart", stakes: "The shape of the rest of the week's arrangement." },
+        dre_due_day: { who: "Dre on the day the note comes due", where: "Behind the Night Owl Mini-Mart", stakes: "What happens to the balance, and to his patience." },
+        dre_day7: { who: "Dre, closing the week's account", where: "Behind the Night Owl Mini-Mart", stakes: "What your name is worth to him after seven days." },
+        curtis_mark: { who: "Curtis's people, working through somebody else", where: "Your usual corner", stakes: "Confirmation that you are being watched, and by whom." },
+        curtis_tax: { who: "Curtis Foyer, in person, which is the message", where: "The Downtown exit lane", stakes: "A cut, a favor, or a public no." },
+        curtis_day7: { who: "Curtis, deciding what you were", where: "Wherever he finds you at the checkpoint", stakes: "Whether the pressure phase ends as a partnership, a truce, or a problem." },
+        goodie_corner_intro: { who: "Goodie, running a corner out of a gym bag", where: "The Wash & Go lot, Spenard Road", stakes: "Whether the block's nearest supply becomes a contact, a mark, or neither." },
+        goodie_recognized: { who: "Deshawn, who vouched for you before you robbed Goodie", where: "Outside the Wash & Go, Spenard", stakes: "What your word is worth on the block after you spent it." },
+        wet_bricks: { who: "A driver unstrapping someone else's mistake", where: "Loading Bay Seven, Industrial Service Roads", stakes: "Cheap weight of unverified condition, and a seller who will not be here tomorrow." },
+        door_knock: { who: "Two APD officers working the row", where: "The fourplex two doors from North Star Garage", stakes: "What is in the unit with you, and how long the knocking takes to reach this door." },
+        stranded_wagon: { who: "A woman with two kids and a dead battery", where: "The Minnesota Drive off-ramp shoulder", stakes: "Twenty minutes of your week against a stranger's night." },
+        found_phone: { who: "Whoever left it, and whoever keeps calling it", where: "The transit shelter on Fourth Avenue", stakes: "Six days of somebody's pickup schedule, and whether you take it." },
+        careful_customer: { who: "A buyer asking better questions than he should", where: "The corner you are standing on", stakes: "One sale, and who hears about it afterward." },
+        dock_shift: { who: "A foreman short two people on a night unload", where: "Ship Creek freight dock", stakes: "Four hours you do not have, for money nobody writes down." },
+        garage_furnace: { who: "The garage, and everything stored along the cold wall", where: "North Star Garage, back bay", stakes: "A repair bill, an afternoon, or whatever six hours of outside temperature did to the stock." },
+        sedan_rumor: { who: "Somebody's cousin, two conversations removed", where: "Wherever you happened to be standing", stakes: "A story nobody has confirmed, and what you are willing to spend on it." },
+        midtown_lights: { who: "Four cruisers and a closed left lane", where: "The Seward Highway at Thirty-Sixth", stakes: "Half a mile at walking speed in front of every officer in Midtown." },
+        courier: { who: "An injured courier and approaching drivers", where: "Industrial Service Roads, Bay Twelve", stakes: "Cash, Heat, and who controls the courier's route information." },
+        dre_after_payoff: { who: "Dre Smooth", where: "Behind the Mini-Mart", stakes: "A new debt, premium supply access, or independence." },
+        base_watch: { who: "Curtis's watcher and a possible plainclothes officer", where: "Across from North Star Garage", stakes: "Your stored operation and whether the watcher identifies its value." },
+        crew_crisis: { who: "A jailed crew member and APD", where: "North Star Garage burner line", stakes: "$180 or the loyalty of everyone working for you." },
+        buyer_hurry: { who: "A hurried buyer, Mina, and an observer", where: "Mini-Mart parking lot", stakes: "Fast cash against Heat and exposure near Mina's job." },
+        checkpoint: { who: "APD officers and a tow driver", where: "Airport service road", stakes: "$90 or a risky inspection of your vehicle and cargo." },
+        curtis_cut: { who: "Curtis's driver", where: "Downtown exit lane", stakes: "$120, physical injury, and Curtis's respect." },
+        rough_night: { who: "Three people tied to Curtis", where: "Industrial Bay Nine", stakes: "$80 or a dangerous attempt to hold your ground." },
+        dre_warning: { who: "Dre Smooth", where: "Behind the Mini-Mart", stakes: "Dre's patience and the pressure attached to the unpaid balance." },
+        eli_lieutenant_offer: { who: "Eli Ward, with a second phone in his jacket", where: "North Star Garage, Spenard", stakes: "Whether Eli starts running soldiers and corners instead of only routes." },
+        spenard_block_scouted: { who: "Eli, with a hand-marked map of Spenard", where: "North Star Garage, Spenard", stakes: "Counted numbers on every block, in place of a guess." },
+        curtis_respect_notice: { who: "Word from two blocks over", where: "Spenard", stakes: "What Curtis thinks of an operation that is starting to look like his." },
+        soldier_raid_aftermath: { who: "The block, the morning after", where: "Spenard", stakes: "Nothing to decide here. Just what it cost." }
+      };
+      module.exports = {
+        AMBIENT_FLAVOR,
+        ENTITY_REGISTRY,
+        ENTITY_MATCH_ORDER,
+        EVENT_FLAVOR,
+        EVENT_CONTEXT
+      };
+    }
+  });
+
+  // src/data/locations.js
+  var require_locations = __commonJS({
+    "src/data/locations.js"(exports, module) {
+      var HOME_DISTRICT_ID = "north_star_lot";
+      var NEIGHBORHOODS = [
+        {
+          id: "north_star_lot",
+          name: "Spenard",
+          role: "Home",
+          travelAction: "TRAVEL",
+          risk: 1,
+          police: 1,
+          rival: 0,
+          accent: "#d7d7d7",
+          blurb: "North Star Garage, the Night Owl Mini-Mart, and familiar blocks that offer the week's safest footing.",
+          bias: { weed: 0.78, shrooms: 0.88, cocaine: 1.02, meth: 0.95 },
+          availability: { weed: 1, shrooms: 0.88, pills: 0.82, lean: 0.7, coke: 0.62, molly: 0.68, cocaine: 0.55, meth: 0.48 }
+        },
+        {
+          id: "downtown",
+          name: "Downtown",
+          role: "Commercial",
+          travelAction: "BUS_TRAVEL",
+          risk: 2,
+          police: 3,
+          rival: 1,
+          accent: "#e14332",
+          blurb: "Nightlife money moves fast under cameras and through Curtis's buyers.",
+          bias: { weed: 1.08, shrooms: 1.32, cocaine: 1.46, meth: 1.08 },
+          availability: { weed: 0.9, shrooms: 0.9, pills: 0.82, lean: 0.78, coke: 0.8, molly: 0.86, cocaine: 0.78, meth: 0.58 }
+        },
+        {
+          id: "airport_industrial",
+          name: "Industrial Service Roads",
+          role: "Outer",
+          travelAction: "TRAVEL",
+          risk: 4,
+          police: 2,
+          rival: 3,
+          accent: "#9a1d18",
+          blurb: "Loading yards, warehouses, service roads, rare supply, and expensive mistakes.",
+          bias: { weed: 1.12, shrooms: 1.18, cocaine: 1.32, meth: 1.62 },
+          availability: { weed: 0.72, shrooms: 0.7, pills: 0.7, lean: 0.74, coke: 0.78, molly: 0.72, cocaine: 0.7, meth: 0.86 }
+        }
+      ];
+      var TERRITORIES = [
+        { areaId: "north_star_lot", power: 12, attackCost: 100, dailyIncome: 45, special: "Recruitment costs 10% less." },
+        { areaId: "downtown", power: 18, attackCost: 150, dailyIncome: 75, special: "Cocaine access opens." },
+        { areaId: "airport_industrial", power: 24, attackCost: 200, dailyIncome: 110, special: "Meth access opens." }
+      ];
+      var SPENARD_BLOCKS = [
+        { id: "wash_and_go_lot", name: "Wash & Go Lot", earningPotential: 55, heatExposure: 1, curtisVisibility: 1, patrolFrequency: 1, claimCost: 220 },
+        { id: "fourth_ave_strip", name: "Fourth Avenue Strip", earningPotential: 80, heatExposure: 2, curtisVisibility: 2, patrolFrequency: 2, claimCost: 320 },
+        { id: "minnesota_offramp", name: "Minnesota Off-Ramp", earningPotential: 65, heatExposure: 2, curtisVisibility: 1, patrolFrequency: 1, claimCost: 260 },
+        { id: "spenard_rec_lot", name: "Spenard Rec Center Lot", earningPotential: 45, heatExposure: 1, curtisVisibility: 0, patrolFrequency: 1, claimCost: 180 },
+        { id: "northern_lights_motels", name: "Northern Lights Motel Row", earningPotential: 100, heatExposure: 3, curtisVisibility: 3, patrolFrequency: 2, claimCost: 400 },
+        { id: "service_road_chokepoint", name: "Service Road Chokepoint", earningPotential: 70, heatExposure: 2, curtisVisibility: 2, patrolFrequency: 3, claimCost: 300 }
+      ];
+      var SPENARD_BLOCK_BY_ID = Object.fromEntries(SPENARD_BLOCKS.map((item) => [item.id, item]));
+      var AREA_BY_ID = Object.fromEntries(NEIGHBORHOODS.map((item) => [item.id, item]));
+      module.exports = {
+        HOME_DISTRICT_ID,
+        NEIGHBORHOODS,
+        TERRITORIES,
+        SPENARD_BLOCKS,
+        SPENARD_BLOCK_BY_ID,
+        AREA_BY_ID
+      };
+    }
+  });
+
+  // src/selectors.js
+  var require_selectors = __commonJS({
+    "src/selectors.js"(exports, module) {
+      function checkpointDay(state) {
+        return state.run.checkpointDay || Infinity;
+      }
+      function controlled(state, areaId) {
+        var _a;
+        return ((_a = state.world.territories[areaId]) == null ? void 0 : _a.owner) === "player";
+      }
+      module.exports = {
+        checkpointDay,
+        controlled
+      };
+    }
+  });
+
+  // src/events/cards.js
+  var require_cards = __commonJS({
+    "src/events/cards.js"(exports, module) {
+      var { EVENT_CONTEXT, EVENT_FLAVOR } = require_registry();
+      var { AREA_BY_ID } = require_locations();
+      var { checkpointDay, controlled } = require_selectors();
+      function effectPreview(effect) {
+        const parts = [];
+        if (effect.cash) parts.push(`${effect.cash > 0 ? "+" : "\u2212"}$${Math.abs(effect.cash)} cash`);
+        if (effect.health) parts.push(`${effect.health > 0 ? "+" : "\u2212"}${Math.abs(effect.health)} Health`);
+        if (effect.heat) parts.push(`${effect.heat > 0 ? "+" : "\u2212"}${Math.abs(effect.heat)} Heat`);
+        if (effect.minaTrust) parts.push(`${effect.minaTrust > 0 ? "+" : "\u2212"}${Math.abs(effect.minaTrust)} Mina trust`);
+        if (effect.lenderTrust) parts.push(`${effect.lenderTrust > 0 ? "+" : "\u2212"}${Math.abs(effect.lenderTrust)} Dre trust`);
+        if (effect.rivalPressure) parts.push(`${effect.rivalPressure > 0 ? "+" : "\u2212"}${Math.abs(effect.rivalPressure)} Curtis pressure`);
+        if (effect.rivalRespect) parts.push(`${effect.rivalRespect > 0 ? "+" : "\u2212"}${Math.abs(effect.rivalRespect)} Curtis respect`);
+        if (effect.loseRandomInventory) parts.push(`risk ${effect.loseRandomInventory} cargo`);
+        if (effect.secondLoan) parts.push("take $1,200 cash and owe $1,380 within five days or by the checkpoint");
+        if (effect.access) parts.push(`unlock ${effect.access} access`);
+        if (effect.introduceCrew) parts.push("opens a future recruitment option");
+        return parts.length ? parts.join(" \xB7 ") : "Relationship and story consequences carry forward.";
+      }
+      function event(id, title, description, choices, flavor) {
+        const context = EVENT_CONTEXT[id] || { who: "People in the current situation", where: AREA_BY_ID.north_star_lot.name, stakes: "The result changes this run." };
+        return { id, title, ...context, description, flavor: flavor || EVENT_FLAVOR[id] || null, choices: choices.map((choice) => ({ ...choice, preview: choice.preview || effectPreview(choice.effect || {}) })) };
+      }
+      function activeEvent(id, state) {
+        var _a;
+        const events = {
+          mina_intro: () => event("mina_intro", "First Coffee", 'The Night Owl clerk slides a paper cup toward you. "Black or cream?" Her name tag says Mina. Set the tone of this first conversation.', [
+            { label: "Friendly honesty", effect: { minaTrust: 1, setFlags: { minaFriendlyIntro: true, minaIntroChoice: "friendly" } }, preview: "Tell her you just arrived and keep the first exchange warm.", result: "You tell her Alaska is the restart, not the victory lap. Mina listens without trying to turn it into advice. She marks the coffee down as a refill and points out which bus still runs after closing. When the next customer enters, she gives you a small nod that says the conversation can continue another night." },
+            { label: "Light flirtation", effect: { minaTrust: 1, setFlags: { minaFlirted: true, minaIntroChoice: "flirt" } }, preview: "Let the mutual interest show while respecting the counter between you.", result: 'You ask whether every new customer gets this much attention. Mina looks at the cup, then back at you. "Only the ones reading the machine like a legal document." The smile stays brief and professional, but it is real. She tells you her name even though the tag already did.' },
+            { label: "Brief and guarded", effect: { setFlags: { minaDistantIntro: true, minaIntroChoice: "distant" } }, preview: "Keep your history private and the exchange surface-level.", result: "You choose black, pay, and offer only your street name. Mina does not press. She gives you the correct change and a neutral goodnight, then returns to the register book. You leave as a stranger she noticed, not a story she already knows." }
+          ]),
+          eli_offer: () => event("eli_offer", "The Impound Notice", "Eli Ward wants work outside North Star Garage. He knows the loading yards, the service roads, and which gates chain up at what hour. He can move a small package without bringing a tail home.", [
+            { label: "Hear him out", effect: { introduceCrew: "eli", setCrewStage: { id: "eli", stage: "test_available" }, crewLoyalty: { id: "eli", delta: 1 } }, preview: "Unlocks Give Eli a Test Route in People.", result: "He flattens the impound notice on the hood and draws the route on the back of it, naming each turn as he goes. He wants thirty-five for fuel and one chance to prove it. He does not ask what would be in the package, which is either professional or well practiced." },
+            { label: "Ask about the service roads", effect: { introduceCrew: "eli", setCrewStage: { id: "eli", stage: "followup_required" }, addRumor: { areaId: "airport_industrial", productId: "shrooms", text: "Eli says construction has pushed patrol traffic away from the east industrial service road for a few hours." } }, preview: "Adds a short-lived Industrial Service Roads clue. Recruitment waits for a follow-up.", result: "He circles the east service road twice and explains that construction has pushed patrol traffic off it, but only until the crews finish, which is days and not weeks. He leaves the notice with you so you know where to find him, and asks for nothing in return." },
+            { label: "Turn him away", effect: { introduceCrew: "eli", setCrewStage: { id: "eli", stage: "rejected" }, crewLoyalty: { id: "eli", delta: -1 }, setFlags: { refusedEli: true } }, preview: "Eli leaves. A later scene remembers the rejection.", result: 'He folds the notice back into the same worn crease and puts it away. "I know which doors close." There is no argument anywhere in it. He walks off toward the service road with his hands in his pockets and does not look back at the garage once.' }
+          ]),
+          eli_callback: () => event("eli_callback", "Eli Comes Back With a Route", "Eli makes the same offer at the same price. Another driver has been asking around about your routes. He says he is finished asking after tonight. Open the door or close it.", [
+            { label: "Offer the test route", effect: { setCrewStage: { id: "eli", stage: "test_available" }, crewLoyalty: { id: "eli", delta: 1 }, setFlags: { eliRejectionReopened: true } }, preview: "Unlocks Give Eli a Test Route in People.", result: "He accepts without thanking you, which somehow lands better than gratitude would have. The route and its risks are waiting in People by the time he is back in his vehicle. He does not mention the last conversation, and neither do you." },
+            { label: "Tell him it is still no", effect: { setFlags: { eliRejectedFinally: true } }, preview: "Eli stays outside this operation for the rest of the week.", result: "He nods once, the way somebody nods when they have already worked out the answer and only wanted it confirmed out loud. He leaves. The next route rumor that reaches you comes through somebody who charges for it and gets half the detail wrong." }
+          ]),
+          pherris_offer: () => event("pherris_offer", "The List in Pherris's Pocket", "Pherris Cole puts one torn page on the table. Half the names are crossed out. The rest still pick up. She keeps her hand flat on the paper. Decide what supplier access is worth.", [
+            { label: "Offer her a share of the take", effect: { introduceCrew: "pherris", crewLoyalty: { id: "pherris", delta: 2 }, setFlags: { gavePherrisOwnership: true } }, preview: "Opens a future recruitment option on her terms rather than yours.", result: "She leaves her hand where it is a second longer, then slides the page across and starts talking in terms of we, which she has not done once until now. She names two people on the list she will not introduce yet, and tells you exactly why not." },
+            { label: "Ask to buy the list", effect: { introduceCrew: "pherris", crewLoyalty: { id: "pherris", delta: -1 } }, preview: "Opens a future recruitment option, colder than it could have been.", result: 'She laughs without any part of her face joining in, and folds the page back into quarters. "You want the names without the person who knows them." The page goes into her pocket. She still finishes the drink, and she still pays for it.' }
+          ]),
+          tone_offer: () => event("tone_offer", "Tone at the Garage Door", "Anton Bell points out a sedan parked in the one spot your camera misses, and says how long it has sat there. Curtis's people cost him his last job. He wants a wage to guard the garage.", [
+            { label: "Offer protection work", effect: { introduceCrew: "tone", crewLoyalty: { id: "tone", delta: 1 } }, preview: "Opens a future recruitment option and another wage against Curtis.", result: `He checks the doorframe, then the hinge side, then the lock, in that order, before he asks what the work pays. "Two things. I don't start anything, and you tell me when something's already started." He waits on the second one specifically.` },
+            { label: "Say the garage is handled", effect: { introduceCrew: "tone", crewLoyalty: { id: "tone", delta: -1 } }, preview: "Tone stays available later, with less patience for the offer.", result: 'He looks at the lock, then at you, and does not say the obvious thing about either. "All right." He walks back toward the street past the sedan without changing his pace, and the sedan is still in the same spot in the morning.' }
+          ]),
+          tone_jacksonville: () => event("tone_jacksonville", "Jacksonville Calls Collect", "A Jacksonville number reaches Tone after midnight. The people behind it know his old name and your two strongest blocks. Protection, separation, or leverage all leave a mark.", [
+            { label: "Protect Tone", effect: { heat: 2, crewLoyalty: { id: "tone", delta: 2 }, setFlags: { toneJacksonvilleProtected: true } }, preview: "+2 Heat and +2 Tone loyalty. Keep him inside the operation.", result: "You put the garage and the blocks behind Tone. Jacksonville hears the boundary in the next call." },
+            { label: "Cut Tone loose", effect: { crewLoyalty: { id: "tone", delta: -4 }, setFlags: { toneJacksonvilleCutLoose: true } }, preview: "Remove the immediate threat and break Tone's loyalty.", result: "Tone leaves the key on the workbench. The call stops reaching your phone." },
+            { label: "Use the call as leverage", effect: { rivalRespect: 1, setFlags: { toneJacksonvilleLeverage: true } }, preview: "Gain leverage with Curtis; Tone remembers being used.", result: "Curtis gets the number and a reason to care. Tone gets proof that protection has conditions." }
+          ]),
+          mina_shift_change: () => event("mina_shift_change", "Twenty Minutes Past Close", "Mina counts the till and hands you a lead: Ship Creek freight is hiring dispatch. Then she asks what people call you, and waits like the answer matters. Give her a name or keep it.", [
+            { label: "Tell her what the week looks like", effect: { minaTrust: 1, setFlags: { minaKnowsScope: true } }, preview: "Mina learns how your week is funded and holds you to it later.", result: `You give her the version with the debt in it, the checkpoint, and Dre's name. Mina listens. "All right, ${state.player.streetName || "friend"}," she says, and writes the yard's address on the back of a receipt. "Thursday mornings. Don't be here when he is."` },
+            { label: "Keep the answer small", effect: { setFlags: { minaDeflected: true } }, preview: "Nothing changes tonight. Mina notices the size of the answer.", result: "You give her the short version. Mina nods, folds the receipt she was about to write on, and puts it in her apron. The heater ticks. She counts the last of the twenties without looking up." },
+            { label: "Put $60 toward her yard fees", requires: "cash60", effect: { cash: -60, minaTrust: 2, setFlags: { minaTookMoney: true } }, preview: "Costs $60. Mina accepts the help and sets the terms you did not ask for.", result: 'She takes the sixty and writes you a receipt on Night Owl paper, dated and signed, because she does not want it to be a favor. "This is a loan," she says. "I pay it back in March." She means it.' }
+          ]),
+          mina_invitation: () => event("mina_invitation", "Four Hours and No Agenda", "Mina has four hours before her next shift and no car. The owner cut her hours again. She wants to know what kind of evening you can make. Spend the time or hand it back.", [
+            { label: "Take the bus toward the inlet", effect: { minaTrust: 2, heat: -1, setFlags: { minaDateNight: true } }, preview: "Bus fare is folded into the scene; you spend the evening away from the block.", result: "You ride until the commercial lights thin out, then walk where the inlet wind cuts across the open ground. Mina talks about the yard interview, her mother, and nothing at all. On the bus back, your shoulders touch twice and neither of you moves." },
+            ...state.base.controlled ? [{ label: "Show her the garage", requires: "base_controlled", effect: { minaTrust: 1, minaJobAtRisk: true, setFlags: { minaSawGarage: true } }, preview: "She sees the operation, and she is seen near it.", result: 'She walks the length of the bay once, looks at the bags, and does not touch anything. "This is what it is, then." A car slows on the street outside and keeps going. Mina watches it the whole way down the block.' }] : [],
+            { label: "Tell her tonight is not good", effect: { setFlags: state.flags.minaRaincheck ? { minaInvitationClosed: true } : { minaRaincheck: true } }, preview: "Nothing happens tonight. The offer may come back once.", result: 'She takes it evenly, the way she takes most things. "Then another night." She starts walking toward the bus shelter on Spenard before you can offer the ride.' }
+          ]),
+          mina_boundary: () => event("mina_boundary", "Someone Said Your Name Wrong", 'A customer used your street name, asked which nights Mina closes, and left without buying. "I am asking you to tell me what I am standing next to." Give her the truth or manage her.', [
+            { label: "Tell her everything, risk included", effect: { minaTrust: 2, setFlags: { toldMinaTruth: true } }, preview: "Mina gets the whole picture, including the part that could put her at risk.", result: `You give her Curtis's name, Dre's date, and the honest odds. Mina listens all the way through without interrupting. Then she writes down the names and puts the note in her shoe. "Now the decision is mine too," she says. "That was the part you owed me."` },
+            { label: "Give the officer her name", effect: { minaTrust: -2, heat: -1, setFlags: { usedMinaWithoutConsent: true } }, preview: "Heat drops. Mina finds out from someone else that you used her name.", result: "The story holds because her name is clean and yours is not. Some attention comes off you. Mina hears it from the officer's partner, who buys cigarettes at her counter on Fridays and assumed she already knew." },
+            { label: "Tell her you can't answer that", effect: { minaTrust: -1 }, preview: "The question stays open. Mina stops expecting an answer to it.", result: 'She waits long enough to be sure that is the whole reply. Then she pockets the keys. "Okay." The next time you come in, the coffee is on the counter before you reach it, and she is already turned toward the register.' }
+          ]),
+          mina_sedan_night: () => event("mina_sedan_night", "The Vale Call", "Kieran Vale arrives after Curtis's attention reaches Mina's counter. Mina knows the family name can stop this once. Decide whether she is protected, asked, or used.", [
+            { label: "Protect Mina and take the pressure outside", effect: { minaTrust: 1, setFlags: { valeProtectedMina: true } }, preview: "Keep Mina out of the negotiation and accept the pressure yourself.", result: "You move the conversation away from the counter before Kieran can use her as the room's center. Mina sees exactly what you chose." },
+            { label: "Ask Mina to broker it", effect: { setFlags: { minaBrokeredVale: true } }, preview: "Trust Mina to use the Vale name on terms she understands.", result: "Mina makes the call herself, states the limit before the favor, and ends it before either man can expand the deal." },
+            { label: "Exploit the Vale name", effect: { minaTrust: -2, setFlags: { exploitedValeName: true } }, preview: "Gain leverage at the cost of Mina's trust and clean life.", result: "The name works. Mina watches you spend it as though it belonged to the operation." }
+          ]),
+          mina_after: () => {
+            const name = state.player.streetName || "friend";
+            if (state.npc.mina.usedWithoutConsent) {
+              return event("mina_after", "The Lights Off Two Hours Early", `The Night Owl is dark two hours early. Mina is in the lot with a duffel and her sister's car running. The Ship Creek job is gone because your name reached the owner. "I just can't be near this."`, [
+                { label: "Tell her you're sorry and mean it", effect: { minaDeparts: true, setFlags: { minaLeftClean: true } }, preview: "She leaves either way. This is the version where you do not argue.", result: `She accepts it the way she accepts most things, evenly and without making you feel better about it. "I know." She puts the duffel in the back seat. "Lock the garage at night, ${name}. You never do."` },
+                { label: "Ask her to stay", effect: { minaTrust: -1, minaDeparts: true }, preview: "She has already decided. Asking does not change it.", result: '"No." Not sharp, just finished. The car pulls out and turns toward Minnesota before the headlights have swung far enough to catch you.' }
+              ], `The night window is closed and the store is dark before nine. "I'm not angry," she says, and she is not, which is worse. The owner heard her name in the wrong sentence from somebody who did not know it mattered.`);
+            }
+            if (state.npc.mina.trust >= 3 && state.flags.minaDateNight) {
+              return event("mina_after", "The Name on the Receipt", 'Mina slides a folded receipt across the counter: a name, a phone number, and a bay number at the Ship Creek yard. "He owes me, not you," she says. "Which means it works once." Take it or leave it.', [
+                { label: "Take the name", effect: { setFlags: { minaGaveContact: true }, addRumor: { areaId: "airport_industrial", productId: "cocaine", text: "Mina's contact at the Ship Creek yard says which bay doors stay unwatched after the second shift." } }, preview: "Adds a reliable Industrial Service Roads lead that Mina cannot get you twice.", result: `She watches you write the number somewhere better than your hand. "One time, ${name}. After that he doesn't know either of us." The coffee is already the right temperature, which means she poured it before you walked in.` },
+                { label: "Tell her to keep it for herself", effect: { minaTrust: 1, setFlags: { refusedMinaContact: true } }, preview: "You give up the lead. Mina keeps a favor she can still spend on Monday.", result: `She looks at the receipt for a second, then puts it back in her apron without arguing. "That's the first useful thing you've done all week." She says it flatly, and she means it as a compliment.` }
+              ], "The coffee comes with it, already poured. Outside, the first real snow of the week is holding on the pavement instead of melting. The favor is hers, and spending it on you empties it.");
+            }
+            return event("mina_after", "Restocking the Cold Case", "Mina keeps working through the conversation. Her Ship Creek dispatch interview follows your checkpoint. She waits for you to decide how this week closes.", [
+              { label: "Wish her luck on Monday", effect: { minaTrust: 1 }, preview: "A small, honest exchange at the end of a week that did not include her.", result: `"I don't need luck, I need him to read the second page." She sets the last row of bottles straight. "But thank you." The cooler door swings shut and holds the fog for a while.` },
+              { label: "Ask if she'll still be here after", effect: {}, preview: "You get a straight answer, which may not be the one you want.", result: '"Here, or Ship Creek, or Palmer." She does not stop working. "Somewhere with a schedule." It is not an invitation and it is not a door closing, and she leaves it exactly that way.' }
+            ], "She is restocking the cold case when you come in. The cooler door fogs and clears between you. The question she leaves unasked is its own kind of answer.");
+          },
+          courier: () => event("courier", "Courier Behind Bay Twelve", "A courier is down beside Bay Twelve, split lip, locked case cuffed to his wrist. Headlights turn into the Industrial lane and slow down. They know what they are looking for. Move now.", [
+            { label: "Spend supplies helping", effect: { cash: -55, heat: 1, setFlags: { helpedIndustrialCourier: true } }, preview: "\u2212$55 and +1 Heat. He owes you something and knows it.", result: "You get the cuff off and get him breathing evenly against the wall. He does not thank you for it. Before he goes he tells you which service road closes on Day 6, and that the closure has nothing to do with construction." },
+            { label: "Search the case", risky: true, effect: { cash: 160, heat: 2, setFlags: { robbedIndustrialCourier: true } }, preview: "+$160 and +2 Heat. He is awake for all of it.", result: "The case holds cash and a route sheet folded open to the current week, and you take both. He watches you do it from the ground with his eyes open the whole time, and the bay light is more than good enough for him to keep your face." },
+            { label: "Leave before the headlights arrive", effect: {}, preview: "Nothing gained. Whatever is in the case ends up somewhere else.", result: "You are back in the vehicle before the headlights reach the bay. Two nights later the same locked case turns up open in Curtis's hand at the Downtown exit lane, and nobody has to explain to you how it got there." }
+          ]),
+          dre_after_payoff: () => event("dre_after_payoff", "Dre Opens Another Door", "Dre tears the note in half and keeps one piece. Then he stays, which he has not done before. He has three ways for you to use the name you just earned. Pick one.", [
+            { label: "Take a larger note", effect: { secondLoan: true }, preview: `Take $1,200 now and owe $1,380 by Day ${Math.min(state.run.day + 5, state.run.checkpointDay)}.`, result: `He transfers twelve hundred before you finish agreeing. The paper says thirteen-eighty within five days or at the checkpoint, whichever comes first. "Same rules. Bigger note." He walks back to the car.` },
+            { label: "Ask for the supplier", effect: { access: "cocaine", lenderTrust: 1 }, preview: "Unlocks supplier access and leaves Dre satisfied with the arrangement.", result: `He writes one Downtown address on the back of your paid note, hands it over, and burns the rest of the paperwork in the ashtray with the window cracked an inch. "Use my name once. After that it's yours or it isn't."` },
+            { label: "Stay independent", effect: { influence: { areaId: "north_star_lot", delta: 1 }, lenderTrust: 1, setFlags: { refusedSecondNote: true } }, preview: "No new debt. Spenard notices that you walked away clean.", result: 'He puts the offer back in his jacket without any visible reaction, which from Dre is a form of respect. "Then make your own door." He gets in the car. He does not say it unkindly, and he does not offer it twice.' }
+          ]),
+          base_watch: () => event("base_watch", "The Sedan Across From the Garage", "A gray sedan has held the curb across from North Star Garage for forty minutes, windshield on the bay door, engine running. Somebody is sitting in it. None of it is hidden. Decide how you answer.", [
+            { label: "Check the camera", requires: "security2", effect: { heat: -1, setFlags: { identifiedBaseWatcher: true }, baseWatched: false }, preview: "\u22121 Heat. You find out who is actually sitting out there.", result: "The camera catches the changeover. Curtis's driver gets out and a second man in plain clothes gets in, and neither of them looks at the lens. You now know two things they do not know you know, which is worth more than the sedan leaving would have been." },
+            { label: "Move the valuable stock", effect: { heat: 1, baseWatched: true }, preview: "+1 Heat. The stock moves, and so does whoever is watching.", result: "You move the bags before first light in two trips. The sedan does not follow the first one. It follows the second one, at a distance, all the way to the turn, and then it goes back to the same piece of curb it started from." },
+            { label: "Leave the garage dark", effect: { baseWatched: true }, preview: "Nothing spent. The garage stays watched and they know it.", result: "Nobody comes in and nobody tries the door. In the morning there is a chalk mark low on the frame beside the lock, small enough that you would have missed it entirely if you were not already looking for something." }
+          ]),
+          crew_crisis: () => event("crew_crisis", "A Crew Member Misses Check-In", "A burner buzzes at four in the morning: an APD booking number and a dollar amount. The number belongs to somebody who works for you. Whoever sent it wants money before the six o'clock shift change.", [
+            { label: "Pay $180 and show up", effect: { cash: -180, crewAllLoyalty: 1, setFlags: { protectedCrewCrisis: true } }, preview: "\u2212$180. Every person working for you hears about it.", result: "You are standing in the lot when the side door opens, which is a different thing entirely than posting the money and staying home. Nobody in the crew says anything about it directly. All of them know by the end of the day." },
+            { label: "Protect the operation", effect: { crewAllLoyalty: -2, setFlags: { abandonedCrewCrisis: true } }, preview: "Nothing spent. Crew loyalty pays for it instead.", result: "You do not answer it. The garage is untouched in the morning, the stock is where you left it, and the operation loses nothing you can put a number against. The empty chair at the table stays where it is and everybody works around it." }
+          ]),
+          buyer_hurry: () => event("buyer_hurry", "Cash Across the Hood", "A Downtown buyer counts an overpay across your hood in the Night Owl lot, in the open. A man by the door pockets his phone, steps three feet aside, and makes a call while watching your vehicle.", [
+            { label: "Take the overpay", effect: { cash: 140, heat: 1, setFlags: { buyerSeenAtMiniMart: true } }, preview: "+$140 and +1 Heat, in front of Mina's window.", result: "You take it, and it is a good number. Through the window Mina watches the man on the phone read your plate out loud, slowly, twice, and she keeps her face completely still the entire time she is ringing somebody up." },
+            { label: "Move the deal elsewhere", effect: { influence: { areaId: "north_star_lot", delta: 1 }, heat: -1 }, preview: "\u22121 Heat and a little Spenard standing. The overpay goes away.", result: "You send him around the corner to the church lot and finish it there, out of sight of the door. It costs you four minutes and most of the premium. The Mini-Mart stays a place where you buy coffee and nothing happened in the lot." }
+          ]),
+          checkpoint: () => event("checkpoint", "Cones on the Service Road", "APD has the airport service road down to one lane. An officer taps the rear panel of each vehicle as he passes. The tow driver has been watching your vehicle. The line behind you keeps growing.", [
+            { label: "Pay the tow driver $90", effect: { cash: -90, heat: -1 }, preview: "\u2212$90 and \u22121 Heat. He opens a gate and asks nothing.", result: "He takes it without turning his head and opens the maintenance gate at the far end of the lot forty seconds later. He does not ask what is in the vehicle. He does not look at the vehicle at all, which visibly takes him some effort." },
+            { label: "Risk the inspection", effect: { heat: 2, loseRandomInventory: 2, setFlags: { checkpointRecognizedVehicle: true } }, preview: "+2 Heat and up to two units gone. The vehicle gets written down.", result: "The officer takes his time and finds enough to make the time worth it. You leave two units behind and a full description of the vehicle in somebody's notebook, and he says the plate back to himself once while you are pulling away." }
+          ]),
+          curtis_cut: () => event("curtis_cut", "Curtis's Driver Blocks the Exit", "A black sedan blocks the Downtown exit lane. Curtis's driver opens the passenger door, leans on the roof, and waits while traffic backs up. He never says the number. He was told he does not have to.", [
+            { label: "Pay Curtis $120", effect: { cash: -120, rivalPressure: -2, rivalRespect: 1, setFlags: { paidCurtisPassage: true } }, preview: "\u2212$120. Curtis eases off and remembers that you paid.", result: "He counts it once, fast, the way somebody counts who does this several times a day. Then he moves the sedan and gives you the next block without being asked for it, which is the part that costs more than the money did." },
+            { label: "Refuse the door", effect: { rivalPressure: 3, health: -8, setFlags: { refusedCurtisCut: true } }, preview: "\u22128 Health and sharper Curtis pressure. He hears you said no.", result: "The sedan does not move for a while. When it finally does, it is because two people have pulled you away from the wheel and made their point on the pavement. Curtis hears the version where you refused before he hears the version where you lost." }
+          ]),
+          rough_night: () => event("rough_night", "Red Gloves at Bay Nine", "Three people spread across the Industrial bay lane wide enough that going around is out. One wears the red work gloves you last saw on Curtis's dash. Nobody has said anything yet.", [
+            { label: "Leave $80 on the concrete", effect: { cash: -80, health: -3 }, preview: "\u2212$80 and a few bruises. They leave the bag alone.", result: "They take it off the concrete and leave the bag where it is, which is the deal they came out here to make. The one in the red gloves says there will be a next time, in the tone of somebody scheduling it rather than threatening you with it." },
+            { label: "Hold your ground", effect: { health: -14, rivalRespect: 1, rivalPressure: 1, setFlags: { industrialCrewEncountered: true } }, preview: "\u221214 Health. Curtis hears that you did not go down.", result: "You leave upright with blood on your collar and one of them limping worse than you are. Curtis hears about it before the clinic does, and the version that reaches him is the one where you were still standing at the end of it." }
+          ]),
+          dre_warning: () => event("dre_warning", "Dre Counts What Is Missing", "Dre counts your partial stack on the hood twice, then folds one bill back and holds it out to you. He asks when the rest is coming. The question is genuine. He wants a date.", [
+            { label: "Name the next payment", effect: { lenderTrust: 1, setFlags: { dreGoodFaithPayment: true } }, preview: "Dre takes the date and the partial payment for now.", result: 'You give him a day and he repeats it back once, in the flat way he says numbers, and puts the stack in his jacket. "Thursday." He does not write it down anywhere, which is not remotely the same thing as forgetting it.' },
+            { label: "Tell him to wait", effect: { lenderTrust: -2, heat: 1 }, preview: "+1 Heat and lasting damage to Dre's patience.", result: `He closes his jacket over the money without counting it a third time. "All right." He makes one call from the driver's seat before he pulls out, short, and he is looking at the Mini-Mart door the entire time he is talking.` }
+          ]),
+          eli_missed_turn: () => event("eli_missed_turn", "An Hour Later Than the Route", "Eli is an hour past the route time and leads with the reason. A vehicle followed him from the fuel stop, so he drove past the drop and came in from the other side. The package is intact.", [
+            { label: "Ask what he saw", effect: { crewLoyalty: { id: "eli", delta: 2 }, setFlags: { eliJudgmentTrusted: true } }, preview: "Eli learns his read is worth something here.", result: "He gives you the make, the colour, which lane it held, and the two places it could have turned off and did not. None of it is guesswork and none of it is padded. Somewhere in the middle of it he stops sounding like he is defending himself." },
+            { label: "Dock the route payment", effect: { crewLoyalty: { id: "eli", delta: -2 }, cash: 20, setFlags: { eliDocked: true } }, preview: "+$20 back. He learns the clock outranks his judgment.", result: "He does not argue about it, which is worse than arguing. He hands back the twenty without counting it and says the route will be on time next run. It is on time after that, every time, including the runs where it should not have been." },
+            { label: "Tell him he made the right call", effect: { crewLoyalty: { id: "eli", delta: 1 }, setFlags: { eliJudgmentTrusted: true } }, preview: "He will make that call again without asking first.", result: '"Okay." He says it like he is filing it somewhere. Two days later he changes a route again without checking in, and that one is also correct, and he tells you about it afterward the same flat way he tells you the fuel cost.' }
+          ]),
+          eli_service_map: () => event("eli_service_map", "The Map He Drew Himself", "Eli spreads a hand-drawn page under the dome light: gate hours, which yards chain up at night, where patrol cars turn around, two crossings on no map. He built it over a year. He wants something for it.", [
+            { label: "Pay him for a copy", requires: "cash90", effect: { cash: -90, crewLoyalty: { id: "eli", delta: 1 }, addRumor: { areaId: "airport_industrial", productId: "meth", text: "Eli's map marks two service-road crossings the patrol pattern does not cover after dark." } }, preview: "\u2212$90. He keeps the original and you get the routes.", result: "He copies it out by hand rather than giving you the original, which takes twenty minutes and tells you exactly how he feels about the page. The copy is just as good. He folds the original back into his jacket before the money is even put away." },
+            { label: "Offer him a share instead", effect: { crewLoyalty: { id: "eli", delta: 2 }, setFlags: { eliOwnsShare: true }, addRumor: { areaId: "airport_industrial", productId: "meth", text: "Eli's map marks two service-road crossings the patrol pattern does not cover after dark." } }, preview: "No cash now. He takes a cut of what the routes earn.", result: "He works out the percentage out loud, lands somewhere lower than you expected, and writes it on the corner of the map so neither of you has to remember it. Then he starts talking about a third crossing he has not verified yet, which he would not have mentioned an hour ago." },
+            { label: "Tell him to keep it", effect: {}, preview: "The routes stay his. Nothing changes tonight, and he does not push.", result: `He folds it up without any visible disappointment and puts it back inside his jacket. "It's there if you want it." He mentions the page exactly once more, in passing, weeks of driving later, and never pushes it again.` }
+          ]),
+          eli_last_run: () => event("eli_last_run", "After the Seventh Night", "Eli asks what happens to him when the week is over. He wants no money. He has worked out that whatever you are building either has a driver's seat in it or it does not. Answer him.", [
+            { label: "Tell him there's a seat", effect: { crewLoyalty: { id: "eli", delta: 2 }, setFlags: { eliPromisedFuture: true } }, preview: "A promise he will hold you to after the checkpoint.", result: "He nods once and goes straight back to the fuel prices, which is how you know it landed. Before he leaves he mentions that his cousin has a van with a working heater and no questions attached, and that he had not brought it up before because there had not been a reason to." },
+            { label: "Tell him you don't know yet", effect: { setFlags: { eliToldHonestly: true } }, preview: "Honest and unsatisfying. He can work with honest.", result: `"That's fair." He means it, mostly. He keeps driving the routes exactly as well as before, and he stops mentioning the week after next, and you notice the second thing more than you expected to.` },
+            { label: "Tell him this ends here", effect: { crewLoyalty: { id: "eli", delta: -1 }, setFlags: { eliToldNoFuture: true } }, preview: "He finishes the pressure phase and starts looking on his own time.", result: "He takes it without complaint because he asked and you answered. The routes stay clean through the checkpoint. He starts taking calls outside the bay, briefly, and stops leaving his jacket in the vehicle." }
+          ]),
+          dre_terms: () => event("dre_terms", "The Envelope After Work", `$1,000 now. $1,200 due Day ${state.run.checkpointDay}. Partial payments accepted. Dre names the terms once and keeps the envelope in his hand while the sedan idles.`, [
+            { label: "Take it measured", effect: { acceptDreLoan: true, lenderTrust: 1, setFlags: { dreTermsAcknowledged: true } }, preview: `$1,000 dirty cash now. $1,200 is due Day ${state.run.checkpointDay}.`, result: "You take the envelope and hold his eyes. Dre releases it one finger at a time. He says the date once. You repeat it once." },
+            { label: "Take it nervous", effect: { acceptDreLoan: true, setFlags: { dreAskedConsequences: true } }, preview: `$1,000 dirty cash now. $1,200 is due Day ${state.run.checkpointDay}.`, result: "You ask for the date again. Dre gives it to you. His thumb stays under the envelope until your grip settles." },
+            { label: "Leave it with him", effect: { declineDreLoan: true, setFlags: { dreOfferDeclined: true } }, preview: "Keep grinding with your own money and no Dre debt.", result: "You leave the envelope between his hands. Dre tucks it inside his coat. The car door shuts. Your shift money stays yours." }
+          ], "Dre leans against a dark sedan outside your job. Snow gathers along one shoulder. His bare hand holds a thick envelope against the roof. The engine keeps running."),
+          dre_first_payment: () => {
+            const name = state.player.streetName || "friend";
+            return event("dre_first_payment", "The First Money You Bring Him", `Dre counts your money on the hood in stacks of five and says nothing about the amount. Then he looks at you a second longer than the transaction needs, working out whether this is a pattern.`, [
+              { label: "Tell him when the next one comes", effect: { lenderTrust: 2, setFlags: { drePaymentPattern: true } }, preview: "A date on the record. Dre keeps dates.", result: `"All right, ${name}." It is the first time he has used the name, and he uses it the way he uses numbers, as a thing that is now on file. He does not write the date down. He does not need to, and both of you know that is the point.` },
+              { label: "Let the money speak", effect: { lenderTrust: 1 }, preview: "No promises made, which means nothing for him to hold you to.", result: `He accepts the silence without pushing into it. "Fine." The car door closes and the light goes out and the lot is dark again. Whatever he decided about you, he decided it while counting and he is not going to share it.` }
+            ]);
+          },
+          dre_due_day: () => {
+            const balance = state.lender.balance;
+            const paid = state.lender.payments;
+            const heavy = paid >= 300;
+            const description = balance <= 0 ? "The note is clear and Dre came by on the due day anyway. He talks about the weather for ninety seconds, then gets to the reason: almost nobody clears one of these early." : heavy ? `Dre arrives on the due day and skips the number. $${balance} is still on the paper and there are hours left in the day. He is here to find out what you plan to do about it.` : `Dre is behind the Night Owl with the engine off, which means he intends to stay. $${balance} of the original amount is still on the paper. He says nothing at all. He is going to make you open.`;
+            const flavor = balance <= 0 ? "He leans on the car door with his hands in his pockets, in no hurry to explain himself. Turning up to collect nothing is the closest thing to approval he offers." : heavy ? "He has kept the running total in his head all week, so he knows what you have paid without asking. Asking beats telling, and he chose to ask." : "An engine left off is how he signals he has time. He has kept the running total in his head all week and he will not speak first.";
+            const choices = [];
+            if (balance > 0 && state.player.cash >= Math.min(balance, 100)) {
+              choices.push({ label: "Pay what you have on you", effect: { payLenderNow: true, lenderTrust: 1 }, preview: "Hands over what you are carrying against the balance.", result: "You count it out onto the hood and he counts it again after you, because that is not an insult where he is from, it is just how money gets counted. The number on the paper comes down. Neither of you says anything about the part that is left." });
+            }
+            choices.push({ label: "Name the day you can clear it", effect: { lenderTrust: heavy ? 1 : -1, setFlags: { dreNamedFinalDate: true } }, preview: heavy ? "He has seen enough this week to take a date." : "He has not seen enough this week to take a date on faith.", result: heavy ? `He takes the date without any argument, because the week behind it does the arguing. "I'll be here." He is gone in under a minute, which from Dre is a compliment.` : `He listens to the date and does not agree to it or refuse it. "You've told me a lot of things this week." He gets back in the car. The date stands, but so does everything else.` });
+            choices.push({ label: "Offer him work instead of money", effect: { lenderTrust: -1, rivalPressure: 1, setFlags: { dreOfferedFavor: true } }, preview: "He takes the offer and the balance stays where it is.", result: `"Everybody's got something they'd rather do than pay." He does not say no. He takes a name and a place off you instead of cash, and by the next evening that name has a problem, and the number on your paper has not moved at all.` });
+            return event("dre_due_day", balance <= 0 ? "He Came By Anyway" : "The Day on the Paper", description, choices, flavor);
+          },
+          dre_day7: () => {
+            const cleared = state.lender.balance <= 0;
+            return event("dre_day7", cleared ? "The Account Closes Clean" : "What Is Left on the Paper", cleared ? `Dre finds you on Day ${state.run.checkpointDay} without being told where you would be. The note is settled. He is here to say what he thinks he has been dealing with all week.` : `Dre finds you on Day ${state.run.checkpointDay} and leaves the paper unmentioned. The balance stands at $${state.lender.balance}. He has decided what happens next. He is here to tell you.`, [
+              { label: "Hear him out", effect: { lenderTrust: cleared ? 1 : 0 }, preview: cleared ? "He tells you where you stand with him." : "He tells you what the unpaid balance becomes.", result: cleared ? `"Most people I front pay me late and act like I owe them the patience." He looks out at the lot rather than at you. "You paid me. That's it. That's the whole compliment, don't wait for a better one."` : `"It doesn't stop being money because the week ended." He says the new number, which is larger, and the new date, which is close. Then he waits to see whether you are going to argue, and does not seem to mind either way.` },
+              { label: "Ask what comes next", effect: { lenderTrust: cleared ? 1 : -1, setFlags: { dreAskedForFuture: true } }, preview: cleared ? "You ask about the next arrangement before he offers." : "You ask for a future while the current one is unpaid.", result: cleared ? `He takes a second with it. "Come find me in a week and I'll have a number for you." It is not a yes, but he has never once said a thing like that to somebody he was finished with.` : `"Next." He repeats the word back like it is unfamiliar. "You're asking me about next." He does not raise his voice at any point, and the conversation is over about four seconds later.` }
+            ], cleared ? "Arriving where you are without asking is its own kind of statement. He came for the reason people come at the end of an arrangement they respected." : "He wants to see your face while he says it. The decision was made before he arrived, so nothing said here moves the number.");
+          },
+          curtis_mark: () => event("curtis_mark", "Somebody Repeats a Private Detail", "The kid at the coffee counter mentions somebody asked which mornings you come in. He does not know he told you anything. The tag by the bus shelter has been gone over in a different hand.", [
+            { label: "Ask the kid who was asking", effect: { setFlags: { curtisMarkInvestigated: true }, rivalRespect: 1 }, preview: "You get a description. Curtis hears that you went looking.", result: "The description is useless on its own (a man, a jacket, a car nobody looked at properly). The kid remembers he was polite and bought nothing. By the afternoon somebody has told Curtis's driver that you asked, which was always the more useful half of doing it." },
+            { label: "Change which mornings you come in", effect: { heat: -1, setFlags: { curtisMarkAvoided: true } }, preview: "\u22121 Heat. Harder to find, and it costs you the routine.", result: "You move your hours and the coffee is worse at the new time and the walk is longer. Nothing follows you for two days. On the third, the same tag on the same wall has been gone over again, so somebody worked out the new schedule inside forty-eight hours." },
+            { label: "Do nothing about it", effect: { rivalPressure: 1 }, preview: "+1 Curtis pressure. Being watched costs nothing until it does.", result: "You keep the same mornings and the same corner and act as though the wall is just a wall. Nothing happens for three days. Then a buyer who has never been late is late, and apologises without explaining, and does not meet your eye while doing it." }
+          ]),
+          curtis_tax: () => event("curtis_tax", "Curtis Comes Himself", "Curtis Foyer gets out of the car and offers four versions of the same future: pay him, stand beside him, keep him at arm's length, or refuse him in public.", [
+            { label: "Pay the tax", effect: { curtisDecision: "pay_tax" }, preview: "Curtis takes 15% of nightly illegal gross. Ordinary attention growth pauses at 5.", result: "Curtis names no weekly minimum. He takes fifteen percent of whatever the night actually made and tells his people to stop inflating the number. The arrangement is expensive, stable, and visible." },
+            { label: "Accept friendship", effect: { curtisDecision: "friendship" }, preview: "Two days of protection and a 10% buyer premium. Betrayal becomes possible after the protection expires at attention 7.", result: "Curtis calls it friendship. For two days his name keeps hands off your buyers and adds ten percent to what they will pay. The word is warmer than the arrangement." },
+            { label: "Stay guarded", effect: { curtisDecision: "guarded" }, preview: "+1 respect. No protection and no betrayal trap.", result: "You keep the conversation respectful and the distance exact. Curtis recognizes the boundary, gives you nothing, and respects that you asked for nothing." },
+            { label: "Reject him", effect: { curtisDecision: "reject" }, preview: "+2 respect and +1 attention. Independence remains intact and stronger confrontations unlock.", result: "You say no in front of the corner. Curtis respects the public answer, then makes sure the city notices that he heard it." }
+          ]),
+          curtis_day7: () => {
+            const respectful = state.npc.curtis.respect >= 2 && state.npc.curtis.pressure <= 6;
+            return event("curtis_day7", respectful ? "An Offer at the End of the Week" : "The Account He Has Been Keeping", respectful ? "Curtis's car is outside North Star Garage and the window comes down. He has watched you handle a debt, a corner, and two of his own people all week. He has a number for what you are worth to him." : `Curtis sends three people on Day ${state.run.checkpointDay} instead of coming. They stand in the lot. One holds a phone with an open line. He is listening live.`, [
+              { label: respectful ? "Hear the offer" : "Walk out and face them", effect: { rivalRespect: 1 }, preview: respectful ? "You find out what a working arrangement costs." : "You take the meeting on your feet, in your own lot.", result: respectful ? 'The arrangement he describes is genuinely good and would leave you working for him in every way that matters except the word. He does not oversell it. "Think about it past tonight," he says, and the window goes back up before you have answered.' : "You go out to them and nobody touches anybody. The one with the phone holds it up slightly, and a voice on it says your name once, and then they leave. The whole thing takes ninety seconds and costs you nothing you can count." },
+              { label: respectful ? "Tell him you're staying independent" : "Stay inside and let them stand there", effect: { rivalPressure: 2, setFlags: { refusedCurtisFinal: true } }, preview: "+2 pressure. He learns where the line is.", result: respectful ? `"That's a no, then." He is not offended, which is somehow worse than if he had been. "You'll hear from me in a month and it won't be an offer." The car pulls out slowly enough that it is clearly on purpose.` : "They stand in the lot for forty minutes and then go. Nothing is broken and nobody is hurt and every single person on this block watched them do it, which was always the point of sending them instead of coming." }
+            ], respectful ? "He stays in the car the whole time. What you are worth to him and what you are worth are separate figures, and he is quoting one of them." : "Standing in your lot without acting is the entire message. Whatever gets said here reaches him before you finish saying it.");
+          },
+          goodie_corner_intro: () => event("goodie_corner_intro", "Warm Air Off the Dryer Vents", "Three people stand in the warm air off the Wash & Go dryer vents. One works a corner out of a gym bag and has clocked you twice. The second time, he lifts his chin. Decide what he becomes.", [
+            { label: "Introduce yourself properly", effect: { meetDealer: "goodie", dealerStanding: { id: "goodie", delta: 1 } }, preview: "Opens Goodie as a contact in People. He decides what you are later.", result: "He gives you a name, Goodie, and does not ask for yours, which means he already has some version of it. The conversation lasts ninety seconds and covers nothing. By the end of it you know where he stands every night and he knows you bothered to ask." },
+            { label: "Ask what he moves", effect: { meetDealer: "goodie" }, preview: "Opens Goodie as a contact. Straight to business, and he notices that too.", result: "He tells you weed and shrooms and nothing else, and he tells you the prices without being asked, which is either confidence or a test. He does not offer a name until you are already turning to go, and then he offers it to your back." },
+            { label: "Mark the corner and keep walking", effect: { meetDealer: "goodie", dealerStanding: { id: "goodie", delta: -1 } }, preview: "Opens Goodie as a contact, cold. He read the look you gave the bag.", result: "You do not stop, but you slow down enough to count the bag, the two people with him, and the gap between the vents and the street. He watches you do all of it. Neither of you pretends the other was not counting something." }
+          ]),
+          goodie_regular: () => event("goodie_regular", "The Regular-Customer Price", "Goodie has stopped checking the bills twice. He names the regular price and one rule: one buy a day, no exceptions when the corner is hot.", [
+            { label: "Accept the terms", effect: { dealerStanding: { id: "goodie", delta: 1 }, setFlags: { goodieRegularTerms: true } }, preview: "Build standing and keep the corner dependable.", result: "Goodie nods once. The price improves; the daily limit does not." },
+            { label: "Keep it transactional", effect: { setFlags: { goodieRegularTerms: false } }, preview: "Keep access without another promise.", result: "He counts the bag, counts the cash, and leaves trust exactly where it was." }
+          ]),
+          goodie_atlanta: () => event("goodie_atlanta", "What Atlanta Taught Him", "Goodie talks about Atlanta only after the last buyer leaves: too many people mistaking fast growth for invisible growth, and a corner that disappeared in one afternoon.", [
+            { label: "Listen without mining it", effect: { dealerStanding: { id: "goodie", delta: 1 }, setFlags: { goodieAtlantaHeard: true } }, preview: "Goodie reads respect in the silence.", result: "He finishes the story and gives you tomorrow's reliable rumor before you ask." },
+            { label: "Ask who survived", effect: { setFlags: { goodieAtlantaHeard: true } }, preview: "Learn the lesson without gaining standing.", result: 'Goodie names nobody. "The ones you know are the ones who stayed visible."' }
+          ]),
+          goodie_recognized: () => event("goodie_recognized", "Deshawn Wants a Word", "Deshawn vouched for you when you were nobody here, and you robbed Goodie after. He has waited outside the Wash & Go for twenty minutes. He wants to know whether he read you wrong. He is calm.", [
+            { label: "Tell him straight what you did", effect: { influence: { areaId: "north_star_lot", delta: -1 }, setFlags: { ownedGoodieRobbery: true } }, preview: "Costs you standing on the block. He keeps talking to you afterward.", result: `You give him the version with nothing shaved off it. He listens all the way through and then stands there a while longer. "I'm not going to say anything to anybody." He means it, and it is somehow worse than being shouted at.` },
+            { label: "Offer him money to square it", effect: { cash: -120, setFlags: { paidOffDeshawn: true, goodieRestitution: true } }, requires: "cash120", preview: "\u2212$120. It settles the debt without settling what he thinks.", result: "He takes it because turning it down would be a performance and he is not interested in performing. He counts it once, puts it away, and tells you the corner is somebody else's problem now. He does not ask where the money came from, which is its own answer." },
+            { label: "Tell him it was business", effect: { influence: { areaId: "north_star_lot", delta: -1 }, rivalRespect: 1, setFlags: { dismissedDeshawn: true, deshawnBusinessSevered: true } }, preview: "Costs block standing. The version Curtis hears is that you do not flinch.", result: `"Business." He repeats it back without any weight on it at all, nods once, and walks off toward Minnesota. Within two days three people who used to nod at you outside the Mini-Mart have stopped doing it, and one of them tells Curtis's driver why.` }
+          ]),
+          wet_bricks: () => event("wet_bricks", "The Tarp Tore Past Palmer", "The load rode forty miles in freezing rain after the tarp tore past Palmer. The man unstrapping it wants it off his truck before his shift ends, and offers the whole lot at a little over half.", [
+            { label: "Buy the whole lot", requires: "cash190", effect: { cash: -190, addProduct: { id: "weed", qty: 6, unitCost: 32 }, setFlags: { boughtWetLot: true } }, preview: "\u2212$190 for six units of weed. Condition stays unverified until you try to move it.", result: "He helps you load it, which is the first generous thing he has done all night, and is gone before you finish counting. Two of the seals are soft at the corner. The rest you will find out about at the sale." },
+            { label: "Buy two and check the seals", requires: "cash70", effect: { cash: -70, addProduct: { id: "weed", qty: 2, unitCost: 35 } }, preview: "\u2212$70 for two units you inspect before committing to the rest.", result: "You take the two off the dry end of the pallet and hold each one up to the bay light. They are fine. He watches you check, decides you are not worth the argument, and re-straps what is left." },
+            { label: "Leave it on the truck", effect: { setFlags: { passedWetLot: true } }, preview: "Nothing spent. He finds another buyer inside the hour.", result: "You are still in the lot when a second vehicle backs up to the flatbed and takes the lot at his asking price without opening anything. The wind comes off the flats and the whole bay smells like wet cardboard." }
+          ]),
+          door_knock: () => event("door_knock", "Working Their Way Along the Row", 'Knocking two doors down, and a voice saying "just a few questions." One officer on the landing, one at the bottom of the stairs. They are working along the row toward this door.', [
+            { label: "Sit still and let it pass", effect: { heat: 1 }, preview: "+1 Heat. You stay put and hope the row ends before this door does.", result: "The knocking reaches the next unit, holds there a while, then moves on down the landing. Somebody upstairs runs water for a long time. Nobody knocks here, but the officer at the bottom of the stairs writes something down before he leaves." },
+            { label: "Move the bag out the back", effect: { heat: -2, health: -3, setFlags: { movedBagOnIce: true } }, preview: "\u22122 Heat. The back stairs are iced and you are carrying weight down them.", result: "The back stairs have not been salted since November. You go down them fast with the bag on one shoulder and your free hand on the rail, and you land badly at the bottom. By the time the officers reach this unit there is nothing in it worth the questions." },
+            { label: "Open the door first", effect: { heat: -1, setFlags: { openedDoorToAPD: true } }, preview: "\u22121 Heat. Volunteering looks better than being found, and costs you the conversation.", result: "You open it before they knock, which surprises them enough to change the tone. They ask about a vehicle, not about you. You answer three questions honestly because none of them are dangerous, and they move on a door earlier than they meant to." }
+          ]),
+          stranded_wagon: () => event("stranded_wagon", "Hazards on the Off-Ramp", "A wagon sits on the off-ramp shoulder, hazards on, hood up, two kids belted in the back with their coats zipped. She waves once, apologetically. Twenty minutes of your week against her night.", [
+            { label: "Pull over and jump the battery", effect: { influence: { areaId: "north_star_lot", delta: 1 }, setFlags: { helpedStrandedDriver: true } }, preview: "Costs you the shoulder time. She and half the block will remember the vehicle.", result: "It takes two tries and a lot of engine noise before the wagon catches. She writes her number on a gas receipt and says her brother does bodywork in Mountain View, no charge, whenever you want. The kids wave through the back glass the entire time you are pulling away." },
+            { label: "Call it in from the corner", effect: {}, preview: "Somebody official gets there eventually. You are not involved.", result: "You make the call from the lot at the top of the ramp and watch long enough to see a trooper's lights come up the shoulder. It takes twenty-five minutes. The kids' windows are fogged the whole time." },
+            { label: "Keep driving", effect: {}, preview: "Nothing spent, nothing gained. The ramp is behind you in nine seconds.", result: "You are past before the decision finishes forming. In the mirror the hazards keep going, smaller, and then the on-ramp curve takes them out of sight." }
+          ]),
+          found_phone: () => event("found_phone", "Face-Down on the Bench", "A phone on the bench, still warm, screen unlocked. The last thread is a buyer arranging pickups by cross-street and half-hour window, six days out. It rings. The contact name reads DO NOT SAVE.", [
+            { label: "Copy the schedule and leave the phone", effect: { setFlags: { copiedBuyerList: true }, addRumor: { areaId: "downtown", productId: "shrooms", text: "A schedule copied off a lost phone puts a Downtown buyer on Fourth Avenue in half-hour windows for the next several days." } }, preview: "Adds a short-lived Downtown lead. Somebody eventually notices the phone was read.", result: "You write the six cross-streets on the inside of a receipt and set the phone back exactly face-down, exactly where it was. It rings twice more while you are still under the shelter. You do not look at it the second time." },
+            { label: "Wipe it and hand it in", effect: { influence: { areaId: "downtown", delta: 1 }, setFlags: { returnedLostPhone: true } }, preview: "You give up the schedule. The counter staff on Fourth will know your face for the right reason.", result: "The woman behind the transit counter takes it, checks the lock screen, and thanks you by name because she has seen you on this corner before. Whoever owns it gets it back at four. You will never know who they were." },
+            { label: "Put it back and walk", effect: {}, preview: "You leave it exactly as you found it, warm and ringing.", result: "You set it down and go. Half a block later it is still audible under the shelter roof, and then a bus pulls in and it is not." }
+          ]),
+          careful_customer: () => event("careful_customer", "Better Questions Than He Should Have", "He knows the weight before you say it and the price before you quote it. He asks which lot you park in, apologizes, then asks again in a different order. His hands are wrong for his story.", [
+            { label: "Sell him exactly what he asked for", effect: { cash: 95, heat: 2, setFlags: { soldToCarefulCustomer: true } }, preview: "+$95 now, +2 Heat, and he keeps whatever he came here to collect.", result: "The money is right and the handoff is clean and he thanks you twice, which nobody does. He is gone up the block before you have finished putting it away. Two of his questions are still sitting where you cannot reach them." },
+            { label: "Tell him you're not holding", effect: { setFlags: { refusedCarefulCustomer: true } }, preview: "No sale, no Heat. He may simply have been careful.", result: 'He accepts it immediately, which is the first thing all night that has not been strange. "Worth asking." He walks to the corner, does not cross, and stands there reading his phone for a while.' },
+            { label: "Ask who sent him", effect: { heat: 1, setFlags: { questionedCarefulCustomer: true } }, preview: "+1 Heat. You get a name, and he gets confirmation that you noticed.", result: "He gives you a name from two blocks over, and it is a real name, and the way he produces it means he had it ready. Whatever he was checking, he now knows you count questions. Neither of you pretends otherwise." }
+          ]),
+          dock_shift: () => event("dock_shift", "Two People Short", "Four hours of unload at the Ship Creek dock, two people short, cash at the end of the shift and nothing written down. The foreman has a clipboard and no patience. These are four hours you do not have.", [
+            { label: "Take the shift", effect: { cash: 110, heat: -1, health: -2, setFlags: { workedDockShift: true } }, preview: "+$110, \u22121 Heat. Four hours of honest labor and a sore back for it.", result: "It is pallets of canned goods and one long run of freight blankets, and by the third hour your hands have stopped closing properly. The foreman pays out of an envelope at the door and asks if you want Thursday. Nobody at the yard asked your name." },
+            { label: "Tell him you can't tonight", effect: {}, preview: "Nothing gained. He fills the slot in under a minute.", result: "He has already turned toward the two men behind you before you finish the sentence. The doors roll open and the wind takes the sound of it up the channel." }
+          ]),
+          garage_furnace: () => event("garage_furnace", "The Door Seal Froze Shut", "The furnace stopped overnight. Everything stored along the back wall sat at outside temperature for six hours, and the door seal froze to the frame. The repair number is a Wasilla answering machine.", [
+            { label: "Pay the emergency callout", requires: "cash130", effect: { cash: -130, setFlags: { paidFurnaceCallout: true } }, preview: "\u2212$130. Somebody drives in from the Valley and the bay is warm by afternoon.", result: "He comes down from Wasilla in a truck with the tailgate wired shut, replaces an igniter, and charges you for the drive more than the part. The bay is warm by two. He does not ask what is stacked along the wall and does not look at it twice." },
+            { label: "Patch it yourself", effect: { health: -4, setFlags: { patchedFurnace: true } }, preview: "Nothing spent. You are on a cold concrete floor with somebody else's wiring.", result: "It is a thermocouple, which you work out after an hour on the floor with a flashlight in your teeth. It lights on the fourth try and stays lit. Your knuckles are opened up across two fingers and the whole bay smells like burnt dust for the rest of the day." },
+            { label: "Leave it until the week is over", effect: { baseDamage: 1, setFlags: { ignoredFurnace: true } }, preview: "Nothing spent now. The cold wall keeps being a cold wall.", result: "You shut the connecting door and decide it is a next-week problem. By evening there is condensation running down the inside of the bay window and standing water along the base of the wall where the stock is." }
+          ]),
+          sedan_rumor: () => event("sedan_rumor", "Everyone Agrees on the Color", "The gray sedan is a repo driver, or it is Curtis's, or it belongs to a man whose brother you have never met. Nobody in the chain saw it. Everyone agrees on the color and nothing else.", [
+            { label: "Change your route for the day", effect: { heat: -1, setFlags: { reroutedOnRumor: true } }, preview: "\u22121 Heat from the longer way around, whether or not any of it was true.", result: "You take the long way to everything for a day, which costs you two good windows and produces no sedan. That is either because the story was wrong or because the route worked, and there is no version of the day that tells you which." },
+            { label: "Ask somebody positioned to know", effect: { setFlags: { checkedSedanRumor: true } }, preview: "You spend the ask. The answer may be that nobody knows either.", result: "The third person you ask is the first one who was actually on the block, and what she says is that there was a gray sedan on Tuesday and she has no idea whose. It is the most honest version you get and it is worth almost nothing." },
+            { label: "Carry on as planned", effect: {}, preview: "You act as though nothing was said, because possibly nothing was.", result: "You work the day you had already planned. Nothing happens, which proves nothing at all, and by evening two more people have told you the story with a different make of car in it." }
+          ]),
+          midtown_lights: () => event("midtown_lights", "Half a Mile at Walking Speed", "Four cruisers and a fire truck have the left two lanes coned off. Traffic is doing walking speed for half a mile. It is a collision. It is also every officer in Midtown with nothing else to look at.", [
+            { label: "Cut over to the frontage road", effect: { heat: -1, setFlags: { avoidedMidtownLights: true } }, preview: "\u22121 Heat. The frontage road is slower and nobody on it is being watched.", result: "You come off at Thirty-Sixth and take the frontage road behind the strip mall, past the sign for a carpet outlet that closed years ago and never came down. It adds fifteen minutes. Nobody looks at the vehicle once." },
+            { label: "Sit in the line", effect: { heat: 1 }, preview: "+1 Heat. Half a mile of being the slowest thing in front of four cruisers.", result: "It takes eleven minutes to clear the cones. A trooper glances into the vehicle somewhere around the fire truck, the way people look at anything that is moving slowly past them, and then looks at the next one. It is almost certainly nothing." }
+          ]),
+          eli_lieutenant_offer: () => event("eli_lieutenant_offer", "Eli Wants a Bigger Job", `Eli has a second phone he did not have last week. "You're spending time on corners that should just be running themselves." He wants to place soldiers, rotate them, and bring you only the calls that need you.`, [
+            { label: "Give him Operations", effect: { setFlags: { eliLieutenantOfferAccepted: true }, promoteEliLieutenant: true }, preview: "Eli starts running soldier placement and corner rotation on his own.", result: `He pockets the phone like the conversation is already over. "I'll bring you the numbers, not the errands." By the time you are back at the garage he has already written a rotation on the whiteboard nobody asked him to buy.` },
+            { label: "Keep making the calls yourself", effect: { setFlags: { eliLieutenantOfferDeclined: true }, crewLoyalty: { id: "eli", delta: -1 } }, preview: "Nothing changes yet. He will ask again once more is riding on it.", result: 'He puts the second phone away without arguing. "Your week." He does not bring it up again, but he also stops volunteering the small things he used to mention on his own.' }
+          ]),
+          spenard_block_scouted: () => event("spenard_block_scouted", "Eli's Map of the Blocks", 'Eli unrolls a Spenard street map with corners circled in three pens and dates beside some of them. "This is what patrol looks like on the ground." He taps each circle and gives you a number for it.', [
+            { label: "Take the map", effect: { setFlags: { spenardBlocksRevealed: true } }, preview: "Block earning, Heat exposure, Curtis visibility, and patrol frequency become visible before you claim anything.", result: "You fold the map into the glovebox. The numbers on it do not match the stories people tell about those corners, which is exactly why they are worth having." },
+            { label: "Tell him to keep it simple", effect: { setFlags: { spenardBlocksDeclined: true } }, preview: "You skip the numbers and keep reading the blocks yourself, the way you have all week.", result: `He rolls the map back up without arguing and sets it on the shelf instead of the hood. "It'll be here when you want it." You keep working corners off instinct instead of his notes.` }
+          ]),
+          yalonda_cooking: () => event("yalonda_cooking", "Something on the Stove", "Yalonda has rice going and asks how the day treated you. She waits through the first easy answer while the pot lid taps against the steam.", [
+            { label: "Tell her the useful truth", effect: { setFlags: { yalondaCookingSeen: true }, npcTrust: { id: "yalonda", delta: 1 } }, preview: "Build a little trust at home.", result: "She turns the flame down and listens until the whole answer is out." },
+            { label: "Keep the answer light", effect: { setFlags: { yalondaCookingSeen: true } }, preview: "Share the meal without opening the whole day.", result: "She lets the easy answer stand and puts another spoon beside the pot." }
+          ]),
+          yalonda_warning: () => event("yalonda_warning", "Questions at the Walk", "Yalonda saw somebody pause outside twice. The coat was wrong for the weather, the questions were about you, and the same car stayed warm at the curb.", [
+            { label: "Take the warning seriously", effect: { heat: -1, setFlags: { yalondaWarningSeen: true } }, preview: "Change your route and lose 1 Heat.", result: "You leave by the back walk. The same coat passes the front window once more." },
+            { label: "Say it was nothing", effect: { setFlags: { yalondaWarningSeen: true } }, preview: "Keep your route and accept the uncertainty.", result: "Yalonda locks the deadbolt herself and says nothing more about the car." }
+          ]),
+          yalonda_flirt: () => event("yalonda_flirt", "The Rent Envelope Stays Open", "Yalonda sets the paid envelope beside the kettle instead of putting it away. The house is quiet, your route home stayed clean, and she asks whether you ever stop working long enough to eat.", [
+            { label: "Stay for dinner", effect: { npcTrust: { id: "yalonda", delta: 1 }, setFlags: { yalondaFlirtAccepted: true } }, preview: "Let the relationship become something more personal.", result: "She leaves the second plate on the table. Neither of you calls the evening business." },
+            { label: "Keep it about the room", effect: { setFlags: { yalondaFlirtDeclined: true } }, preview: "Keep the relationship warm and strictly practical.", result: "Yalonda nods, seals the envelope, and sends you off with a covered plate." }
+          ]),
+          juan_warehouse_story: () => event("juan_warehouse_story", "Juan Gets Home Late", "Juan drops his work gloves by the heater. A truck missed its window and the dock needs people who answer callbacks.", [
+            { label: "Ask who runs the dock", effect: { shareJuanInfo: "work:ship_creek", discoverGym: true, setFlags: { juanWarehouseStorySeen: true } }, preview: "Learn a work lead and the community gym.", result: "Juan writes two names and the gym address on the back of a receipt." },
+            { label: "Ask about his shift", effect: { npcTrust: { id: "juan", delta: 1 }, setFlags: { juanWarehouseStorySeen: true } }, preview: "Build trust without taking the lead.", result: "Juan tells the whole truck story and leaves the work names for another night." }
+          ]),
+          juan_referral: () => event("juan_referral", "Juan Makes the Call", "Juan's warehouse needs another loader before the next receiving truck. He can put your name directly in the supervisor's hand and skip the callback wait.", [
+            { label: "Take the referral", effect: { hireJobId: "juan_warehouse", setFlags: { juanReferralSeen: true } }, preview: "Skip the normal two-part application delay.", result: "Juan sends the name. The supervisor replies with tomorrow's loading time." },
+            { label: "Apply on your own", effect: { setFlags: { juanReferralSeen: true } }, preview: "Leave Juan's direct referral unused today.", result: "Juan pockets his phone and tells you which door takes paper applications." }
+          ]),
+          discover_907_juan: () => event("discover_907_juan", "Juan Sends a Link", "Juan shows you a local resale list where ordinary items move for clean cash. He says the useful posts disappear before most people finish breakfast.", [
+            { label: "Save the link", effect: { discover907List: true }, preview: "Save the 907List link for later.", result: "The link stays in your phone under a plain bookmark." },
+            { label: "Leave it for now", effect: {}, preview: "Keep the local listing link unknown.", result: "Juan closes the page and goes back to his music." }
+          ]),
+          discover_907_work: () => event("discover_907_work", "A Link Between Shifts", "A coworker texts a local resale list between shifts. The fast listings disappear first, and buyers pay clean when the item looks ready to carry home.", [
+            { label: "Save it", effect: { discover907List: true }, preview: "Save the 907List link for later.", result: "The listings load beside the shift schedule." },
+            { label: "Ignore the message", effect: {}, preview: "Keep the local listing link unknown.", result: "The message slides under the rest of the shift thread." }
+          ]),
+          discover_907_night_owl: () => event("discover_907_night_owl", "The Board's Missing Tab", "A torn Night Owl posting leaves one readable resale link under the staple. Every phone-number tab is gone, but the page address is still intact.", [
+            { label: "Copy the address", effect: { discover907List: true }, preview: "Save the 907List link for later.", result: "You copy the address before the paper tears loose." },
+            { label: "Leave the board alone", effect: {}, preview: "Keep the local listing link unknown.", result: "The loose corner flaps once and folds back under the staple." }
+          ]),
+          discover_907_wander: () => event("discover_907_wander", "A Listing on the Pole", "A resale pickup note on Spenard Road points to a local listings page. The handwriting promises cash pickup and leaves the web address twice.", [
+            { label: "Follow the link", effect: { discover907List: true }, preview: "Save the 907List link for later.", result: "The page opens to three listings nearby." },
+            { label: "Keep walking", effect: {}, preview: "Keep the local listing link unknown.", result: "The paper stays on the pole for the next person walking past." }
+          ]),
+          curtis_respect_notice: () => event("curtis_respect_notice", "Curtis Notices the Corners", "Curtis has stopped calling your operation a nuisance. One of his people called it an operation, in front of people who repeat things. That attention arrives with no threat attached. Take it seriously.", [
+            { label: "Note it and keep moving", effect: {}, preview: "Nothing to spend here. The respect is already logged and worth remembering later.", result: "You do not change anything about the week because of a rumor, but you remember who told you, in case the next thing that comes through this route needs to move fast." },
+            { label: "Ask what else they said", effect: {}, preview: "You spend a little time chasing the rest of the story instead of moving on.", result: "The second half of the rumor turns out thinner than the first, mostly guesswork dressed up as certainty. Still, you learn which corner the comment was made on, and that is not nothing." }
+          ]),
+          soldier_raid_aftermath: () => event("soldier_raid_aftermath", "The Morning After the Raid", "The block is quiet too early. Nobody is standing that corner, and the regular buyers are deciding whether to come back. Nothing here needs a decision from you. It already happened.", [
+            { label: "Keep the block running", effect: {}, preview: "Acknowledge it and move on. The operation absorbs the loss and keeps working the corner.", result: "You do not close the corner. By afternoon somebody is standing on it again, and the block decides on its own how much that matters." },
+            { label: "Walk the block yourself", effect: {}, preview: "You spend a little time seeing the aftermath in person instead of hearing about it.", result: "There is nothing dramatic to see, just an empty spot where somebody used to stand and a few people who noticed. You leave without changing anything, but you saw it yourself." }
+          ])
+        };
+        const factory = events[id];
+        if (!factory) return null;
+        const built = factory();
+        const identity = state.player.streetIdentity;
+        const identityCopy = {
+          mina_intro: { mover: "Mina notices you check the counter traffic before you sit.", earner: "Mina has already heard that you keep dates written down.", stickup: "Mina watches your hands before she watches your face.", connector: "Mina knows two people who have already said your name kindly.", wild_card: "Mina says the stories about you never agree long enough to become useful." },
+          eli_offer: { mover: "Eli starts with the delivery window instead of the route.", earner: "Eli asks whether the people at your table get paid on time.", stickup: "Eli names the exits before he names the turns.", connector: "Eli names the people on the route before he names the turns.", wild_card: "Eli admits he cannot tell which version of you will show up." },
+          dre_terms: { mover: "Dre asks about turnover before he asks about cash in hand.", earner: "Dre already has the payment dates written down. So do you.", stickup: "Dre leaves a longer silence after he mentions consequences.", connector: "Dre names the people who vouched before he names the number.", wild_card: "Dre says inconsistency is still a pattern if it lasts long enough." },
+          curtis_mark: { mover: "Curtis's people have started counting your buyers.", earner: "Curtis's people know which obligations you have kept.", stickup: "Curtis's people stopped asking whether you carry. They ask whether you came alone.", connector: "Curtis's people keep asking why calls get returned for you.", wild_card: "Curtis's people have three descriptions of you and trust none of them." },
+          goodie_corner_intro: { mover: "You check the seals before the price. Goodie notices the order.", earner: "Goodie asks who taught you to keep a ledger.", stickup: "Goodie leaves one hand below the dryer-door line.", connector: "Goodie recognizes the name of the person who sent you.", wild_card: "Goodie cannot decide whether to quote you a price or watch the exit." },
+          sedan_rumor: { mover: "You weigh the rumor against the lost selling window.", earner: "You weigh it against everything due before Night.", stickup: "The version people repeat gives you a weapon whether it is true or not.", connector: "Two calls tell you more than the third-hand story did.", wild_card: "The rumor changes shape because nobody knows which version of you would react." },
+          dre_day7: { mover: "Dre judges the week by what kept moving.", earner: "Dre judges the week by what got paid.", stickup: "Dre judges the week by what survived the pressure.", connector: "Dre judges the week by who is still at the table.", wild_card: "Dre says the week produced evidence in every direction." }
+        };
+        if (identity !== "unproven" && ((_a = identityCopy[id]) == null ? void 0 : _a[identity])) built.description += ` ${identityCopy[id][identity]}`;
+        built.choices = built.choices.filter((choice) => {
+          if (!choice.requires) return true;
+          if (choice.requires === "security2") return state.base.tracks.security >= 2;
+          if (choice.requires === "base_controlled") return state.base.controlled;
+          const cashGate = /^cash(\d+)$/.exec(choice.requires);
+          if (cashGate) return state.player.cash >= Number(cashGate[1]);
+          return true;
+        }).map((choice) => ({
+          ...choice,
+          preview: choice.preview.split(/\s+/).length < 8 ? `${choice.preview} This changes the next route available to you.` : choice.preview,
+          result: choice.result.split(/\s+/).length < 15 ? `${choice.result} The exchange settles into the room and stays there after you move on.` : choice.result
+        }));
+        return built;
+      }
+      module.exports = {
+        effectPreview,
+        event,
+        activeEvent
+      };
+    }
+  });
+
   // src/data/products.js
   var require_products = __commonJS({
     "src/data/products.js"(exports, module) {
@@ -617,6 +1507,295 @@
     }
   });
 
+  // src/data/items.js
+  var require_items = __commonJS({
+    "src/data/items.js"(exports, module) {
+      var GEAR = [
+        { id: "utility_knife", name: "Utility Knife", cost: 90, slot: "weapon", type: "close", accuracy: 0.04, damage: [8, 14], heat: 0, description: "Concealable close-range protection." },
+        { id: "cheap_handgun", name: "Cheap Handgun", cost: 230, slot: "weapon", type: "firearm", accuracy: -0.06, damage: [14, 24], heat: 2, description: "Affordable stopping power with unreliable aim." },
+        { id: "reliable_handgun", name: "Reliable Handgun", cost: 430, slot: "weapon", type: "firearm", accuracy: 0.08, damage: [18, 30], heat: 2, description: "Accurate, costly, and difficult to explain." },
+        { id: "protective_vest", name: "Protective Vest", cost: 300, slot: "armor", armor: 4, description: "Cuts incoming damage but marks you as prepared for trouble." },
+        { id: "running_shoes", name: "Running Shoes", cost: 160, slot: "utility", escape: 0.1, description: "A real advantage when the bag is not overloaded." },
+        { id: "medical_kit", name: "Medical Kit", cost: 95, slot: "consumable", heal: 24, description: "One use during an encounter or at the garage." },
+        { id: "larger_bag", name: "Larger Bag", cost: 260, slot: "gear", cargo: 5, description: "Five more carried units, with more weight to escape with." },
+        { id: "burner_phone", name: "Burner Phone", cost: 180, slot: "tool", call: true, description: "Unlocks selected warnings, calls, and remote coordination." }
+      ];
+      var BASE_UPGRADES = [
+        { track: "security", level: 1, id: "better_locks", name: "Better Locks", cost: 140, description: "Protects stored goods from the first intrusion." },
+        { track: "security", level: 2, id: "camera_door", name: "Camera + Reinforced Door", cost: 360, description: "Reveals surveillance and changes raid choices." },
+        { track: "storage", level: 1, id: "hidden_compartment", name: "Hidden Compartment", cost: 120, description: "Adds protected product space and a small cash stash." },
+        { track: "storage", level: 2, id: "secure_lockbox", name: "Secure Lockbox", cost: 300, description: "Expands protected inventory and off-street cash." },
+        { track: "operations", level: 1, id: "burner_station", name: "Burner Station", cost: 180, description: "Improves coordination and unlocks crew assignments." },
+        { track: "operations", level: 2, id: "market_table", name: "Market Board + Packaging Table", cost: 420, description: "Improves rumors and opens harder supply lanes." },
+        { track: "recovery", level: 1, id: "first_aid_setup", name: "First-Aid Setup", cost: 150, description: "Makes garage recovery cheaper and safer." },
+        { track: "recovery", level: 2, id: "safe_room", name: "Safe Room + Medical Contact", cost: 380, description: "Protects one person and can prevent a fatal ending." }
+      ];
+      var GEAR_BY_ID = Object.fromEntries(GEAR.map((item) => [item.id, item]));
+      var LISTING_ITEMS = [
+        { id: "space_heater", name: "Space heater", buy: 25, resale: [45, 65] },
+        { id: "used_tv", name: "Used television", buy: 55, resale: [85, 120] },
+        { id: "dresser", name: "Solid dresser", buy: 40, resale: [65, 95] },
+        { id: "tool_set", name: "Mechanic tool set", buy: 70, resale: [100, 140] },
+        { id: "snow_tires", name: "Set of snow tires", buy: 80, resale: [120, 160] },
+        { id: "shop_vac", name: "Shop vacuum", buy: 45, resale: [70, 100] },
+        { id: "winter_coat", name: "Winter coat bundle", buy: 35, resale: [55, 85] },
+        { id: "camp_stove", name: "Camp stove", buy: 60, resale: [90, 125] }
+      ];
+      var LISTING_ITEM_BY_ID = Object.fromEntries(LISTING_ITEMS.map((item) => [item.id, item]));
+      module.exports = {
+        GEAR,
+        BASE_UPGRADES,
+        GEAR_BY_ID,
+        LISTING_ITEMS,
+        LISTING_ITEM_BY_ID
+      };
+    }
+  });
+
+  // src/data/npcs.js
+  var require_npcs = __commonJS({
+    "src/data/npcs.js"(exports, module) {
+      var CREW = [
+        {
+          id: "eli",
+          name: "Eli \u2018Shortcut\u2019 Ward",
+          role: "Runner",
+          power: 3,
+          recruitCost: 120,
+          wage: 45,
+          description: "Moves small bundles and knows service-road exits.",
+          canFieldAssign: true,
+          canRunTerritory: true,
+          lieutenantRole: "operations"
+        },
+        {
+          id: "pherris",
+          name: "Pherris Dickens",
+          role: "Connector / Territory Manager",
+          power: 2,
+          recruitCost: 180,
+          wage: 60,
+          description: "Turns a living Downtown contact list into buyers, rumors, and social control.",
+          canFieldAssign: true,
+          canRunTerritory: true,
+          lieutenantRole: null
+        },
+        {
+          id: "tone",
+          name: "Anton \u2018Tone\u2019 Bell",
+          role: "Enforcer / Lookout",
+          power: 5,
+          recruitCost: 250,
+          wage: 85,
+          description: "Protects the garage and changes confrontation choices.",
+          canFieldAssign: true,
+          canRunTerritory: true,
+          lieutenantRole: null
+        },
+        {
+          id: "deshawn",
+          name: "Deshawn",
+          role: "Fixer / Recruiter",
+          power: 1,
+          recruitCost: 100,
+          wage: 50,
+          description: "De-escalates conflicts, recruits through trust, and keeps Spenard talking.",
+          canFieldAssign: true,
+          canRunTerritory: true,
+          lieutenantRole: null
+        }
+      ];
+      var CREW_BY_ID = Object.fromEntries(CREW.map((item) => [item.id, item]));
+      var NIGHT_OWL_REGULARS = [
+        { id: "cal", name: "Cal Brooks", role: "The loud regular", hint: "Cal talks like every room is already listening." },
+        { id: "nia", name: "Nia Park", role: "The quiet courier", hint: "Nia keeps route notes folded inside a paperback." }
+      ];
+      var HOUSEHOLD_NPCS = [
+        { id: "yalonda", name: "Yalonda Hernandez", role: "Landlord", location: "home", startsKnown: true, hint: "She rents the spare room weekly and keeps the house steady." },
+        { id: "juan", name: "Juan Hernandez", role: "Yalonda's son", location: "home", startsKnown: true, hint: "He works a warehouse loading dock and knows who is hiring." }
+      ];
+      var DEALERS = [
+        { id: "goodie", name: "Goodie", where: "the Wash & Go lot on Spenard Road", areaId: "north_star_lot", products: ["weed", "shrooms"] }
+      ];
+      var DEALER_BY_ID = Object.fromEntries(DEALERS.map((item) => [item.id, item]));
+      var PLUGS = [
+        { id: "goodie", name: "Goodie", products: [{ id: "weed", standing: 0 }, { id: "shrooms", standing: 2 }], priceModifier: 1, maxUnits: 3, introducesNext: "tasha" },
+        { id: "tasha", name: "Tasha", products: [{ id: "pills", standing: 0 }, { id: "lean", standing: 0 }], priceModifier: 0.9, maxUnits: 5, introducesNext: "malik" },
+        { id: "malik", name: "Malik", products: [{ id: "coke", standing: 0 }, { id: "molly", standing: 0 }], priceModifier: 0.82, maxUnits: 8, introducesNext: null, bulkStanding: 3 }
+      ];
+      var PLUG_BY_ID = Object.fromEntries(PLUGS.map((plug) => [plug.id, plug]));
+      module.exports = {
+        CREW,
+        CREW_BY_ID,
+        DEALERS,
+        DEALER_BY_ID,
+        PLUGS,
+        PLUG_BY_ID,
+        HOUSEHOLD_NPCS,
+        NIGHT_OWL_REGULARS
+      };
+    }
+  });
+
+  // src/data/jobs.js
+  var require_jobs = __commonJS({
+    "src/data/jobs.js"(exports, module) {
+      var { HOME_DISTRICT_ID } = require_locations();
+      var JOB_RANK_THRESHOLDS = [4, 8, 14];
+      var JOB_APPROACHES = {
+        work_hard: { id: "work_hard", label: "Work Hard", xp: 2, relationship: 0.5, payMultiplier: 1.1, health: -2, description: "+10% pay \xB7 2 XP \xB7 \u22122 Health" },
+        socialize: { id: "socialize", label: "Socialize", xp: 1, relationship: 1, payMultiplier: 1, health: 0, description: "+1 relationship \xB7 1 XP" },
+        take_it_easy: { id: "take_it_easy", label: "Take It Easy", xp: 0, relationship: 0.5, payMultiplier: 1, health: 1, description: "+1 Health \xB7 no XP" },
+        learn_job: { id: "learn_job", label: "Learn the Job", xp: 1.5, relationship: 0.5, payMultiplier: 1, health: 0, description: "1.5 XP \xB7 learn one workplace detail" }
+      };
+      var SPENARD_JOBS = [
+        {
+          id: "wash_go",
+          name: "Wash & Go Attendant",
+          areaId: HOME_DISTRICT_ID,
+          pay: [40, 60],
+          slots: [0, 1, 2, 3],
+          scheduled: true,
+          risk: "None",
+          starter: true,
+          coworkers: [
+            { id: "lena", name: "Lena Aguchak", introduction: "Lena Aguchak shows you the towel shelves, then points out which machines shake during the spin cycle." },
+            { id: "andre", name: "Andre Price", introduction: "Andre Price slides you the spare key and shows you how to reset the change machine without calling the owner." }
+          ],
+          discovery: "You notice a 'Help Wanted' sign taped to the Wash & Go window.",
+          details: ["Lena says the quiet hour starts after the school buses clear Spenard.", "The change machine jams when the temperature drops below zero."],
+          shiftDialogue: ["The dryers thump through another load while the counter stays steady.", "A line forms at the change machine. You keep it moving.", "Salt dries white across the floor. The last basket leaves clean."]
+        },
+        {
+          id: "spenard_chevron",
+          name: "Spenard Chevron Clerk",
+          areaId: HOME_DISTRICT_ID,
+          pay: [48, 60],
+          slots: [0, 1, 2, 3],
+          scheduled: true,
+          risk: "None",
+          starter: true,
+          coworkers: [
+            { id: "tiana", name: "Tiana Cole", introduction: "Tiana Cole shows you the cigarette count and the camera angles behind the counter." },
+            { id: "owen", name: "Owen Park", introduction: "Owen Park hands you a register code and points toward the rush that follows every airport shift." }
+          ],
+          discovery: "A handwritten card at Spenard Chevron says the counter needs another reliable clerk.",
+          details: ["Tiana says the coffee rush lands before the pumps get busy.", "Owen keeps the snow shovel beside the freezer door."],
+          shiftDialogue: ["Pump numbers blink while you count change under the counter light.", "A cab line fills the lot. Coffee and fuel move together.", "The doors hiss open all shift. You keep the register square."]
+        },
+        {
+          id: "rebel_convenience",
+          name: "Rebel Convenience Clerk",
+          areaId: HOME_DISTRICT_ID,
+          pay: [48, 60],
+          slots: [0, 1, 2, 3],
+          scheduled: true,
+          risk: "None",
+          starter: true,
+          coworkers: [
+            { id: "rochelle", name: "Rochelle King", introduction: "Rochelle King walks you through the cooler count and the stack of delivery slips." },
+            { id: "jae", name: "Jae Park", introduction: "Jae Park gives you the register drawer and shows you which regulars pay in exact change." }
+          ],
+          discovery: "Rebel Convenience has a counter opening posted beside the lottery display.",
+          details: ["Rochelle checks the cooler seals before every handoff.", "Jae says the late bus brings the cleanest rush."],
+          shiftDialogue: ["The cooler doors knock shut while the register keeps ringing.", "A delivery blocks one aisle. You clear boxes between customers.", "Lottery slips curl beside the till. Your drawer stays even."]
+        },
+        {
+          id: "northern_value",
+          name: "Northern Value Floor Staff",
+          areaId: HOME_DISTRICT_ID,
+          pay: [48, 60],
+          slots: [0, 1, 2],
+          scheduled: true,
+          risk: "None",
+          starter: true,
+          coworkers: [
+            { id: "isaiah", name: "Isaiah Green", introduction: "Isaiah Green hands you a rolling rack and shows you how the floor gets reset before lunch." },
+            { id: "ana", name: "Ana Sosa", introduction: "Ana Sosa marks the sorting bins and points out the donations worth moving first." }
+          ],
+          discovery: "Northern Value needs floor staff. The paper application sits beside a row of winter coats.",
+          details: ["Isaiah saves the strongest hangers for heavy parkas.", "Ana says tool donations sell before they reach the back wall."],
+          shiftDialogue: ["Coats move from the rack before you finish tagging the next row.", "Donation carts crowd the back door. You sort a path through them.", "The floor clears by closing. One last rack rolls into place."]
+        },
+        {
+          id: "night_owl",
+          name: "Night Owl counter shift",
+          areaId: HOME_DISTRICT_ID,
+          pay: [55, 75],
+          slots: [2],
+          scheduled: true,
+          risk: "None",
+          coworkers: [{ id: "mina", name: "Mina Vale", introduction: "Mina points out the closing list, the regulars, and which register sticks. Then she hands you an apron." }],
+          discovery: "The Night Owl has a cardboard sign by the register: 'Counter help needed, evenings.'",
+          details: ["Mina says the coffee rush ends ten minutes after the last airport shift bus.", "The owner counts cigarettes before cash and checks the back door twice."],
+          shiftDialogue: ["The counter light catches every face that comes through after dusk.", "Coffee burns low while Mina counts the last cigarettes.", "The door keeps opening until the city finally settles."]
+        },
+        {
+          id: "delivery",
+          name: "Delivery run",
+          areaId: HOME_DISTRICT_ID,
+          pay: [60, 120],
+          slots: [0, 1, 2, 3],
+          scheduled: false,
+          risk: "None",
+          coworkers: [{ id: "minh", name: "Minh Tran", introduction: "Minh Tran keeps the courier route moving with two phones and a paper map." }],
+          discovery: "Guy loading a van on Spenard Road asks if you drive. Says he needs runners.",
+          details: ["Minh marks apartment entrances that stay clear when the snow berms narrow the road.", "The airport hotels accept deliveries fastest between housekeeping rounds."],
+          shiftDialogue: ["The route folds across Spenard and back before the next call lands.", "Hotel doors open, packages change hands, and the van keeps moving.", "Snow narrows the curb. You finish every stop without losing the route."]
+        },
+        {
+          id: "ship_creek",
+          name: "Ship Creek Freight",
+          areaId: HOME_DISTRICT_ID,
+          pay: [110, 140],
+          slots: [0],
+          scheduled: true,
+          risk: "None",
+          coworkers: [{ id: "marcus", name: "Marcus Bell", introduction: "Marcus Bell checks your gloves, points at the freight line, and says payday is at the door." }],
+          discovery: "Flyer stapled to a phone pole: 'FREIGHT HELP NEEDED. Same day pay. AM only.'",
+          details: ["Marcus says the first truck after sunrise is the one that decides whether the dock falls behind.", "The yard office keeps a short list of workers who show up before the gate opens."],
+          shiftDialogue: ["Pallets scrape concrete before the sun clears the yard.", "The first truck lands heavy. You keep the freight line moving.", "Cold metal bites through the gloves. The last load clears on time."]
+        },
+        {
+          id: "juan_warehouse",
+          name: "Spenard Warehouse Dock",
+          areaId: HOME_DISTRICT_ID,
+          pay: [70, 95],
+          slots: [0, 1],
+          scheduled: true,
+          risk: "None",
+          coworkers: [{ id: "juan", name: "Juan Hernandez", introduction: "Juan Hernandez meets you at the loading door and shows you which pallets move first." }],
+          discovery: "Juan says his warehouse dock needs another loader.",
+          details: ["Juan says the receiving truck is easiest before lunch.", "The dock supervisor keeps callbacks short and notices early arrivals."],
+          shiftDialogue: ["Pallet wrap snaps while the loading door rattles open.", "Juan calls the order and you keep the dock moving.", "The last pallet lands square before the truck pulls away."]
+        },
+        {
+          id: "day_labor",
+          name: "Day Labor Pickup",
+          areaId: HOME_DISTRICT_ID,
+          pay: [40, 60],
+          slots: [0, 1],
+          scheduled: true,
+          risk: "None",
+          dayLabor: true,
+          coworkers: [],
+          discovery: "The day-labor pickup takes walk-ons every morning.",
+          details: [],
+          shiftDialogue: ["You shovel, haul, and take the cash when the truck returns.", "A short crew clears the job before the weather turns.", "The foreman counts bills into your palm at the curb."]
+        }
+      ];
+      var SPENARD_JOB_BY_ID = Object.fromEntries(SPENARD_JOBS.map((job) => [job.id, job]));
+      var STARTER_JOB_IDS = SPENARD_JOBS.filter((job) => job.starter).map((job) => job.id);
+      module.exports = {
+        JOB_RANK_THRESHOLDS,
+        JOB_APPROACHES,
+        SPENARD_JOBS,
+        SPENARD_JOB_BY_ID,
+        STARTER_JOB_IDS
+      };
+    }
+  });
+
   // game-core.js
   var require_game_core = __commonJS({
     "game-core.js"(exports, module) {
@@ -627,6 +1806,9 @@
         root.GameCore = api;
       })(typeof globalThis !== "undefined" ? globalThis : exports, function(EncounterSystem) {
         "use strict";
+        const { normalizeSeed, stringHash, makeRandom, seededShuffle } = require_random();
+        const { effectPreview, event, activeEvent } = require_cards();
+        const { checkpointDay, controlled } = require_selectors();
         const VERSION = 5;
         const RUN_DAYS = 7;
         const PRESSURE_DAYS = 7;
@@ -660,129 +1842,15 @@
           return String(input).replace(/[^A-Za-z0-9 '\-.]/g, "").replace(/\s+/g, " ").trim().slice(0, STREET_NAME_MAX).trim();
         }
         const { PRODUCTS, PRODUCT_BY_ID } = require_products();
-        const HOME_DISTRICT_ID = "north_star_lot";
-        const NEIGHBORHOODS = [
-          {
-            id: "north_star_lot",
-            name: "Spenard",
-            role: "Home",
-            travelAction: "TRAVEL",
-            risk: 1,
-            police: 1,
-            rival: 0,
-            accent: "#d7d7d7",
-            blurb: "North Star Garage, the Night Owl Mini-Mart, and familiar blocks that offer the week's safest footing.",
-            bias: { weed: 0.78, shrooms: 0.88, cocaine: 1.02, meth: 0.95 },
-            availability: { weed: 1, shrooms: 0.88, pills: 0.82, lean: 0.7, coke: 0.62, molly: 0.68, cocaine: 0.55, meth: 0.48 }
-          },
-          {
-            id: "downtown",
-            name: "Downtown",
-            role: "Commercial",
-            travelAction: "BUS_TRAVEL",
-            risk: 2,
-            police: 3,
-            rival: 1,
-            accent: "#e14332",
-            blurb: "Nightlife money moves fast under cameras and through Curtis's buyers.",
-            bias: { weed: 1.08, shrooms: 1.32, cocaine: 1.46, meth: 1.08 },
-            availability: { weed: 0.9, shrooms: 0.9, pills: 0.82, lean: 0.78, coke: 0.8, molly: 0.86, cocaine: 0.78, meth: 0.58 }
-          },
-          {
-            id: "airport_industrial",
-            name: "Industrial Service Roads",
-            role: "Outer",
-            travelAction: "TRAVEL",
-            risk: 4,
-            police: 2,
-            rival: 3,
-            accent: "#9a1d18",
-            blurb: "Loading yards, warehouses, service roads, rare supply, and expensive mistakes.",
-            bias: { weed: 1.12, shrooms: 1.18, cocaine: 1.32, meth: 1.62 },
-            availability: { weed: 0.72, shrooms: 0.7, pills: 0.7, lean: 0.74, coke: 0.78, molly: 0.72, cocaine: 0.7, meth: 0.86 }
-          }
-        ];
+        const { HOME_DISTRICT_ID, NEIGHBORHOODS, TERRITORIES, SPENARD_BLOCKS, SPENARD_BLOCK_BY_ID, AREA_BY_ID } = require_locations();
         const BACKGROUNDS = [
           { id: "shooter", name: "Steady-Hand Shooter", combat: 3, charisma: 1, intelligence: 2, cash: 375, heat: 1, description: "Weapons, direct confrontation, survival, and joining territory attacks are your strongest opening tools." },
           { id: "hustler", name: "Silver-Tongued Hustler", combat: 1, charisma: 3, intelligence: 2, cash: 375, heat: 1, description: "Negotiation, trade margins, recruiting, and relationship choices are your strongest opening tools." },
           { id: "strategist", name: "Strategist", combat: 2, charisma: 1, intelligence: 3, cash: 375, heat: 1, description: "Best at reading danger, intimidation, and judging territory strength." }
         ];
         const STARTING_EDGES = BACKGROUNDS.filter((item) => item.id !== "strategist");
-        const GEAR = [
-          { id: "utility_knife", name: "Utility Knife", cost: 90, slot: "weapon", type: "close", accuracy: 0.04, damage: [8, 14], heat: 0, description: "Concealable close-range protection." },
-          { id: "cheap_handgun", name: "Cheap Handgun", cost: 230, slot: "weapon", type: "firearm", accuracy: -0.06, damage: [14, 24], heat: 2, description: "Affordable stopping power with unreliable aim." },
-          { id: "reliable_handgun", name: "Reliable Handgun", cost: 430, slot: "weapon", type: "firearm", accuracy: 0.08, damage: [18, 30], heat: 2, description: "Accurate, costly, and difficult to explain." },
-          { id: "protective_vest", name: "Protective Vest", cost: 300, slot: "armor", armor: 4, description: "Cuts incoming damage but marks you as prepared for trouble." },
-          { id: "running_shoes", name: "Running Shoes", cost: 160, slot: "utility", escape: 0.1, description: "A real advantage when the bag is not overloaded." },
-          { id: "medical_kit", name: "Medical Kit", cost: 95, slot: "consumable", heal: 24, description: "One use during an encounter or at the garage." },
-          { id: "larger_bag", name: "Larger Bag", cost: 260, slot: "gear", cargo: 5, description: "Five more carried units, with more weight to escape with." },
-          { id: "burner_phone", name: "Burner Phone", cost: 180, slot: "tool", call: true, description: "Unlocks selected warnings, calls, and remote coordination." }
-        ];
-        const BASE_UPGRADES = [
-          { track: "security", level: 1, id: "better_locks", name: "Better Locks", cost: 140, description: "Protects stored goods from the first intrusion." },
-          { track: "security", level: 2, id: "camera_door", name: "Camera + Reinforced Door", cost: 360, description: "Reveals surveillance and changes raid choices." },
-          { track: "storage", level: 1, id: "hidden_compartment", name: "Hidden Compartment", cost: 120, description: "Adds protected product space and a small cash stash." },
-          { track: "storage", level: 2, id: "secure_lockbox", name: "Secure Lockbox", cost: 300, description: "Expands protected inventory and off-street cash." },
-          { track: "operations", level: 1, id: "burner_station", name: "Burner Station", cost: 180, description: "Improves coordination and unlocks crew assignments." },
-          { track: "operations", level: 2, id: "market_table", name: "Market Board + Packaging Table", cost: 420, description: "Improves rumors and opens harder supply lanes." },
-          { track: "recovery", level: 1, id: "first_aid_setup", name: "First-Aid Setup", cost: 150, description: "Makes garage recovery cheaper and safer." },
-          { track: "recovery", level: 2, id: "safe_room", name: "Safe Room + Medical Contact", cost: 380, description: "Protects one person and can prevent a fatal ending." }
-        ];
-        const CREW = [
-          {
-            id: "eli",
-            name: "Eli \u2018Shortcut\u2019 Ward",
-            role: "Runner",
-            power: 3,
-            recruitCost: 120,
-            wage: 45,
-            description: "Moves small bundles and knows service-road exits.",
-            canFieldAssign: true,
-            canRunTerritory: true,
-            lieutenantRole: "operations"
-          },
-          {
-            id: "pherris",
-            name: "Pherris Dickens",
-            role: "Connector / Territory Manager",
-            power: 2,
-            recruitCost: 180,
-            wage: 60,
-            description: "Turns a living Downtown contact list into buyers, rumors, and social control.",
-            canFieldAssign: true,
-            canRunTerritory: true,
-            lieutenantRole: null
-          },
-          {
-            id: "tone",
-            name: "Anton \u2018Tone\u2019 Bell",
-            role: "Enforcer / Lookout",
-            power: 5,
-            recruitCost: 250,
-            wage: 85,
-            description: "Protects the garage and changes confrontation choices.",
-            canFieldAssign: true,
-            canRunTerritory: true,
-            lieutenantRole: null
-          },
-          {
-            id: "deshawn",
-            name: "Deshawn",
-            role: "Fixer / Recruiter",
-            power: 1,
-            recruitCost: 100,
-            wage: 50,
-            description: "De-escalates conflicts, recruits through trust, and keeps Spenard talking.",
-            canFieldAssign: true,
-            canRunTerritory: true,
-            lieutenantRole: null
-          }
-        ];
-        const TERRITORIES = [
-          { areaId: "north_star_lot", power: 12, attackCost: 100, dailyIncome: 45, special: "Recruitment costs 10% less." },
-          { areaId: "downtown", power: 18, attackCost: 150, dailyIncome: 75, special: "Cocaine access opens." },
-          { areaId: "airport_industrial", power: 24, attackCost: 200, dailyIncome: 110, special: "Meth access opens." }
-        ];
+        const { GEAR, BASE_UPGRADES, GEAR_BY_ID, LISTING_ITEMS, LISTING_ITEM_BY_ID } = require_items();
+        const { CREW, CREW_BY_ID, DEALERS, DEALER_BY_ID, PLUGS, PLUG_BY_ID, HOUSEHOLD_NPCS, NIGHT_OWL_REGULARS } = require_npcs();
         const SOLDIER_RECRUIT_COST = 140;
         const SOLDIER_BASE_CAPACITY = 2;
         const SOLDIER_CAPACITY_PER_BLOCK = 2;
@@ -845,18 +1913,6 @@
         const DISTRICT_CONTROL_CAPSTONE_RESPECT = RESPECT_STAGE_THRESHOLDS.mid;
         const DISTRICT_CONTROL_LABEL = "District Control";
         const DISTRICT_CONTROL_DISCOUNT_BONUS = 0.02;
-        const SPENARD_BLOCKS = [
-          { id: "wash_and_go_lot", name: "Wash & Go Lot", earningPotential: 55, heatExposure: 1, curtisVisibility: 1, patrolFrequency: 1, claimCost: 220 },
-          { id: "fourth_ave_strip", name: "Fourth Avenue Strip", earningPotential: 80, heatExposure: 2, curtisVisibility: 2, patrolFrequency: 2, claimCost: 320 },
-          { id: "minnesota_offramp", name: "Minnesota Off-Ramp", earningPotential: 65, heatExposure: 2, curtisVisibility: 1, patrolFrequency: 1, claimCost: 260 },
-          { id: "spenard_rec_lot", name: "Spenard Rec Center Lot", earningPotential: 45, heatExposure: 1, curtisVisibility: 0, patrolFrequency: 1, claimCost: 180 },
-          { id: "northern_lights_motels", name: "Northern Lights Motel Row", earningPotential: 100, heatExposure: 3, curtisVisibility: 3, patrolFrequency: 2, claimCost: 400 },
-          { id: "service_road_chokepoint", name: "Service Road Chokepoint", earningPotential: 70, heatExposure: 2, curtisVisibility: 2, patrolFrequency: 3, claimCost: 300 }
-        ];
-        const SPENARD_BLOCK_BY_ID = Object.fromEntries(SPENARD_BLOCKS.map((item) => [item.id, item]));
-        const AREA_BY_ID = Object.fromEntries(NEIGHBORHOODS.map((item) => [item.id, item]));
-        const GEAR_BY_ID = Object.fromEntries(GEAR.map((item) => [item.id, item]));
-        const CREW_BY_ID = Object.fromEntries(CREW.map((item) => [item.id, item]));
         const BOOST_TARGETS = [
           { id: "night_owl", name: "Night Owl Mini-Mart", areaId: "north_star_lot", tier: 1, take: [15, 40] },
           { id: "spenard_fuel", name: "Spenard Fuel", areaId: "north_star_lot", tier: 1, take: [15, 40] },
@@ -872,171 +1928,8 @@
           { id: "delivery_route_4", name: "Delivery Route 4", areaId: "downtown", tier: 3, take: [200, 500] }
         ];
         const BOOST_TARGET_BY_ID = Object.fromEntries(BOOST_TARGETS.map((target) => [target.id, target]));
-        const JOB_RANK_THRESHOLDS = [4, 8, 14];
-        const JOB_APPROACHES = {
-          work_hard: { id: "work_hard", label: "Work Hard", xp: 2, relationship: 0.5, payMultiplier: 1.1, health: -2, description: "+10% pay \xB7 2 XP \xB7 \u22122 Health" },
-          socialize: { id: "socialize", label: "Socialize", xp: 1, relationship: 1, payMultiplier: 1, health: 0, description: "+1 relationship \xB7 1 XP" },
-          take_it_easy: { id: "take_it_easy", label: "Take It Easy", xp: 0, relationship: 0.5, payMultiplier: 1, health: 1, description: "+1 Health \xB7 no XP" },
-          learn_job: { id: "learn_job", label: "Learn the Job", xp: 1.5, relationship: 0.5, payMultiplier: 1, health: 0, description: "1.5 XP \xB7 learn one workplace detail" }
-        };
-        const SPENARD_JOBS = [
-          {
-            id: "wash_go",
-            name: "Wash & Go Attendant",
-            areaId: HOME_DISTRICT_ID,
-            pay: [40, 60],
-            slots: [0, 1, 2, 3],
-            scheduled: true,
-            risk: "None",
-            starter: true,
-            coworkers: [
-              { id: "lena", name: "Lena Aguchak", introduction: "Lena Aguchak shows you the towel shelves, then points out which machines shake during the spin cycle." },
-              { id: "andre", name: "Andre Price", introduction: "Andre Price slides you the spare key and shows you how to reset the change machine without calling the owner." }
-            ],
-            discovery: "You notice a 'Help Wanted' sign taped to the Wash & Go window.",
-            details: ["Lena says the quiet hour starts after the school buses clear Spenard.", "The change machine jams when the temperature drops below zero."],
-            shiftDialogue: ["The dryers thump through another load while the counter stays steady.", "A line forms at the change machine. You keep it moving.", "Salt dries white across the floor. The last basket leaves clean."]
-          },
-          {
-            id: "spenard_chevron",
-            name: "Spenard Chevron Clerk",
-            areaId: HOME_DISTRICT_ID,
-            pay: [48, 60],
-            slots: [0, 1, 2, 3],
-            scheduled: true,
-            risk: "None",
-            starter: true,
-            coworkers: [
-              { id: "tiana", name: "Tiana Cole", introduction: "Tiana Cole shows you the cigarette count and the camera angles behind the counter." },
-              { id: "owen", name: "Owen Park", introduction: "Owen Park hands you a register code and points toward the rush that follows every airport shift." }
-            ],
-            discovery: "A handwritten card at Spenard Chevron says the counter needs another reliable clerk.",
-            details: ["Tiana says the coffee rush lands before the pumps get busy.", "Owen keeps the snow shovel beside the freezer door."],
-            shiftDialogue: ["Pump numbers blink while you count change under the counter light.", "A cab line fills the lot. Coffee and fuel move together.", "The doors hiss open all shift. You keep the register square."]
-          },
-          {
-            id: "rebel_convenience",
-            name: "Rebel Convenience Clerk",
-            areaId: HOME_DISTRICT_ID,
-            pay: [48, 60],
-            slots: [0, 1, 2, 3],
-            scheduled: true,
-            risk: "None",
-            starter: true,
-            coworkers: [
-              { id: "rochelle", name: "Rochelle King", introduction: "Rochelle King walks you through the cooler count and the stack of delivery slips." },
-              { id: "jae", name: "Jae Park", introduction: "Jae Park gives you the register drawer and shows you which regulars pay in exact change." }
-            ],
-            discovery: "Rebel Convenience has a counter opening posted beside the lottery display.",
-            details: ["Rochelle checks the cooler seals before every handoff.", "Jae says the late bus brings the cleanest rush."],
-            shiftDialogue: ["The cooler doors knock shut while the register keeps ringing.", "A delivery blocks one aisle. You clear boxes between customers.", "Lottery slips curl beside the till. Your drawer stays even."]
-          },
-          {
-            id: "northern_value",
-            name: "Northern Value Floor Staff",
-            areaId: HOME_DISTRICT_ID,
-            pay: [48, 60],
-            slots: [0, 1, 2],
-            scheduled: true,
-            risk: "None",
-            starter: true,
-            coworkers: [
-              { id: "isaiah", name: "Isaiah Green", introduction: "Isaiah Green hands you a rolling rack and shows you how the floor gets reset before lunch." },
-              { id: "ana", name: "Ana Sosa", introduction: "Ana Sosa marks the sorting bins and points out the donations worth moving first." }
-            ],
-            discovery: "Northern Value needs floor staff. The paper application sits beside a row of winter coats.",
-            details: ["Isaiah saves the strongest hangers for heavy parkas.", "Ana says tool donations sell before they reach the back wall."],
-            shiftDialogue: ["Coats move from the rack before you finish tagging the next row.", "Donation carts crowd the back door. You sort a path through them.", "The floor clears by closing. One last rack rolls into place."]
-          },
-          {
-            id: "night_owl",
-            name: "Night Owl counter shift",
-            areaId: HOME_DISTRICT_ID,
-            pay: [55, 75],
-            slots: [2],
-            scheduled: true,
-            risk: "None",
-            coworkers: [{ id: "mina", name: "Mina Vale", introduction: "Mina points out the closing list, the regulars, and which register sticks. Then she hands you an apron." }],
-            discovery: "The Night Owl has a cardboard sign by the register: 'Counter help needed, evenings.'",
-            details: ["Mina says the coffee rush ends ten minutes after the last airport shift bus.", "The owner counts cigarettes before cash and checks the back door twice."],
-            shiftDialogue: ["The counter light catches every face that comes through after dusk.", "Coffee burns low while Mina counts the last cigarettes.", "The door keeps opening until the city finally settles."]
-          },
-          {
-            id: "delivery",
-            name: "Delivery run",
-            areaId: HOME_DISTRICT_ID,
-            pay: [60, 120],
-            slots: [0, 1, 2, 3],
-            scheduled: false,
-            risk: "None",
-            coworkers: [{ id: "minh", name: "Minh Tran", introduction: "Minh Tran keeps the courier route moving with two phones and a paper map." }],
-            discovery: "Guy loading a van on Spenard Road asks if you drive. Says he needs runners.",
-            details: ["Minh marks apartment entrances that stay clear when the snow berms narrow the road.", "The airport hotels accept deliveries fastest between housekeeping rounds."],
-            shiftDialogue: ["The route folds across Spenard and back before the next call lands.", "Hotel doors open, packages change hands, and the van keeps moving.", "Snow narrows the curb. You finish every stop without losing the route."]
-          },
-          {
-            id: "ship_creek",
-            name: "Ship Creek Freight",
-            areaId: HOME_DISTRICT_ID,
-            pay: [110, 140],
-            slots: [0],
-            scheduled: true,
-            risk: "None",
-            coworkers: [{ id: "marcus", name: "Marcus Bell", introduction: "Marcus Bell checks your gloves, points at the freight line, and says payday is at the door." }],
-            discovery: "Flyer stapled to a phone pole: 'FREIGHT HELP NEEDED. Same day pay. AM only.'",
-            details: ["Marcus says the first truck after sunrise is the one that decides whether the dock falls behind.", "The yard office keeps a short list of workers who show up before the gate opens."],
-            shiftDialogue: ["Pallets scrape concrete before the sun clears the yard.", "The first truck lands heavy. You keep the freight line moving.", "Cold metal bites through the gloves. The last load clears on time."]
-          },
-          {
-            id: "juan_warehouse",
-            name: "Spenard Warehouse Dock",
-            areaId: HOME_DISTRICT_ID,
-            pay: [70, 95],
-            slots: [0, 1],
-            scheduled: true,
-            risk: "None",
-            coworkers: [{ id: "juan", name: "Juan Hernandez", introduction: "Juan Hernandez meets you at the loading door and shows you which pallets move first." }],
-            discovery: "Juan says his warehouse dock needs another loader.",
-            details: ["Juan says the receiving truck is easiest before lunch.", "The dock supervisor keeps callbacks short and notices early arrivals."],
-            shiftDialogue: ["Pallet wrap snaps while the loading door rattles open.", "Juan calls the order and you keep the dock moving.", "The last pallet lands square before the truck pulls away."]
-          },
-          {
-            id: "day_labor",
-            name: "Day Labor Pickup",
-            areaId: HOME_DISTRICT_ID,
-            pay: [40, 60],
-            slots: [0, 1],
-            scheduled: true,
-            risk: "None",
-            dayLabor: true,
-            coworkers: [],
-            discovery: "The day-labor pickup takes walk-ons every morning.",
-            details: [],
-            shiftDialogue: ["You shovel, haul, and take the cash when the truck returns.", "A short crew clears the job before the weather turns.", "The foreman counts bills into your palm at the curb."]
-          }
-        ];
-        const SPENARD_JOB_BY_ID = Object.fromEntries(SPENARD_JOBS.map((job) => [job.id, job]));
-        const STARTER_JOB_IDS = SPENARD_JOBS.filter((job) => job.starter).map((job) => job.id);
+        const { JOB_RANK_THRESHOLDS, JOB_APPROACHES, SPENARD_JOBS, SPENARD_JOB_BY_ID, STARTER_JOB_IDS } = require_jobs();
         const LISTING_CAPACITY = 3;
-        const LISTING_ITEMS = [
-          { id: "space_heater", name: "Space heater", buy: 25, resale: [45, 65] },
-          { id: "used_tv", name: "Used television", buy: 55, resale: [85, 120] },
-          { id: "dresser", name: "Solid dresser", buy: 40, resale: [65, 95] },
-          { id: "tool_set", name: "Mechanic tool set", buy: 70, resale: [100, 140] },
-          { id: "snow_tires", name: "Set of snow tires", buy: 80, resale: [120, 160] },
-          { id: "shop_vac", name: "Shop vacuum", buy: 45, resale: [70, 100] },
-          { id: "winter_coat", name: "Winter coat bundle", buy: 35, resale: [55, 85] },
-          { id: "camp_stove", name: "Camp stove", buy: 60, resale: [90, 125] }
-        ];
-        const LISTING_ITEM_BY_ID = Object.fromEntries(LISTING_ITEMS.map((item) => [item.id, item]));
-        const NIGHT_OWL_REGULARS = [
-          { id: "cal", name: "Cal Brooks", role: "The loud regular", hint: "Cal talks like every room is already listening." },
-          { id: "nia", name: "Nia Park", role: "The quiet courier", hint: "Nia keeps route notes folded inside a paperback." }
-        ];
-        const HOUSEHOLD_NPCS = [
-          { id: "yalonda", name: "Yalonda Hernandez", role: "Landlord", location: "home", startsKnown: true, hint: "She rents the spare room weekly and keeps the house steady." },
-          { id: "juan", name: "Juan Hernandez", role: "Yalonda's son", location: "home", startsKnown: true, hint: "He works a warehouse loading dock and knows who is hiring." }
-        ];
         const NIGHT_OWL_BOARD = [
           { id: "jobs", title: "Help wanted", body: "Two counters need reliable hands this week." },
           { id: "list", title: "907List", body: "Buy it cheap. Clean it up. Find the next buyer." },
@@ -1460,40 +2353,6 @@
         function slotNumber(day, slot) {
           return (day - 1) * 4 + slot;
         }
-        function normalizeSeed(seed) {
-          const numeric = Number(seed);
-          const fallback = 151461926;
-          return (Number.isFinite(numeric) ? numeric : fallback) >>> 0 || fallback;
-        }
-        function stringHash(value) {
-          let hash = 2166136261;
-          for (const char of String(value || "")) {
-            hash ^= char.charCodeAt(0);
-            hash = Math.imul(hash, 16777619);
-          }
-          return hash >>> 0;
-        }
-        function makeRandom(seed) {
-          let value = normalizeSeed(seed);
-          return {
-            next() {
-              value ^= value << 13;
-              value ^= value >>> 17;
-              value ^= value << 5;
-              value >>>= 0;
-              return value / 4294967296;
-            },
-            int(min, max) {
-              return Math.floor(this.next() * (max - min + 1)) + min;
-            },
-            pick(items) {
-              return items[Math.floor(this.next() * items.length)];
-            },
-            get state() {
-              return value >>> 0;
-            }
-          };
-        }
         function logEntry(state, text, tone) {
           state.log.unshift({ text, tone: tone || "", stamp: `Day ${state.run.day} \xB7 ${SLOTS[state.run.slot]}` });
           state.log = state.log.slice(0, 80);
@@ -1762,134 +2621,7 @@
             "Goodie: Price out there swings hard. Don't commit your whole roll on one trip."
           ]
         };
-        const AMBIENT_FLAVOR = {
-          north_star_lot: {
-            0: [
-              "A bus rattles past on Spenard Road.",
-              "Somebody scrapes frost off a windshield with a debit card.",
-              "The laundromat sign flickers on, an hour late.",
-              "Two crows work over a dropped bag of fries.",
-              "A man in a Carhartt jacket counts change on the curb.",
-              "Steam off a grate. The smell of somebody else's breakfast.",
-              "A truck idles outside the pawn shop with nobody in it.",
-              "The light at Thirty-Sixth stays red a long time."
-            ],
-            1: [
-              "Kids cut through the lot behind the strip mall.",
-              "A woman argues into her phone by the ice machine.",
-              "Sun comes off the wet asphalt hard enough to squint.",
-              "Somebody's car alarm goes off down the block. Nobody flinches.",
-              "The barber props his door open with a paint can.",
-              "A flatbed rolls by carrying a snowmachine in July.",
-              "Two guys shake hands too long outside the check cashing place.",
-              "A shopping cart sits upright in the middle of the lot."
-            ],
-            2: [
-              "Neon comes on above the bar before the sun is done.",
-              "A dog barks itself hoarse behind a chain link fence.",
-              "Somebody is grilling in a parking space.",
-              "The bus shelter glass has a new crack in it.",
-              "Music from a passing car, one bar of it, then gone.",
-              "A woman waits by the payphone that has not worked in years.",
-              "Somebody sweeps the same square of sidewalk twice.",
-              "The liquor store door chimes and keeps chiming."
-            ],
-            3: [
-              "The Night Owl sign hums over an empty lot.",
-              "A cab idles at the corner with its light off.",
-              "Somebody laughs two blocks over. It carries.",
-              "Frost on the hoods already, and it is not even late.",
-              "A window upstairs goes dark, then comes back on.",
-              "Tires on wet road, going too fast for the corner.",
-              "The dumpster lid drops and echoes off the buildings.",
-              "Somebody is asleep in a parked car with the engine running."
-            ]
-          },
-          downtown: {
-            0: [
-              "Delivery trucks stack up on Fourth Ave.",
-              "A tour bus unloads people in brand new rain jackets.",
-              "Somebody hoses off the sidewalk in front of a hotel.",
-              "Office windows catch the light all the way up.",
-              "A street sweeper takes the whole lane and nobody passes it.",
-              "Coffee cups in every hand at the crosswalk.",
-              "The gift shop rolls its shutter up on carved bears.",
-              "Gulls work the trash cans by the transit center."
-            ],
-            1: [
-              "Construction noise on Fourth. Nothing else pulls.",
-              "Suits eat lunch on a low concrete wall.",
-              "A guy with a cardboard sign works the light patiently.",
-              "Somebody films the mountains with their phone held sideways.",
-              "The parking garage gate sticks halfway and somebody swears.",
-              "A courier chains a bike to a sign that says no bikes.",
-              "Shadows come off the towers and cut the street in half.",
-              "Two cops stand talking outside a coffee place, unhurried."
-            ],
-            2: [
-              "Bar doors open and the noise comes out in a slab.",
-              "Somebody in a wedding dress crosses against the light.",
-              "The hotel valet stand fills up with idling SUVs.",
-              "A busker packs a guitar into a case lined with dollars.",
-              "Windows go orange floor by floor as the sun drops.",
-              "Somebody hands out flyers nobody takes.",
-              "The smell of fryer oil from a place with no sign.",
-              "A pedicab driver waits, one foot up on the curb."
-            ],
-            3: [
-              "Downtown at this hour belongs to the bar crowd.",
-              "A squad car rolls slow past the same block twice.",
-              "Somebody sits on the curb holding their own shoes.",
-              "The transit center is locked and lit and empty.",
-              "Glass in the gutter catches the streetlight.",
-              "Two guys square up outside a club and then do not.",
-              "A cleaner runs a vacuum past a dark lobby window.",
-              "The last bus pulls out with three people on it."
-            ]
-          },
-          airport_industrial: {
-            0: [
-              "A cargo plane comes in low enough to feel.",
-              "Forklifts working somewhere behind a fence.",
-              "Frost on the gravel where the trucks have not been yet.",
-              "A gate rolls open on a yard full of containers.",
-              "Somebody in a vest waves a semi backward.",
-              "Diesel and cold air. The road out here has no curb.",
-              "A pallet jack squeals across a loading dock.",
-              "Two men drink coffee on the bumper of a box truck."
-            ],
-            1: [
-              "Belly of a jet passes over the service road.",
-              "A yard dog barks at every truck and means none of it.",
-              "Somebody eats lunch sitting in an open trailer.",
-              "Heat shimmer off a hundred yards of parked semis.",
-              "The scale house window slides open and shut.",
-              "A radio plays country from inside a warehouse.",
-              "Tarps snap on a flatbed in the crosswind.",
-              "Nothing out here has a sidewalk or needs one."
-            ],
-            2: [
-              "Sodium lights come on over the freight yards.",
-              "A shift lets out and the lot empties in ten minutes.",
-              "Somebody chains a gate and tests it twice.",
-              "Landing lights stack up in a line toward the runway.",
-              "The last truck of the day pulls out heavy.",
-              "A security pickup idles with its parking lights on.",
-              "Wind comes off the inlet with nothing to stop it.",
-              "Cigarette smoke by a door marked no entry."
-            ],
-            3: [
-              "Between the lights out here, the dark is total.",
-              "A conveyor runs somewhere with nobody watching it.",
-              "Headlights sweep a fence and keep going.",
-              "The cold gets into the gravel and comes back up.",
-              "A hangar door stands open on nothing.",
-              "Something metal moves in the wind, over and over.",
-              "One window lit in a building the size of a block.",
-              "The road out is the road in. Nobody is on it."
-            ]
-          }
-        };
+        const { AMBIENT_FLAVOR, ENTITY_REGISTRY, ENTITY_MATCH_ORDER, EVENT_FLAVOR, EVENT_CONTEXT } = require_registry();
         function ambientFlavor(state) {
           var _a, _b;
           const byArea = AMBIENT_FLAVOR[(_a = state.world) == null ? void 0 : _a.currentNeighborhoodId] || AMBIENT_FLAVOR.north_star_lot;
@@ -2048,16 +2780,6 @@
             trucesBrokered: 0
           }]));
         }
-        const DEALERS = [
-          { id: "goodie", name: "Goodie", where: "the Wash & Go lot on Spenard Road", areaId: "north_star_lot", products: ["weed", "shrooms"] }
-        ];
-        const DEALER_BY_ID = Object.fromEntries(DEALERS.map((item) => [item.id, item]));
-        const PLUGS = [
-          { id: "goodie", name: "Goodie", products: [{ id: "weed", standing: 0 }, { id: "shrooms", standing: 2 }], priceModifier: 1, maxUnits: 3, introducesNext: "tasha" },
-          { id: "tasha", name: "Tasha", products: [{ id: "pills", standing: 0 }, { id: "lean", standing: 0 }], priceModifier: 0.9, maxUnits: 5, introducesNext: "malik" },
-          { id: "malik", name: "Malik", products: [{ id: "coke", standing: 0 }, { id: "molly", standing: 0 }], priceModifier: 0.82, maxUnits: 8, introducesNext: null, bulkStanding: 3 }
-        ];
-        const PLUG_BY_ID = Object.fromEntries(PLUGS.map((plug) => [plug.id, plug]));
         function createPlugState() {
           return {
             unlocked: [],
@@ -2076,15 +2798,6 @@
             gone: false,
             supplyChoked: 0
           }]));
-        }
-        function seededShuffle(items, seed, salt) {
-          const random = makeRandom(stringHash(`${normalizeSeed(seed)}:${normalizeSeed(salt)}`));
-          const out = items.slice();
-          for (let index = out.length - 1; index > 0; index -= 1) {
-            const swap = random.int(0, index);
-            [out[index], out[swap]] = [out[swap], out[index]];
-          }
-          return out;
         }
         function createContactsState() {
           return Object.fromEntries(Object.keys(SOCIAL_CONTACTS).map((id) => [id, {
@@ -2934,9 +3647,6 @@
         function canSpendEnergy(state, actionType) {
           return state.player.energy >= actionEnergyCost(state, actionType);
         }
-        function checkpointDay(state) {
-          return state.run.checkpointDay || Infinity;
-        }
         function recordVisitedLocation(state, id) {
           if (!id || state.onboarding.visitedLocations.includes(id)) return false;
           state.onboarding.visitedLocations.push(id);
@@ -3402,10 +4112,6 @@
         function minaThreatEligible(state) {
           const relevantHistory = !!(state.npc.mina.introChoice || state.flags.minaFlirted || state.flags.minaFriendlyIntro || state.flags.minaDistantIntro || state.flags.toldMinaAboutGarage || state.stats.moneySpent.relationships > 0);
           return !!(state.flags.minaBoundaryResolved && state.npc.mina.met && state.npc.mina.available !== false && state.npc.mina.status !== "gone" && relevantHistory && state.npc.curtis.pressure >= 4 && !state.flags.minaSedanNightResolved);
-        }
-        function controlled(state, areaId) {
-          var _a;
-          return ((_a = state.world.territories[areaId]) == null ? void 0 : _a.owner) === "player";
         }
         function recruitmentCost(state, crewId) {
           const person = CREW_BY_ID[crewId];
@@ -4142,600 +4848,8 @@
           state.npc.mina.status = minaStatus(state.npc.mina);
           state.stats.highestHeat = Math.max(state.stats.highestHeat, state.player.heat);
         }
-        const ENTITY_REGISTRY = {
-          dre: {
-            id: "dre",
-            name: "Dre",
-            kind: "person",
-            title: "Dre Smooth",
-            aliases: ["Dre Smooth", "Dre"],
-            text: "A lender who approaches after you establish yourself. If you accept, $1,200 is due at the run's checkpoint. He names the terms once."
-          },
-          yalonda: {
-            id: "yalonda",
-            name: "Yalonda",
-            kind: "person",
-            title: "Yalonda Hernandez",
-            aliases: ["Yalonda Hernandez", "Yalonda"],
-            text: "Dominican, early forties, and the landlord of the spare room. The first week is free; every week after is cash."
-          },
-          juan: {
-            id: "juan",
-            name: "Juan",
-            kind: "person",
-            title: "Juan Hernandez",
-            aliases: ["Juan Hernandez", "Juan"],
-            text: "Yalonda's eighteen-year-old son. He loads a warehouse dock and turns ordinary workplace talk into useful names."
-          },
-          mina: {
-            id: "mina",
-            name: "Mina",
-            kind: "person",
-            title: "Mina Vale",
-            aliases: ["Mina Vale", "Mina"],
-            text: "Night Owl Mini-Mart clerk in Spenard. She is building an exit into a Ship Creek dispatch job, and public association with your operation would close it."
-          },
-          curtis: {
-            id: "curtis",
-            name: "Curtis",
-            kind: "person",
-            title: "Curtis Foyer",
-            aliases: ["Curtis Foyer", "Curtis"],
-            text: "Runs the established operation you are growing next to. Concrete exposure builds attention from zero to eight; respect changes what he offers once he notices."
-          },
-          goodie: {
-            id: "goodie",
-            name: "Goodie",
-            kind: "person",
-            title: "Goodie",
-            aliases: ["Goodie", "Goodie"],
-            text: "Dealer working a corner out of a gym bag at the Wash & Go. He sells once daily, shares reliable rumors with regulars, and never joins the field crew."
-          },
-          eli: {
-            id: "eli",
-            name: "Eli",
-            kind: "person",
-            title: "Eli 'Shortcut' Ward",
-            aliases: ["Eli Ward", "Eli"],
-            text: "Driver who knows the loading yards, the service roads, and which gates chain up at what hour. Promoted, he places and rotates soldiers for you."
-          },
-          pherris: {
-            id: "pherris",
-            name: "Pherris",
-            kind: "person",
-            title: "Pherris Dickens",
-            aliases: ["Pherris Dickens", "Pherris"],
-            text: "Connector working an aging Downtown list. She opens buyers and supply, and she prices access in ownership."
-          },
-          simone: {
-            id: "simone",
-            name: "Simone",
-            kind: "person",
-            title: "Simone Hart",
-            aliases: ["Simone Hart", "Simone"],
-            text: "Anchorage-born former hotel night auditor who built an independent worker-screening and protection network. Respecting her autonomy builds trust; poaching, threats, and leverage raise threat."
-          },
-          tone: {
-            id: "tone",
-            name: "Tone",
-            kind: "person",
-            title: "Anton 'Tone' Bell",
-            aliases: ["Anton Bell", "Tone"],
-            text: "Former security worker who lost his last job to Curtis's people. He protects the garage and changes how confrontations resolve."
-          },
-          deshawn: {
-            id: "deshawn",
-            name: "Deshawn",
-            kind: "person",
-            title: "Deshawn",
-            aliases: ["Deshawn"],
-            text: "He put your name in front of Goodie when you were nobody on this block. What your word is worth here runs through him."
-          },
-          lena: {
-            id: "lena",
-            name: "Lena",
-            kind: "person",
-            title: "Lena Aguchak",
-            aliases: ["Lena Aguchak", "Lena"],
-            text: "Late-forties Yup'ik manager at the Wash & Go. She is saving to turn years of cleaning work into a business of her own."
-          },
-          minh: {
-            id: "minh",
-            name: "Minh",
-            kind: "person",
-            title: "Minh Tran",
-            aliases: ["Minh Tran", "Minh"],
-            text: "Mid-thirties Vietnamese Alaskan dispatcher. He keeps a local courier route staffed with two phones, paper maps, and exact delivery windows."
-          },
-          marcus: {
-            id: "marcus",
-            name: "Marcus",
-            kind: "person",
-            title: "Marcus Bell",
-            aliases: ["Marcus Bell", "Marcus"],
-            text: "Early-forties Black Alaskan foreman at Ship Creek Freight. He remembers who arrives before the gate opens and pays at the loading-office door."
-          },
-          spenard: {
-            id: "spenard",
-            name: "Spenard",
-            kind: "place",
-            title: "Spenard",
-            aliases: ["Spenard Road", "Spenard"],
-            text: "Your home district. The Night Owl, North Star Garage, and the Wash & Go all sit on this stretch, and Curtis watches all three."
-          },
-          north_star: {
-            id: "north_star",
-            name: "North Star Garage",
-            kind: "place",
-            title: "North Star Garage",
-            aliases: ["North Star Garage", "North Star"],
-            text: "The garage you can lease as a base. It holds stored product and protected cash, and it unlocks crew assignments and safehouse upgrades."
-          },
-          night_owl: {
-            id: "night_owl",
-            name: "Night Owl",
-            kind: "place",
-            title: "Night Owl Mini-Mart",
-            aliases: ["Night Owl Mini-Mart", "Night Owl"],
-            text: "The corner mini-mart where Mina works and Dre collects. Business done in this lot lands on her shift."
-          },
-          wash_go: {
-            id: "wash_go",
-            name: "Wash & Go",
-            kind: "place",
-            title: "The Wash & Go",
-            aliases: ["Wash & Go"],
-            text: "Laundromat lot on Spenard Road. Goodie runs the block's nearest supply from it, and the dryer vents are the only warm air on the street."
-          },
-          downtown: {
-            id: "downtown",
-            name: "Downtown",
-            kind: "place",
-            title: "Downtown",
-            aliases: ["Downtown"],
-            text: "Highest prices and highest police attention. Pherris's list lives here, and so does Curtis's exit lane."
-          },
-          ship_creek: {
-            id: "ship_creek",
-            name: "Ship Creek",
-            kind: "place",
-            title: "Ship Creek Freight",
-            aliases: ["Ship Creek"],
-            text: "Freight dock hiring dispatch and night unload work. It pays cash the same shift and writes nothing down."
-          },
-          industrial: {
-            id: "industrial",
-            name: "Industrial Service Roads",
-            kind: "place",
-            title: "Industrial Service Roads",
-            aliases: ["Industrial Service Roads", "Industrial"],
-            text: "Loading bays and unlit service roads by the airport. Cheap weight moves here, and so does everyone who wants to catch you carrying it."
-          }
-        };
-        const ENTITY_MATCH_ORDER = Object.values(ENTITY_REGISTRY).flatMap((entity) => entity.aliases.map((alias) => ({ alias, id: entity.id }))).sort((a, b) => b.alias.length - a.alias.length);
-        const EVENT_FLAVOR = {
-          mina_intro: "The heater clicks louder than the drink cooler. You study the coffee machine without pretending you know the routine. She watched from behind the register a little longer than professionalism requires.",
-          eli_offer: "He waits outside the garage with an impound notice folded into his jacket, the crease worn soft from being taken out and put back. He has clearly rehearsed that last sentence.",
-          eli_callback: "He comes up beside the garage without knocking, which is new. He wanted you to hear about the other driver from him first. Repeating his terms word for word is how he shows the price has not moved.",
-          pherris_offer: "She took the corner booth Downtown before you arrived and ordered for both of you, which tells you how the conversation is going to go.",
-          tone_offer: "He stands under the broken security light, far enough back that he is out of the doorway. He leaves the part about Curtis for last.",
-          mina_shift_change: "The heater ticks over the door. The owner drinks his coffee here every Thursday and knows every face on this block. On this street a name is the first thing anyone trades.",
-          mina_invitation: "She is outside when you come around the corner, coat already on. The lot's sodium light makes the slush look orange. She is asking what you can build in four hours, on foot, in Spenard.",
-          mina_boundary: 'She meets you behind the store with the keys already in her hand and the lights already off. "I am not asking you to fix it," she says first. She wants enough information to decide for herself.',
-          courier: "He is conscious and saying nothing at all. Drivers who slow down instead of speeding up have already been told where to stop.",
-          dre_after_payoff: "He counts the final stack across the hood and it comes out right. Staying afterward is new. He lays the options out like a man reading from a menu he wrote himself.",
-          base_watch: "In this weather a running engine means somebody is sitting in the car rather than watching from somewhere warm. Being obvious appears to be the point of it.",
-          crew_crisis: "The message carries no name, no explanation, and no request. The phone vibrates itself half off the garage table. Six is when the booking desk changes hands and the price of quiet goes up.",
-          buyer_hurry: "The hurry is his. Two customers wait by the door for the cigarette line to clear. This is Mina's lot, and her shift is the reason anyone here recognizes you.",
-          checkpoint: "Orange cones and a tow truck sit at the head of the lane. The officer looks inside nothing. He taps, moves on, and taps the next one.",
-          curtis_cut: "The angle of the car is deliberate. He is unhurried about all of it, and the line of vehicles behind you does the pressuring for him.",
-          rough_night: "They let the arithmetic happen on its own, which is most of the work. Silence costs them nothing and buys them the first move.",
-          dre_warning: "He parks with the engine off and hurries neither count. He never comments on the amount. Handing money back is worse than being short, and he knows it.",
-          eli_missed_turn: "He took a lap around the freight yard before circling back in from the other side. He is watching your face to learn whether you want a driver who thinks.",
-          eli_service_map: "It is drawn to no scale at all and it beats anything you could buy. The two crossings appear on no map because they are technically somebody's parking lot. He has never shown it to anyone.",
-          eli_last_run: "He asks it in the middle of a conversation about fuel prices, the way people ask questions they have been carrying around. He would rather find out now than in eight days.",
-          dre_terms: 'The meeting is already arranged, and Dre still makes you read the paper again. "People make it complicated after. Not me."',
-          dre_first_payment: "The back light is out again, so he counts by the glow of the open car door. He takes his time, and he keeps whatever he decided while counting.",
-          curtis_mark: "Same wall, same spot, different hand. Whatever the tag says now, it is not what it said on Monday. Nobody has spoken to you directly, which is how this stage of Curtis's attention works.",
-          curtis_tax: "He is unhurried and entirely unthreatening, and he stands close enough that the two people at the corner hear none of the words. A number set low is a number set to end the argument early.",
-          goodie_corner_intro: "The vents push warm lint-smelling air across the lot, the only warm thing on this stretch of road. Lifting his chin instead of looking away is an opening he can still take back.",
-          goodie_recognized: "Four people have already given him their version. He wants yours from you. Calm is worse than angry, because calm means he has already finished the arithmetic.",
-          wet_bricks: "He is not the man who packed it. The seals look intact. Some of them look intact. He will not be here tomorrow to discuss the difference.",
-          door_knock: "A plow berm blocks the walk behind the second officer, so the stairs are the only way down. Whatever is in the unit with you is on a clock now.",
-          stranded_wagon: "The hood has been up long enough that she has stopped expecting anything. She waves the way people wave after forty cars have already gone past.",
-          found_phone: "Face-down, still warm, left in a hurry at the transit shelter on Fourth Avenue. Six days of somebody's schedule sits in your hand, and somebody wants it back before you finish reading.",
-          careful_customer: "Nobody else in the line looks at either of you, which is its own kind of information. People who buy here watch a sale happen. These people watch something else.",
-          dock_shift: "He stands in the door light while the wind comes up the channel hard enough to swing the sodium lamps on their arms. It is honest work, and it pays the way honest work pays.",
-          garage_furnace: "The answering machine on the sticker does not say when anyone calls back. Six hours of Anchorage winter against a cold wall decides how much of the stock still sells.",
-          sedan_rumor: "The story reaches you third-hand and improves on the way. The person telling you did not see it. The person who told them did not see it either.",
-          midtown_lights: "The queue crawls at ten miles an hour on the Seward Highway at Thirty-Sixth. A collision closes lanes and gathers uniforms in one place for an hour at a time.",
-          eli_lieutenant_offer: 'He leans against the bay door while he says it. "Routes are fine" is his opening line, which is how he tells you he has outgrown them.',
-          spenard_block_scouted: "The dates matter more than the circles. Three colors of ink mean three passes on foot, at different hours, across more than one week.",
-          curtis_respect_notice: "The word reaches you secondhand, the way it always does. Respect and pressure are separate accounts with Curtis, and this one just moved.",
-          soldier_raid_aftermath: "The regular buyers work it out on the spot, on the sidewalk, in front of each other. That decision gets made once and then it holds."
-        };
-        const EVENT_CONTEXT = {
-          mina_intro: { who: "Mina Vale, the Night Owl clerk meeting you for the first time", where: "Night Owl Mini-Mart, Spenard", stakes: "Choose the tone of a first conversation with someone who has no prior history with you." },
-          eli_offer: { who: "Eli Ward, a local driver looking for work", where: "Outside North Star Garage, Spenard", stakes: "Decide whether Eli gets a test route, only shares road information, or remembers being turned away." },
-          eli_callback: { who: "Eli Ward, still working the service roads", where: "North Star Garage, Spenard", stakes: "Reopen the door to a test route or confirm that Eli should look elsewhere." },
-          pherris_offer: { who: "Pherris Cole, a connected supplier", where: "Downtown corner booth", stakes: "Supplier access, loyalty, and how much ownership you are willing to share." },
-          tone_offer: { who: "Anton Bell, a former security worker", where: "North Star Garage", stakes: "Protection against Curtis at the cost of another wage." },
-          mina_shift_change: { who: "Mina Vale, twenty minutes past close", where: "Night Owl Mini-Mart, Spenard", stakes: "Mina is building an exit that public association with your operation would close. How much you tell her sets the terms." },
-          mina_invitation: { who: "Mina, off shift early and without a car", where: "The Night Owl lot, Spenard", stakes: "Four hours away from the block, or four hours she spends near your operation. Both cost time." },
-          mina_boundary: { who: "Mina and the question a customer left behind", where: "Behind the Night Owl after closing", stakes: "Her job, her consent, and whether she gets to decide with accurate information." },
-          mina_after: { who: "Mina, at the end of your week and the start of hers", where: "Night Owl Mini-Mart, Spenard", stakes: "What the week cost her, and what is left to say about it." },
-          eli_missed_turn: { who: "Eli Ward, back an hour later than the route allows", where: "North Star Garage, Spenard", stakes: "Whether you want a driver who thinks, or one who does what the clock says." },
-          eli_service_map: { who: "Eli and a map he drew himself", where: "Passenger seat outside North Star Garage", stakes: "Route knowledge nobody else on this block has, and what he wants for it." },
-          eli_last_run: { who: "Eli, asking a rehearsed question", where: "North Star Garage, Spenard", stakes: "Whether the operation has a place for him after the checkpoint." },
-          dre_terms: { who: "Dre Smooth and one folded sheet of paper", where: "Behind the Night Owl Mini-Mart", stakes: "The amount, the date, and what he expects between now and then." },
-          dre_first_payment: { who: "Dre, counting the first money you have brought him", where: "Behind the Night Owl Mini-Mart", stakes: "The shape of the rest of the week's arrangement." },
-          dre_due_day: { who: "Dre on the day the note comes due", where: "Behind the Night Owl Mini-Mart", stakes: "What happens to the balance, and to his patience." },
-          dre_day7: { who: "Dre, closing the week's account", where: "Behind the Night Owl Mini-Mart", stakes: "What your name is worth to him after seven days." },
-          curtis_mark: { who: "Curtis's people, working through somebody else", where: "Your usual corner", stakes: "Confirmation that you are being watched, and by whom." },
-          curtis_tax: { who: "Curtis Foyer, in person, which is the message", where: "The Downtown exit lane", stakes: "A cut, a favor, or a public no." },
-          curtis_day7: { who: "Curtis, deciding what you were", where: "Wherever he finds you at the checkpoint", stakes: "Whether the pressure phase ends as a partnership, a truce, or a problem." },
-          goodie_corner_intro: { who: "Goodie, running a corner out of a gym bag", where: "The Wash & Go lot, Spenard Road", stakes: "Whether the block's nearest supply becomes a contact, a mark, or neither." },
-          goodie_recognized: { who: "Deshawn, who vouched for you before you robbed Goodie", where: "Outside the Wash & Go, Spenard", stakes: "What your word is worth on the block after you spent it." },
-          wet_bricks: { who: "A driver unstrapping someone else's mistake", where: "Loading Bay Seven, Industrial Service Roads", stakes: "Cheap weight of unverified condition, and a seller who will not be here tomorrow." },
-          door_knock: { who: "Two APD officers working the row", where: "The fourplex two doors from North Star Garage", stakes: "What is in the unit with you, and how long the knocking takes to reach this door." },
-          stranded_wagon: { who: "A woman with two kids and a dead battery", where: "The Minnesota Drive off-ramp shoulder", stakes: "Twenty minutes of your week against a stranger's night." },
-          found_phone: { who: "Whoever left it, and whoever keeps calling it", where: "The transit shelter on Fourth Avenue", stakes: "Six days of somebody's pickup schedule, and whether you take it." },
-          careful_customer: { who: "A buyer asking better questions than he should", where: "The corner you are standing on", stakes: "One sale, and who hears about it afterward." },
-          dock_shift: { who: "A foreman short two people on a night unload", where: "Ship Creek freight dock", stakes: "Four hours you do not have, for money nobody writes down." },
-          garage_furnace: { who: "The garage, and everything stored along the cold wall", where: "North Star Garage, back bay", stakes: "A repair bill, an afternoon, or whatever six hours of outside temperature did to the stock." },
-          sedan_rumor: { who: "Somebody's cousin, two conversations removed", where: "Wherever you happened to be standing", stakes: "A story nobody has confirmed, and what you are willing to spend on it." },
-          midtown_lights: { who: "Four cruisers and a closed left lane", where: "The Seward Highway at Thirty-Sixth", stakes: "Half a mile at walking speed in front of every officer in Midtown." },
-          courier: { who: "An injured courier and approaching drivers", where: "Industrial Service Roads, Bay Twelve", stakes: "Cash, Heat, and who controls the courier's route information." },
-          dre_after_payoff: { who: "Dre Smooth", where: "Behind the Mini-Mart", stakes: "A new debt, premium supply access, or independence." },
-          base_watch: { who: "Curtis's watcher and a possible plainclothes officer", where: "Across from North Star Garage", stakes: "Your stored operation and whether the watcher identifies its value." },
-          crew_crisis: { who: "A jailed crew member and APD", where: "North Star Garage burner line", stakes: "$180 or the loyalty of everyone working for you." },
-          buyer_hurry: { who: "A hurried buyer, Mina, and an observer", where: "Mini-Mart parking lot", stakes: "Fast cash against Heat and exposure near Mina's job." },
-          checkpoint: { who: "APD officers and a tow driver", where: "Airport service road", stakes: "$90 or a risky inspection of your vehicle and cargo." },
-          curtis_cut: { who: "Curtis's driver", where: "Downtown exit lane", stakes: "$120, physical injury, and Curtis's respect." },
-          rough_night: { who: "Three people tied to Curtis", where: "Industrial Bay Nine", stakes: "$80 or a dangerous attempt to hold your ground." },
-          dre_warning: { who: "Dre Smooth", where: "Behind the Mini-Mart", stakes: "Dre's patience and the pressure attached to the unpaid balance." },
-          eli_lieutenant_offer: { who: "Eli Ward, with a second phone in his jacket", where: "North Star Garage, Spenard", stakes: "Whether Eli starts running soldiers and corners instead of only routes." },
-          spenard_block_scouted: { who: "Eli, with a hand-marked map of Spenard", where: "North Star Garage, Spenard", stakes: "Counted numbers on every block, in place of a guess." },
-          curtis_respect_notice: { who: "Word from two blocks over", where: "Spenard", stakes: "What Curtis thinks of an operation that is starting to look like his." },
-          soldier_raid_aftermath: { who: "The block, the morning after", where: "Spenard", stakes: "Nothing to decide here. Just what it cost." }
-        };
-        function effectPreview(effect) {
-          const parts = [];
-          if (effect.cash) parts.push(`${effect.cash > 0 ? "+" : "\u2212"}$${Math.abs(effect.cash)} cash`);
-          if (effect.health) parts.push(`${effect.health > 0 ? "+" : "\u2212"}${Math.abs(effect.health)} Health`);
-          if (effect.heat) parts.push(`${effect.heat > 0 ? "+" : "\u2212"}${Math.abs(effect.heat)} Heat`);
-          if (effect.minaTrust) parts.push(`${effect.minaTrust > 0 ? "+" : "\u2212"}${Math.abs(effect.minaTrust)} Mina trust`);
-          if (effect.lenderTrust) parts.push(`${effect.lenderTrust > 0 ? "+" : "\u2212"}${Math.abs(effect.lenderTrust)} Dre trust`);
-          if (effect.rivalPressure) parts.push(`${effect.rivalPressure > 0 ? "+" : "\u2212"}${Math.abs(effect.rivalPressure)} Curtis pressure`);
-          if (effect.rivalRespect) parts.push(`${effect.rivalRespect > 0 ? "+" : "\u2212"}${Math.abs(effect.rivalRespect)} Curtis respect`);
-          if (effect.loseRandomInventory) parts.push(`risk ${effect.loseRandomInventory} cargo`);
-          if (effect.secondLoan) parts.push("take $1,200 cash and owe $1,380 within five days or by the checkpoint");
-          if (effect.access) parts.push(`unlock ${effect.access} access`);
-          if (effect.introduceCrew) parts.push("opens a future recruitment option");
-          return parts.length ? parts.join(" \xB7 ") : "Relationship and story consequences carry forward.";
-        }
-        function event(id, title, description, choices, flavor) {
-          const context = EVENT_CONTEXT[id] || { who: "People in the current situation", where: AREA_BY_ID.north_star_lot.name, stakes: "The result changes this run." };
-          return { id, title, ...context, description, flavor: flavor || EVENT_FLAVOR[id] || null, choices: choices.map((choice) => ({ ...choice, preview: choice.preview || effectPreview(choice.effect || {}) })) };
-        }
         function setPendingEvent(state, item) {
           state.run.pendingEvent = item;
-        }
-        function activeEvent(id, state) {
-          var _a;
-          const events = {
-            mina_intro: () => event("mina_intro", "First Coffee", 'The Night Owl clerk slides a paper cup toward you. "Black or cream?" Her name tag says Mina. Set the tone of this first conversation.', [
-              { label: "Friendly honesty", effect: { minaTrust: 1, setFlags: { minaFriendlyIntro: true, minaIntroChoice: "friendly" } }, preview: "Tell her you just arrived and keep the first exchange warm.", result: "You tell her Alaska is the restart, not the victory lap. Mina listens without trying to turn it into advice. She marks the coffee down as a refill and points out which bus still runs after closing. When the next customer enters, she gives you a small nod that says the conversation can continue another night." },
-              { label: "Light flirtation", effect: { minaTrust: 1, setFlags: { minaFlirted: true, minaIntroChoice: "flirt" } }, preview: "Let the mutual interest show while respecting the counter between you.", result: 'You ask whether every new customer gets this much attention. Mina looks at the cup, then back at you. "Only the ones reading the machine like a legal document." The smile stays brief and professional, but it is real. She tells you her name even though the tag already did.' },
-              { label: "Brief and guarded", effect: { setFlags: { minaDistantIntro: true, minaIntroChoice: "distant" } }, preview: "Keep your history private and the exchange surface-level.", result: "You choose black, pay, and offer only your street name. Mina does not press. She gives you the correct change and a neutral goodnight, then returns to the register book. You leave as a stranger she noticed, not a story she already knows." }
-            ]),
-            eli_offer: () => event("eli_offer", "The Impound Notice", "Eli Ward wants work outside North Star Garage. He knows the loading yards, the service roads, and which gates chain up at what hour. He can move a small package without bringing a tail home.", [
-              { label: "Hear him out", effect: { introduceCrew: "eli", setCrewStage: { id: "eli", stage: "test_available" }, crewLoyalty: { id: "eli", delta: 1 } }, preview: "Unlocks Give Eli a Test Route in People.", result: "He flattens the impound notice on the hood and draws the route on the back of it, naming each turn as he goes. He wants thirty-five for fuel and one chance to prove it. He does not ask what would be in the package, which is either professional or well practiced." },
-              { label: "Ask about the service roads", effect: { introduceCrew: "eli", setCrewStage: { id: "eli", stage: "followup_required" }, addRumor: { areaId: "airport_industrial", productId: "shrooms", text: "Eli says construction has pushed patrol traffic away from the east industrial service road for a few hours." } }, preview: "Adds a short-lived Industrial Service Roads clue. Recruitment waits for a follow-up.", result: "He circles the east service road twice and explains that construction has pushed patrol traffic off it, but only until the crews finish, which is days and not weeks. He leaves the notice with you so you know where to find him, and asks for nothing in return." },
-              { label: "Turn him away", effect: { introduceCrew: "eli", setCrewStage: { id: "eli", stage: "rejected" }, crewLoyalty: { id: "eli", delta: -1 }, setFlags: { refusedEli: true } }, preview: "Eli leaves. A later scene remembers the rejection.", result: 'He folds the notice back into the same worn crease and puts it away. "I know which doors close." There is no argument anywhere in it. He walks off toward the service road with his hands in his pockets and does not look back at the garage once.' }
-            ]),
-            eli_callback: () => event("eli_callback", "Eli Comes Back With a Route", "Eli makes the same offer at the same price. Another driver has been asking around about your routes. He says he is finished asking after tonight. Open the door or close it.", [
-              { label: "Offer the test route", effect: { setCrewStage: { id: "eli", stage: "test_available" }, crewLoyalty: { id: "eli", delta: 1 }, setFlags: { eliRejectionReopened: true } }, preview: "Unlocks Give Eli a Test Route in People.", result: "He accepts without thanking you, which somehow lands better than gratitude would have. The route and its risks are waiting in People by the time he is back in his vehicle. He does not mention the last conversation, and neither do you." },
-              { label: "Tell him it is still no", effect: { setFlags: { eliRejectedFinally: true } }, preview: "Eli stays outside this operation for the rest of the week.", result: "He nods once, the way somebody nods when they have already worked out the answer and only wanted it confirmed out loud. He leaves. The next route rumor that reaches you comes through somebody who charges for it and gets half the detail wrong." }
-            ]),
-            pherris_offer: () => event("pherris_offer", "The List in Pherris's Pocket", "Pherris Cole puts one torn page on the table. Half the names are crossed out. The rest still pick up. She keeps her hand flat on the paper. Decide what supplier access is worth.", [
-              { label: "Offer her a share of the take", effect: { introduceCrew: "pherris", crewLoyalty: { id: "pherris", delta: 2 }, setFlags: { gavePherrisOwnership: true } }, preview: "Opens a future recruitment option on her terms rather than yours.", result: "She leaves her hand where it is a second longer, then slides the page across and starts talking in terms of we, which she has not done once until now. She names two people on the list she will not introduce yet, and tells you exactly why not." },
-              { label: "Ask to buy the list", effect: { introduceCrew: "pherris", crewLoyalty: { id: "pherris", delta: -1 } }, preview: "Opens a future recruitment option, colder than it could have been.", result: 'She laughs without any part of her face joining in, and folds the page back into quarters. "You want the names without the person who knows them." The page goes into her pocket. She still finishes the drink, and she still pays for it.' }
-            ]),
-            tone_offer: () => event("tone_offer", "Tone at the Garage Door", "Anton Bell points out a sedan parked in the one spot your camera misses, and says how long it has sat there. Curtis's people cost him his last job. He wants a wage to guard the garage.", [
-              { label: "Offer protection work", effect: { introduceCrew: "tone", crewLoyalty: { id: "tone", delta: 1 } }, preview: "Opens a future recruitment option and another wage against Curtis.", result: `He checks the doorframe, then the hinge side, then the lock, in that order, before he asks what the work pays. "Two things. I don't start anything, and you tell me when something's already started." He waits on the second one specifically.` },
-              { label: "Say the garage is handled", effect: { introduceCrew: "tone", crewLoyalty: { id: "tone", delta: -1 } }, preview: "Tone stays available later, with less patience for the offer.", result: 'He looks at the lock, then at you, and does not say the obvious thing about either. "All right." He walks back toward the street past the sedan without changing his pace, and the sedan is still in the same spot in the morning.' }
-            ]),
-            tone_jacksonville: () => event("tone_jacksonville", "Jacksonville Calls Collect", "A Jacksonville number reaches Tone after midnight. The people behind it know his old name and your two strongest blocks. Protection, separation, or leverage all leave a mark.", [
-              { label: "Protect Tone", effect: { heat: 2, crewLoyalty: { id: "tone", delta: 2 }, setFlags: { toneJacksonvilleProtected: true } }, preview: "+2 Heat and +2 Tone loyalty. Keep him inside the operation.", result: "You put the garage and the blocks behind Tone. Jacksonville hears the boundary in the next call." },
-              { label: "Cut Tone loose", effect: { crewLoyalty: { id: "tone", delta: -4 }, setFlags: { toneJacksonvilleCutLoose: true } }, preview: "Remove the immediate threat and break Tone's loyalty.", result: "Tone leaves the key on the workbench. The call stops reaching your phone." },
-              { label: "Use the call as leverage", effect: { rivalRespect: 1, setFlags: { toneJacksonvilleLeverage: true } }, preview: "Gain leverage with Curtis; Tone remembers being used.", result: "Curtis gets the number and a reason to care. Tone gets proof that protection has conditions." }
-            ]),
-            mina_shift_change: () => event("mina_shift_change", "Twenty Minutes Past Close", "Mina counts the till and hands you a lead: Ship Creek freight is hiring dispatch. Then she asks what people call you, and waits like the answer matters. Give her a name or keep it.", [
-              { label: "Tell her what the week looks like", effect: { minaTrust: 1, setFlags: { minaKnowsScope: true } }, preview: "Mina learns how your week is funded and holds you to it later.", result: `You give her the version with the debt in it, the checkpoint, and Dre's name. Mina listens. "All right, ${state.player.streetName || "friend"}," she says, and writes the yard's address on the back of a receipt. "Thursday mornings. Don't be here when he is."` },
-              { label: "Keep the answer small", effect: { setFlags: { minaDeflected: true } }, preview: "Nothing changes tonight. Mina notices the size of the answer.", result: "You give her the short version. Mina nods, folds the receipt she was about to write on, and puts it in her apron. The heater ticks. She counts the last of the twenties without looking up." },
-              { label: "Put $60 toward her yard fees", requires: "cash60", effect: { cash: -60, minaTrust: 2, setFlags: { minaTookMoney: true } }, preview: "Costs $60. Mina accepts the help and sets the terms you did not ask for.", result: 'She takes the sixty and writes you a receipt on Night Owl paper, dated and signed, because she does not want it to be a favor. "This is a loan," she says. "I pay it back in March." She means it.' }
-            ]),
-            mina_invitation: () => event("mina_invitation", "Four Hours and No Agenda", "Mina has four hours before her next shift and no car. The owner cut her hours again. She wants to know what kind of evening you can make. Spend the time or hand it back.", [
-              { label: "Take the bus toward the inlet", effect: { minaTrust: 2, heat: -1, setFlags: { minaDateNight: true } }, preview: "Bus fare is folded into the scene; you spend the evening away from the block.", result: "You ride until the commercial lights thin out, then walk where the inlet wind cuts across the open ground. Mina talks about the yard interview, her mother, and nothing at all. On the bus back, your shoulders touch twice and neither of you moves." },
-              ...state.base.controlled ? [{ label: "Show her the garage", requires: "base_controlled", effect: { minaTrust: 1, minaJobAtRisk: true, setFlags: { minaSawGarage: true } }, preview: "She sees the operation, and she is seen near it.", result: 'She walks the length of the bay once, looks at the bags, and does not touch anything. "This is what it is, then." A car slows on the street outside and keeps going. Mina watches it the whole way down the block.' }] : [],
-              { label: "Tell her tonight is not good", effect: { setFlags: state.flags.minaRaincheck ? { minaInvitationClosed: true } : { minaRaincheck: true } }, preview: "Nothing happens tonight. The offer may come back once.", result: 'She takes it evenly, the way she takes most things. "Then another night." She starts walking toward the bus shelter on Spenard before you can offer the ride.' }
-            ]),
-            mina_boundary: () => event("mina_boundary", "Someone Said Your Name Wrong", 'A customer used your street name, asked which nights Mina closes, and left without buying. "I am asking you to tell me what I am standing next to." Give her the truth or manage her.', [
-              { label: "Tell her everything, risk included", effect: { minaTrust: 2, setFlags: { toldMinaTruth: true } }, preview: "Mina gets the whole picture, including the part that could put her at risk.", result: `You give her Curtis's name, Dre's date, and the honest odds. Mina listens all the way through without interrupting. Then she writes down the names and puts the note in her shoe. "Now the decision is mine too," she says. "That was the part you owed me."` },
-              { label: "Give the officer her name", effect: { minaTrust: -2, heat: -1, setFlags: { usedMinaWithoutConsent: true } }, preview: "Heat drops. Mina finds out from someone else that you used her name.", result: "The story holds because her name is clean and yours is not. Some attention comes off you. Mina hears it from the officer's partner, who buys cigarettes at her counter on Fridays and assumed she already knew." },
-              { label: "Tell her you can't answer that", effect: { minaTrust: -1 }, preview: "The question stays open. Mina stops expecting an answer to it.", result: 'She waits long enough to be sure that is the whole reply. Then she pockets the keys. "Okay." The next time you come in, the coffee is on the counter before you reach it, and she is already turned toward the register.' }
-            ]),
-            mina_sedan_night: () => event("mina_sedan_night", "The Vale Call", "Kieran Vale arrives after Curtis's attention reaches Mina's counter. Mina knows the family name can stop this once. Decide whether she is protected, asked, or used.", [
-              { label: "Protect Mina and take the pressure outside", effect: { minaTrust: 1, setFlags: { valeProtectedMina: true } }, preview: "Keep Mina out of the negotiation and accept the pressure yourself.", result: "You move the conversation away from the counter before Kieran can use her as the room's center. Mina sees exactly what you chose." },
-              { label: "Ask Mina to broker it", effect: { setFlags: { minaBrokeredVale: true } }, preview: "Trust Mina to use the Vale name on terms she understands.", result: "Mina makes the call herself, states the limit before the favor, and ends it before either man can expand the deal." },
-              { label: "Exploit the Vale name", effect: { minaTrust: -2, setFlags: { exploitedValeName: true } }, preview: "Gain leverage at the cost of Mina's trust and clean life.", result: "The name works. Mina watches you spend it as though it belonged to the operation." }
-            ]),
-            mina_after: () => {
-              const name = state.player.streetName || "friend";
-              if (state.npc.mina.usedWithoutConsent) {
-                return event("mina_after", "The Lights Off Two Hours Early", `The Night Owl is dark two hours early. Mina is in the lot with a duffel and her sister's car running. The Ship Creek job is gone because your name reached the owner. "I just can't be near this."`, [
-                  { label: "Tell her you're sorry and mean it", effect: { minaDeparts: true, setFlags: { minaLeftClean: true } }, preview: "She leaves either way. This is the version where you do not argue.", result: `She accepts it the way she accepts most things, evenly and without making you feel better about it. "I know." She puts the duffel in the back seat. "Lock the garage at night, ${name}. You never do."` },
-                  { label: "Ask her to stay", effect: { minaTrust: -1, minaDeparts: true }, preview: "She has already decided. Asking does not change it.", result: '"No." Not sharp, just finished. The car pulls out and turns toward Minnesota before the headlights have swung far enough to catch you.' }
-                ], `The night window is closed and the store is dark before nine. "I'm not angry," she says, and she is not, which is worse. The owner heard her name in the wrong sentence from somebody who did not know it mattered.`);
-              }
-              if (state.npc.mina.trust >= 3 && state.flags.minaDateNight) {
-                return event("mina_after", "The Name on the Receipt", 'Mina slides a folded receipt across the counter: a name, a phone number, and a bay number at the Ship Creek yard. "He owes me, not you," she says. "Which means it works once." Take it or leave it.', [
-                  { label: "Take the name", effect: { setFlags: { minaGaveContact: true }, addRumor: { areaId: "airport_industrial", productId: "cocaine", text: "Mina's contact at the Ship Creek yard says which bay doors stay unwatched after the second shift." } }, preview: "Adds a reliable Industrial Service Roads lead that Mina cannot get you twice.", result: `She watches you write the number somewhere better than your hand. "One time, ${name}. After that he doesn't know either of us." The coffee is already the right temperature, which means she poured it before you walked in.` },
-                  { label: "Tell her to keep it for herself", effect: { minaTrust: 1, setFlags: { refusedMinaContact: true } }, preview: "You give up the lead. Mina keeps a favor she can still spend on Monday.", result: `She looks at the receipt for a second, then puts it back in her apron without arguing. "That's the first useful thing you've done all week." She says it flatly, and she means it as a compliment.` }
-                ], "The coffee comes with it, already poured. Outside, the first real snow of the week is holding on the pavement instead of melting. The favor is hers, and spending it on you empties it.");
-              }
-              return event("mina_after", "Restocking the Cold Case", "Mina keeps working through the conversation. Her Ship Creek dispatch interview follows your checkpoint. She waits for you to decide how this week closes.", [
-                { label: "Wish her luck on Monday", effect: { minaTrust: 1 }, preview: "A small, honest exchange at the end of a week that did not include her.", result: `"I don't need luck, I need him to read the second page." She sets the last row of bottles straight. "But thank you." The cooler door swings shut and holds the fog for a while.` },
-                { label: "Ask if she'll still be here after", effect: {}, preview: "You get a straight answer, which may not be the one you want.", result: '"Here, or Ship Creek, or Palmer." She does not stop working. "Somewhere with a schedule." It is not an invitation and it is not a door closing, and she leaves it exactly that way.' }
-              ], "She is restocking the cold case when you come in. The cooler door fogs and clears between you. The question she leaves unasked is its own kind of answer.");
-            },
-            courier: () => event("courier", "Courier Behind Bay Twelve", "A courier is down beside Bay Twelve, split lip, locked case cuffed to his wrist. Headlights turn into the Industrial lane and slow down. They know what they are looking for. Move now.", [
-              { label: "Spend supplies helping", effect: { cash: -55, heat: 1, setFlags: { helpedIndustrialCourier: true } }, preview: "\u2212$55 and +1 Heat. He owes you something and knows it.", result: "You get the cuff off and get him breathing evenly against the wall. He does not thank you for it. Before he goes he tells you which service road closes on Day 6, and that the closure has nothing to do with construction." },
-              { label: "Search the case", risky: true, effect: { cash: 160, heat: 2, setFlags: { robbedIndustrialCourier: true } }, preview: "+$160 and +2 Heat. He is awake for all of it.", result: "The case holds cash and a route sheet folded open to the current week, and you take both. He watches you do it from the ground with his eyes open the whole time, and the bay light is more than good enough for him to keep your face." },
-              { label: "Leave before the headlights arrive", effect: {}, preview: "Nothing gained. Whatever is in the case ends up somewhere else.", result: "You are back in the vehicle before the headlights reach the bay. Two nights later the same locked case turns up open in Curtis's hand at the Downtown exit lane, and nobody has to explain to you how it got there." }
-            ]),
-            dre_after_payoff: () => event("dre_after_payoff", "Dre Opens Another Door", "Dre tears the note in half and keeps one piece. Then he stays, which he has not done before. He has three ways for you to use the name you just earned. Pick one.", [
-              { label: "Take a larger note", effect: { secondLoan: true }, preview: `Take $1,200 now and owe $1,380 by Day ${Math.min(state.run.day + 5, state.run.checkpointDay)}.`, result: `He transfers twelve hundred before you finish agreeing. The paper says thirteen-eighty within five days or at the checkpoint, whichever comes first. "Same rules. Bigger note." He walks back to the car.` },
-              { label: "Ask for the supplier", effect: { access: "cocaine", lenderTrust: 1 }, preview: "Unlocks supplier access and leaves Dre satisfied with the arrangement.", result: `He writes one Downtown address on the back of your paid note, hands it over, and burns the rest of the paperwork in the ashtray with the window cracked an inch. "Use my name once. After that it's yours or it isn't."` },
-              { label: "Stay independent", effect: { influence: { areaId: "north_star_lot", delta: 1 }, lenderTrust: 1, setFlags: { refusedSecondNote: true } }, preview: "No new debt. Spenard notices that you walked away clean.", result: 'He puts the offer back in his jacket without any visible reaction, which from Dre is a form of respect. "Then make your own door." He gets in the car. He does not say it unkindly, and he does not offer it twice.' }
-            ]),
-            base_watch: () => event("base_watch", "The Sedan Across From the Garage", "A gray sedan has held the curb across from North Star Garage for forty minutes, windshield on the bay door, engine running. Somebody is sitting in it. None of it is hidden. Decide how you answer.", [
-              { label: "Check the camera", requires: "security2", effect: { heat: -1, setFlags: { identifiedBaseWatcher: true }, baseWatched: false }, preview: "\u22121 Heat. You find out who is actually sitting out there.", result: "The camera catches the changeover. Curtis's driver gets out and a second man in plain clothes gets in, and neither of them looks at the lens. You now know two things they do not know you know, which is worth more than the sedan leaving would have been." },
-              { label: "Move the valuable stock", effect: { heat: 1, baseWatched: true }, preview: "+1 Heat. The stock moves, and so does whoever is watching.", result: "You move the bags before first light in two trips. The sedan does not follow the first one. It follows the second one, at a distance, all the way to the turn, and then it goes back to the same piece of curb it started from." },
-              { label: "Leave the garage dark", effect: { baseWatched: true }, preview: "Nothing spent. The garage stays watched and they know it.", result: "Nobody comes in and nobody tries the door. In the morning there is a chalk mark low on the frame beside the lock, small enough that you would have missed it entirely if you were not already looking for something." }
-            ]),
-            crew_crisis: () => event("crew_crisis", "A Crew Member Misses Check-In", "A burner buzzes at four in the morning: an APD booking number and a dollar amount. The number belongs to somebody who works for you. Whoever sent it wants money before the six o'clock shift change.", [
-              { label: "Pay $180 and show up", effect: { cash: -180, crewAllLoyalty: 1, setFlags: { protectedCrewCrisis: true } }, preview: "\u2212$180. Every person working for you hears about it.", result: "You are standing in the lot when the side door opens, which is a different thing entirely than posting the money and staying home. Nobody in the crew says anything about it directly. All of them know by the end of the day." },
-              { label: "Protect the operation", effect: { crewAllLoyalty: -2, setFlags: { abandonedCrewCrisis: true } }, preview: "Nothing spent. Crew loyalty pays for it instead.", result: "You do not answer it. The garage is untouched in the morning, the stock is where you left it, and the operation loses nothing you can put a number against. The empty chair at the table stays where it is and everybody works around it." }
-            ]),
-            buyer_hurry: () => event("buyer_hurry", "Cash Across the Hood", "A Downtown buyer counts an overpay across your hood in the Night Owl lot, in the open. A man by the door pockets his phone, steps three feet aside, and makes a call while watching your vehicle.", [
-              { label: "Take the overpay", effect: { cash: 140, heat: 1, setFlags: { buyerSeenAtMiniMart: true } }, preview: "+$140 and +1 Heat, in front of Mina's window.", result: "You take it, and it is a good number. Through the window Mina watches the man on the phone read your plate out loud, slowly, twice, and she keeps her face completely still the entire time she is ringing somebody up." },
-              { label: "Move the deal elsewhere", effect: { influence: { areaId: "north_star_lot", delta: 1 }, heat: -1 }, preview: "\u22121 Heat and a little Spenard standing. The overpay goes away.", result: "You send him around the corner to the church lot and finish it there, out of sight of the door. It costs you four minutes and most of the premium. The Mini-Mart stays a place where you buy coffee and nothing happened in the lot." }
-            ]),
-            checkpoint: () => event("checkpoint", "Cones on the Service Road", "APD has the airport service road down to one lane. An officer taps the rear panel of each vehicle as he passes. The tow driver has been watching your vehicle. The line behind you keeps growing.", [
-              { label: "Pay the tow driver $90", effect: { cash: -90, heat: -1 }, preview: "\u2212$90 and \u22121 Heat. He opens a gate and asks nothing.", result: "He takes it without turning his head and opens the maintenance gate at the far end of the lot forty seconds later. He does not ask what is in the vehicle. He does not look at the vehicle at all, which visibly takes him some effort." },
-              { label: "Risk the inspection", effect: { heat: 2, loseRandomInventory: 2, setFlags: { checkpointRecognizedVehicle: true } }, preview: "+2 Heat and up to two units gone. The vehicle gets written down.", result: "The officer takes his time and finds enough to make the time worth it. You leave two units behind and a full description of the vehicle in somebody's notebook, and he says the plate back to himself once while you are pulling away." }
-            ]),
-            curtis_cut: () => event("curtis_cut", "Curtis's Driver Blocks the Exit", "A black sedan blocks the Downtown exit lane. Curtis's driver opens the passenger door, leans on the roof, and waits while traffic backs up. He never says the number. He was told he does not have to.", [
-              { label: "Pay Curtis $120", effect: { cash: -120, rivalPressure: -2, rivalRespect: 1, setFlags: { paidCurtisPassage: true } }, preview: "\u2212$120. Curtis eases off and remembers that you paid.", result: "He counts it once, fast, the way somebody counts who does this several times a day. Then he moves the sedan and gives you the next block without being asked for it, which is the part that costs more than the money did." },
-              { label: "Refuse the door", effect: { rivalPressure: 3, health: -8, setFlags: { refusedCurtisCut: true } }, preview: "\u22128 Health and sharper Curtis pressure. He hears you said no.", result: "The sedan does not move for a while. When it finally does, it is because two people have pulled you away from the wheel and made their point on the pavement. Curtis hears the version where you refused before he hears the version where you lost." }
-            ]),
-            rough_night: () => event("rough_night", "Red Gloves at Bay Nine", "Three people spread across the Industrial bay lane wide enough that going around is out. One wears the red work gloves you last saw on Curtis's dash. Nobody has said anything yet.", [
-              { label: "Leave $80 on the concrete", effect: { cash: -80, health: -3 }, preview: "\u2212$80 and a few bruises. They leave the bag alone.", result: "They take it off the concrete and leave the bag where it is, which is the deal they came out here to make. The one in the red gloves says there will be a next time, in the tone of somebody scheduling it rather than threatening you with it." },
-              { label: "Hold your ground", effect: { health: -14, rivalRespect: 1, rivalPressure: 1, setFlags: { industrialCrewEncountered: true } }, preview: "\u221214 Health. Curtis hears that you did not go down.", result: "You leave upright with blood on your collar and one of them limping worse than you are. Curtis hears about it before the clinic does, and the version that reaches him is the one where you were still standing at the end of it." }
-            ]),
-            dre_warning: () => event("dre_warning", "Dre Counts What Is Missing", "Dre counts your partial stack on the hood twice, then folds one bill back and holds it out to you. He asks when the rest is coming. The question is genuine. He wants a date.", [
-              { label: "Name the next payment", effect: { lenderTrust: 1, setFlags: { dreGoodFaithPayment: true } }, preview: "Dre takes the date and the partial payment for now.", result: 'You give him a day and he repeats it back once, in the flat way he says numbers, and puts the stack in his jacket. "Thursday." He does not write it down anywhere, which is not remotely the same thing as forgetting it.' },
-              { label: "Tell him to wait", effect: { lenderTrust: -2, heat: 1 }, preview: "+1 Heat and lasting damage to Dre's patience.", result: `He closes his jacket over the money without counting it a third time. "All right." He makes one call from the driver's seat before he pulls out, short, and he is looking at the Mini-Mart door the entire time he is talking.` }
-            ]),
-            eli_missed_turn: () => event("eli_missed_turn", "An Hour Later Than the Route", "Eli is an hour past the route time and leads with the reason. A vehicle followed him from the fuel stop, so he drove past the drop and came in from the other side. The package is intact.", [
-              { label: "Ask what he saw", effect: { crewLoyalty: { id: "eli", delta: 2 }, setFlags: { eliJudgmentTrusted: true } }, preview: "Eli learns his read is worth something here.", result: "He gives you the make, the colour, which lane it held, and the two places it could have turned off and did not. None of it is guesswork and none of it is padded. Somewhere in the middle of it he stops sounding like he is defending himself." },
-              { label: "Dock the route payment", effect: { crewLoyalty: { id: "eli", delta: -2 }, cash: 20, setFlags: { eliDocked: true } }, preview: "+$20 back. He learns the clock outranks his judgment.", result: "He does not argue about it, which is worse than arguing. He hands back the twenty without counting it and says the route will be on time next run. It is on time after that, every time, including the runs where it should not have been." },
-              { label: "Tell him he made the right call", effect: { crewLoyalty: { id: "eli", delta: 1 }, setFlags: { eliJudgmentTrusted: true } }, preview: "He will make that call again without asking first.", result: '"Okay." He says it like he is filing it somewhere. Two days later he changes a route again without checking in, and that one is also correct, and he tells you about it afterward the same flat way he tells you the fuel cost.' }
-            ]),
-            eli_service_map: () => event("eli_service_map", "The Map He Drew Himself", "Eli spreads a hand-drawn page under the dome light: gate hours, which yards chain up at night, where patrol cars turn around, two crossings on no map. He built it over a year. He wants something for it.", [
-              { label: "Pay him for a copy", requires: "cash90", effect: { cash: -90, crewLoyalty: { id: "eli", delta: 1 }, addRumor: { areaId: "airport_industrial", productId: "meth", text: "Eli's map marks two service-road crossings the patrol pattern does not cover after dark." } }, preview: "\u2212$90. He keeps the original and you get the routes.", result: "He copies it out by hand rather than giving you the original, which takes twenty minutes and tells you exactly how he feels about the page. The copy is just as good. He folds the original back into his jacket before the money is even put away." },
-              { label: "Offer him a share instead", effect: { crewLoyalty: { id: "eli", delta: 2 }, setFlags: { eliOwnsShare: true }, addRumor: { areaId: "airport_industrial", productId: "meth", text: "Eli's map marks two service-road crossings the patrol pattern does not cover after dark." } }, preview: "No cash now. He takes a cut of what the routes earn.", result: "He works out the percentage out loud, lands somewhere lower than you expected, and writes it on the corner of the map so neither of you has to remember it. Then he starts talking about a third crossing he has not verified yet, which he would not have mentioned an hour ago." },
-              { label: "Tell him to keep it", effect: {}, preview: "The routes stay his. Nothing changes tonight, and he does not push.", result: `He folds it up without any visible disappointment and puts it back inside his jacket. "It's there if you want it." He mentions the page exactly once more, in passing, weeks of driving later, and never pushes it again.` }
-            ]),
-            eli_last_run: () => event("eli_last_run", "After the Seventh Night", "Eli asks what happens to him when the week is over. He wants no money. He has worked out that whatever you are building either has a driver's seat in it or it does not. Answer him.", [
-              { label: "Tell him there's a seat", effect: { crewLoyalty: { id: "eli", delta: 2 }, setFlags: { eliPromisedFuture: true } }, preview: "A promise he will hold you to after the checkpoint.", result: "He nods once and goes straight back to the fuel prices, which is how you know it landed. Before he leaves he mentions that his cousin has a van with a working heater and no questions attached, and that he had not brought it up before because there had not been a reason to." },
-              { label: "Tell him you don't know yet", effect: { setFlags: { eliToldHonestly: true } }, preview: "Honest and unsatisfying. He can work with honest.", result: `"That's fair." He means it, mostly. He keeps driving the routes exactly as well as before, and he stops mentioning the week after next, and you notice the second thing more than you expected to.` },
-              { label: "Tell him this ends here", effect: { crewLoyalty: { id: "eli", delta: -1 }, setFlags: { eliToldNoFuture: true } }, preview: "He finishes the pressure phase and starts looking on his own time.", result: "He takes it without complaint because he asked and you answered. The routes stay clean through the checkpoint. He starts taking calls outside the bay, briefly, and stops leaving his jacket in the vehicle." }
-            ]),
-            dre_terms: () => event("dre_terms", "The Envelope After Work", `$1,000 now. $1,200 due Day ${state.run.checkpointDay}. Partial payments accepted. Dre names the terms once and keeps the envelope in his hand while the sedan idles.`, [
-              { label: "Take it measured", effect: { acceptDreLoan: true, lenderTrust: 1, setFlags: { dreTermsAcknowledged: true } }, preview: `$1,000 dirty cash now. $1,200 is due Day ${state.run.checkpointDay}.`, result: "You take the envelope and hold his eyes. Dre releases it one finger at a time. He says the date once. You repeat it once." },
-              { label: "Take it nervous", effect: { acceptDreLoan: true, setFlags: { dreAskedConsequences: true } }, preview: `$1,000 dirty cash now. $1,200 is due Day ${state.run.checkpointDay}.`, result: "You ask for the date again. Dre gives it to you. His thumb stays under the envelope until your grip settles." },
-              { label: "Leave it with him", effect: { declineDreLoan: true, setFlags: { dreOfferDeclined: true } }, preview: "Keep grinding with your own money and no Dre debt.", result: "You leave the envelope between his hands. Dre tucks it inside his coat. The car door shuts. Your shift money stays yours." }
-            ], "Dre leans against a dark sedan outside your job. Snow gathers along one shoulder. His bare hand holds a thick envelope against the roof. The engine keeps running."),
-            dre_first_payment: () => {
-              const name = state.player.streetName || "friend";
-              return event("dre_first_payment", "The First Money You Bring Him", `Dre counts your money on the hood in stacks of five and says nothing about the amount. Then he looks at you a second longer than the transaction needs, working out whether this is a pattern.`, [
-                { label: "Tell him when the next one comes", effect: { lenderTrust: 2, setFlags: { drePaymentPattern: true } }, preview: "A date on the record. Dre keeps dates.", result: `"All right, ${name}." It is the first time he has used the name, and he uses it the way he uses numbers, as a thing that is now on file. He does not write the date down. He does not need to, and both of you know that is the point.` },
-                { label: "Let the money speak", effect: { lenderTrust: 1 }, preview: "No promises made, which means nothing for him to hold you to.", result: `He accepts the silence without pushing into it. "Fine." The car door closes and the light goes out and the lot is dark again. Whatever he decided about you, he decided it while counting and he is not going to share it.` }
-              ]);
-            },
-            dre_due_day: () => {
-              const balance = state.lender.balance;
-              const paid = state.lender.payments;
-              const heavy = paid >= 300;
-              const description = balance <= 0 ? "The note is clear and Dre came by on the due day anyway. He talks about the weather for ninety seconds, then gets to the reason: almost nobody clears one of these early." : heavy ? `Dre arrives on the due day and skips the number. $${balance} is still on the paper and there are hours left in the day. He is here to find out what you plan to do about it.` : `Dre is behind the Night Owl with the engine off, which means he intends to stay. $${balance} of the original amount is still on the paper. He says nothing at all. He is going to make you open.`;
-              const flavor = balance <= 0 ? "He leans on the car door with his hands in his pockets, in no hurry to explain himself. Turning up to collect nothing is the closest thing to approval he offers." : heavy ? "He has kept the running total in his head all week, so he knows what you have paid without asking. Asking beats telling, and he chose to ask." : "An engine left off is how he signals he has time. He has kept the running total in his head all week and he will not speak first.";
-              const choices = [];
-              if (balance > 0 && state.player.cash >= Math.min(balance, 100)) {
-                choices.push({ label: "Pay what you have on you", effect: { payLenderNow: true, lenderTrust: 1 }, preview: "Hands over what you are carrying against the balance.", result: "You count it out onto the hood and he counts it again after you, because that is not an insult where he is from, it is just how money gets counted. The number on the paper comes down. Neither of you says anything about the part that is left." });
-              }
-              choices.push({ label: "Name the day you can clear it", effect: { lenderTrust: heavy ? 1 : -1, setFlags: { dreNamedFinalDate: true } }, preview: heavy ? "He has seen enough this week to take a date." : "He has not seen enough this week to take a date on faith.", result: heavy ? `He takes the date without any argument, because the week behind it does the arguing. "I'll be here." He is gone in under a minute, which from Dre is a compliment.` : `He listens to the date and does not agree to it or refuse it. "You've told me a lot of things this week." He gets back in the car. The date stands, but so does everything else.` });
-              choices.push({ label: "Offer him work instead of money", effect: { lenderTrust: -1, rivalPressure: 1, setFlags: { dreOfferedFavor: true } }, preview: "He takes the offer and the balance stays where it is.", result: `"Everybody's got something they'd rather do than pay." He does not say no. He takes a name and a place off you instead of cash, and by the next evening that name has a problem, and the number on your paper has not moved at all.` });
-              return event("dre_due_day", balance <= 0 ? "He Came By Anyway" : "The Day on the Paper", description, choices, flavor);
-            },
-            dre_day7: () => {
-              const cleared = state.lender.balance <= 0;
-              return event("dre_day7", cleared ? "The Account Closes Clean" : "What Is Left on the Paper", cleared ? `Dre finds you on Day ${state.run.checkpointDay} without being told where you would be. The note is settled. He is here to say what he thinks he has been dealing with all week.` : `Dre finds you on Day ${state.run.checkpointDay} and leaves the paper unmentioned. The balance stands at $${state.lender.balance}. He has decided what happens next. He is here to tell you.`, [
-                { label: "Hear him out", effect: { lenderTrust: cleared ? 1 : 0 }, preview: cleared ? "He tells you where you stand with him." : "He tells you what the unpaid balance becomes.", result: cleared ? `"Most people I front pay me late and act like I owe them the patience." He looks out at the lot rather than at you. "You paid me. That's it. That's the whole compliment, don't wait for a better one."` : `"It doesn't stop being money because the week ended." He says the new number, which is larger, and the new date, which is close. Then he waits to see whether you are going to argue, and does not seem to mind either way.` },
-                { label: "Ask what comes next", effect: { lenderTrust: cleared ? 1 : -1, setFlags: { dreAskedForFuture: true } }, preview: cleared ? "You ask about the next arrangement before he offers." : "You ask for a future while the current one is unpaid.", result: cleared ? `He takes a second with it. "Come find me in a week and I'll have a number for you." It is not a yes, but he has never once said a thing like that to somebody he was finished with.` : `"Next." He repeats the word back like it is unfamiliar. "You're asking me about next." He does not raise his voice at any point, and the conversation is over about four seconds later.` }
-              ], cleared ? "Arriving where you are without asking is its own kind of statement. He came for the reason people come at the end of an arrangement they respected." : "He wants to see your face while he says it. The decision was made before he arrived, so nothing said here moves the number.");
-            },
-            curtis_mark: () => event("curtis_mark", "Somebody Repeats a Private Detail", "The kid at the coffee counter mentions somebody asked which mornings you come in. He does not know he told you anything. The tag by the bus shelter has been gone over in a different hand.", [
-              { label: "Ask the kid who was asking", effect: { setFlags: { curtisMarkInvestigated: true }, rivalRespect: 1 }, preview: "You get a description. Curtis hears that you went looking.", result: "The description is useless on its own (a man, a jacket, a car nobody looked at properly). The kid remembers he was polite and bought nothing. By the afternoon somebody has told Curtis's driver that you asked, which was always the more useful half of doing it." },
-              { label: "Change which mornings you come in", effect: { heat: -1, setFlags: { curtisMarkAvoided: true } }, preview: "\u22121 Heat. Harder to find, and it costs you the routine.", result: "You move your hours and the coffee is worse at the new time and the walk is longer. Nothing follows you for two days. On the third, the same tag on the same wall has been gone over again, so somebody worked out the new schedule inside forty-eight hours." },
-              { label: "Do nothing about it", effect: { rivalPressure: 1 }, preview: "+1 Curtis pressure. Being watched costs nothing until it does.", result: "You keep the same mornings and the same corner and act as though the wall is just a wall. Nothing happens for three days. Then a buyer who has never been late is late, and apologises without explaining, and does not meet your eye while doing it." }
-            ]),
-            curtis_tax: () => event("curtis_tax", "Curtis Comes Himself", "Curtis Foyer gets out of the car and offers four versions of the same future: pay him, stand beside him, keep him at arm's length, or refuse him in public.", [
-              { label: "Pay the tax", effect: { curtisDecision: "pay_tax" }, preview: "Curtis takes 15% of nightly illegal gross. Ordinary attention growth pauses at 5.", result: "Curtis names no weekly minimum. He takes fifteen percent of whatever the night actually made and tells his people to stop inflating the number. The arrangement is expensive, stable, and visible." },
-              { label: "Accept friendship", effect: { curtisDecision: "friendship" }, preview: "Two days of protection and a 10% buyer premium. Betrayal becomes possible after the protection expires at attention 7.", result: "Curtis calls it friendship. For two days his name keeps hands off your buyers and adds ten percent to what they will pay. The word is warmer than the arrangement." },
-              { label: "Stay guarded", effect: { curtisDecision: "guarded" }, preview: "+1 respect. No protection and no betrayal trap.", result: "You keep the conversation respectful and the distance exact. Curtis recognizes the boundary, gives you nothing, and respects that you asked for nothing." },
-              { label: "Reject him", effect: { curtisDecision: "reject" }, preview: "+2 respect and +1 attention. Independence remains intact and stronger confrontations unlock.", result: "You say no in front of the corner. Curtis respects the public answer, then makes sure the city notices that he heard it." }
-            ]),
-            curtis_day7: () => {
-              const respectful = state.npc.curtis.respect >= 2 && state.npc.curtis.pressure <= 6;
-              return event("curtis_day7", respectful ? "An Offer at the End of the Week" : "The Account He Has Been Keeping", respectful ? "Curtis's car is outside North Star Garage and the window comes down. He has watched you handle a debt, a corner, and two of his own people all week. He has a number for what you are worth to him." : `Curtis sends three people on Day ${state.run.checkpointDay} instead of coming. They stand in the lot. One holds a phone with an open line. He is listening live.`, [
-                { label: respectful ? "Hear the offer" : "Walk out and face them", effect: { rivalRespect: 1 }, preview: respectful ? "You find out what a working arrangement costs." : "You take the meeting on your feet, in your own lot.", result: respectful ? 'The arrangement he describes is genuinely good and would leave you working for him in every way that matters except the word. He does not oversell it. "Think about it past tonight," he says, and the window goes back up before you have answered.' : "You go out to them and nobody touches anybody. The one with the phone holds it up slightly, and a voice on it says your name once, and then they leave. The whole thing takes ninety seconds and costs you nothing you can count." },
-                { label: respectful ? "Tell him you're staying independent" : "Stay inside and let them stand there", effect: { rivalPressure: 2, setFlags: { refusedCurtisFinal: true } }, preview: "+2 pressure. He learns where the line is.", result: respectful ? `"That's a no, then." He is not offended, which is somehow worse than if he had been. "You'll hear from me in a month and it won't be an offer." The car pulls out slowly enough that it is clearly on purpose.` : "They stand in the lot for forty minutes and then go. Nothing is broken and nobody is hurt and every single person on this block watched them do it, which was always the point of sending them instead of coming." }
-              ], respectful ? "He stays in the car the whole time. What you are worth to him and what you are worth are separate figures, and he is quoting one of them." : "Standing in your lot without acting is the entire message. Whatever gets said here reaches him before you finish saying it.");
-            },
-            goodie_corner_intro: () => event("goodie_corner_intro", "Warm Air Off the Dryer Vents", "Three people stand in the warm air off the Wash & Go dryer vents. One works a corner out of a gym bag and has clocked you twice. The second time, he lifts his chin. Decide what he becomes.", [
-              { label: "Introduce yourself properly", effect: { meetDealer: "goodie", dealerStanding: { id: "goodie", delta: 1 } }, preview: "Opens Goodie as a contact in People. He decides what you are later.", result: "He gives you a name, Goodie, and does not ask for yours, which means he already has some version of it. The conversation lasts ninety seconds and covers nothing. By the end of it you know where he stands every night and he knows you bothered to ask." },
-              { label: "Ask what he moves", effect: { meetDealer: "goodie" }, preview: "Opens Goodie as a contact. Straight to business, and he notices that too.", result: "He tells you weed and shrooms and nothing else, and he tells you the prices without being asked, which is either confidence or a test. He does not offer a name until you are already turning to go, and then he offers it to your back." },
-              { label: "Mark the corner and keep walking", effect: { meetDealer: "goodie", dealerStanding: { id: "goodie", delta: -1 } }, preview: "Opens Goodie as a contact, cold. He read the look you gave the bag.", result: "You do not stop, but you slow down enough to count the bag, the two people with him, and the gap between the vents and the street. He watches you do all of it. Neither of you pretends the other was not counting something." }
-            ]),
-            goodie_regular: () => event("goodie_regular", "The Regular-Customer Price", "Goodie has stopped checking the bills twice. He names the regular price and one rule: one buy a day, no exceptions when the corner is hot.", [
-              { label: "Accept the terms", effect: { dealerStanding: { id: "goodie", delta: 1 }, setFlags: { goodieRegularTerms: true } }, preview: "Build standing and keep the corner dependable.", result: "Goodie nods once. The price improves; the daily limit does not." },
-              { label: "Keep it transactional", effect: { setFlags: { goodieRegularTerms: false } }, preview: "Keep access without another promise.", result: "He counts the bag, counts the cash, and leaves trust exactly where it was." }
-            ]),
-            goodie_atlanta: () => event("goodie_atlanta", "What Atlanta Taught Him", "Goodie talks about Atlanta only after the last buyer leaves: too many people mistaking fast growth for invisible growth, and a corner that disappeared in one afternoon.", [
-              { label: "Listen without mining it", effect: { dealerStanding: { id: "goodie", delta: 1 }, setFlags: { goodieAtlantaHeard: true } }, preview: "Goodie reads respect in the silence.", result: "He finishes the story and gives you tomorrow's reliable rumor before you ask." },
-              { label: "Ask who survived", effect: { setFlags: { goodieAtlantaHeard: true } }, preview: "Learn the lesson without gaining standing.", result: 'Goodie names nobody. "The ones you know are the ones who stayed visible."' }
-            ]),
-            goodie_recognized: () => event("goodie_recognized", "Deshawn Wants a Word", "Deshawn vouched for you when you were nobody here, and you robbed Goodie after. He has waited outside the Wash & Go for twenty minutes. He wants to know whether he read you wrong. He is calm.", [
-              { label: "Tell him straight what you did", effect: { influence: { areaId: "north_star_lot", delta: -1 }, setFlags: { ownedGoodieRobbery: true } }, preview: "Costs you standing on the block. He keeps talking to you afterward.", result: `You give him the version with nothing shaved off it. He listens all the way through and then stands there a while longer. "I'm not going to say anything to anybody." He means it, and it is somehow worse than being shouted at.` },
-              { label: "Offer him money to square it", effect: { cash: -120, setFlags: { paidOffDeshawn: true, goodieRestitution: true } }, requires: "cash120", preview: "\u2212$120. It settles the debt without settling what he thinks.", result: "He takes it because turning it down would be a performance and he is not interested in performing. He counts it once, puts it away, and tells you the corner is somebody else's problem now. He does not ask where the money came from, which is its own answer." },
-              { label: "Tell him it was business", effect: { influence: { areaId: "north_star_lot", delta: -1 }, rivalRespect: 1, setFlags: { dismissedDeshawn: true, deshawnBusinessSevered: true } }, preview: "Costs block standing. The version Curtis hears is that you do not flinch.", result: `"Business." He repeats it back without any weight on it at all, nods once, and walks off toward Minnesota. Within two days three people who used to nod at you outside the Mini-Mart have stopped doing it, and one of them tells Curtis's driver why.` }
-            ]),
-            wet_bricks: () => event("wet_bricks", "The Tarp Tore Past Palmer", "The load rode forty miles in freezing rain after the tarp tore past Palmer. The man unstrapping it wants it off his truck before his shift ends, and offers the whole lot at a little over half.", [
-              { label: "Buy the whole lot", requires: "cash190", effect: { cash: -190, addProduct: { id: "weed", qty: 6, unitCost: 32 }, setFlags: { boughtWetLot: true } }, preview: "\u2212$190 for six units of weed. Condition stays unverified until you try to move it.", result: "He helps you load it, which is the first generous thing he has done all night, and is gone before you finish counting. Two of the seals are soft at the corner. The rest you will find out about at the sale." },
-              { label: "Buy two and check the seals", requires: "cash70", effect: { cash: -70, addProduct: { id: "weed", qty: 2, unitCost: 35 } }, preview: "\u2212$70 for two units you inspect before committing to the rest.", result: "You take the two off the dry end of the pallet and hold each one up to the bay light. They are fine. He watches you check, decides you are not worth the argument, and re-straps what is left." },
-              { label: "Leave it on the truck", effect: { setFlags: { passedWetLot: true } }, preview: "Nothing spent. He finds another buyer inside the hour.", result: "You are still in the lot when a second vehicle backs up to the flatbed and takes the lot at his asking price without opening anything. The wind comes off the flats and the whole bay smells like wet cardboard." }
-            ]),
-            door_knock: () => event("door_knock", "Working Their Way Along the Row", 'Knocking two doors down, and a voice saying "just a few questions." One officer on the landing, one at the bottom of the stairs. They are working along the row toward this door.', [
-              { label: "Sit still and let it pass", effect: { heat: 1 }, preview: "+1 Heat. You stay put and hope the row ends before this door does.", result: "The knocking reaches the next unit, holds there a while, then moves on down the landing. Somebody upstairs runs water for a long time. Nobody knocks here, but the officer at the bottom of the stairs writes something down before he leaves." },
-              { label: "Move the bag out the back", effect: { heat: -2, health: -3, setFlags: { movedBagOnIce: true } }, preview: "\u22122 Heat. The back stairs are iced and you are carrying weight down them.", result: "The back stairs have not been salted since November. You go down them fast with the bag on one shoulder and your free hand on the rail, and you land badly at the bottom. By the time the officers reach this unit there is nothing in it worth the questions." },
-              { label: "Open the door first", effect: { heat: -1, setFlags: { openedDoorToAPD: true } }, preview: "\u22121 Heat. Volunteering looks better than being found, and costs you the conversation.", result: "You open it before they knock, which surprises them enough to change the tone. They ask about a vehicle, not about you. You answer three questions honestly because none of them are dangerous, and they move on a door earlier than they meant to." }
-            ]),
-            stranded_wagon: () => event("stranded_wagon", "Hazards on the Off-Ramp", "A wagon sits on the off-ramp shoulder, hazards on, hood up, two kids belted in the back with their coats zipped. She waves once, apologetically. Twenty minutes of your week against her night.", [
-              { label: "Pull over and jump the battery", effect: { influence: { areaId: "north_star_lot", delta: 1 }, setFlags: { helpedStrandedDriver: true } }, preview: "Costs you the shoulder time. She and half the block will remember the vehicle.", result: "It takes two tries and a lot of engine noise before the wagon catches. She writes her number on a gas receipt and says her brother does bodywork in Mountain View, no charge, whenever you want. The kids wave through the back glass the entire time you are pulling away." },
-              { label: "Call it in from the corner", effect: {}, preview: "Somebody official gets there eventually. You are not involved.", result: "You make the call from the lot at the top of the ramp and watch long enough to see a trooper's lights come up the shoulder. It takes twenty-five minutes. The kids' windows are fogged the whole time." },
-              { label: "Keep driving", effect: {}, preview: "Nothing spent, nothing gained. The ramp is behind you in nine seconds.", result: "You are past before the decision finishes forming. In the mirror the hazards keep going, smaller, and then the on-ramp curve takes them out of sight." }
-            ]),
-            found_phone: () => event("found_phone", "Face-Down on the Bench", "A phone on the bench, still warm, screen unlocked. The last thread is a buyer arranging pickups by cross-street and half-hour window, six days out. It rings. The contact name reads DO NOT SAVE.", [
-              { label: "Copy the schedule and leave the phone", effect: { setFlags: { copiedBuyerList: true }, addRumor: { areaId: "downtown", productId: "shrooms", text: "A schedule copied off a lost phone puts a Downtown buyer on Fourth Avenue in half-hour windows for the next several days." } }, preview: "Adds a short-lived Downtown lead. Somebody eventually notices the phone was read.", result: "You write the six cross-streets on the inside of a receipt and set the phone back exactly face-down, exactly where it was. It rings twice more while you are still under the shelter. You do not look at it the second time." },
-              { label: "Wipe it and hand it in", effect: { influence: { areaId: "downtown", delta: 1 }, setFlags: { returnedLostPhone: true } }, preview: "You give up the schedule. The counter staff on Fourth will know your face for the right reason.", result: "The woman behind the transit counter takes it, checks the lock screen, and thanks you by name because she has seen you on this corner before. Whoever owns it gets it back at four. You will never know who they were." },
-              { label: "Put it back and walk", effect: {}, preview: "You leave it exactly as you found it, warm and ringing.", result: "You set it down and go. Half a block later it is still audible under the shelter roof, and then a bus pulls in and it is not." }
-            ]),
-            careful_customer: () => event("careful_customer", "Better Questions Than He Should Have", "He knows the weight before you say it and the price before you quote it. He asks which lot you park in, apologizes, then asks again in a different order. His hands are wrong for his story.", [
-              { label: "Sell him exactly what he asked for", effect: { cash: 95, heat: 2, setFlags: { soldToCarefulCustomer: true } }, preview: "+$95 now, +2 Heat, and he keeps whatever he came here to collect.", result: "The money is right and the handoff is clean and he thanks you twice, which nobody does. He is gone up the block before you have finished putting it away. Two of his questions are still sitting where you cannot reach them." },
-              { label: "Tell him you're not holding", effect: { setFlags: { refusedCarefulCustomer: true } }, preview: "No sale, no Heat. He may simply have been careful.", result: 'He accepts it immediately, which is the first thing all night that has not been strange. "Worth asking." He walks to the corner, does not cross, and stands there reading his phone for a while.' },
-              { label: "Ask who sent him", effect: { heat: 1, setFlags: { questionedCarefulCustomer: true } }, preview: "+1 Heat. You get a name, and he gets confirmation that you noticed.", result: "He gives you a name from two blocks over, and it is a real name, and the way he produces it means he had it ready. Whatever he was checking, he now knows you count questions. Neither of you pretends otherwise." }
-            ]),
-            dock_shift: () => event("dock_shift", "Two People Short", "Four hours of unload at the Ship Creek dock, two people short, cash at the end of the shift and nothing written down. The foreman has a clipboard and no patience. These are four hours you do not have.", [
-              { label: "Take the shift", effect: { cash: 110, heat: -1, health: -2, setFlags: { workedDockShift: true } }, preview: "+$110, \u22121 Heat. Four hours of honest labor and a sore back for it.", result: "It is pallets of canned goods and one long run of freight blankets, and by the third hour your hands have stopped closing properly. The foreman pays out of an envelope at the door and asks if you want Thursday. Nobody at the yard asked your name." },
-              { label: "Tell him you can't tonight", effect: {}, preview: "Nothing gained. He fills the slot in under a minute.", result: "He has already turned toward the two men behind you before you finish the sentence. The doors roll open and the wind takes the sound of it up the channel." }
-            ]),
-            garage_furnace: () => event("garage_furnace", "The Door Seal Froze Shut", "The furnace stopped overnight. Everything stored along the back wall sat at outside temperature for six hours, and the door seal froze to the frame. The repair number is a Wasilla answering machine.", [
-              { label: "Pay the emergency callout", requires: "cash130", effect: { cash: -130, setFlags: { paidFurnaceCallout: true } }, preview: "\u2212$130. Somebody drives in from the Valley and the bay is warm by afternoon.", result: "He comes down from Wasilla in a truck with the tailgate wired shut, replaces an igniter, and charges you for the drive more than the part. The bay is warm by two. He does not ask what is stacked along the wall and does not look at it twice." },
-              { label: "Patch it yourself", effect: { health: -4, setFlags: { patchedFurnace: true } }, preview: "Nothing spent. You are on a cold concrete floor with somebody else's wiring.", result: "It is a thermocouple, which you work out after an hour on the floor with a flashlight in your teeth. It lights on the fourth try and stays lit. Your knuckles are opened up across two fingers and the whole bay smells like burnt dust for the rest of the day." },
-              { label: "Leave it until the week is over", effect: { baseDamage: 1, setFlags: { ignoredFurnace: true } }, preview: "Nothing spent now. The cold wall keeps being a cold wall.", result: "You shut the connecting door and decide it is a next-week problem. By evening there is condensation running down the inside of the bay window and standing water along the base of the wall where the stock is." }
-            ]),
-            sedan_rumor: () => event("sedan_rumor", "Everyone Agrees on the Color", "The gray sedan is a repo driver, or it is Curtis's, or it belongs to a man whose brother you have never met. Nobody in the chain saw it. Everyone agrees on the color and nothing else.", [
-              { label: "Change your route for the day", effect: { heat: -1, setFlags: { reroutedOnRumor: true } }, preview: "\u22121 Heat from the longer way around, whether or not any of it was true.", result: "You take the long way to everything for a day, which costs you two good windows and produces no sedan. That is either because the story was wrong or because the route worked, and there is no version of the day that tells you which." },
-              { label: "Ask somebody positioned to know", effect: { setFlags: { checkedSedanRumor: true } }, preview: "You spend the ask. The answer may be that nobody knows either.", result: "The third person you ask is the first one who was actually on the block, and what she says is that there was a gray sedan on Tuesday and she has no idea whose. It is the most honest version you get and it is worth almost nothing." },
-              { label: "Carry on as planned", effect: {}, preview: "You act as though nothing was said, because possibly nothing was.", result: "You work the day you had already planned. Nothing happens, which proves nothing at all, and by evening two more people have told you the story with a different make of car in it." }
-            ]),
-            midtown_lights: () => event("midtown_lights", "Half a Mile at Walking Speed", "Four cruisers and a fire truck have the left two lanes coned off. Traffic is doing walking speed for half a mile. It is a collision. It is also every officer in Midtown with nothing else to look at.", [
-              { label: "Cut over to the frontage road", effect: { heat: -1, setFlags: { avoidedMidtownLights: true } }, preview: "\u22121 Heat. The frontage road is slower and nobody on it is being watched.", result: "You come off at Thirty-Sixth and take the frontage road behind the strip mall, past the sign for a carpet outlet that closed years ago and never came down. It adds fifteen minutes. Nobody looks at the vehicle once." },
-              { label: "Sit in the line", effect: { heat: 1 }, preview: "+1 Heat. Half a mile of being the slowest thing in front of four cruisers.", result: "It takes eleven minutes to clear the cones. A trooper glances into the vehicle somewhere around the fire truck, the way people look at anything that is moving slowly past them, and then looks at the next one. It is almost certainly nothing." }
-            ]),
-            eli_lieutenant_offer: () => event("eli_lieutenant_offer", "Eli Wants a Bigger Job", `Eli has a second phone he did not have last week. "You're spending time on corners that should just be running themselves." He wants to place soldiers, rotate them, and bring you only the calls that need you.`, [
-              { label: "Give him Operations", effect: { setFlags: { eliLieutenantOfferAccepted: true }, promoteEliLieutenant: true }, preview: "Eli starts running soldier placement and corner rotation on his own.", result: `He pockets the phone like the conversation is already over. "I'll bring you the numbers, not the errands." By the time you are back at the garage he has already written a rotation on the whiteboard nobody asked him to buy.` },
-              { label: "Keep making the calls yourself", effect: { setFlags: { eliLieutenantOfferDeclined: true }, crewLoyalty: { id: "eli", delta: -1 } }, preview: "Nothing changes yet. He will ask again once more is riding on it.", result: 'He puts the second phone away without arguing. "Your week." He does not bring it up again, but he also stops volunteering the small things he used to mention on his own.' }
-            ]),
-            spenard_block_scouted: () => event("spenard_block_scouted", "Eli's Map of the Blocks", 'Eli unrolls a Spenard street map with corners circled in three pens and dates beside some of them. "This is what patrol looks like on the ground." He taps each circle and gives you a number for it.', [
-              { label: "Take the map", effect: { setFlags: { spenardBlocksRevealed: true } }, preview: "Block earning, Heat exposure, Curtis visibility, and patrol frequency become visible before you claim anything.", result: "You fold the map into the glovebox. The numbers on it do not match the stories people tell about those corners, which is exactly why they are worth having." },
-              { label: "Tell him to keep it simple", effect: { setFlags: { spenardBlocksDeclined: true } }, preview: "You skip the numbers and keep reading the blocks yourself, the way you have all week.", result: `He rolls the map back up without arguing and sets it on the shelf instead of the hood. "It'll be here when you want it." You keep working corners off instinct instead of his notes.` }
-            ]),
-            yalonda_cooking: () => event("yalonda_cooking", "Something on the Stove", "Yalonda has rice going and asks how the day treated you. She waits through the first easy answer while the pot lid taps against the steam.", [
-              { label: "Tell her the useful truth", effect: { setFlags: { yalondaCookingSeen: true }, npcTrust: { id: "yalonda", delta: 1 } }, preview: "Build a little trust at home.", result: "She turns the flame down and listens until the whole answer is out." },
-              { label: "Keep the answer light", effect: { setFlags: { yalondaCookingSeen: true } }, preview: "Share the meal without opening the whole day.", result: "She lets the easy answer stand and puts another spoon beside the pot." }
-            ]),
-            yalonda_warning: () => event("yalonda_warning", "Questions at the Walk", "Yalonda saw somebody pause outside twice. The coat was wrong for the weather, the questions were about you, and the same car stayed warm at the curb.", [
-              { label: "Take the warning seriously", effect: { heat: -1, setFlags: { yalondaWarningSeen: true } }, preview: "Change your route and lose 1 Heat.", result: "You leave by the back walk. The same coat passes the front window once more." },
-              { label: "Say it was nothing", effect: { setFlags: { yalondaWarningSeen: true } }, preview: "Keep your route and accept the uncertainty.", result: "Yalonda locks the deadbolt herself and says nothing more about the car." }
-            ]),
-            yalonda_flirt: () => event("yalonda_flirt", "The Rent Envelope Stays Open", "Yalonda sets the paid envelope beside the kettle instead of putting it away. The house is quiet, your route home stayed clean, and she asks whether you ever stop working long enough to eat.", [
-              { label: "Stay for dinner", effect: { npcTrust: { id: "yalonda", delta: 1 }, setFlags: { yalondaFlirtAccepted: true } }, preview: "Let the relationship become something more personal.", result: "She leaves the second plate on the table. Neither of you calls the evening business." },
-              { label: "Keep it about the room", effect: { setFlags: { yalondaFlirtDeclined: true } }, preview: "Keep the relationship warm and strictly practical.", result: "Yalonda nods, seals the envelope, and sends you off with a covered plate." }
-            ]),
-            juan_warehouse_story: () => event("juan_warehouse_story", "Juan Gets Home Late", "Juan drops his work gloves by the heater. A truck missed its window and the dock needs people who answer callbacks.", [
-              { label: "Ask who runs the dock", effect: { shareJuanInfo: "work:ship_creek", discoverGym: true, setFlags: { juanWarehouseStorySeen: true } }, preview: "Learn a work lead and the community gym.", result: "Juan writes two names and the gym address on the back of a receipt." },
-              { label: "Ask about his shift", effect: { npcTrust: { id: "juan", delta: 1 }, setFlags: { juanWarehouseStorySeen: true } }, preview: "Build trust without taking the lead.", result: "Juan tells the whole truck story and leaves the work names for another night." }
-            ]),
-            juan_referral: () => event("juan_referral", "Juan Makes the Call", "Juan's warehouse needs another loader before the next receiving truck. He can put your name directly in the supervisor's hand and skip the callback wait.", [
-              { label: "Take the referral", effect: { hireJobId: "juan_warehouse", setFlags: { juanReferralSeen: true } }, preview: "Skip the normal two-part application delay.", result: "Juan sends the name. The supervisor replies with tomorrow's loading time." },
-              { label: "Apply on your own", effect: { setFlags: { juanReferralSeen: true } }, preview: "Leave Juan's direct referral unused today.", result: "Juan pockets his phone and tells you which door takes paper applications." }
-            ]),
-            discover_907_juan: () => event("discover_907_juan", "Juan Sends a Link", "Juan shows you a local resale list where ordinary items move for clean cash. He says the useful posts disappear before most people finish breakfast.", [
-              { label: "Save the link", effect: { discover907List: true }, preview: "Save the 907List link for later.", result: "The link stays in your phone under a plain bookmark." },
-              { label: "Leave it for now", effect: {}, preview: "Keep the local listing link unknown.", result: "Juan closes the page and goes back to his music." }
-            ]),
-            discover_907_work: () => event("discover_907_work", "A Link Between Shifts", "A coworker texts a local resale list between shifts. The fast listings disappear first, and buyers pay clean when the item looks ready to carry home.", [
-              { label: "Save it", effect: { discover907List: true }, preview: "Save the 907List link for later.", result: "The listings load beside the shift schedule." },
-              { label: "Ignore the message", effect: {}, preview: "Keep the local listing link unknown.", result: "The message slides under the rest of the shift thread." }
-            ]),
-            discover_907_night_owl: () => event("discover_907_night_owl", "The Board's Missing Tab", "A torn Night Owl posting leaves one readable resale link under the staple. Every phone-number tab is gone, but the page address is still intact.", [
-              { label: "Copy the address", effect: { discover907List: true }, preview: "Save the 907List link for later.", result: "You copy the address before the paper tears loose." },
-              { label: "Leave the board alone", effect: {}, preview: "Keep the local listing link unknown.", result: "The loose corner flaps once and folds back under the staple." }
-            ]),
-            discover_907_wander: () => event("discover_907_wander", "A Listing on the Pole", "A resale pickup note on Spenard Road points to a local listings page. The handwriting promises cash pickup and leaves the web address twice.", [
-              { label: "Follow the link", effect: { discover907List: true }, preview: "Save the 907List link for later.", result: "The page opens to three listings nearby." },
-              { label: "Keep walking", effect: {}, preview: "Keep the local listing link unknown.", result: "The paper stays on the pole for the next person walking past." }
-            ]),
-            curtis_respect_notice: () => event("curtis_respect_notice", "Curtis Notices the Corners", "Curtis has stopped calling your operation a nuisance. One of his people called it an operation, in front of people who repeat things. That attention arrives with no threat attached. Take it seriously.", [
-              { label: "Note it and keep moving", effect: {}, preview: "Nothing to spend here. The respect is already logged and worth remembering later.", result: "You do not change anything about the week because of a rumor, but you remember who told you, in case the next thing that comes through this route needs to move fast." },
-              { label: "Ask what else they said", effect: {}, preview: "You spend a little time chasing the rest of the story instead of moving on.", result: "The second half of the rumor turns out thinner than the first, mostly guesswork dressed up as certainty. Still, you learn which corner the comment was made on, and that is not nothing." }
-            ]),
-            soldier_raid_aftermath: () => event("soldier_raid_aftermath", "The Morning After the Raid", "The block is quiet too early. Nobody is standing that corner, and the regular buyers are deciding whether to come back. Nothing here needs a decision from you. It already happened.", [
-              { label: "Keep the block running", effect: {}, preview: "Acknowledge it and move on. The operation absorbs the loss and keeps working the corner.", result: "You do not close the corner. By afternoon somebody is standing on it again, and the block decides on its own how much that matters." },
-              { label: "Walk the block yourself", effect: {}, preview: "You spend a little time seeing the aftermath in person instead of hearing about it.", result: "There is nothing dramatic to see, just an empty spot where somebody used to stand and a few people who noticed. You leave without changing anything, but you saw it yourself." }
-            ])
-          };
-          const factory = events[id];
-          if (!factory) return null;
-          const built = factory();
-          const identity = state.player.streetIdentity;
-          const identityCopy = {
-            mina_intro: { mover: "Mina notices you check the counter traffic before you sit.", earner: "Mina has already heard that you keep dates written down.", stickup: "Mina watches your hands before she watches your face.", connector: "Mina knows two people who have already said your name kindly.", wild_card: "Mina says the stories about you never agree long enough to become useful." },
-            eli_offer: { mover: "Eli starts with the delivery window instead of the route.", earner: "Eli asks whether the people at your table get paid on time.", stickup: "Eli names the exits before he names the turns.", connector: "Eli names the people on the route before he names the turns.", wild_card: "Eli admits he cannot tell which version of you will show up." },
-            dre_terms: { mover: "Dre asks about turnover before he asks about cash in hand.", earner: "Dre already has the payment dates written down. So do you.", stickup: "Dre leaves a longer silence after he mentions consequences.", connector: "Dre names the people who vouched before he names the number.", wild_card: "Dre says inconsistency is still a pattern if it lasts long enough." },
-            curtis_mark: { mover: "Curtis's people have started counting your buyers.", earner: "Curtis's people know which obligations you have kept.", stickup: "Curtis's people stopped asking whether you carry. They ask whether you came alone.", connector: "Curtis's people keep asking why calls get returned for you.", wild_card: "Curtis's people have three descriptions of you and trust none of them." },
-            goodie_corner_intro: { mover: "You check the seals before the price. Goodie notices the order.", earner: "Goodie asks who taught you to keep a ledger.", stickup: "Goodie leaves one hand below the dryer-door line.", connector: "Goodie recognizes the name of the person who sent you.", wild_card: "Goodie cannot decide whether to quote you a price or watch the exit." },
-            sedan_rumor: { mover: "You weigh the rumor against the lost selling window.", earner: "You weigh it against everything due before Night.", stickup: "The version people repeat gives you a weapon whether it is true or not.", connector: "Two calls tell you more than the third-hand story did.", wild_card: "The rumor changes shape because nobody knows which version of you would react." },
-            dre_day7: { mover: "Dre judges the week by what kept moving.", earner: "Dre judges the week by what got paid.", stickup: "Dre judges the week by what survived the pressure.", connector: "Dre judges the week by who is still at the table.", wild_card: "Dre says the week produced evidence in every direction." }
-          };
-          if (identity !== "unproven" && ((_a = identityCopy[id]) == null ? void 0 : _a[identity])) built.description += ` ${identityCopy[id][identity]}`;
-          built.choices = built.choices.filter((choice) => {
-            if (!choice.requires) return true;
-            if (choice.requires === "security2") return state.base.tracks.security >= 2;
-            if (choice.requires === "base_controlled") return state.base.controlled;
-            const cashGate = /^cash(\d+)$/.exec(choice.requires);
-            if (cashGate) return state.player.cash >= Number(cashGate[1]);
-            return true;
-          }).map((choice) => ({
-            ...choice,
-            preview: choice.preview.split(/\s+/).length < 8 ? `${choice.preview} This changes the next route available to you.` : choice.preview,
-            result: choice.result.split(/\s+/).length < 15 ? `${choice.result} The exchange settles into the room and stays there after you move on.` : choice.result
-          }));
-          return built;
         }
         function startEncounter(state, id, finishAfter) {
           const templates = {

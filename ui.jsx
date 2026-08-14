@@ -143,7 +143,7 @@ function Header({ state, onMenu }) {
   // 50px row of branding above every page, so it is now a screen-reader
   // heading and the Menu button rides the HUD line instead.
   return <header className="top">
-    <h1 className="sr-only">907Hustle: One Good Run · v1.8.1</h1>
+    <h1 className="sr-only">907Hustle: One Good Run · v1.9b</h1>
     <div className="hud primary-hud">
       <Hud label="Day / Time" value={<>{`${state.run.day}${state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""} · ${C.SLOTS[state.run.slot]} · ${area.name}`}<SlotPips slot={state.run.slot} /></>} good />
       <Hud label="Cash" value={money(state.player.cash)} good flash={cashFlash} />
@@ -254,7 +254,7 @@ function Home({ state, dispatch, navigate }) {
       {state.run.day >= state.obligations.rentDueDay && <button className="btn full secondary" disabled={state.player.cash < C.WEEKLY_RENT} onClick={() => dispatch({ type: "PAY_RENT" })}>Pay weekly rent · {money(C.WEEKLY_RENT)}<span className="action-copy">Cash · no time passes</span></button>}
       <button className="btn full primary" disabled={household.evicted} onClick={() => dispatch({ type: "SLEEP_HOME" })}>Sleep at home<span className="action-copy">$0 · uses one part of day</span></button>
       <MenuRow title={state.phone.active ? "Phone" : "No Service"} status={state.phone.active ? `${state.phone.inbox.length} texts` : "Restoration directions"} description={state.phone.active ? "Texts, today's log, and word around town." : "Open the phone to see how to restore service."} onClick={() => navigate("phone")} />
-      {state.inventory.laptop && C.selectors.nineZeroSevenListAccess(state, "home").visible && <MenuRow title="907List Laptop" status="5 today" description="Open the daily Home listings." onClick={() => navigate("more", "907list", "home")} />}
+      {state.inventory.laptop && C.selectors.nineZeroSevenListAccess(state, "home").visible && <MenuRow title="907List Laptop" status={`${C.selectors.marketTierConfig(state).listings} today`} description="Open the day's listings with condition and seller history." onClick={() => navigate("more", "907list", "home")} />}
     </> : <MenuRow title="The spare room" status="Back in Spenard" description="Storage, Yalonda, Juan, and sleep wait until you return." onClick={openRoom} />}
   </div>;
 }
@@ -559,15 +559,86 @@ function Listings({ state, dispatch, onBack }) {
 
 function NineOhSevenList({ state, dispatch, onBack, surface = "phone" }) {
   const atHome = (surface === "home" || !state.phone.active) && state.inventory.laptop && state.world.currentNeighborhoodId === "north_star_lot";
-  const slate = C.selectors.listingSlate(state, atHome ? "home" : "phone");
+  const board = atHome ? "home" : "phone";
+  const slate = C.selectors.listingSlate(state, board);
   const list = state.nineZeroSevenList;
-  return <><PageHead title="907List" sub={atHome ? "Five listings refresh daily on the laptop" : "Three listings refresh every two days on your phone"} onBack={onBack} /><div className="scroll">
+  const view = C.selectors.marketOverview(state);
+  const meetup = C.selectors.marketMeetupAvailability(state);
+  const risk = C.selectors.marketRobberyPreview(state);
+  const bulk = C.selectors.marketBulkDeal(state);
+  const requests = C.selectors.marketRequests(state);
+  const ready = list.pendingSells.filter((entry) => entry.status === "ready");
+  const waiting = list.pendingSells.filter((entry) => entry.status !== "ready");
+  const nameOf = (itemId) => (C.LISTING_ITEMS.find((entry) => entry.id === itemId) || {}).name || "Item";
+  const full = list.inventory.length >= view.capacity;
+  const held = (id) => list.inventory.find((entry) => entry.id === id);
+  return <><PageHead title="907List" sub={`${view.name} tier · ${view.blurb}`} onBack={onBack} /><div className="scroll">
     {state.run.day >= state.phone.billDueDay && <div className="card debt-card"><div className="card-title">Phone bill<small>{money(C.PHONE_BILL)} DUE</small></div><p className="compact">Online payment needs the laptop and active service. A dead phone must be paid at the store.</p><button className="btn full primary" disabled={!state.inventory.laptop || !state.phone.active || state.player.cash < C.PHONE_BILL} onClick={() => dispatch({ type: "PAY_PHONE_BILL", surface: "online" })}>Pay online · {money(C.PHONE_BILL)}<span className="action-copy">Free · no time passes</span></button></div>}
-    <div className="stat-row"><StatTile label="Held" value={`${list.inventory.length}/${C.LISTING_CAPACITY}`} /><StatTile label="Sales" value={list.sales} /><StatTile label="Profit" value={money(list.profit)} tone={list.profit >= 0 ? "good" : "bad"} /></div>
-    {!state.inventory.laptop && <div className="card"><div className="card-title">Used laptop<small>$250</small></div><p className="compact">Unlock five listings that refresh each day from Home.</p><button className="btn full primary" disabled={state.player.cash < 250} onClick={() => dispatch({ type: "BUY_LAPTOP" })}>Buy laptop · $250<span className="action-copy">One-time purchase · no alert matching</span></button></div>}
+    <div className="stat-row"><StatTile label="Held" value={`${list.inventory.length}/${view.capacity}`} /><StatTile label="Flips" value={view.flipCount} /><StatTile label="Profit" value={money(list.profit)} tone={list.profit >= 0 ? "good" : "bad"} /></div>
+    {/* The risk readout is the whole point of the risk formula: a number the
+        player can move by choosing when and where to meet. */}
+    <div className="card"><div className="card-title">Meetup risk<small>{risk.percent}%</small></div>
+      <div className="outcome-grid">
+        <Outcome label="Carrying" value={money(risk.carriedValue)} />
+        <Outcome label="Where" value={meetup.available ? (risk.district === "downtown" ? "Downtown" : "Spenard") : "No meetup"} />
+        <Outcome label="When" value={C.SLOTS[risk.slot]} />
+        <Outcome label="Robbery odds" value={`${risk.percent}%`} tone={risk.band === "low" ? "good" : risk.band === "moderate" ? "" : "bad"} />
+      </div>
+      <p className="compact">{meetup.reason} Mornings are safest and Night is worst; the more you carry, the more it matters.</p>
+    </div>
+    {view.nextTier && <div className="card"><div className="card-title">Next tier<small>{view.tier === 1 ? "FLIPPER" : "BROKER"}</small></div><p className="compact">{view.nextTier}{view.disputes > 0 ? ` ${view.disputes} dispute${view.disputes === 1 ? "" : "s"} on record.` : ""}</p></div>}
+    {view.specialist && <div className="card"><div className="card-title">Specialist<small>{String(view.specialist).replace("_", " ").toUpperCase()}</small></div><p className="compact">Three flips in one category earned you an extra listing in it every day.</p></div>}
+    {!state.inventory.laptop && <div className="card"><div className="card-title">Used laptop<small>$250</small></div><p className="compact">Four listings a day with condition and seller history on every one, Downtown meetups, and quick sells.</p><button className="btn full primary" disabled={state.player.cash < 250} onClick={() => dispatch({ type: "BUY_LAPTOP" })}>Buy laptop · $250<span className="action-copy">One-time purchase · no time passes</span></button></div>}
+
+    {requests.length > 0 && <><div className="section-label">Buyers looking</div>{requests.map((request) => {
+      const candidate = C.selectors.requestFillCandidates(state, request.id)[0];
+      return <div className="card" key={request.id}><div className="card-title">{request.buyerName}<small>UNDER {money(request.budget)}</small></div>
+        <p className="compact">“{request.text}”</p>
+        <button className="btn full primary" disabled={!candidate || !meetup.available} onClick={() => dispatch({ type: "FILL_BUYER_REQUEST", requestId: request.id, inventoryId: candidate.id })}>
+          {candidate ? `Deliver the ${nameOf(candidate.itemId).toLowerCase()}` : "Nothing held that fits"}
+          <span className="action-copy">One part of day · 15% premium · never falls through</span>
+        </button></div>;
+    })}</>}
+
+    {ready.length > 0 && <><div className="section-label">Buyers waiting on you</div>{ready.map((pending) => <div className="card" key={pending.id}>
+      <div className="card-title">{nameOf(pending.itemId)}<small>{money(pending.price)}</small></div>
+      <p className="compact">A buyer confirmed at {money(pending.price)}. Meet them to close it.</p>
+      <button className="btn full primary" disabled={!meetup.available} onClick={() => dispatch({ type: "DELIVER_907LIST", pendingId: pending.id })}>Deliver for {money(pending.price)}<span className="action-copy">One part of day · proceeds are clean cash</span></button>
+    </div>)}</>}
+
+    {waiting.length > 0 && <><div className="section-label">Posted, waiting</div>{waiting.map((pending) => <div className="card" key={pending.id}>
+      <div className="card-title">{nameOf(pending.itemId)}<small>LISTED</small></div>
+      <p className="compact">Posted and waiting. Somebody answers by morning, or nobody does.</p>
+    </div>)}</>}
+
     <div className="section-label">Today's listings</div>
-    {slate.map((item) => <div className="card" key={item.id}><div className="card-title">{item.name}<small>{money(item.buy)}</small></div><div className="outcome-grid"><Outcome label="Est. resale" value={`${money(item.resale[0])}–${money(item.resale[1])}`} /><Outcome label="Est. profit" value={`${money(item.resale[0] - item.buy)}–${money(item.resale[1] - item.buy)}`} /></div><button className="btn full secondary" disabled={list.inventory.length >= C.LISTING_CAPACITY || state.player.cash < item.buy} onClick={() => dispatch({ type: "BUY_907LIST", itemId: item.id, surface: atHome ? "home" : "phone" })}>Buy for {money(item.buy)}<span className="action-copy">Free transaction · held until resold</span></button></div>)}
-    {list.inventory.length > 0 && <><div className="section-label">Held items</div>{list.inventory.map((held) => { const item = C.LISTING_ITEMS.find((entry) => entry.id === held.itemId); return <div className="card" key={held.id}><div className="card-title">{item.name}<small>BOUGHT {money(held.cost)}</small></div><p className="compact">Expected buyer range {money(item.resale[0])}–{money(item.resale[1])}.</p><button className="btn full primary" onClick={() => dispatch({ type: "SELL_907LIST", inventoryId: held.id, surface: atHome ? "home" : "phone" })}>Find a buyer<span className="action-copy">Free transaction · proceeds are clean cash</span></button></div>; })}</>}
+    {slate.map((item) => <div className="card" key={item.id}>
+      <div className="card-title">{item.name}<small>{money(item.buy)}</small>{item.specialist ? <small> · SPECIALTY</small> : null}</div>
+      <div className="outcome-grid">
+        <Outcome label="Est. resale" value={money(item.estimate)} />
+        <Outcome label="Est. profit" value={money(item.estimate - item.buy)} tone={item.estimate - item.buy >= 0 ? "good" : "bad"} />
+        {item.conditionLabel ? <Outcome label="Condition" value={item.conditionLabel} /> : null}
+        {item.reliabilityLabel ? <Outcome label="Seller" value={item.reliabilityLabel} /> : null}
+      </div>
+      <button className="btn full secondary" disabled={full || !meetup.available || state.player.cash < item.buy} onClick={() => dispatch({ type: "BUY_907LIST", itemId: item.id, surface: board })}>Buy for {money(item.buy)}<span className="action-copy">One part of day · the seller may already be gone</span></button>
+    </div>)}
+    {view.tier === 1 && <p className="compact">Scrapper listings show a title and a price. What it is actually worth is your read to make.</p>}
+
+    {bulk && !bulk.taken && <><div className="section-label">Distressed seller</div><div className="card">
+      <div className="card-title">Three-item lot<small>{money(bulk.price)}</small></div>
+      <p className="compact">{bulk.itemIds.map(nameOf).join(", ")}. {money(bulk.listPrice - bulk.price)} under asking, and all of it becomes carried value until it moves.</p>
+      <button className="btn full secondary" disabled={!meetup.available || state.player.cash < bulk.price || list.inventory.length + bulk.itemIds.length > view.capacity} onClick={() => dispatch({ type: "BUY_BULK_907LIST", dealId: bulk.id })}>Take the lot · {money(bulk.price)}<span className="action-copy">One part of day · high capital lock</span></button>
+    </div></>}
+
+    {list.inventory.filter((entry) => !entry.listed).length > 0 && <><div className="section-label">Held items</div>{list.inventory.filter((entry) => !entry.listed).map((entry) => {
+      const item = C.LISTING_ITEMS.find((row) => row.id === entry.itemId);
+      return <div className="card" key={entry.id}><div className="card-title">{item.name}<small>PAID {money(entry.cost)}</small></div>
+        <p className="compact">Open market runs about {money(C.marketEvents.estimatedResale(item))} and can fall through. A quick sell takes 20% off and cannot.</p>
+        <button className="btn full primary" onClick={() => dispatch({ type: "SELL_907LIST", inventoryId: entry.id, surface: board })}>Post it{view.verified ? " · sells today" : " · buyer answers by morning"}<span className="action-copy">Free to post · delivering costs one part of day</span></button>
+        {view.quickSell && <button className="btn full secondary" disabled={!meetup.available} onClick={() => dispatch({ type: "QUICK_SELL_907LIST", inventoryId: entry.id })}>Quick sell · about {money(Math.round(C.marketEvents.estimatedResale(item) * 0.8))}<span className="action-copy">One part of day · guaranteed · never falls through</span></button>}
+      </div>;
+    })}</>}
+
     <div className="section-label">Aspirational property</div>
     <PlaceAction title="North Star Garage" status={state.base.controlled ? "CONTROLLED" : "$650 DEPOSIT"} purpose="Storage and operations space. This property never occupies a 907List inventory slot." cost={state.base.controlled ? "Paid" : "$650"} time={state.base.controlled ? "Owned" : "Leasing uses one part of day"} disabled={state.base.controlled || state.player.cash < C.GARAGE_DEPOSIT} reason={state.base.controlled ? "Already controlled." : state.player.cash < C.GARAGE_DEPOSIT ? `You need ${money(C.GARAGE_DEPOSIT - state.player.cash)} more.` : "Deposit and first week included."} onClick={() => dispatch({ type: "LEASE_GARAGE" })} />
   </div></>;
@@ -995,7 +1066,7 @@ function PhoneScreen({ state, dispatch, onBack, openList }) {
     <div className="section-label">Texts</div>{state.phone.inbox.length ? state.phone.inbox.map((message) => <div className="card compact" key={message.id}><div className="card-title">{message.from}<small>DAY {message.day} · {C.SLOTS[message.slot]}</small></div><p className="compact">{message.text}</p></div>) : <div className="card compact muted">No messages yet.</div>}
     <div className="section-label">Day Log</div>{dayLog.length ? dayLog.map((entry, index) => <div className={`card compact ${entry.tone || ""}`} key={index}>{entry.text}</div>) : <div className="card compact muted">Nothing logged today.</div>}
     <div className="section-label">Word Around Town</div>{intel.map((line, index) => <div className="card compact" key={index}>{line}</div>)}
-    {state.knowledge.knows907List && <MenuRow title="907List" status={state.phone.active ? "3 listings" : "No service"} description="Local resale listings." disabled={!state.phone.active} onClick={openList} />}
+    {state.knowledge.knows907List && <MenuRow title="907List" status={state.phone.active ? `${C.selectors.marketTierConfig(state).listings} listings` : "No service"} description="Local resale listings." disabled={!state.phone.active} onClick={openList} />}
   </div></>;
 }
 
@@ -1020,7 +1091,7 @@ function More({ state, dispatch, features, page, setPage, sub, subToken }) {
   const financeSummary = !hasDreDebt ? `${money(state.player.cleanCash)} clean` : !state.lender.balance ? "Debt clear" : daysLeft <= 0 ? "Debt due" : `Debt Day ${state.lender.dueDay}`;
   return <><PageHead title="More" sub="Character, progress, finances, and help stay available; property unlocks operations" /><div className="scroll">
     <MenuRow title="Finances" status={financeSummary} description={hasDreDebt ? "Cash, debt, Shark notes, and financial risk." : "Cash and financial risk."} onClick={() => setPage("finances")} />
-    {state.knowledge.knows907List && <MenuRow title="907List" status={`${state.nineZeroSevenList.inventory.length}/${C.LISTING_CAPACITY} held`} description="Three two-day phone listings, resale estimates, and a laptop upgrade." disabled={!C.selectors.nineZeroSevenListAccess(state, "phone").available && !C.selectors.nineZeroSevenListAccess(state, "home").available} onClick={() => setPage("907list")} />}
+    {state.knowledge.knows907List && <MenuRow title="907List" status={`${state.nineZeroSevenList.inventory.length}/${C.selectors.marketCapacity(state)} held`} description={`${C.selectors.marketOverview(state).name} tier. Buy low, read the listing, find the next buyer.`} disabled={!C.selectors.nineZeroSevenListAccess(state, "phone").available && !C.selectors.nineZeroSevenListAccess(state, "home").available} onClick={() => setPage("907list")} />}
     <MenuRow title="Operations" status={opsSummary} description={features.operations.available ? "Safehouse, territory, soldiers, gear, and Rob." : features.operations.hint} disabled={!features.operations.available} onClick={() => setPage("operations")} />
     {features.recovery.available && <MenuRow title="Recovery" status={`Health ${state.player.health}`} description="Treat injuries or lay low to reduce Heat." onClick={() => setPage("recovery")} />}
     <MenuRow title="Character" status={`${identity} · Respect ${state.npc.curtis.respect}`} description="Street Identity, attributes, derived ratings, and reputation." onClick={() => setPage("character")} />
@@ -1251,7 +1322,7 @@ function MenuModal({ state, dispatch, onClose, onTitle }) {
   return <><Modal title="Run menu" onClose={onClose}>
     <ExpandableMoreSection
       collapsedContent={<p className="popup-lead">Autosave is on. This run saves to your browser after every action.</p>}
-      expandedContent={<p className="popup-flavor">907Hustle v1.8.1 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
+      expandedContent={<p className="popup-flavor">907Hustle v1.9b · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
       moreLabel="Save detail" lessLabel="Hide detail" />
     <button className="btn full primary" onClick={onTitle}>Return to Title</button>
     <button className="btn full secondary choice" onClick={() => setConfirmRestart(true)}>Restart Run<span>Creates a new seed and returns to Street Name entry.</span></button>

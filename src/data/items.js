@@ -1,4 +1,11 @@
-// Purchasable gear, the base upgrade tracks, and the resale listing catalogue.
+// Purchasable gear and the base upgrade tracks.
+//
+// The 907List resale catalogue moved to ./market.js in v1.9b, where the tier,
+// category, and true-value fields it grew belong next to the constants that
+// price them. It is re-exported here so the game-core barrel and every existing
+// caller keep the name they already use.
+
+const { LISTING_ITEMS, LISTING_ITEM_BY_ID } = require("./market.js");
 
 const GEAR = [
   { id: "utility_knife", name: "Utility Knife", cost: 90, slot: "weapon", type: "close", accuracy: 0.04, damage: [8, 14], heat: 0, description: "Concealable close-range protection." },
@@ -23,19 +30,6 @@ const BASE_UPGRADES = [
 ];
 
 const GEAR_BY_ID = Object.fromEntries(GEAR.map((item) => [item.id, item]));
-
-const LISTING_ITEMS = [
-  { id: "space_heater", name: "Space heater", buy: 25, resale: [45, 65] },
-  { id: "used_tv", name: "Used television", buy: 55, resale: [85, 120] },
-  { id: "dresser", name: "Solid dresser", buy: 40, resale: [65, 95] },
-  { id: "tool_set", name: "Mechanic tool set", buy: 70, resale: [100, 140] },
-  { id: "snow_tires", name: "Set of snow tires", buy: 80, resale: [120, 160] },
-  { id: "shop_vac", name: "Shop vacuum", buy: 45, resale: [70, 100] },
-  { id: "winter_coat", name: "Winter coat bundle", buy: 35, resale: [55, 85] },
-  { id: "camp_stove", name: "Camp stove", buy: 60, resale: [90, 125] },
-];
-
-const LISTING_ITEM_BY_ID = Object.fromEntries(LISTING_ITEMS.map((item) => [item.id, item]));
 
 module.exports = {
   GEAR,

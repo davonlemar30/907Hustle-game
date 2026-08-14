@@ -227,8 +227,8 @@ test("an action becomes an observation becomes a disposition change", () => {
 
 // ------------------------------------------------------------ migration
 
-test("v3, v4, and v5 saves all arrive with a ledger they can be read from", () => {
-  for (const version of [3, 4, 5]) {
+test("v3, v4, v5, and v6 saves all arrive with a ledger they can be read from", () => {
+  for (const version of [3, 4, 5, 6]) {
     const raw = JSON.parse(C.serializeRun(fresh(1920 + version)));
     raw.version = version;
     raw.npc.mina.trust = 3; raw.npc.mina.met = true;
@@ -238,7 +238,7 @@ test("v3, v4, and v5 saves all arrive with a ledger they can be read from", () =
     for (const id of C.EXPOSURE_NPC_IDS) delete raw.npc[id].ledger;
 
     const state = C.hydrateRun(raw);
-    assert.equal(state.version, 6, `v${version} did not migrate`);
+    assert.equal(state.version, 7, `v${version} did not migrate`);
     assert.ok(state.npc.mina.ledger.some((entry) => entry.event === "told_truth"), `v${version} lost the truth she was told`);
     assert.ok(state.npc.mina.ledger.some((entry) => entry.event === "legacy_history"), `v${version} lost her accumulated history`);
     assert.ok(state.npc.curtis.ledger.some((entry) => entry.event === "units_10"), `v${version} lost Curtis's milestones`);

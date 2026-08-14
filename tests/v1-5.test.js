@@ -169,21 +169,27 @@ test("Downtown shows two seeded once-per-run arrivals and always supports the re
   assert.deepEqual(C.DOWNTOWN_CONTENT_STUBS, ["circle_k", "fourth_avenue_bars", "rei"]);
 });
 
-test("phone listings refresh every two days while the home laptop has five daily listings", () => {
+// v1.9b: the board refreshes daily at every tier, and the laptop buys detail and
+// reach rather than a second surface with more rows.
+test("the board refreshes daily and the laptop takes the player from two blind listings to four detailed ones", () => {
   const state = fresh(2100);
   state.nineZeroSevenList.known = true;
   state.knowledge.knows907List = true;
-  const phone1 = C.selectors.listingSlate(state, "phone").map((item) => item.id);
+  const day1 = C.selectors.listingSlate(state, "phone").map((item) => item.id);
+  assert.equal(day1.length, 2);
   state.run.day = 2;
-  assert.deepEqual(C.selectors.listingSlate(state, "phone").map((item) => item.id), phone1);
-  state.run.day = 3;
-  assert.notDeepEqual(C.selectors.listingSlate(state, "phone").map((item) => item.id), phone1);
+  assert.notDeepEqual(C.selectors.listingSlate(state, "phone").map((item) => item.id), day1);
+
   state.inventory.laptop = true;
-  state.nineZeroSevenList.tier = "upgraded";
-  const home3 = C.selectors.listingSlate(state, "home").map((item) => item.id);
-  assert.equal(home3.length, 5);
-  state.run.day = 4;
-  assert.notDeepEqual(C.selectors.listingSlate(state, "home").map((item) => item.id), home3);
+  assert.equal(C.selectors.marketTier(state), 2);
+  const flipper = C.selectors.listingSlate(state, "phone");
+  assert.equal(flipper.length, 4);
+  for (const listing of flipper) {
+    assert.ok(listing.conditionLabel, `${listing.id} should show condition at Flipper tier`);
+    assert.ok(listing.reliabilityLabel, `${listing.id} should show seller reliability at Flipper tier`);
+  }
+  // The laptop is also what makes a Downtown seller willing to meet.
+  assert.deepEqual(C.selectors.marketTierConfig(state).districts, ["north_star_lot", "downtown"]);
   assert.deepEqual(state.nineZeroSevenList.alerts, { enabled: false, subscriptions: [] });
 });
 

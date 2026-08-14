@@ -55,7 +55,7 @@ function driveTo(state, id, limit = 90) {
 }
 
 test("v3 run keeps legacy migration data without exposing a starting class", () => {
-  assert.equal(C.VERSION, 6); assert.equal(C.SAVE_KEY, "907ogr_v6");
+  assert.equal(C.VERSION, 7); assert.equal(C.SAVE_KEY, "907ogr_v7");
   assert.equal(C.BACKGROUNDS.length, 3);
   assert.deepEqual(C.BACKGROUNDS.map((item) => item.name), ["Steady-Hand Shooter", "Silver-Tongued Hustler", "Strategist"]);
   assert.deepEqual(C.STARTING_EDGES.map((item) => item.id), ["shooter", "hustler"]);
@@ -448,9 +448,9 @@ test("a pre-v0.7 save migrates to v5 and gains the new fields", () => {
 
   const inspection = C.inspectSave(JSON.stringify(legacy));
   assert.equal(inspection.valid, true, inspection.error || "legacy save rejected");
-  assert.equal(C.VERSION, 6); assert.equal(C.SAVE_KEY, "907ogr_v6");
+  assert.equal(C.VERSION, 7); assert.equal(C.SAVE_KEY, "907ogr_v7");
   const hydrated = inspection.state;
-  assert.equal(hydrated.version, 6);
+  assert.equal(hydrated.version, 7);
   assert.deepEqual(hydrated.run.eventHistory, {});
   assert.equal(hydrated.run.chainStreak, 0);
   assert.equal(hydrated.npc.mina.chainStage, 0);
@@ -681,7 +681,7 @@ test("a pre-v0.7.1 save hydrates and gains the dealer record", () => {
   delete legacy.people.dealers;
   const inspection = C.inspectSave(JSON.stringify(legacy));
   assert.equal(inspection.valid, true, inspection.error || "rejected");
-  assert.equal(inspection.state.version, 6);
+  assert.equal(inspection.state.version, 7);
   assert.equal(inspection.state.people.dealers.goodie.known, false);
   assert.equal(inspection.state.people.dealers.goodie.robbedCount, 0);
   assert.equal(C.selectors.dealerSupplyFactor(inspection.state, "north_star_lot", "weed"), 1);

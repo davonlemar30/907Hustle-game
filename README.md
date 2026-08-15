@@ -2,11 +2,60 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-The current playable build is **v1.9c: UX Polish Pass**, on top of
-**v1.12a: Home Screen Visual Overhaul**.
+The current playable build is **v1.13: Criminal Economy Cluster**, on top of
+**v1.9c: UX Polish Pass**.
 
 New here? Read [ARCHITECTURE.md](ARCHITECTURE.md) — file map, state shape, event
 card schema, and the rules a change has to hold to.
+
+## What changed in v1.13
+
+**A gameplay build: geography starts charging for crime.** The criminal economy
+grows from one full track (Boost, shipped quietly across earlier builds) and
+two loose robbery levers into three parallel tracks with district-aware math,
+and the city starts talking back. Save schema moves to **v10**; both
+simulation hashes move on purpose (details in Verification).
+
+- **District modifiers** (`src/data/districts.js`). Every criminal track reads
+  two numbers per district — a difficulty nudge (one step = 0.08 of success
+  chance, or 4% of buy price on the market) and a heat multiplier. Spenard
+  runs a quiet, easy market but loud, hard stickups; Downtown is the reverse;
+  the Service Roads pay robbers and punish shoplifters. Fairview and Mountain
+  View are scaffolded in data for the districts that don't exist yet.
+- **The Stick track.** Robbery is now a ladder like Boost: street work at
+  Tier 1 (drunks outside Chilkoot's, the Wash & Go lot, bar crawlers on
+  Fourth), named registers behind a weapon at Tier 2, and organized jobs —
+  Goodie's stash, the dice game behind the rec center — behind rep 10, a
+  weapon, and planning at Tier 3. Casing a big target twice prices the take
+  and sharpens the job; two robberies a day is the ceiling before people
+  start naming you; a job's victims can queue a retaliation card that finds
+  you two mornings later. The service-road envelope and Rob-Goodie both feed
+  the same rep ladder. A botched Tier 3 job at real Heat books you: bail and
+  the rest of the day (the full arrest system remains a future build).
+- **Plug suspicion.** Robbing anyone on a plug's home block makes that plug
+  wary: suspicion 3 prices a 10% risk premium into every unit, 5 cuts you off
+  entirely. Robbing a plug directly burns three standing with every plug at
+  once. A clean purchase or a quiet day on their block works suspicion back
+  down one point.
+- **Cross-district awareness.** Every criminal action raises that track's
+  awareness where it happened, and half a point bleeds to each adjacent
+  district a day later. Every three points is another difficulty step. Work
+  one district hard and it hardens under you.
+- **The seeded first lift** (bug 86bbejvu9). The Boost unlock now draws from
+  three framings across the current district's tier-1 stores instead of always
+  being the Night Owl camera — six variants, seeded per run, verified across
+  50 seeds with no variant dominating.
+- **Slide Okafor** is the fence's name now — a storage unit off Tudor Road,
+  strictly transactional. Same rates, same standing ladder.
+- **Curtis stays off fresh Hustle screens** (bug 86bbejvtn). The rival card
+  renders only once he actually knows the operation exists (or his attention
+  forces a decision), reframed as "Rival pressure" below the income rows.
+- **Trade modal hardening** (bug 86bbe3k2b). The buy ceiling now includes the
+  plug's per-visit cap (previously an over-cap buy was a silent dead button),
+  floors at zero, and coerces cleared/NaN input. The reducer's own zero-unit
+  guard was already in place from v1.10.
+- **Quick Score** (ticket 86bbaqb8f) turned out not to exist anywhere in the
+  code — the service-road envelope is that design's successor and stays.
 
 ## What changed in v1.9c
 
@@ -422,9 +471,12 @@ All primary controls target a minimum 44px touch area. The shell is designed for
 
 ## Save compatibility
 
-v1.9c and v1.12a change no state, so saves are unchanged: schema version **9**
-and local-storage key `907ogr_v9`, exactly as v1.11 wrote them. The v1.9c
-accordion fold state is React session state and is never persisted.
+v1.13 moves the schema to version **10** under local-storage key `907ogr_v10`.
+The change is purely additive — the Stick slice, the criminal profile, and
+per-plug suspicion all default in through `mergeDefaults` — so every v3
+through v9 save loads, migrates, and plays with the new systems at zero.
+(v1.9c and v1.12a changed no state; the v1.9c accordion fold state is React
+session state and is never persisted.)
 
 The loader continues to read `907ogr_v8`, `907ogr_v7`, `907ogr_v6`, `907ogr_v5`, `907ogr_v4`, and `907ogr_v3` once, migrate them to v9, and preserve:
 
@@ -494,13 +546,19 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 ## Verification
 
-- Node tests: **501 passing** (493 through v1.12a, 8 new v1.9c source contracts)
+- Node tests: **513 passing** (501 through v1.9c, 12 new in `tests/v1-13.test.js`)
 - Deterministic simulations: **2,000 runs, zero crashes or dead ends**
-- Simulation SHA-256: `86e726cc241a071a5edc8170cd50e571fb5944bc49988759f809d71ad4932eb9`
+- Simulation SHA-256: `5d6f9b0f67b63a176cb0a601c246b4a4a816c701cdc8ee957871dfdbf23da245`
   (`--total 2000`) and
-  `febd42d1d7d9349106f03f68a06e109e1c79f538fcc10d7696d71bff0c02ccab`
-  (`--total 200`). Both hashes are byte-identical to v1.11's — v1.9c and
-  v1.12a are UI builds and the simulator never loads `ui.jsx`.
+  `bd77a59cb23c35c185f44a3fd0791349aede3ef65ddf06c2946b647c3424f922`
+  (`--total 200`). **Both moved from v1.11's baselines on purpose**: district
+  heat multipliers touch every existing robbery and boost, market buys carry
+  district price factors and awareness, and dealer robbery now pays cash even
+  when the plug is not holding. Economy delta across the thirteen strategies
+  is **−2.45%** overall; eleven of thirteen move less than 14%, the outlier
+  being `aggressive` (−44%), which trades thin margins in exactly the
+  districts that now charge for the traffic. `legal_worker`, `thief`,
+  `gambler`, and `trainer` are untouched.
 - Build: `npm run build` completes in ~30ms with no circular imports
 - Title art over the wire: 68KB at 375px, 145KB at 1280px, down from 1,976KB
 - Viewports: 320×568, 360×640, 375×812, 414×896, 640×480, 768×1024, 834×1112,

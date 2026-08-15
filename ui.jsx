@@ -143,7 +143,7 @@ function Header({ state, onMenu }) {
   // them as five segments; the exact number stays the accessible name.
   const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil((value / ceiling) * 5))), total: 5 });
   return <header className="top">
-    <h1 className="sr-only">907Hustle: One Good Run · v1.9c</h1>
+    <h1 className="sr-only">907Hustle: One Good Run · v1.13</h1>
     <div className="hud primary-hud">
       <Hud label="Day / Time" bare value={<><b className="hud-day">Day {state.run.day}{state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""}</b><span className="hud-slot">{C.SLOTS[state.run.slot]}</span><SlotPips slot={state.run.slot} /></>} />
       <Hud label="District" bare accent="muted" value={<><span className="hud-diamond" aria-hidden="true">◆</span>{area.name}</>} />
@@ -411,7 +411,7 @@ function Boost({ state, dispatch }) {
       const encounter = target.tier === 1 ? `You're browsing ${target.name}. The camera has a blind spot by the back aisle.` : target.tier === 2 ? `${target.name} has what you need behind minimal security. Move now or wait for a better window.` : "Pick the target, keep the crew moving, and deliver the merchandise to the fence.";
       return <div className={`card boost-target${availability.available ? "" : " locked"}`} key={target.id}><div className="card-title">{target.name}<small>TIER {target.tier} · ${target.take[0]}–${target.take[1]}</small></div><p className="compact">{encounter}</p><div className="outcome-grid"><Outcome label="Status" value={banned ? "Banned" : hit ? "Hit today" : "Ready"} />{target.tier === 2 && <Outcome label="Window" value={window || "Unknown"} />}</div>{target.tier === 2 && !discovered && <button className="btn full secondary" onClick={() => dispatch({ type: "ASK_BOOST_WINDOW", targetId: target.id })}>Ask around<span className="action-copy">Uses one social action</span></button>}<button className="btn full primary" disabled={!availability.available} onClick={() => dispatch({ type: "BOOST", targetId: target.id })}>Make the lift<span className="action-copy">{availability.available ? "Uses one part of day" : availability.reason}</span></button></div>;
     })}
-    {state.boost.tier >= 3 && <div className="card"><div className="card-title">Fence<small>{Math.round(C.selectors.boostFenceRate(state.boost.fenceStanding) * 100)}% RATE</small></div><p className="compact">He looks at what you brought, quotes a number. Take it or try somewhere else.</p><button className="btn full good-btn" disabled={!state.boost.merchandise} onClick={() => dispatch({ type: "FENCE_BOOST_GOODS" })}>Sell ${state.boost.merchandise} merchandise<span className="action-copy">Standing {state.boost.fenceStanding}/5 · no time cost</span></button></div>}
+    {state.boost.tier >= 3 && <div className="card"><div className="card-title">Slide Okafor<small>{Math.round(C.selectors.boostFenceRate(state.boost.fenceStanding) * 100)}% RATE</small></div><p className="compact">A storage unit off Tudor Road. Slide looks at what you brought, quotes a number. There is no somewhere else.</p><button className="btn full good-btn" disabled={!state.boost.merchandise} onClick={() => dispatch({ type: "FENCE_BOOST_GOODS" })}>Sell ${state.boost.merchandise} merchandise<span className="action-copy">Standing {state.boost.fenceStanding}/5 · no time cost</span></button></div>}
   </div></>;
 }
 
@@ -951,12 +951,15 @@ function HustleScreen({ state, dispatch, page, setPage, onTrade }) {
   if (page === "stickup") return <Rob state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   if (page === "shark") return <><PageHead title="Shark" sub="Borrower profiles, qualitative risk, and open notes" onBack={() => setPage("root")} /><SharkPanel state={state} dispatch={dispatch} /></>;
   return <><PageHead title="Hustle" sub="Illegal-income work in one place" /><div className="scroll">
-    <div className="card"><div className="card-title">Curtis Foyer<small>ATTENTION {state.npc.curtis.attention}/8</small></div><p>Respect {state.npc.curtis.respect} · {state.npc.curtis.relationship}. Attention comes from visible sales, rolling illegal revenue, reports, and network escalation.</p>{state.npc.curtis.attention >= 4 && !state.npc.curtis.friendship && !state.npc.curtis.taxActive && <div className="btn-row"><button className="btn secondary" onClick={() => dispatch({ type: "CURTIS_DECISION", choice: "pay_tax" })}>Pay tax</button><button className="btn secondary" onClick={() => dispatch({ type: "CURTIS_DECISION", choice: "friendship" })}>Friendship</button><button className="btn secondary" onClick={() => dispatch({ type: "CURTIS_DECISION", choice: "guarded" })}>Stay guarded</button><button className="btn primary" onClick={() => dispatch({ type: "CURTIS_DECISION", choice: "reject" })}>Reject</button></div>}</div>
     {state.market.visible && <MenuRow title="Market" status={`${state.hustle.soldUnits} units sold`} description="Buy, sell, and finish a market session." onClick={() => setPage("market")} />}
     {state.boost.visible && <MenuRow title="Boost" status={`Tier ${state.boost.tier}`} description="Store work, targets, and the fence." onClick={() => setPage("boost")} />}
-    {state.rob.visible && <MenuRow title="Stickup" status={`${state.stats.robbery.successes} successes`} description="Direct robbery attempts and their consequences." onClick={() => setPage("stickup")} />}
+    {state.rob.visible && <MenuRow title="Stickup" status={`Tier ${Math.max(state.stick.tier, 1)} · ${state.stats.robbery.successes} successes`} description="Street robbery, registers, and organized work." onClick={() => setPage("stickup")} />}
     {state.hustle.shark.visible && <MenuRow title="Shark" status={`${state.hustle.shark.loans.filter((loan) => ["active", "extended", "defaulted"].includes(loan.status)).length} open`} description="Fund borrowers and resolve defaults." onClick={() => setPage("shark")} />}
     {!state.market.visible && !state.boost.visible && !state.rob.visible && !state.hustle.shark.visible && <div className="card locked">Sections unlock independently as the run discovers them.</div>}
+    {/* v1.13: Curtis only surfaces here once he actually knows the operation
+        exists — a fresh run's income overview carries no rival NPC data. When
+        his attention forces a decision, this card is the pressure surface. */}
+    {(state.npc.curtis.relationship !== "unaware" || state.npc.curtis.attention >= 4) && <div className="card"><div className="card-title">Rival pressure<small>ATTENTION {state.npc.curtis.attention}/8</small></div><p>Curtis Foyer reads this operation at Respect {state.npc.curtis.respect} · {state.npc.curtis.relationship}. Attention comes from visible sales, rolling illegal revenue, reports, and network escalation.</p>{state.npc.curtis.attention >= 4 && !state.npc.curtis.friendship && !state.npc.curtis.taxActive && <div className="btn-row"><button className="btn secondary" onClick={() => dispatch({ type: "CURTIS_DECISION", choice: "pay_tax" })}>Pay tax</button><button className="btn secondary" onClick={() => dispatch({ type: "CURTIS_DECISION", choice: "friendship" })}>Friendship</button><button className="btn secondary" onClick={() => dispatch({ type: "CURTIS_DECISION", choice: "guarded" })}>Stay guarded</button><button className="btn primary" onClick={() => dispatch({ type: "CURTIS_DECISION", choice: "reject" })}>Reject</button></div>}</div>}
   </div></>;
 }
 
@@ -1050,9 +1053,30 @@ function People({ state, dispatch, navigateMore }) {
   </div></>;
 }
 
+// v1.13: the Stick track — street work at Tier 1, named registers behind a
+// weapon at Tier 2, organized jobs behind rep and planning at Tier 3. The
+// service-road envelope keeps its own once-a-day comeback slot below the
+// ladder, and Goodie stays a walking Tier 2 target on his own corner.
 function Rob({ state, dispatch, onBack }) {
   const score = C.selectors.robAvailability(state); const stats = state.stats.robbery;
-  return <><PageHead title="Rob" sub="A risky comeback option; legal work remains the safer long-term plan" onBack={onBack} /><div className="scroll"><div className="outcome-grid"><Outcome label="Attempts" value={stats.attempts || 0} /><Outcome label="Successes" value={stats.successes || 0} /><Outcome label="Failures" value={stats.failures || 0} /><Outcome label="Total payout" value={money(stats.totalPayout || 0)} /></div><div className="card debt-card"><div className="card-title">Service-road envelope<small>Once each day · one part of day</small></div><p>Take a direct cash risk. Weapons, Combat, Intelligence, crew, and Heat affect the approach. Repeated attempts raise exposure and injury risk.</p><button className="btn full primary" disabled={!score.available} onClick={() => dispatch({ type: "ROB" })}>Attempt today's Rob<span className="action-copy">{score.available ? `${score.chanceLabel} estimated success · uses one part of day` : score.reason}</span></button></div></div></>;
+  const tier = Math.max(state.stick.tier, C.selectors.stickTier(state));
+  const targets = C.selectors.visibleStickTargets(state);
+  return <><PageHead title="Stickup" sub={`Tier ${tier} · two attempts a day before people start naming you`} onBack={onBack} /><div className="scroll">
+    <div className="outcome-grid"><Outcome label="Rep" value={state.stick.rep} /><Outcome label="Attempts" value={stats.attempts || 0} /><Outcome label="Successes" value={stats.successes || 0} /><Outcome label="Total payout" value={money(stats.totalPayout || 0)} /></div>
+    {targets.map((target) => {
+      const availability = C.selectors.stickTargetAvailability(state, target.id);
+      const cased = C.selectors.stickCasing(state, target.id);
+      const canCase = target.tier >= 2 && (!cased || cased.timesObserved < 2);
+      return <div className={`card boost-target${availability.available ? "" : " locked"}`} key={target.id}>
+        <div className="card-title">{target.name}<small>TIER {target.tier} · {target.tier === 1 || cased ? `$${target.take[0]}–$${target.take[1]}` : "CASE TO PRICE"}</small></div>
+        <div className="outcome-grid">{target.slots && <Outcome label="Window" value={target.slots.map((slot) => C.SLOTS[slot]).join(" / ")} />}{target.tier >= 2 && <Outcome label="Cased" value={`${Math.min(2, cased?.timesObserved || 0)}/2`} />}</div>
+        {canCase && <button className="btn full secondary" onClick={() => dispatch({ type: "CASE_TARGET", targetId: target.id })}>Case the target<span className="action-copy">Uses one part of day · prices the take, sharpens the job</span></button>}
+        <button className="btn full primary" disabled={!availability.available} onClick={() => dispatch({ type: "STICKUP", targetId: target.id })}>Run it<span className="action-copy">{availability.available ? "Uses one part of day" : availability.reason}</span></button>
+      </div>;
+    })}
+    {tier >= 2 && <p className="compact muted">Goodie is a walking Tier 2 target. His corner works the same ladder — find him through Street → People.</p>}
+    <div className="card debt-card"><div className="card-title">Service-road envelope<small>Once each day · one part of day</small></div><p>Take a direct cash risk. Weapons, Combat, Intelligence, crew, and Heat affect the approach. Repeated attempts raise exposure and injury risk; legal work remains the safer long-term plan.</p><button className="btn full primary" disabled={!score.available} onClick={() => dispatch({ type: "ROB" })}>Attempt today's Rob<span className="action-copy">{score.available ? `${score.chanceLabel} estimated success · uses one part of day` : score.reason}</span></button></div>
+  </div></>;
 }
 
 function Gear({ state, dispatch, onBack }) { return <><PageHead title="Gear" sub="Weapons, armor, tools, utility, and consumables" onBack={onBack} /><div className="scroll">{!state.base.visiting && <p className="warn">Visit North Star Garage in Safehouse before buying gear.</p>}{C.GEAR.map((gear) => { const owned = state.player.gear.owned.includes(gear.id); return <div className="card" key={gear.id}><div className="card-title">{gear.name}<small>{owned ? "EQUIPPED" : money(gear.cost)}</small></div><p className="compact muted">{gear.description}</p><button className="btn full secondary" disabled={!state.base.visiting || state.player.cash < gear.cost || (owned && gear.id !== "medical_kit")} onClick={() => dispatch({ type: "BUY_GEAR", gearId: gear.id })}>{owned ? "Owned" : "Buy"}<span className="action-copy">Free purchase · no time passes</span></button></div>; })}</div></>; }
@@ -1535,7 +1559,12 @@ function OpeningModal({ dispatch }) {
   </Modal>;
 }
 function TradeModal({ state, productId, dispatch, onClose }) {
-  const [mode, setMode] = useState("buy"); const [qty, setQty] = useState(1); const product = C.PRODUCTS.find((item) => item.id === productId); const market = state.world.markets[state.world.currentNeighborhoodId]; const item = state.player.inventory[productId]; const prices = C.selectors.tradeUnitPrices(state, productId); const maxBuy = Math.min(market.availability[productId], C.selectors.cargoCapacity(state) - C.selectors.cargoUsed(state), Math.floor(state.player.cash / prices.buy)); const max = mode === "buy" ? maxBuy : item.qty; const selected = Math.max(0, Math.min(qty, max)); const projection = C.selectors.tradeProjection(state, productId, selected, mode); const resultIsProfit = projection.profitLoss >= 0;
+  const [mode, setMode] = useState("buy"); const [qty, setQty] = useState(1); const product = C.PRODUCTS.find((item) => item.id === productId); const market = state.world.markets[state.world.currentNeighborhoodId]; const item = state.player.inventory[productId]; const prices = C.selectors.tradeUnitPrices(state, productId);
+  // v1.13: the buy ceiling now includes the plug's per-visit cap (previously
+  // the reducer rejected an over-cap buy silently — a dead button), floors at
+  // zero, and coerces a cleared/NaN input so MAX and the steppers stay sane.
+  const maxBuy = Math.max(0, Math.min(market.availability[productId] || 0, C.selectors.cargoCapacity(state) - C.selectors.cargoUsed(state), prices.buy > 0 ? Math.floor(state.player.cash / prices.buy) : 0, C.selectors.plugMaxUnits(state, productId)));
+  const max = mode === "buy" ? maxBuy : item.qty; const selected = Math.max(0, Math.min(Number.isFinite(qty) ? qty : 0, max)); const projection = C.selectors.tradeProjection(state, productId, selected, mode); const resultIsProfit = projection.profitLoss >= 0;
   return <Modal title={`${product.name} trade`}><p>Prices stay locked until you end this market visit.</p><div className="btn-row"><button className={`btn ${mode === "buy" ? "good-btn" : "secondary"}`} onClick={() => { setMode("buy"); setQty(1); }}>Buy</button><button className={`btn ${mode === "sell" ? "primary" : "secondary"}`} onClick={() => { setMode("sell"); setQty(1); }}>Sell</button></div><div className="trade-stats"><div className="trade-stat"><small>Unit price</small><b>{money(projection.unitPrice)}</b></div><div className="trade-stat"><small>Maximum</small><b>{max}</b></div></div><div className="trade-projection" aria-live="polite">{mode === "buy" ? <><Outcome label="Total cost" value={money(projection.purchaseCost)} /><Outcome label="Cash after" value={money(projection.cashAfter)} /><Outcome label="Cargo after" value={`${projection.cargoAfter}/${projection.cargoCapacity}`} />{projection.localContext.available && <div className="trade-context"><span>Recent local context</span><b>{projection.localContext.label}</b></div>}</> : <><Outcome label="Revenue" value={money(projection.revenue)} /><Outcome label="Cost basis" value={money(projection.costBasis)} /><div className={`trade-result ${resultIsProfit ? "profit" : "loss"}`}><span>{resultIsProfit ? "Profit" : "Loss"}</span><b>{signedMoney(projection.profitLoss)}</b></div><Outcome label="Cash after" value={money(projection.cashAfter)} /></>}</div><div className="qty"><button className="btn secondary qty-wide" onClick={() => setQty(Math.max(1, selected - 5))}>−5</button><button className="btn secondary" onClick={() => setQty(Math.max(1, selected - 1))}>−</button><input aria-label="Trade quantity" type="number" min="1" max={max} value={selected} onChange={(event) => setQty(Number(event.target.value))} /><button className="btn secondary" onClick={() => setQty(Math.min(max, selected + 1))}>+</button><button className="btn secondary" onClick={() => setQty(Math.min(max, selected + 5))}>+5</button><button className="btn secondary" onClick={() => setQty(max)}>MAX</button></div><div className="btn-row trade-confirm"><button className="btn secondary" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!selected} onClick={() => { dispatch({ type: mode === "buy" ? "BUY" : "SELL", productId, qty: selected }); onClose(); }}>{mode} {selected}</button></div></Modal>;
 }
 
@@ -1653,7 +1682,7 @@ function MenuModal({ state, dispatch, onClose, onTitle }) {
   return <><Modal title="Run menu" onClose={onClose}>
     <ExpandableMoreSection
       collapsedContent={<p className="popup-lead">Autosave is on. This run saves to your browser after every action.</p>}
-      expandedContent={<p className="popup-flavor">907Hustle v1.9c · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
+      expandedContent={<p className="popup-flavor">907Hustle v1.13 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
       moreLabel="Save detail" lessLabel="Hide detail" />
     <button className="btn full primary" onClick={onTitle}>Return to Title</button>
     <button className="btn full secondary choice" onClick={() => setConfirmRestart(true)}>Restart Run<span>Creates a new seed and returns to Street Name entry.</span></button>

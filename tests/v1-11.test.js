@@ -807,7 +807,7 @@ test("a v8 save loads on v9 with The Nile undiscovered and the tables at zero", 
   delete raw.gambling;
   delete raw.player.nileStreak;
   const state = C.hydrateRun(raw);
-  assert.equal(state.version, 9);
+  assert.equal(state.version, 10);
   assert.equal(state.world.locations.theNile.discovered, false);
   assert.equal(state.world.locations.theNile.secondFloorAccess, false);
   assert.deepEqual(state.gambling.tonkGamesPlayed, 0);
@@ -829,15 +829,15 @@ test("every supported save version reaches v9 with a playable Nile", () => {
     delete raw.world.locations.theNile;
     delete raw.gambling;
     const state = C.hydrateRun(raw);
-    assert.equal(state.version, 9, `v${version} did not reach v9`);
+    assert.equal(state.version, 10, `v${version} did not reach v9`);
     assert.equal(typeof state.world.locations.theNile.discovered, "boolean", `v${version} lost the Nile`);
     assert.equal(state.gambling.dailyGamesPlayed, 0, `v${version} lost the table counters`);
   }
 });
 
-test("v9 owns its save key and still advertises every older one", () => {
-  assert.equal(C.VERSION, 9);
-  assert.equal(C.SAVE_KEY, "907ogr_v9");
+test("v10 owns its save key and still advertises every older one", () => {
+  assert.equal(C.VERSION, 10);
+  assert.equal(C.SAVE_KEY, "907ogr_v10");
   assert.ok(C.LEGACY_SAVE_KEYS.includes("907ogr_v8"), "v8 saves must still be findable");
-  assert.equal(C.LEGACY_SAVE_KEYS.length, 6);
+  assert.equal(C.LEGACY_SAVE_KEYS.length, 7);
 });

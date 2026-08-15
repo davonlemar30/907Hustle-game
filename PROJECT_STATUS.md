@@ -2,7 +2,54 @@
 
 Last updated: 2026-08-15 (America/Anchorage)
 
-## v1.9c UX Polish Pass — branch in progress
+## v1.13 Criminal Economy Cluster — branch in progress
+
+- Branch: `claude/clickup-2kyd583p-15714-klwirj`, stacked on the v1.9c commit.
+  Built from the "v1.12 Build Prompt — Criminal Economy Cluster" doc, shipped
+  as v1.13 because v1.12a's name was already taken by the home screen build.
+- **District modifiers** (`src/data/districts.js`): per-district difficulty
+  (0.08 chance / 4% market price per step) and heat multipliers for market,
+  boost, and stick; adjacency graph for awareness bleed; fairview and
+  mountain_view scaffolded.
+- **Stick track** (`state.stick`): street/register/organized tiers behind
+  rep 4/10 + weapon gates, casing (+0.06 per pass, max 2), a two-a-day cap
+  across every robbery surface, seeded retaliation cards two mornings later,
+  and an arrest stub (bail + rest of day) on a botched Tier 3 at Heat > 8.
+  The ROB envelope and ROB_DEALER feed the same rep ladder.
+- **Plug suspicion** (`plugs.records[*].suspicion`): +1 for any robbery on the
+  plug's home block (+2 and −3 standing to all plugs when the plug is robbed
+  directly), 10% price premium at 3, cutoff at 5, −1 per clean purchase or
+  quiet day. Dealer robbery now pays cash even when the plug holds no product
+  for you — the pre-existing silent no-op there became reachable once
+  suspicion could empty the product list mid-run (caught by the simulator:
+  5 stickup-strategy dead ends before the fix, 0 after).
+- **Awareness bleed** (`state.criminalProfile`): +1 per action in-district,
+  half strength to adjacent districts a day later, one difficulty step per
+  three points.
+- **Fold-ins**: seeded boost-unlock variants (86bbejvu9), Curtis off fresh
+  Hustle screens (86bbejvtn), trade-modal clamps (86bbe3k2b), Slide Okafor
+  named as the fence. Quick Score (86bbaqb8f) verified nonexistent.
+- **Save schema v10** under `907ogr_v10`; purely additive migration, v3–v9
+  all load (asserted in `tests/v1-8-1.test.js`).
+
+### Verification
+
+- **513/513 tests passing**, up from 501. 12 new in `tests/v1-13.test.js`;
+  version pins across nine suites moved 9 → 10.
+- **200-run hash `bd77a59cb23c35c185f44a3fd0791349aede3ef65ddf06c2946b647c3424f922`,
+  2,000-run `5d6f9b0f67b63a176cb0a601c246b4a4a816c701cdc8ee957871dfdbf23da245`.
+  Moved on purpose** — district heat multipliers, market price factors, and
+  the dealer-robbery fix all touch existing behavior. **Zero dead ends.**
+- **Economy delta −2.45%** across the thirteen strategies; worst mover is
+  `aggressive` (−44%), thin-margin trading in the districts that now charge
+  for repeat traffic; `legal_worker`/`thief`/`gambler`/`trainer` untouched.
+- **Browser pass** (Chromium, seeded v10 save): Hustle root shows
+  Market/Boost/Stickup rows with Curtis hidden while unaware; Stickup page
+  renders three targets with case/run buttons and the envelope card; Slide's
+  fence card sells $350 of merchandise; zero overflow at 375px; zero console
+  errors.
+
+## v1.9c UX Polish Pass — shipped on this branch
 
 - Branch: `claude/clickup-2kyd583p-15714-klwirj`, based on `main` commit
   `460a094` containing merged PR #72 (v1.12a). The build ships the UX pass

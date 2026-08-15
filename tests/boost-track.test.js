@@ -93,19 +93,22 @@ test("one hit per store per day is enforced", () => {
   assert.equal(blocked.boost.technique, technique);
 });
 
-test("successful tier Heat is 0.5, 1, and 2", () => {
+// v1.13: base tier heat (0.5 / 1 / 2) now passes through the district heat
+// multiplier — Spenard's boost heatMod is 0.9, so home-turf lifts run a
+// little quieter than the raw tier number.
+test("successful tier Heat is the tier base times Spenard's 0.9 boost multiplier", () => {
   let tier1 = openTier(1);
   tier1 = C.reduceGame(tier1, { type: "BOOST", targetId: "night_owl", roll: 0 });
-  assert.equal(tier1.player.heat, 0.5);
+  assert.ok(Math.abs(tier1.player.heat - 0.5 * 0.9) < 1e-9);
 
   let tier2 = openTier(2);
   tier2 = C.reduceGame(tier2, { type: "BOOST", targetId: "northern_value", roll: 0 });
-  assert.equal(tier2.player.heat, 1);
+  assert.ok(Math.abs(tier2.player.heat - 1 * 0.9) < 1e-9);
 
   let tier3 = addCrew(openTier(3));
   tier3.boost.crewAssigned = "eli";
   tier3 = C.reduceGame(tier3, { type: "BOOST", targetId: "warehouse_club", roll: 0 });
-  assert.equal(tier3.player.heat, 2);
+  assert.ok(Math.abs(tier3.player.heat - 2 * 0.9) < 1e-9);
   assert.ok(tier3.boost.merchandise >= 200);
 });
 

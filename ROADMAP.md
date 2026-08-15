@@ -4,6 +4,38 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
+## Shipped — v1.13 Criminal Economy Cluster
+
+Branch: `claude/clickup-2kyd583p-15714-klwirj` (stacked on v1.9c). The
+criminal-economy build from the queued prompt doc, renumbered from "v1.12"
+because v1.12a already shipped. Save schema v10; both sim hashes moved on
+purpose; zero dead ends.
+
+- **Geography charges for crime**: per-district difficulty and heat modifiers
+  for market/boost/stick, plus cross-district awareness bleed — work one
+  district hard and it hardens under you.
+- **The Stick track**: street robbery, weapon-gated registers, and organized
+  Tier 3 jobs with casing, retaliation cards, a two-a-day ceiling, and an
+  arrest stub. Goodie and the service-road envelope feed the same rep ladder.
+- **Plug suspicion**: rob where a plug works and their prices rise at 3,
+  supply cuts at 5; clean purchases and quiet days rebuild.
+- **Slide Okafor** named as the fence; seeded boost-unlock variants; Curtis
+  off fresh Hustle screens; trade-modal clamps.
+
+### Next
+
+- The Tier 3 arrest stub wants the full arrest/jail system (86bbamm18).
+- Weapons still come only from the garage gear shop; the Gun Counter listing
+  is browse-only. An acquisition path would open Stick Tier 2 earlier.
+- Fairview and Mountain View exist in district data but not on the map —
+  the district-content builds (86bbe2bkf, 86bbe2bmg) can now plug straight
+  into the modifier table.
+- Boost's caught-state still resolves by chance roll; the combat-integration
+  ticket (86bbe3k0b) remains open.
+- No simulation strategy works the Stick ladder yet (the spec said document,
+  don't add profiles) — worth a profile once balance settles, like the Nile
+  note before it.
+
 ## Shipped — v1.9c UX Polish Pass
 
 Branch: `claude/clickup-2kyd583p-15714-klwirj`. The UX pass deferred from the

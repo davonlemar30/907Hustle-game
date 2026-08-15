@@ -79,7 +79,7 @@ test("a v7 save folds six attributes into three by taking the best of each group
   raw.player.attributeProgress = { strength: 6, endurance: 0, reflexes: 0, presence: 0, insight: 0, discipline: 0 };
   raw.player.streetIdentity = "stickup";
   const state = C.hydrateRun(raw);
-  assert.equal(state.version, 9);
+  assert.equal(state.version, 10);
   // combat = max(strength, endurance, reflexes); charisma = max(presence,
   // discipline); intelligence = max(insight, discipline).
   assert.deepEqual(state.player.attributes, { combat: 4, charisma: 3, intelligence: 5 });
@@ -94,7 +94,7 @@ test("every supported save version arrives with exactly three attributes", () =>
     raw.version = version;
     raw.player.attributes = { strength: 3, endurance: 3, reflexes: 3, presence: 2, insight: 2, discipline: 2 };
     const state = C.hydrateRun(raw);
-    assert.equal(state.version, 9, `v${version} did not reach v9`);
+    assert.equal(state.version, 10, `v${version} did not reach v9`);
     assert.deepEqual(Object.keys(state.player.attributes).sort(), ["charisma", "combat", "intelligence"], `v${version} kept a legacy attribute key`);
   }
 });

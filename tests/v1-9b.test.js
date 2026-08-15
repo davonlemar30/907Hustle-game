@@ -482,7 +482,7 @@ test("a v6 save loads on v7 with a derived tier and empty broker state", () => {
   raw.inventory.laptop = true;
 
   const state = C.hydrateRun(raw);
-  assert.equal(state.version, 9);
+  assert.equal(state.version, 10);
   assert.equal(state.nineZeroSevenList.tier, 2, "the string tier should be re-derived as a number");
   assert.equal(state.nineZeroSevenList.flipCount, 2, "old sales carry over as flips");
   assert.equal(state.nineZeroSevenList.disputes, 0);

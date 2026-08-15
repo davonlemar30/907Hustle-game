@@ -52,7 +52,7 @@ test("a v4 save drops every legacy key and carries plug access across the rename
   raw.world.territoryBlocks[Object.keys(raw.world.territoryBlocks)[0]].owner = "rook";
 
   const state = C.hydrateRun(raw);
-  assert.equal(state.version, 9);
+  assert.equal(state.version, 10);
 
   // Data carried over rather than reset.
   assert.equal(state.people.dealers.goodie.standing, 4);
@@ -74,15 +74,24 @@ test("a v4 save drops every legacy key and carries plug access across the rename
   assert.ok(Object.values(state.world.territoryBlocks).every((block) => block.owner !== "rook"), "block owners still say rook");
 });
 
-test("v3 through v8 saves all migrate to v9, and unsupported versions are refused", () => {
+test("v3 through v9 saves all migrate to v10, and unsupported versions are refused", () => {
   // LEGACY_SAVE_KEYS promises every older schema still loads.
-  assert.deepEqual(C.LEGACY_SAVE_KEYS, ["907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"]);
-  for (const version of [3, 4, 5, 6, 7, 8]) {
+  assert.deepEqual(C.LEGACY_SAVE_KEYS, ["907ogr_v9", "907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"]);
+  for (const version of [3, 4, 5, 6, 7, 8, 9]) {
     const raw = JSON.parse(C.serializeRun(fresh(1900 + version)));
     raw.version = version;
     for (const id of C.EXPOSURE_NPC_IDS) delete raw.npc[id].ledger;
+    // A pre-v10 save has no stick/criminalProfile slices and no plug suspicion.
+    delete raw.stick;
+    delete raw.criminalProfile;
+    for (const record of Object.values(raw.plugs?.records || {})) delete record.suspicion;
     const state = C.hydrateRun(raw);
-    assert.equal(state.version, 9, `v${version} save should migrate to v9`);
+    assert.equal(state.version, 10, `v${version} save should migrate to v10`);
+    // The v1.13 slices hydrate with defaults on every legacy save.
+    assert.equal(state.stick.rep, 0);
+    assert.ok(Array.isArray(state.stick.retaliationQueue));
+    assert.ok(state.criminalProfile.districtAwareness.north_star_lot);
+    assert.equal(state.plugs.records.goodie.suspicion, 0);
     assert.ok(state.run && state.player && state.world, `v${version} save lost a top-level section`);
     assert.equal(typeof state.player.cash, "number");
     // Every pre-Exposure save comes out with a ledger it can be read from.

@@ -73,9 +73,13 @@ test("Street's travel row no longer repeats the screen it opens", () => {
   assert.doesNotMatch(ui, /<MenuRow title=\{`Around \$\{area\.name\}`\} status="Places & activities"/);
 });
 
-test("v1.9c version strings and cache-busters are current", () => {
-  assert.ok(ui.includes("907Hustle v1.9c"));
-  assert.ok(ui.includes("One Good Run · v1.9c"));
-  assert.ok(html.includes("v05.css?v=1.12.1"));
-  assert.ok(html.includes("ui.built.js?v=1.12.1"));
+// Version-agnostic on purpose: v1.9c introduced the discipline that the two
+// display strings and both cache-busters move together; later builds keep
+// bumping them without editing this file.
+test("version strings and cache-busters are present and consistent", () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+  assert.ok(html.includes(`v05.css?v=${pkg.version}`), "stylesheet cache-buster matches package.json");
+  assert.ok(html.includes(`ui.built.js?v=${pkg.version}`), "bundle cache-buster matches package.json");
+  assert.match(ui, /One Good Run · v\d/);
+  assert.match(ui, /907Hustle v\d/);
 });

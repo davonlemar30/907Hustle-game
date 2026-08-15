@@ -3571,6 +3571,92 @@
     }
   });
 
+  // src/data/districts.js
+  var require_districts = __commonJS({
+    "src/data/districts.js"(exports, module) {
+      var DISTRICT_DIFF_STEP = 0.08;
+      var DISTRICT_MODS = {
+        // Spenard. Home turf: the market runs quieter and easier, but a stickup on
+        // your own block is harder to keep anonymous and travels fast.
+        north_star_lot: {
+          market: { diffMod: -1, heatMod: 0.8 },
+          boost: { diffMod: 0, heatMod: 0.9 },
+          stick: { diffMod: 1, heatMod: 1.3 }
+        },
+        // Downtown. Cameras and police presence price the market up; crowds make
+        // lifting easier and give a robber somewhere to vanish.
+        downtown: {
+          market: { diffMod: 1, heatMod: 1.2 },
+          boost: { diffMod: -1, heatMod: 1.1 },
+          stick: { diffMod: -1, heatMod: 1 }
+        },
+        // Industrial Service Roads. Isolated targets, secured freight: robbery is
+        // easier to attempt and hotter when it lands; boosting fights fences and
+        // dock security.
+        airport_industrial: {
+          market: { diffMod: 0, heatMod: 1.1 },
+          boost: { diffMod: 1, heatMod: 1.2 },
+          stick: { diffMod: -1, heatMod: 1.2 }
+        },
+        // Scaffold only — not navigable yet.
+        fairview: {
+          market: { diffMod: 0, heatMod: 1 },
+          boost: { diffMod: 0, heatMod: 1 },
+          stick: { diffMod: 0, heatMod: 1 }
+        },
+        mountain_view: {
+          market: { diffMod: 0, heatMod: 1 },
+          boost: { diffMod: 1, heatMod: 1.2 },
+          stick: { diffMod: 1, heatMod: 1.5 }
+        }
+      };
+      var DISTRICT_ADJACENCY = {
+        north_star_lot: ["downtown", "airport_industrial"],
+        downtown: ["north_star_lot", "fairview"],
+        airport_industrial: ["north_star_lot"],
+        fairview: ["downtown", "mountain_view"],
+        mountain_view: ["fairview"]
+      };
+      var STICK_TARGETS = [
+        { id: "chilkoots_stumbler", name: "Chilkoot's stumbler", areaId: "north_star_lot", tier: 1, take: [40, 80], slots: [3], resistance: 0, heat: 2, retaliation: 0 },
+        { id: "washgo_regular", name: "Wash & Go regular", areaId: "north_star_lot", tier: 1, take: [30, 50], resistance: 0, heat: 2, retaliation: 0 },
+        { id: "fourth_ave_crawler", name: "Fourth Avenue bar crawler", areaId: "downtown", tier: 1, take: [50, 100], slots: [2, 3], resistance: 0, heat: 2, retaliation: 0 },
+        { id: "c_street_atm", name: "C Street ATM run", areaId: "downtown", tier: 1, take: [60, 100], slots: [2], resistance: 1, heat: 2, retaliation: 0 },
+        { id: "lot_hauler", name: "Long-haul driver at the truck lot", areaId: "airport_industrial", tier: 1, take: [40, 90], slots: [0, 1], resistance: 0, heat: 2, retaliation: 0 },
+        { id: "spenard_fuel_till", name: "Spenard Fuel night till", areaId: "north_star_lot", tier: 2, take: [100, 180], slots: [3], resistance: 1, heat: 3, retaliation: 0.6 },
+        { id: "downtown_fuel_till", name: "Downtown Fuel register", areaId: "downtown", tier: 2, take: [100, 200], resistance: 1, heat: 3, retaliation: 0.6 },
+        { id: "goodie_stash", name: "Goodie's stash spot", areaId: "north_star_lot", tier: 3, take: [800, 1500], resistance: 3, heat: 4, retaliation: 0.6 },
+        { id: "rec_center_dice", name: "Dice game behind the rec center", areaId: "north_star_lot", tier: 3, take: [500, 1200], slots: [2, 3], resistance: 2, heat: 4, retaliation: 0.6 }
+      ];
+      var STICK_TARGET_BY_ID = Object.fromEntries(STICK_TARGETS.map((target) => [target.id, target]));
+      var STICK_TIER_2_REP = 4;
+      var STICK_TIER_3_REP = 10;
+      var STICK_DAILY_CAP = 2;
+      var PLUG_HOME_DISTRICTS = { goodie: "north_star_lot", tasha: "downtown", malik: "airport_industrial" };
+      var PLUG_SUSPICION_PRICE_THRESHOLD = 3;
+      var PLUG_SUSPICION_CUTOFF = 5;
+      var PLUG_SUSPICION_PRICE_PENALTY = 0.1;
+      var AWARENESS_DIFF_DIVISOR = 3;
+      var AWARENESS_BLEED_FACTOR = 0.5;
+      module.exports = {
+        DISTRICT_DIFF_STEP,
+        DISTRICT_MODS,
+        DISTRICT_ADJACENCY,
+        STICK_TARGETS,
+        STICK_TARGET_BY_ID,
+        STICK_TIER_2_REP,
+        STICK_TIER_3_REP,
+        STICK_DAILY_CAP,
+        PLUG_HOME_DISTRICTS,
+        PLUG_SUSPICION_PRICE_THRESHOLD,
+        PLUG_SUSPICION_CUTOFF,
+        PLUG_SUSPICION_PRICE_PENALTY,
+        AWARENESS_DIFF_DIVISOR,
+        AWARENESS_BLEED_FACTOR
+      };
+    }
+  });
+
   // src/data/items.js
   var require_items = __commonJS({
     "src/data/items.js"(exports, module) {
@@ -3860,7 +3946,7 @@
         root.GameCore = api;
       })(typeof globalThis !== "undefined" ? globalThis : exports, function(EncounterSystem) {
         "use strict";
-        const { normalizeSeed, stringHash, makeRandom, seededShuffle, isEligible, getWeight } = require_random();
+        const { normalizeSeed, stringHash, makeRandom, seededShuffle, seededPick, isEligible, getWeight } = require_random();
         const { effectPreview, event, activeEvent } = require_cards();
         const { checkpointDay, controlled, slotNumber } = require_selectors();
         const Exposure = require_engine();
@@ -3874,13 +3960,13 @@
         const Nile = require_nile();
         const Gambling = require_gambling();
         const GamblingEvents = require_gambling_events();
-        const VERSION = 9;
+        const VERSION = 10;
         const RUN_DAYS = 7;
         const PRESSURE_DAYS = 7;
         const MAX_ENERGY = 4;
         const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
-        const SAVE_KEY = "907ogr_v9";
-        const LEGACY_SAVE_KEYS = ["907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"];
+        const SAVE_KEY = "907ogr_v10";
+        const LEGACY_SAVE_KEYS = ["907ogr_v9", "907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"];
         const PHONE_BILL = 75;
         const WEEKLY_RENT = 150;
         const WORKING_CAPITAL_RESERVE = 150;
@@ -3907,6 +3993,8 @@
         }
         const { PRODUCTS, PRODUCT_BY_ID } = require_products();
         const { HOME_DISTRICT_ID, NEIGHBORHOODS, TERRITORIES, SPENARD_BLOCKS, SPENARD_BLOCK_BY_ID, AREA_BY_ID } = require_locations();
+        const Districts = require_districts();
+        const { DISTRICT_MODS, DISTRICT_ADJACENCY, DISTRICT_DIFF_STEP, STICK_TARGETS, STICK_TARGET_BY_ID } = Districts;
         const BACKGROUNDS = [
           { id: "shooter", name: "Steady-Hand Shooter", combat: 3, charisma: 1, intelligence: 2, cash: 375, heat: 1, description: "Weapons, direct confrontation, survival, and joining territory attacks are your strongest opening tools." },
           { id: "hustler", name: "Silver-Tongued Hustler", combat: 1, charisma: 3, intelligence: 2, cash: 375, heat: 1, description: "Negotiation, trade margins, recruiting, and relationship choices are your strongest opening tools." },
@@ -3978,6 +4066,59 @@
         const DISTRICT_CONTROL_CAPSTONE_RESPECT = RESPECT_STAGE_THRESHOLDS.mid;
         const DISTRICT_CONTROL_LABEL = "District Control";
         const DISTRICT_CONTROL_DISCOUNT_BONUS = 0.02;
+        function districtMods(areaId, track) {
+          var _a;
+          return ((_a = DISTRICT_MODS[areaId]) == null ? void 0 : _a[track]) || { diffMod: 0, heatMod: 1 };
+        }
+        function districtChanceDelta(state, areaId, track) {
+          var _a, _b, _c;
+          const mods = districtMods(areaId, track);
+          const awareness = ((_c = (_b = (_a = state.criminalProfile) == null ? void 0 : _a.districtAwareness) == null ? void 0 : _b[areaId]) == null ? void 0 : _c[track]) || 0;
+          return -(mods.diffMod + Math.floor(awareness / Districts.AWARENESS_DIFF_DIVISOR)) * DISTRICT_DIFF_STEP;
+        }
+        function districtHeat(state, areaId, track, amount) {
+          return amount * districtMods(areaId, track).heatMod;
+        }
+        function recordCriminalActivity(state, areaId, track) {
+          const profile = state.criminalProfile;
+          if (!profile) return;
+          if (!profile.districtAwareness[areaId]) profile.districtAwareness[areaId] = { market: 0, boost: 0, stick: 0 };
+          profile.districtAwareness[areaId][track] += 1;
+          for (const neighbor of DISTRICT_ADJACENCY[areaId] || []) {
+            profile.bleedPending.push({ toDistrict: neighbor, track, amount: Districts.AWARENESS_BLEED_FACTOR, arrivalDay: state.run.day + 1 });
+          }
+        }
+        function resolveBleedArrivals(state) {
+          var _a;
+          const profile = state.criminalProfile;
+          if (!profile || !((_a = profile.bleedPending) == null ? void 0 : _a.length)) return;
+          const remaining = [];
+          for (const entry of profile.bleedPending) {
+            if (state.run.day >= entry.arrivalDay) {
+              if (!profile.districtAwareness[entry.toDistrict]) profile.districtAwareness[entry.toDistrict] = { market: 0, boost: 0, stick: 0 };
+              profile.districtAwareness[entry.toDistrict][entry.track] += entry.amount;
+            } else remaining.push(entry);
+          }
+          profile.bleedPending = remaining;
+        }
+        function bumpPlugSuspicion(state, areaId, options = {}) {
+          for (const plug of PLUGS) {
+            const record = state.plugs.records[plug.id];
+            if (!record) continue;
+            if (record.suspicion == null) record.suspicion = 0;
+            const homeDistrict = Districts.PLUG_HOME_DISTRICTS[plug.id];
+            if (options.direct) {
+              if (plug.id !== options.skipStandingFor) record.standing = Math.max(-5, (record.standing || 0) - 3);
+              record.suspicion = Math.min(8, record.suspicion + (homeDistrict === areaId ? 2 : 1));
+            } else if (homeDistrict === areaId) {
+              record.suspicion = Math.min(8, record.suspicion + 1);
+            }
+          }
+        }
+        function plugSuspicion(state, plugId) {
+          var _a, _b;
+          return ((_b = (_a = state.plugs.records) == null ? void 0 : _a[plugId]) == null ? void 0 : _b.suspicion) || 0;
+        }
         const BOOST_TARGETS = [
           { id: "night_owl", name: "Night Owl Mini-Mart", areaId: "north_star_lot", tier: 1, take: [15, 40] },
           { id: "spenard_fuel", name: "Spenard Fuel", areaId: "north_star_lot", tier: 1, take: [15, 40] },
@@ -5020,7 +5161,10 @@
         function createPlugState() {
           return {
             unlocked: [],
-            records: Object.fromEntries(PLUGS.map((plug) => [plug.id, { standing: 0, lastPurchaseDay: null, introducedNext: false }]))
+            // v1.13: `suspicion` — how sure this plug is that you rob people where
+            // they work. 3+ raises their prices, 5 cuts you off entirely; a clean
+            // purchase works it back down one point.
+            records: Object.fromEntries(PLUGS.map((plug) => [plug.id, { standing: 0, lastPurchaseDay: null, introducedNext: false, suspicion: 0 }]))
           };
         }
         function createDealerState() {
@@ -5383,6 +5527,27 @@
               merchandise: 0,
               discoveredWindows: []
             },
+            // v1.13: the Stick track. Visibility stays on state.rob.visible (the
+            // existing unlock flag); this slice carries the ladder. `tier` is derived
+            // on read by stickTier() and mirrored here for saves, never trusted.
+            stick: {
+              tier: 0,
+              rep: 0,
+              casedTargets: [],
+              retaliationQueue: [],
+              dailyCount: 0,
+              lastRobberyDay: null,
+              lastRobberyDistrict: null,
+              heatStreak: 0,
+              organizedHits: 0
+            },
+            // v1.13: how loudly each district has heard about each criminal track.
+            // Every 3 points = one difficulty step there; awareness bleeds to
+            // adjacent districts at half strength a day later.
+            criminalProfile: {
+              districtAwareness: Object.fromEntries(Object.keys(DISTRICT_MODS).map((id) => [id, { market: 0, boost: 0, stick: 0 }])),
+              bleedPending: []
+            },
             home: { storedCash: 0, storedInventory: Object.fromEntries(PRODUCTS.map((item) => [item.id, { qty: 0, avgCost: 0 }])), hiddenWeapon: null },
             flags: { featureNotices: {}, unlockCelebrations: { market: false, boost: false, rob: false, gambling: false } },
             encounterLog: { resolved: [], activeFlags: {}, randomKills: 0, randomFights: 0 },
@@ -5435,7 +5600,7 @@
           var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w;
           if (!value || typeof value !== "object") return null;
           if (value.version === VERSION) return value;
-          if (![3, 4, 5, 6, 7, 8].includes(value.version) || !value.run || !value.world || !value.player) return null;
+          if (![3, 4, 5, 6, 7, 8, 9].includes(value.version) || !value.run || !value.world || !value.player) return null;
           const migrated = JSON.parse(JSON.stringify(value));
           const oldHousehold = ((_a = migrated.people) == null ? void 0 : _a.household) || {};
           const legacyNpc = migrated.npc || {};
@@ -5892,7 +6057,7 @@
           const skill = target.tier === 1 ? (combatCompat(state) + intelligenceCompat(state)) / 2 : target.tier === 2 ? (combatCompat(state) + intelligenceCompat(state)) / 2 : (intelligenceCompat(state) + charismaCompat(state)) / 2;
           const base = target.tier === 1 ? 0.8 : target.tier === 2 ? 0.55 : 0.4;
           const windowBonus = target.tier === 2 && state.run.slot === target.windowSlot ? 0.2 : 0;
-          return clamp(base + (skill - 2) * 0.1 + windowBonus, 0.1, 0.95);
+          return clamp(base + (skill - 2) * 0.1 + windowBonus + districtChanceDelta(state, target.areaId, "boost"), 0.1, 0.95);
         }
         function boostTargetAvailability(state, targetId) {
           var _a, _b;
@@ -5912,12 +6077,13 @@
           const success = roll < chance;
           state.boost.dailyHits[target.id] = state.run.day;
           if (target.tier === 2 && !state.boost.discoveredWindows.includes(target.id)) state.boost.discoveredWindows.push(target.id);
+          recordCriminalActivity(state, target.areaId, "boost");
           if (success) {
             const firstSuccess = !state.boost.visible;
             const take = random.int(target.take[0], target.take[1]);
             state.boost.visible = true;
             state.boost.technique += 1;
-            state.player.heat = clamp(state.player.heat + (target.tier === 1 ? 0.5 : target.tier === 2 ? 1 : 2), 0, 15);
+            state.player.heat = clamp(state.player.heat + districtHeat(state, target.areaId, "boost", target.tier === 1 ? 0.5 : target.tier === 2 ? 1 : 2), 0, 15);
             if (target.tier === 3) {
               state.boost.merchandise += take;
               const crew = state.people.crew[state.boost.crewAssigned];
@@ -5932,20 +6098,20 @@
             updateBoostTier(state);
             if (firstSuccess) queueUnlock(state, "boost");
           } else if (target.tier === 1) {
-            state.player.heat = clamp(state.player.heat + 1, 0, 15);
+            state.player.heat = clamp(state.player.heat + districtHeat(state, target.areaId, "boost", 1), 0, 15);
             if (!state.boost.storeBans.includes(target.id)) state.boost.storeBans.push(target.id);
             logEntry(state, "Security grabbed your arm. You dropped it and walked out.", "bad");
           } else if (target.tier === 2) {
             const chaseRoll = Number.isFinite(options == null ? void 0 : options.chaseRoll) ? options.chaseRoll : random.next();
             const escaped = chaseRoll < clamp(0.45 + combatCompat(state) * 0.08, 0.25, 0.85);
-            state.player.heat = clamp(state.player.heat + (escaped ? 1 : 2), 0, 15);
+            state.player.heat = clamp(state.player.heat + districtHeat(state, target.areaId, "boost", escaped ? 1 : 2), 0, 15);
             if (!escaped) {
               if (!state.boost.storeBans.includes(target.id)) state.boost.storeBans.push(target.id);
               if (state.player.heat > 6) state.flags.boostArrestRisk = true;
             }
             logEntry(state, escaped ? "Security gives chase, but you lose them outside." : "Security runs you down. The store has your face now.", escaped ? "warn" : "bad");
           } else {
-            state.player.heat = clamp(state.player.heat + 3, 0, 15);
+            state.player.heat = clamp(state.player.heat + districtHeat(state, target.areaId, "boost", 3), 0, 15);
             const crewId = state.boost.crewAssigned;
             const caughtRoll = Number.isFinite(options == null ? void 0 : options.crewCaughtRoll) ? options.crewCaughtRoll : random.next();
             if (crewId && caughtRoll < 0.3) {
@@ -5957,6 +6123,107 @@
             logEntry(state, crewId && state.flags.crewBailPending === crewId ? `${CREW_BY_ID[crewId].name} gets caught. Bail is now your problem.` : "The ring breaks empty-handed and leaves Heat behind.", "bad");
           }
           return { success, chance };
+        }
+        function stickTier(state) {
+          var _a, _b;
+          if (!((_a = state.rob) == null ? void 0 : _a.visible)) return 0;
+          const rep = ((_b = state.stick) == null ? void 0 : _b.rep) || 0;
+          const weapon = equippedWeapon(state);
+          if (rep >= Districts.STICK_TIER_3_REP && weapon) return 3;
+          if (rep >= Districts.STICK_TIER_2_REP && weapon) return 2;
+          return 1;
+        }
+        function updateStickTier(state) {
+          state.stick.tier = Math.max(state.stick.tier || 0, stickTier(state));
+          return state.stick.tier;
+        }
+        function stickCasing(state, targetId) {
+          var _a, _b;
+          return ((_b = (_a = state.stick) == null ? void 0 : _a.casedTargets) == null ? void 0 : _b.find((entry) => entry.targetId === targetId)) || null;
+        }
+        function stickCrewReady(state) {
+          return recruitedCrew(state).some((person) => {
+            var _a;
+            return person.canFieldAssign && ((_a = state.people.crew[person.id]) == null ? void 0 : _a.status) === "active";
+          });
+        }
+        function stickChance(state, target) {
+          var _a;
+          const weapon = equippedWeapon(state);
+          const weaponBonus = (weapon == null ? void 0 : weapon.type) === "firearm" ? 0.12 : weapon ? 0.06 : 0;
+          const casing = Math.min(2, ((_a = stickCasing(state, target.id)) == null ? void 0 : _a.timesObserved) || 0);
+          const planning = casing * 0.06 + (target.tier === 3 && stickCrewReady(state) ? 0.06 : 0);
+          const base = target.tier === 1 ? 0.62 : target.tier === 2 ? 0.52 : 0.4;
+          return clamp(
+            base + (combatCompat(state) - 2) * 0.08 + weaponBonus + planning - target.resistance * DISTRICT_DIFF_STEP - state.player.heat * 0.012 + districtChanceDelta(state, target.areaId, "stick"),
+            0.15,
+            0.9
+          );
+        }
+        function stickHeatMultiplier(state) {
+          var _a;
+          return 1 + 0.1 * (((_a = state.stick) == null ? void 0 : _a.heatStreak) || 0);
+        }
+        function recordRobberyActivity(state, areaId, options = {}) {
+          const stick = state.stick;
+          if (stick) {
+            if (stick.lastRobberyDay != null && state.run.day - stick.lastRobberyDay <= 2 && stick.lastRobberyDistrict === areaId) stick.heatStreak += 1;
+            else stick.heatStreak = 0;
+            stick.lastRobberyDay = state.run.day;
+            stick.lastRobberyDistrict = areaId;
+            stick.dailyCount = (stick.dailyCount || 0) + 1;
+          }
+          recordCriminalActivity(state, areaId, "stick");
+          bumpPlugSuspicion(state, areaId, options);
+        }
+        function stickTargetAvailability(state, targetId) {
+          var _a, _b, _c, _d;
+          const target = STICK_TARGET_BY_ID[targetId];
+          if (!((_a = state.rob) == null ? void 0 : _a.visible) || !target) return { available: false, reason: "That corner has not opened yet." };
+          if (target.areaId !== state.world.currentNeighborhoodId) return { available: false, reason: "Wrong part of town." };
+          if (target.tier > Math.max(((_b = state.stick) == null ? void 0 : _b.tier) || 0, stickTier(state))) return { available: false, reason: "You are not there yet." };
+          if (target.slots && !target.slots.includes(state.run.slot)) return { available: false, reason: `Runs ${target.slots.map((slot) => SLOTS[slot]).join(" or ")} only.` };
+          if ((((_c = state.stick) == null ? void 0 : _c.dailyCount) || 0) >= Districts.STICK_DAILY_CAP) return { available: false, reason: "Two in a day is how people get named. Tomorrow." };
+          if (target.tier >= 2 && !equippedWeapon(state)) return { available: false, reason: "Bring a weapon before pressing a register." };
+          if (target.tier === 3 && Math.min(2, ((_d = stickCasing(state, targetId)) == null ? void 0 : _d.timesObserved) || 0) < 2 && !stickCrewReady(state)) {
+            return { available: false, reason: "Case it twice or bring crew before a job this size." };
+          }
+          return { available: true, reason: "Ready.", chance: stickChance(state, target) };
+        }
+        function visibleStickTargets(state) {
+          var _a, _b;
+          if (!((_a = state.rob) == null ? void 0 : _a.visible)) return [];
+          const tier = Math.max(((_b = state.stick) == null ? void 0 : _b.tier) || 0, stickTier(state));
+          return STICK_TARGETS.filter((target) => target.areaId === state.world.currentNeighborhoodId && target.tier <= tier);
+        }
+        function stickRetaliationEvent(state, entry) {
+          var _a;
+          const target = STICK_TARGET_BY_ID[entry.targetId];
+          const name = target ? target.name : "the last mark";
+          const won = stringHash(`${state.run.seed}:retaliation:${state.run.day}:${entry.targetId}`) % 100 < clamp(35 + combatCompat(state) * 10, 20, 85);
+          const payoff = Math.min(120, state.player.cash);
+          return {
+            id: "stick_retaliation",
+            title: "They Found You",
+            who: "People from the job",
+            where: ((_a = AREA_BY_ID[entry.areaId]) == null ? void 0 : _a.name) || "Spenard",
+            stakes: "Word got back. Someone came looking.",
+            description: `People connected to ${name} caught up with you. Two ways this goes.`,
+            choices: [
+              won ? { label: "Stand your ground", effect: { heat: 1 }, preview: "Hold the corner.", result: "You do not blink. They decide you are not worth it and move on." } : { label: "Stand your ground", effect: { heat: 1, health: -14 }, preview: "Hold the corner.", result: "It costs you. You keep your feet, barely, and they leave a warning." },
+              { label: "Pay them off", effect: { cash: -payoff }, preview: payoff > 0 ? `Hand over $${payoff}.` : "Empty pockets talk too.", result: "Money calms the conversation. Nobody swings." }
+            ]
+          };
+        }
+        function resolveStickRetaliation(state, random) {
+          var _a;
+          const queue = (_a = state.stick) == null ? void 0 : _a.retaliationQueue;
+          if (!(queue == null ? void 0 : queue.length) || state.run.status !== "playing") return;
+          if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return;
+          const dueIndex = queue.findIndex((entry2) => state.run.day >= entry2.triggerDay);
+          if (dueIndex === -1) return;
+          const [entry] = queue.splice(dueIndex, 1);
+          state.run.pendingEvent = stickRetaliationEvent(state, entry);
         }
         function crewCapacityFor(state) {
           var _a, _b;
@@ -6009,6 +6276,8 @@
         const TIME_ACTIONS = /* @__PURE__ */ new Set([
           "ROB",
           "ROB_DEALER",
+          "STICKUP",
+          "CASE_TARGET",
           "ELI_TEST_ROUTE",
           "TAKEOVER",
           "WORK_JOB",
@@ -7205,6 +7474,7 @@
           for (const plugId of ((_a = state.plugs) == null ? void 0 : _a.unlocked) || []) {
             const plug = PLUG_BY_ID[plugId];
             const record = plugRecord(state, plugId);
+            if (plugSuspicion(state, plugId) >= Districts.PLUG_SUSPICION_CUTOFF) continue;
             if (plug == null ? void 0 : plug.products.some((product) => product.id === productId && (product.standing === 0 || ((record == null ? void 0 : record.standing) || 0) >= product.standing))) return plug;
           }
           return null;
@@ -7224,18 +7494,22 @@
           let discount = plug.id === "goodie" ? standing >= 3 ? 0.18 : 0.12 : standing >= 4 ? 0.06 : standing >= 2 ? 0.03 : 0;
           if (plug.id === "goodie") discount = Math.min(0.25, discount + (atLeastBand(state, "mina", BANDS.TRUSTED) ? 0.08 : atLeastBand(state, "mina", BANDS.WARM) ? 0.05 : 0));
           const relationshipDiscount = 1 - discount;
-          return plug.priceModifier * relationshipDiscount;
+          const suspicionPenalty = plugSuspicion(state, plug.id) >= Districts.PLUG_SUSPICION_PRICE_THRESHOLD ? 1 + Districts.PLUG_SUSPICION_PRICE_PENALTY : 1;
+          return plug.priceModifier * relationshipDiscount * suspicionPenalty;
         }
         function tradeUnitPrices(state, productId) {
-          var _a, _b;
+          var _a, _b, _c, _d, _e;
           const areaId = state.world.currentNeighborhoodId;
           const marketPriceValue = ((_a = state.world.markets[areaId]) == null ? void 0 : _a.prices[productId]) || 0;
           const control = controlled(state, areaId);
-          const buy = Math.round(marketPriceValue * (control ? 0.96 : 1) * plugPriceModifier(state, productId));
+          const marketMods = districtMods(areaId, "market");
+          const marketAwareness = ((_d = (_c = (_b = state.criminalProfile) == null ? void 0 : _b.districtAwareness) == null ? void 0 : _c[areaId]) == null ? void 0 : _d.market) || 0;
+          const districtBuyFactor = 1 + (marketMods.diffMod + Math.floor(marketAwareness / Districts.AWARENESS_DIFF_DIVISOR)) * 0.04;
+          const buy = Math.round(marketPriceValue * (control ? 0.96 : 1) * plugPriceModifier(state, productId) * districtBuyFactor);
           const charismaBonus = Math.max(0, charismaCompat(state) - 1) * 0.015;
           const influenceBonus = Math.min(0.02, state.world.influence[areaId] * 5e-3);
           const curtisPremium = state.npc.curtis.friendship === "accepted" && state.npc.curtis.protectionUntilDay >= state.run.day ? 0.1 : 0;
-          const pherrisPremium = areaId === "downtown" && ((_b = state.people.crew.pherris) == null ? void 0 : _b.recruited) && state.people.crew.pherris.tier >= 1 ? 0.1 : 0;
+          const pherrisPremium = areaId === "downtown" && ((_e = state.people.crew.pherris) == null ? void 0 : _e.recruited) && state.people.crew.pherris.tier >= 1 ? 0.1 : 0;
           const sell = Math.round(marketPriceValue * (0.96 + charismaBonus + influenceBonus + curtisPremium + pherrisPremium + (control ? 0.04 : 0)));
           return { market: marketPriceValue, buy, sell };
         }
@@ -7394,9 +7668,11 @@
           return Math.round(collected / dayElapsed * RUN_DAYS);
         }
         function robAvailability(state) {
+          var _a;
           if (state.run.status !== "playing") return { available: false, reason: "The run is not active." };
           const robbery = normalizeRobberyStats(state.stats.robbery, state);
           if (robbery.lastAttemptedDay === state.run.day) return { available: false, reason: "You already tried a Rob today." };
+          if ((((_a = state.stick) == null ? void 0 : _a.dailyCount) || 0) >= Districts.STICK_DAILY_CAP) return { available: false, reason: "Two robberies in a day is how people get named. Tomorrow." };
           if (state.run.day === checkpointDay(state) && state.run.slot === 3) return { available: false, reason: "There is no part of the run left to resolve a score." };
           if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
           const capital = workingCapital(state);
@@ -7432,6 +7708,7 @@
           return "Cautious";
         }
         function dealerActions(state, id) {
+          var _a;
           const definition = DEALER_BY_ID[id];
           const record = dealerRecord(state, id);
           const blocked = (reason) => ({ buy: { available: false, reason }, rob: { available: false, reason }, ask: { available: false, reason } });
@@ -7453,6 +7730,7 @@
           let rob;
           if (record.robbedCount >= 2) rob = { available: false, reason: "There is nothing left of him to take." };
           else if (record.lastRobbedDay === state.run.day) rob = { available: false, reason: "Not twice in one day." };
+          else if ((((_a = state.stick) == null ? void 0 : _a.dailyCount) || 0) >= Districts.STICK_DAILY_CAP) rob = { available: false, reason: "Two robberies in a day is how people get named. Tomorrow." };
           else rob = { available: true, reason: "Take the corner. Injury, Heat, retaliation, and the block's supply are all on the table.", chance: dealerRobberyChance(state, record) };
           return { buy, rob, ask };
         }
@@ -7756,7 +8034,7 @@
           }
         }
         function applyPressure(state, context, crossedDay) {
-          var _a, _b;
+          var _a, _b, _c, _d, _e, _f;
           const area = AREA_BY_ID[state.world.currentNeighborhoodId];
           const pressureActive = state.run.phase === "pressure";
           if (context.reason === "TRAVEL") {
@@ -7822,6 +8100,13 @@
             state.player.financialHeat = clamp(state.player.financialHeat - FINANCIAL_HEAT_DECAY_PER_DAY, 0, 10);
             if (state.player.financialHeat >= FINANCIAL_HEAT_FOLD_IN_THRESHOLD) {
               state.player.heat = clamp(state.player.heat + 1, 0, 15);
+            }
+            for (const plug of PLUGS) {
+              const suspicionRecord = (_d = (_c = state.plugs) == null ? void 0 : _c.records) == null ? void 0 : _d[plug.id];
+              if (!suspicionRecord || !(suspicionRecord.suspicion > 0)) continue;
+              const plugHome = Districts.PLUG_HOME_DISTRICTS[plug.id];
+              const robbedThereToday = ((_e = state.stick) == null ? void 0 : _e.lastRobberyDay) === state.run.day && ((_f = state.stick) == null ? void 0 : _f.lastRobberyDistrict) === plugHome;
+              if (!robbedThereToday) suspicionRecord.suspicion = Math.max(0, suspicionRecord.suspicion - 1);
             }
           }
           if (pressureActive && crossedDay && state.lender.status === "active" && state.lender.balance > 0 && state.run.day > state.lender.dueDay) {
@@ -9371,6 +9656,12 @@
           restorePhoneIfReady(state, slotNumber(oldDay, 3));
           resolveJobApplications(state);
           Exposure.resolveObservationQueue(state);
+          resolveBleedArrivals(state);
+          if (state.stick) {
+            state.stick.dailyCount = 0;
+            if (state.stick.lastRobberyDay != null && state.run.day - state.stick.lastRobberyDay > 2) state.stick.heatStreak = 0;
+          }
+          resolveStickRetaliation(state, random);
           state.nineZeroSevenList.known = !!state.knowledge.knows907List;
           state.run.dailyActions = [];
           if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
@@ -9595,13 +9886,16 @@
           state.stats.robbery.attempts = attemptNumber;
           state.stats.robbery.lastAttemptedDay = state.run.day;
           state.stats.robbery.attempted = true;
+          recordRobberyActivity(state, state.world.currentNeighborhoodId, {});
           let result;
           if (success) {
             const clean = outcome.tier === "clean";
             const payout = random.int(115, 210);
-            const addedHeat = clean ? 1 : 2 + Math.floor((attemptNumber - 1) / 2);
+            const addedHeat = districtHeat(state, state.world.currentNeighborhoodId, "stick", clean ? 1 : 2 + Math.floor((attemptNumber - 1) / 2)) * stickHeatMultiplier(state);
             state.player.cash += payout;
             state.player.heat = clamp(state.player.heat + addedHeat, 0, 15);
+            state.stick.rep += 1;
+            updateStickTier(state);
             if (!clean) Exposure.recordObservation(state, "curtis", { type: "violence", event: "stickup", count: Math.min(3, attemptNumber), source: "network" });
             state.stats.robbery.successes += 1;
             addStreetReadEntry(state, "risk", `rob:${state.world.currentNeighborhoodId}`);
@@ -9613,7 +9907,7 @@
               tone: "good",
               title: clean ? "The Rob Goes Clean" : "The Rob Pays",
               summary: clean ? `A contractor leaves a cash envelope in an idling truck off the service road. You clear $${payout} and nobody ever looks up.` : `A contractor leaves a cash envelope in an idling truck off the service road. You clear $${payout}, but there is a struggle and the cameras get a useful description.`,
-              effects: [`+$${payout} cash`, `+${addedHeat} Heat`, `Attempt ${attemptNumber} this week`]
+              effects: [`+$${payout} cash`, `+${Math.round(addedHeat * 10) / 10} Heat`, `Attempt ${attemptNumber} this week`]
             };
             broadcastOutcome(state, "robbery", outcome.tier, payout);
             if (!state.rob.visible) {
@@ -9623,7 +9917,7 @@
           } else {
             const severe = outcome.tier === "catastrophic";
             const damage = random.int(10 + Math.min(6, attemptNumber - 1), 17 + Math.min(8, attemptNumber - 1)) + (severe ? 8 : 0);
-            const addedHeat = Math.min(6, (severe ? 5 : 3) + Math.floor((attemptNumber - 1) / 2));
+            const addedHeat = districtHeat(state, state.world.currentNeighborhoodId, "stick", Math.min(6, (severe ? 5 : 3) + Math.floor((attemptNumber - 1) / 2))) * stickHeatMultiplier(state);
             state.player.health = clamp(state.player.health - damage, 0, 100);
             state.player.heat = clamp(state.player.heat + addedHeat, 0, 15);
             Exposure.recordObservation(state, "curtis", { type: "violence", event: "dealer_stickup", count: Math.min(4, attemptNumber + 1), source: "network" });
@@ -9634,7 +9928,7 @@
               tone: "bad",
               title: severe ? "The Rob Goes Wrong" : "The Rob Falls Apart",
               summary: severe ? "The truck is not empty and the driver is not alone. You get out hurt, and somebody called it in before you cleared the lot." : "The truck is empty and the driver returns with help. You get away hurt and recognized, but another attempt can open on a later day.",
-              effects: [`-${damage} Health`, `+${addedHeat} Heat`, "$0 payout", `Attempt ${attemptNumber} this week`]
+              effects: [`-${damage} Health`, `+${Math.round(addedHeat * 10) / 10} Heat`, "$0 payout", `Attempt ${attemptNumber} this week`]
             };
             broadcastOutcome(state, "robbery", outcome.tier);
           }
@@ -9660,22 +9954,25 @@
           record.robbedCount += success ? 1 : 0;
           record.lastRobbedDay = state.run.day;
           Exposure.recordObservation(state, "curtis", { type: "defiance", event: "took_ground", source: "network" });
+          recordRobberyActivity(state, definition.areaId, { direct: true, skipStandingFor: dealerId });
+          const dealerHeatScale = (amount) => districtHeat(state, definition.areaId, "stick", amount) * stickHeatMultiplier(state);
           const effects = [];
           let result;
           if (success) {
             const payout = 90 + state.run.day * 12 + random.int(0, 60);
             const availableProducts = definition.products.filter((productId2) => !!unlockedPlugForProduct(state, productId2));
-            const productId = random.pick(availableProducts);
-            if (!productId) return inputState;
-            const units = random.int(2, 4);
+            const productId = availableProducts.length ? random.pick(availableProducts) : null;
+            const units = productId ? random.int(2, 4) : 0;
             state.player.cash += payout;
+            state.stick.rep += 1;
+            updateStickTier(state);
             addStreetReadEntry(state, "risk", `robbery:${state.world.currentNeighborhoodId}`);
-            applyEventEffect(state, { addProduct: { id: productId, qty: units, unitCost: 0 } }, random);
-            const takenHeat = outcome.tier === "clean" ? 1 : 2;
+            if (productId) applyEventEffect(state, { addProduct: { id: productId, qty: units, unitCost: 0 } }, random);
+            const takenHeat = dealerHeatScale(outcome.tier === "clean" ? 1 : 2);
             state.player.heat = clamp(state.player.heat + takenHeat, 0, 15);
             record.standing = Math.max(-5, record.standing - 3);
             record.supplyChoked = 2;
-            effects.push(`+$${payout} cash`, `+${units} ${PRODUCTS.find((item) => item.id === productId).name} at no cost`, `+${takenHeat} Heat`, "Spenard supply tightens for two days");
+            effects.push(`+$${payout} cash`, productId ? `+${units} ${PRODUCTS.find((item) => item.id === productId).name} at no cost` : "He was not holding product for you", `+${Math.round(takenHeat * 10) / 10} Heat`, "Spenard supply tightens for two days");
             broadcastOutcome(state, "dealer_robbery", outcome.tier, payout);
             if (record.robbedCount >= 2) {
               record.gone = true;
@@ -9692,12 +9989,12 @@
             const armed = !!equippedWeapon(state);
             const severe = outcome.tier === "catastrophic";
             const damage = random.int(armed ? 12 : 20, 26) + (severe ? 8 : 0);
-            const takenHeat = severe ? 5 : 3;
+            const takenHeat = dealerHeatScale(severe ? 5 : 3);
             state.player.health = clamp(state.player.health - damage, 0, 100);
             state.player.heat = clamp(state.player.heat + takenHeat, 0, 15);
             record.standing = Math.max(-5, record.standing - 3);
             record.retaliated = true;
-            effects.push(`-${damage} Health`, `+${takenHeat} Heat`, "$0 taken", `${first} will be ready next time`);
+            effects.push(`-${damage} Health`, `+${Math.round(takenHeat * 10) / 10} Heat`, "$0 taken", `${first} will be ready next time`);
             broadcastOutcome(state, "dealer_robbery", outcome.tier);
             result = {
               kind: "dealer_robbery",
@@ -9860,16 +10157,26 @@
             ]
           };
         }
-        function firstBoostOpportunityEvent() {
+        const BOOST_FIRST_FRAMINGS = [
+          { id: "blind_spot", title: "Blind Spot", line: (name) => `You're browsing ${name}. The camera has a blind spot by the back aisle. Pocket something or keep walking.` },
+          { id: "back_turned", title: "Back Turned", line: (name) => `The clerk at ${name} is deep in a phone argument, back to the floor. Pocket something or keep walking.` },
+          { id: "propped_door", title: "Propped Door", line: (name) => `A vendor drop has ${name} in chaos \u2014 boxes stacked, door propped, nobody watching. Pocket something or keep walking.` }
+        ];
+        function firstBoostOpportunityEvent(state) {
+          var _a, _b;
+          const areaId = ((_a = state == null ? void 0 : state.world) == null ? void 0 : _a.currentNeighborhoodId) || HOME_DISTRICT_ID;
+          const targets = BOOST_TARGETS.filter((target) => target.tier === 1 && target.areaId === areaId);
+          const pool = targets.flatMap((target) => BOOST_FIRST_FRAMINGS.map((framing) => ({ target, framing, weight: 1 })));
+          const pick = seededPick(pool, `${((_b = state == null ? void 0 : state.run) == null ? void 0 : _b.seed) || 0}:boost_first`) || { target: BOOST_TARGET_BY_ID.night_owl, framing: BOOST_FIRST_FRAMINGS[0] };
           return {
             id: "boost_first_opportunity",
-            title: "Blind Spot",
+            title: pick.framing.title,
             who: "You",
-            where: "Night Owl Mini-Mart",
+            where: pick.target.name,
             stakes: "Pocket something or keep walking.",
-            description: "You're browsing Night Owl Mini-Mart. The camera has a blind spot by the back aisle. Pocket something or keep walking.",
+            description: pick.framing.line(pick.target.name),
             choices: [
-              { label: "Pocket it", effect: { boostTargetId: "night_owl", setFlags: { boostOpportunitySeen: true } }, preview: "Try a small lift.", result: "You make the move before the camera swings back." },
+              { label: "Pocket it", effect: { boostTargetId: pick.target.id, setFlags: { boostOpportunitySeen: true } }, preview: "Try a small lift.", result: "You make the move before the camera swings back." },
               { label: "Keep walking", effect: { setFlags: { boostOpportunitySeen: true } }, preview: "Leave it alone.", result: "You leave the shelf untouched." }
             ]
           };
@@ -9972,7 +10279,7 @@
           return advanced;
         }
         function reduceGame(inputState, action) {
-          var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
+          var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n;
           if (!inputState || !action || !action.type) return inputState;
           if (action.type === "HYDRATE_RUN") return hydrateRun(action.state) || inputState;
           if (action.type === "NEW_RUN") return createRun({ seed: action.seed });
@@ -10157,7 +10464,8 @@
             item.qty = totalQty;
             state.player.cash -= cost;
             market.availability[product.id] -= qty;
-            state.player.heat = clamp(state.player.heat + Math.floor(product.heat * qty / 5), 0, 15);
+            state.player.heat = clamp(state.player.heat + districtHeat(state, state.world.currentNeighborhoodId, "market", Math.floor(product.heat * qty / 5)), 0, 15);
+            recordCriminalActivity(state, state.world.currentNeighborhoodId, "market");
             state.run.currentVisit.trades += 1;
             state.run.currentVisit.grossBuy += cost;
             addStreetReadEntry(state, "trading", `${state.world.currentNeighborhoodId}:${product.id}`);
@@ -10177,13 +10485,18 @@
                 state.run.pendingEvent = plugIntroductionEvent(plug.introducesNext);
               }
             }
+            if (record && (record.suspicion || 0) > 0) {
+              const homeDistrict = Districts.PLUG_HOME_DISTRICTS[plug.id];
+              const robbedThereToday = ((_i = state.stick) == null ? void 0 : _i.lastRobberyDay) === state.run.day && ((_j = state.stick) == null ? void 0 : _j.lastRobberyDistrict) === homeDistrict;
+              if (!robbedThereToday) record.suspicion = Math.max(0, record.suspicion - 1);
+            }
             reconcileCash(state);
             return state;
           }
           if (action.type === "SELL") {
             const product = PRODUCT_BY_ID[action.productId], market = state.world.markets[state.world.currentNeighborhoodId];
             const qty = Math.max(0, Math.floor(action.qty || 0));
-            if (!((_i = state.market) == null ? void 0 : _i.visible) || !product || !unlockedPlugForProduct(state, product.id) || qty < 1 || state.player.inventory[product.id].qty < qty) return inputState;
+            if (!((_k = state.market) == null ? void 0 : _k.visible) || !product || !unlockedPlugForProduct(state, product.id) || qty < 1 || state.player.inventory[product.id].qty < qty) return inputState;
             const item = state.player.inventory[product.id];
             const projection = tradeProjection(state, product.id, qty, "sell");
             const unitPrice = projection.unitPrice;
@@ -10191,6 +10504,7 @@
             item.qty -= qty;
             if (!item.qty) item.avgCost = 0;
             addDirtyCash(state, total);
+            recordCriminalActivity(state, state.world.currentNeighborhoodId, "market");
             state.run.currentVisit.trades += 1;
             state.run.currentVisit.grossSell += total;
             addStreetReadEntry(state, "trading", `${state.world.currentNeighborhoodId}:${product.id}`);
@@ -10922,7 +11236,7 @@
           }
           if (action.type === "ASSIGN_BOOST_CREW") {
             const crew = base.people.crew[action.crewId];
-            if (!base.boost.visible || base.boost.tier < 3 || !(crew == null ? void 0 : crew.recruited) || crew.status !== "active" || !((_j = CREW_BY_ID[action.crewId]) == null ? void 0 : _j.canFieldAssign)) return inputState;
+            if (!base.boost.visible || base.boost.tier < 3 || !(crew == null ? void 0 : crew.recruited) || crew.status !== "active" || !((_l = CREW_BY_ID[action.crewId]) == null ? void 0 : _l.canFieldAssign)) return inputState;
             base.boost.crewAssigned = action.crewId;
             logEntry(base, `${CREW_BY_ID[action.crewId].name} is assigned to boost duty.`, "good");
             return base;
@@ -10942,8 +11256,120 @@
             base.boost.merchandise = 0;
             base.boost.fenceStanding = clamp(base.boost.fenceStanding + 1, 0, 5);
             addDirtyCash(base, payout);
-            logEntry(base, `He looks at what you brought, quotes $${payout}, and takes the merchandise.`, "good");
+            Exposure.broadcastObservation(base, { type: "financial", event: "fence_sale", channel: "household", value: payout, day: base.run.day });
+            logEntry(base, `Slide looks at what you brought, quotes $${payout}, and takes the merchandise. There is no somewhere else.`, "good");
             return base;
+          }
+          if (action.type === "CASE_TARGET") {
+            const target = STICK_TARGET_BY_ID[action.targetId];
+            if (!((_m = base.rob) == null ? void 0 : _m.visible) || !target || target.tier < 2) return inputState;
+            if (target.areaId !== base.world.currentNeighborhoodId) return inputState;
+            const existing = stickCasing(base, target.id);
+            if (existing && existing.timesObserved >= 2) return inputState;
+            if (existing) existing.timesObserved += 1;
+            else base.stick.casedTargets.push({ targetId: target.id, timesObserved: 1 });
+            const observed = stickCasing(base, target.id).timesObserved;
+            logEntry(base, observed === 1 ? `You watch ${target.name} long enough to price it: $${target.take[0]}\u2013$${target.take[1]} moving through.` : `Second pass at ${target.name}. You know the rhythm now.`, "");
+            return advanceRun(base, { reason: "CASE_TARGET", suppressStory: true });
+          }
+          if (action.type === "STICKUP") {
+            const availability = stickTargetAvailability(base, action.targetId);
+            if (!availability.available) return inputState;
+            const target = STICK_TARGET_BY_ID[action.targetId];
+            reconcileCash(base);
+            base.stats.robbery = normalizeRobberyStats(base.stats.robbery, base);
+            const random2 = makeRandom(base.run.rngState);
+            const outcome = resolveOutcome(base, "robbery", availability.chance, `${base.run.seed}:stickup:${base.run.day}:${base.run.slot}:${target.id}`);
+            const success = Attributes.isSuccessTier(outcome.tier);
+            recordRobberyActivity(base, target.areaId, {});
+            const heatScale = (amount) => districtHeat(base, target.areaId, "stick", amount) * stickHeatMultiplier(base);
+            base.stats.robbery.attempts += 1;
+            base.stats.robbery.lastAttemptedDay = base.run.day;
+            base.stats.robbery.attempted = true;
+            const effects = [];
+            let result;
+            if (success) {
+              const clean = outcome.tier === "clean";
+              const take = random2.int(target.take[0], target.take[1]);
+              const addedHeat = heatScale(clean ? Math.max(1, target.heat - 1) : target.heat);
+              if (target.tier === 1) base.player.cash += take;
+              else addDirtyCash(base, take);
+              base.player.heat = clamp(base.player.heat + addedHeat, 0, 15);
+              base.stick.rep += 1;
+              base.stats.robbery.successes += 1;
+              base.stats.robbery.totalPayout += take;
+              base.stats.robbery.success = true;
+              base.stats.robbery.payout = base.stats.robbery.totalPayout;
+              addStreetReadEntry(base, "risk", `stickup:${target.areaId}:${target.id}`);
+              effects.push(`+$${take} ${target.tier === 1 ? "cash" : "dirty cash"}`, `+${Math.round(addedHeat * 10) / 10} Heat`);
+              if (target.tier === 3) {
+                base.stick.organizedHits += 1;
+                if (base.stick.organizedHits >= 2) Exposure.recordObservation(base, "curtis", { type: "violence", event: "organized_hit", count: base.stick.organizedHits, source: "network" });
+                if (target.id === "goodie_stash" && ((_n = base.people.dealers) == null ? void 0 : _n.goodie)) {
+                  base.people.dealers.goodie.supplyChoked = 7;
+                  base.people.dealers.goodie.retaliated = true;
+                  bumpPlugSuspicion(base, target.areaId, { direct: true, skipStandingFor: null });
+                  base.stick.retaliationQueue.push({ targetId: target.id, areaId: target.areaId, triggerDay: base.run.day + 2 });
+                  effects.push("Goodie's supply is gone for the run", "His people will come looking");
+                }
+              }
+              if (target.retaliation > 0 && target.id !== "goodie_stash" && random2.next() < target.retaliation) {
+                base.stick.retaliationQueue.push({ targetId: target.id, areaId: target.areaId, triggerDay: base.run.day + 2 });
+              }
+              result = {
+                kind: "robbery",
+                tone: "good",
+                title: clean ? "Quiet Take" : "Loud Take",
+                summary: clean ? `${target.name} gives it up without a scene. You clear $${take} and the block keeps moving.` : `${target.name} gives it up, but not quietly. You clear $${take} and leave a description behind.`,
+                effects
+              };
+              broadcastOutcome(base, "robbery", outcome.tier, take);
+            } else {
+              const severe = outcome.tier === "catastrophic";
+              const damage = random2.int(target.tier === 1 ? 8 : target.tier === 2 ? 15 : 20, target.tier === 1 ? 15 : target.tier === 2 ? 26 : 40) + (severe ? 6 : 0);
+              let addedHeat = heatScale(target.heat + (severe ? 1 : 0));
+              if (random2.next() < 0.3) {
+                addedHeat += 1;
+                effects.push("A witness got a good look");
+              }
+              base.player.health = clamp(base.player.health - damage, 0, 100);
+              base.player.heat = clamp(base.player.heat + addedHeat, 0, 15);
+              base.stats.robbery.failures += 1;
+              base.stats.robbery.success = base.stats.robbery.successes > 0;
+              effects.unshift(`-${damage} Health`, `+${Math.round(addedHeat * 10) / 10} Heat`, "$0 taken");
+              let arrested = false;
+              if (target.tier === 3 && base.player.heat > 8) {
+                arrested = true;
+                const bail = Math.min(200, base.player.cash);
+                base.player.cash -= bail;
+                effects.push(`Booked and released \u2014 $${bail} bail`, "The rest of the day is gone");
+              }
+              result = {
+                kind: "robbery",
+                tone: "bad",
+                title: severe ? "It Goes Wrong" : "It Falls Apart",
+                summary: arrested ? `${target.name} does not go down, and the next set of hands on you has a badge. Processing eats the day.` : severe ? `${target.name} fights back harder than the plan allowed. You get out hurt, and somebody called it in.` : `${target.name} does not go down. You get away hurt and lighter than you came.`,
+                effects
+              };
+              broadcastOutcome(base, "robbery", outcome.tier);
+              if (arrested) {
+                base.stats.majorDecisions.push(`Stickup ${target.id}: arrested`);
+                recordBehavior(base, "stickup", 2, `stickup:${base.run.day}:${target.id}`, "rob");
+                base.run.rngState = random2.state;
+                logEntry(base, result.summary, result.tone);
+                const held = advanceRun(base, { reason: "STICKUP", suppressStory: true, timeCost: SLOTS.length });
+                if (held.run.status === "playing") held.run.pendingOperationResult = result;
+                return held;
+              }
+            }
+            updateStickTier(base);
+            base.stats.majorDecisions.push(`Stickup ${target.id}: ${outcome.tier}`);
+            recordBehavior(base, "stickup", 2, `stickup:${base.run.day}:${target.id}`, "rob");
+            base.run.rngState = random2.state;
+            logEntry(base, result.summary, result.tone);
+            const advanced = advanceRun(base, { reason: "STICKUP", suppressStory: true });
+            if (advanced.run.status === "playing") advanced.run.pendingOperationResult = result;
+            return advanced;
           }
           if (action.type === "BOOST" || action.type === "SHOPLIFT") {
             updateBoostTier(base);
@@ -10986,7 +11412,7 @@
             base.run.rngState = random2.state;
             const advanced = advanceRun(base, { reason: "WANDER_SPENARD", suppressStory: meetsBoost || meetsGoodie });
             if (meetsBoost && advanced.run.status === "playing") {
-              advanced.run.pendingEvent = firstBoostOpportunityEvent();
+              advanced.run.pendingEvent = firstBoostOpportunityEvent(advanced);
             } else if (meetsGoodie && advanced.run.status === "playing") {
               advanced.flags.goodieEncounterSeen = true;
               advanced.run.pendingEvent = plugIntroductionEvent("goodie");
@@ -11567,6 +11993,8 @@
           SHOPLIFT: "Attempt Resolved",
           BOOST: "Boost Resolved",
           ASK_BOOST_WINDOW: "Window Learned",
+          STICKUP: "Stickup Resolved",
+          CASE_TARGET: "Target Cased",
           NILE_TONK_SIT: "Hand Resolved",
           NILE_CELO_SIT: "Round Resolved",
           NILE_WELLNESS: "Session Done",
@@ -11705,6 +12133,8 @@
           ENTITY_MATCH_ORDER,
           PLUGS,
           BOOST_TARGETS,
+          STICK_TARGETS,
+          DISTRICTS: Districts,
           SPENARD_JOBS,
           STARTER_JOB_IDS,
           JOB_APPROACHES,
@@ -11844,6 +12274,13 @@
             boostChance,
             boostFenceRate,
             boostTier,
+            visibleStickTargets,
+            stickTargetAvailability,
+            stickChance,
+            stickTier,
+            stickCasing,
+            plugSuspicion,
+            districtMods,
             controlledBlockCount,
             eliLieutenantActive,
             soldierCapacity,
@@ -12059,7 +12496,7 @@
         const showCrew = C.selectors.recruitedCrew(state).length > 0;
         const showCurtis = state.npc.curtis.relationship !== "unaware";
         const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil(value / ceiling * 5))), total: 5 });
-        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.9c"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day, state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
+        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.13"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day, state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
       }
       var NAV_ICONS = {
         home: "M12 3 3 10.4V21h6v-6h6v6h6V10.4z",
@@ -12192,7 +12629,7 @@
           const window2 = target.tier === 2 && discovered ? `Best window: ${C.SLOTS[target.windowSlot]}` : null;
           const encounter = target.tier === 1 ? `You're browsing ${target.name}. The camera has a blind spot by the back aisle.` : target.tier === 2 ? `${target.name} has what you need behind minimal security. Move now or wait for a better window.` : "Pick the target, keep the crew moving, and deliver the merchandise to the fence.";
           return /* @__PURE__ */ React.createElement("div", { className: `card boost-target${availability.available ? "" : " locked"}`, key: target.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, target.name, /* @__PURE__ */ React.createElement("small", null, "TIER ", target.tier, " \xB7 $", target.take[0], "\u2013$", target.take[1])), /* @__PURE__ */ React.createElement("p", { className: "compact" }, encounter), /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, /* @__PURE__ */ React.createElement(Outcome, { label: "Status", value: banned ? "Banned" : hit ? "Hit today" : "Ready" }), target.tier === 2 && /* @__PURE__ */ React.createElement(Outcome, { label: "Window", value: window2 || "Unknown" })), target.tier === 2 && !discovered && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", onClick: () => dispatch({ type: "ASK_BOOST_WINDOW", targetId: target.id }) }, "Ask around", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Uses one social action")), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !availability.available, onClick: () => dispatch({ type: "BOOST", targetId: target.id }) }, "Make the lift", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, availability.available ? "Uses one part of day" : availability.reason)));
-        }), state.boost.tier >= 3 && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Fence", /* @__PURE__ */ React.createElement("small", null, Math.round(C.selectors.boostFenceRate(state.boost.fenceStanding) * 100), "% RATE")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "He looks at what you brought, quotes a number. Take it or try somewhere else."), /* @__PURE__ */ React.createElement("button", { className: "btn full good-btn", disabled: !state.boost.merchandise, onClick: () => dispatch({ type: "FENCE_BOOST_GOODS" }) }, "Sell $", state.boost.merchandise, " merchandise", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Standing ", state.boost.fenceStanding, "/5 \xB7 no time cost")))));
+        }), state.boost.tier >= 3 && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Slide Okafor", /* @__PURE__ */ React.createElement("small", null, Math.round(C.selectors.boostFenceRate(state.boost.fenceStanding) * 100), "% RATE")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "A storage unit off Tudor Road. Slide looks at what you brought, quotes a number. There is no somewhere else."), /* @__PURE__ */ React.createElement("button", { className: "btn full good-btn", disabled: !state.boost.merchandise, onClick: () => dispatch({ type: "FENCE_BOOST_GOODS" }) }, "Sell $", state.boost.merchandise, " merchandise", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Standing ", state.boost.fenceStanding, "/5 \xB7 no time cost")))));
       }
       function Destinations({ state, dispatch, onBack }) {
         const here = state.world.currentNeighborhoodId;
@@ -12446,7 +12883,7 @@
         if (page === "boost") return /* @__PURE__ */ React.createElement(Boost, { state, dispatch });
         if (page === "stickup") return /* @__PURE__ */ React.createElement(Rob, { state, dispatch, onBack: () => setPage("root") });
         if (page === "shark") return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Shark", sub: "Borrower profiles, qualitative risk, and open notes", onBack: () => setPage("root") }), /* @__PURE__ */ React.createElement(SharkPanel, { state, dispatch }));
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Hustle", sub: "Illegal-income work in one place" }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Curtis Foyer", /* @__PURE__ */ React.createElement("small", null, "ATTENTION ", state.npc.curtis.attention, "/8")), /* @__PURE__ */ React.createElement("p", null, "Respect ", state.npc.curtis.respect, " \xB7 ", state.npc.curtis.relationship, ". Attention comes from visible sales, rolling illegal revenue, reports, and network escalation."), state.npc.curtis.attention >= 4 && !state.npc.curtis.friendship && !state.npc.curtis.taxActive && /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: () => dispatch({ type: "CURTIS_DECISION", choice: "pay_tax" }) }, "Pay tax"), /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: () => dispatch({ type: "CURTIS_DECISION", choice: "friendship" }) }, "Friendship"), /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: () => dispatch({ type: "CURTIS_DECISION", choice: "guarded" }) }, "Stay guarded"), /* @__PURE__ */ React.createElement("button", { className: "btn primary", onClick: () => dispatch({ type: "CURTIS_DECISION", choice: "reject" }) }, "Reject"))), state.market.visible && /* @__PURE__ */ React.createElement(MenuRow, { title: "Market", status: `${state.hustle.soldUnits} units sold`, description: "Buy, sell, and finish a market session.", onClick: () => setPage("market") }), state.boost.visible && /* @__PURE__ */ React.createElement(MenuRow, { title: "Boost", status: `Tier ${state.boost.tier}`, description: "Store work, targets, and the fence.", onClick: () => setPage("boost") }), state.rob.visible && /* @__PURE__ */ React.createElement(MenuRow, { title: "Stickup", status: `${state.stats.robbery.successes} successes`, description: "Direct robbery attempts and their consequences.", onClick: () => setPage("stickup") }), state.hustle.shark.visible && /* @__PURE__ */ React.createElement(MenuRow, { title: "Shark", status: `${state.hustle.shark.loans.filter((loan) => ["active", "extended", "defaulted"].includes(loan.status)).length} open`, description: "Fund borrowers and resolve defaults.", onClick: () => setPage("shark") }), !state.market.visible && !state.boost.visible && !state.rob.visible && !state.hustle.shark.visible && /* @__PURE__ */ React.createElement("div", { className: "card locked" }, "Sections unlock independently as the run discovers them.")));
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Hustle", sub: "Illegal-income work in one place" }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, state.market.visible && /* @__PURE__ */ React.createElement(MenuRow, { title: "Market", status: `${state.hustle.soldUnits} units sold`, description: "Buy, sell, and finish a market session.", onClick: () => setPage("market") }), state.boost.visible && /* @__PURE__ */ React.createElement(MenuRow, { title: "Boost", status: `Tier ${state.boost.tier}`, description: "Store work, targets, and the fence.", onClick: () => setPage("boost") }), state.rob.visible && /* @__PURE__ */ React.createElement(MenuRow, { title: "Stickup", status: `Tier ${Math.max(state.stick.tier, 1)} \xB7 ${state.stats.robbery.successes} successes`, description: "Street robbery, registers, and organized work.", onClick: () => setPage("stickup") }), state.hustle.shark.visible && /* @__PURE__ */ React.createElement(MenuRow, { title: "Shark", status: `${state.hustle.shark.loans.filter((loan) => ["active", "extended", "defaulted"].includes(loan.status)).length} open`, description: "Fund borrowers and resolve defaults.", onClick: () => setPage("shark") }), !state.market.visible && !state.boost.visible && !state.rob.visible && !state.hustle.shark.visible && /* @__PURE__ */ React.createElement("div", { className: "card locked" }, "Sections unlock independently as the run discovers them."), (state.npc.curtis.relationship !== "unaware" || state.npc.curtis.attention >= 4) && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Rival pressure", /* @__PURE__ */ React.createElement("small", null, "ATTENTION ", state.npc.curtis.attention, "/8")), /* @__PURE__ */ React.createElement("p", null, "Curtis Foyer reads this operation at Respect ", state.npc.curtis.respect, " \xB7 ", state.npc.curtis.relationship, ". Attention comes from visible sales, rolling illegal revenue, reports, and network escalation."), state.npc.curtis.attention >= 4 && !state.npc.curtis.friendship && !state.npc.curtis.taxActive && /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: () => dispatch({ type: "CURTIS_DECISION", choice: "pay_tax" }) }, "Pay tax"), /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: () => dispatch({ type: "CURTIS_DECISION", choice: "friendship" }) }, "Friendship"), /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: () => dispatch({ type: "CURTIS_DECISION", choice: "guarded" }) }, "Stay guarded"), /* @__PURE__ */ React.createElement("button", { className: "btn primary", onClick: () => dispatch({ type: "CURTIS_DECISION", choice: "reject" }) }, "Reject")))));
       }
       function SpenardBlockCard({ state, dispatch, block }) {
         const record = state.world.territoryBlocks[block.id];
@@ -12538,7 +12975,14 @@
       function Rob({ state, dispatch, onBack }) {
         const score = C.selectors.robAvailability(state);
         const stats = state.stats.robbery;
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Rob", sub: "A risky comeback option; legal work remains the safer long-term plan", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, /* @__PURE__ */ React.createElement(Outcome, { label: "Attempts", value: stats.attempts || 0 }), /* @__PURE__ */ React.createElement(Outcome, { label: "Successes", value: stats.successes || 0 }), /* @__PURE__ */ React.createElement(Outcome, { label: "Failures", value: stats.failures || 0 }), /* @__PURE__ */ React.createElement(Outcome, { label: "Total payout", value: money(stats.totalPayout || 0) })), /* @__PURE__ */ React.createElement("div", { className: "card debt-card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Service-road envelope", /* @__PURE__ */ React.createElement("small", null, "Once each day \xB7 one part of day")), /* @__PURE__ */ React.createElement("p", null, "Take a direct cash risk. Weapons, Combat, Intelligence, crew, and Heat affect the approach. Repeated attempts raise exposure and injury risk."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !score.available, onClick: () => dispatch({ type: "ROB" }) }, "Attempt today's Rob", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, score.available ? `${score.chanceLabel} estimated success \xB7 uses one part of day` : score.reason)))));
+        const tier = Math.max(state.stick.tier, C.selectors.stickTier(state));
+        const targets = C.selectors.visibleStickTargets(state);
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Stickup", sub: `Tier ${tier} \xB7 two attempts a day before people start naming you`, onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, /* @__PURE__ */ React.createElement(Outcome, { label: "Rep", value: state.stick.rep }), /* @__PURE__ */ React.createElement(Outcome, { label: "Attempts", value: stats.attempts || 0 }), /* @__PURE__ */ React.createElement(Outcome, { label: "Successes", value: stats.successes || 0 }), /* @__PURE__ */ React.createElement(Outcome, { label: "Total payout", value: money(stats.totalPayout || 0) })), targets.map((target) => {
+          const availability = C.selectors.stickTargetAvailability(state, target.id);
+          const cased = C.selectors.stickCasing(state, target.id);
+          const canCase = target.tier >= 2 && (!cased || cased.timesObserved < 2);
+          return /* @__PURE__ */ React.createElement("div", { className: `card boost-target${availability.available ? "" : " locked"}`, key: target.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, target.name, /* @__PURE__ */ React.createElement("small", null, "TIER ", target.tier, " \xB7 ", target.tier === 1 || cased ? `$${target.take[0]}\u2013$${target.take[1]}` : "CASE TO PRICE")), /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, target.slots && /* @__PURE__ */ React.createElement(Outcome, { label: "Window", value: target.slots.map((slot) => C.SLOTS[slot]).join(" / ") }), target.tier >= 2 && /* @__PURE__ */ React.createElement(Outcome, { label: "Cased", value: `${Math.min(2, (cased == null ? void 0 : cased.timesObserved) || 0)}/2` })), canCase && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", onClick: () => dispatch({ type: "CASE_TARGET", targetId: target.id }) }, "Case the target", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Uses one part of day \xB7 prices the take, sharpens the job")), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !availability.available, onClick: () => dispatch({ type: "STICKUP", targetId: target.id }) }, "Run it", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, availability.available ? "Uses one part of day" : availability.reason)));
+        }), tier >= 2 && /* @__PURE__ */ React.createElement("p", { className: "compact muted" }, "Goodie is a walking Tier 2 target. His corner works the same ladder \u2014 find him through Street \u2192 People."), /* @__PURE__ */ React.createElement("div", { className: "card debt-card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Service-road envelope", /* @__PURE__ */ React.createElement("small", null, "Once each day \xB7 one part of day")), /* @__PURE__ */ React.createElement("p", null, "Take a direct cash risk. Weapons, Combat, Intelligence, crew, and Heat affect the approach. Repeated attempts raise exposure and injury risk; legal work remains the safer long-term plan."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !score.available, onClick: () => dispatch({ type: "ROB" }) }, "Attempt today's Rob", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, score.available ? `${score.chanceLabel} estimated success \xB7 uses one part of day` : score.reason)))));
       }
       function Gear({ state, dispatch, onBack }) {
         return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Gear", sub: "Weapons, armor, tools, utility, and consumables", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, !state.base.visiting && /* @__PURE__ */ React.createElement("p", { className: "warn" }, "Visit North Star Garage in Safehouse before buying gear."), C.GEAR.map((gear) => {
@@ -12873,9 +13317,9 @@
         const market = state.world.markets[state.world.currentNeighborhoodId];
         const item = state.player.inventory[productId];
         const prices = C.selectors.tradeUnitPrices(state, productId);
-        const maxBuy = Math.min(market.availability[productId], C.selectors.cargoCapacity(state) - C.selectors.cargoUsed(state), Math.floor(state.player.cash / prices.buy));
+        const maxBuy = Math.max(0, Math.min(market.availability[productId] || 0, C.selectors.cargoCapacity(state) - C.selectors.cargoUsed(state), prices.buy > 0 ? Math.floor(state.player.cash / prices.buy) : 0, C.selectors.plugMaxUnits(state, productId)));
         const max = mode === "buy" ? maxBuy : item.qty;
-        const selected = Math.max(0, Math.min(qty, max));
+        const selected = Math.max(0, Math.min(Number.isFinite(qty) ? qty : 0, max));
         const projection = C.selectors.tradeProjection(state, productId, selected, mode);
         const resultIsProfit = projection.profitLoss >= 0;
         return /* @__PURE__ */ React.createElement(Modal, { title: `${product.name} trade` }, /* @__PURE__ */ React.createElement("p", null, "Prices stay locked until you end this market visit."), /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, /* @__PURE__ */ React.createElement("button", { className: `btn ${mode === "buy" ? "good-btn" : "secondary"}`, onClick: () => {
@@ -12957,7 +13401,7 @@
           ExpandableMoreSection,
           {
             collapsedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-lead" }, "Autosave is on. This run saves to your browser after every action."),
-            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.9c \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
+            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.13 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
             moreLabel: "Save detail",
             lessLabel: "Hide detail"
           }

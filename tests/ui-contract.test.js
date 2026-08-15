@@ -3,7 +3,15 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const root = path.join(__dirname, "..");
-const ui = fs.readFileSync(path.join(root, "ui.jsx"), "utf8");
+// The UI source is two files: the screens in ui.jsx and the presentational
+// primitives they compose in src/ds/primitives.jsx (shared with the synced
+// design system). These contract checks assert over the UI as a whole, so read
+// both. ui.jsx stays first — the slice() checks below index into it by
+// function name and would break if primitives led.
+const ui = [
+  fs.readFileSync(path.join(root, "ui.jsx"), "utf8"),
+  fs.readFileSync(path.join(root, "src", "ds", "primitives.jsx"), "utf8"),
+].join("\n");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "v05.css"), "utf8");
 

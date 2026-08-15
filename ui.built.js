@@ -5,6 +5,14 @@
   var __getOwnPropNames = Object.getOwnPropertyNames;
   var __getProtoOf = Object.getPrototypeOf;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __esm = (fn, res, err) => function __init() {
+    if (err) throw err[0];
+    try {
+      return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+    } catch (e) {
+      throw err = [e], e;
+    }
+  };
   var __commonJS = (cb, mod) => function __require() {
     try {
       return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
@@ -11917,9 +11925,43 @@
     }
   });
 
+  // src/ds/primitives.jsx
+  function Hud({ label, value, danger, good, flash }) {
+    return /* @__PURE__ */ React.createElement("div", { className: `hud-item${danger ? " danger" : ""}${good ? " good" : ""}`, "data-flash": flash || void 0 }, /* @__PURE__ */ React.createElement("span", { className: "k" }, label), /* @__PURE__ */ React.createElement("span", { className: "v" }, value));
+  }
+  function Chip({ label, value, tone, flash }) {
+    return /* @__PURE__ */ React.createElement("div", { className: `status-chip${tone ? ` ${tone}` : ""}`, "data-flash": flash || void 0 }, /* @__PURE__ */ React.createElement("span", { className: "k" }, label), /* @__PURE__ */ React.createElement("span", { className: "v" }, value));
+  }
+  function PageHead({ title, sub, onBack }) {
+    return /* @__PURE__ */ React.createElement("div", { className: "page-head" }, onBack && /* @__PURE__ */ React.createElement("button", { className: "back-btn", onClick: onBack }, "\u2190 Back"), /* @__PURE__ */ React.createElement("div", { className: "page-head-text" }, /* @__PURE__ */ React.createElement("h1", null, title), /* @__PURE__ */ React.createElement("p", null, sub)));
+  }
+  function Outcome({ label, value }) {
+    return /* @__PURE__ */ React.createElement("div", { className: "outcome" }, /* @__PURE__ */ React.createElement("span", { className: "muted" }, label), /* @__PURE__ */ React.createElement("b", null, value));
+  }
+  function CategoryCard({ title, status, description, onClick, disabled }) {
+    return /* @__PURE__ */ React.createElement("button", { className: `card category-card${disabled ? " locked" : ""}`, disabled, onClick }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, title, /* @__PURE__ */ React.createElement("small", null, status)), /* @__PURE__ */ React.createElement("p", null, description), /* @__PURE__ */ React.createElement("span", { className: "category-arrow" }, "Open \u2192"));
+  }
+  function MenuRow({ title, status, description, onClick, disabled, tone }) {
+    return /* @__PURE__ */ React.createElement("button", { className: `menu-row${tone ? ` ${tone}` : ""}${disabled ? " locked" : ""}`, disabled, onClick }, /* @__PURE__ */ React.createElement("span", { className: "menu-row-main" }, /* @__PURE__ */ React.createElement("b", null, title), description && /* @__PURE__ */ React.createElement("small", null, description)), /* @__PURE__ */ React.createElement("span", { className: "menu-row-meta" }, status, /* @__PURE__ */ React.createElement("span", { className: "menu-row-arrow", "aria-hidden": "true" }, "\u203A")));
+  }
+  function StatTile({ label, value, note, tone, text }) {
+    return /* @__PURE__ */ React.createElement("div", { className: `stat-tile${tone ? ` ${tone}` : ""}${text ? " text" : ""}` }, /* @__PURE__ */ React.createElement("span", { className: "k" }, label), /* @__PURE__ */ React.createElement("span", { className: "v" }, value), note && /* @__PURE__ */ React.createElement("span", { className: "n" }, note));
+  }
+  function PlaceAction({ title, status, purpose, cost, time, disabled, reason, onClick }) {
+    return /* @__PURE__ */ React.createElement("div", { className: `card area-card${disabled ? " locked" : ""}` }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, title, /* @__PURE__ */ React.createElement("small", null, status)), /* @__PURE__ */ React.createElement("p", null, purpose), /* @__PURE__ */ React.createElement("div", { className: "area-meta" }, /* @__PURE__ */ React.createElement("span", null, "Cost ", cost), /* @__PURE__ */ React.createElement("span", null, time)), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled, onClick }, disabled ? "Unavailable" : "Go", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, reason)));
+  }
+  function Modal({ title, children, onClose, className = "" }) {
+    return /* @__PURE__ */ React.createElement("div", { className: `modal-backdrop ${className ? `${className}-backdrop` : ""}` }, /* @__PURE__ */ React.createElement("div", { className: `modal ${className}`, role: "dialog", "aria-modal": "true", "aria-label": title }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("h2", null, title), onClose && /* @__PURE__ */ React.createElement("button", { type: "button", className: "modal-close", "aria-label": "Close", onClick: onClose }, "\xD7")), children));
+  }
+  var init_primitives = __esm({
+    "src/ds/primitives.jsx"() {
+    }
+  });
+
   // ui.jsx
   var require_ui = __commonJS({
     "ui.jsx"() {
+      init_primitives();
       var { useEffect, useMemo, useReducer, useRef, useState } = React;
       var C = window.GameCore;
       var money = (value) => `$${Math.round(value || 0)}`;
@@ -11956,12 +11998,6 @@
             expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "Each day has Morning, Afternoon, Evening, and Night. Night actions open a confirmation gate before the city rolls into tomorrow.")
           }
         )))));
-      }
-      function Hud({ label, value, danger, good, flash }) {
-        return /* @__PURE__ */ React.createElement("div", { className: `hud-item${danger ? " danger" : ""}${good ? " good" : ""}`, "data-flash": flash || void 0 }, /* @__PURE__ */ React.createElement("span", { className: "k" }, label), /* @__PURE__ */ React.createElement("span", { className: "v" }, value));
-      }
-      function Chip({ label, value, tone, flash }) {
-        return /* @__PURE__ */ React.createElement("div", { className: `status-chip${tone ? ` ${tone}` : ""}`, "data-flash": flash || void 0 }, /* @__PURE__ */ React.createElement("span", { className: "k" }, label), /* @__PURE__ */ React.createElement("span", { className: "v" }, value));
       }
       function useValueFlash(value) {
         const seeded = React.useRef(false);
@@ -12039,21 +12075,6 @@
           return /* @__PURE__ */ React.createElement("button", { key: id, className: tab === id ? "active" : "", onClick: () => setTab(id) }, /* @__PURE__ */ React.createElement(NavIcon, { id }), label);
         }));
       }
-      function PageHead({ title, sub, onBack }) {
-        return /* @__PURE__ */ React.createElement("div", { className: "page-head" }, onBack && /* @__PURE__ */ React.createElement("button", { className: "back-btn", onClick: onBack }, "\u2190 Back"), /* @__PURE__ */ React.createElement("div", { className: "page-head-text" }, /* @__PURE__ */ React.createElement("h1", null, title), /* @__PURE__ */ React.createElement("p", null, sub)));
-      }
-      function Outcome({ label, value }) {
-        return /* @__PURE__ */ React.createElement("div", { className: "outcome" }, /* @__PURE__ */ React.createElement("span", { className: "muted" }, label), /* @__PURE__ */ React.createElement("b", null, value));
-      }
-      function CategoryCard({ title, status, description, onClick, disabled }) {
-        return /* @__PURE__ */ React.createElement("button", { className: `card category-card${disabled ? " locked" : ""}`, disabled, onClick }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, title, /* @__PURE__ */ React.createElement("small", null, status)), /* @__PURE__ */ React.createElement("p", null, description), /* @__PURE__ */ React.createElement("span", { className: "category-arrow" }, "Open \u2192"));
-      }
-      function MenuRow({ title, status, description, onClick, disabled, tone }) {
-        return /* @__PURE__ */ React.createElement("button", { className: `menu-row${tone ? ` ${tone}` : ""}${disabled ? " locked" : ""}`, disabled, onClick }, /* @__PURE__ */ React.createElement("span", { className: "menu-row-main" }, /* @__PURE__ */ React.createElement("b", null, title), description && /* @__PURE__ */ React.createElement("small", null, description)), /* @__PURE__ */ React.createElement("span", { className: "menu-row-meta" }, status, /* @__PURE__ */ React.createElement("span", { className: "menu-row-arrow", "aria-hidden": "true" }, "\u203A")));
-      }
-      function StatTile({ label, value, note, tone, text }) {
-        return /* @__PURE__ */ React.createElement("div", { className: `stat-tile${tone ? ` ${tone}` : ""}${text ? " text" : ""}` }, /* @__PURE__ */ React.createElement("span", { className: "k" }, label), /* @__PURE__ */ React.createElement("span", { className: "v" }, value), note && /* @__PURE__ */ React.createElement("span", { className: "n" }, note));
-      }
       var PRIORITY_TARGETS = {
         debt_overdue: ["more", "finances", "debt"],
         debt_tonight: ["more", "finances", "debt"],
@@ -12109,9 +12130,6 @@
           const encounter = target.tier === 1 ? `You're browsing ${target.name}. The camera has a blind spot by the back aisle.` : target.tier === 2 ? `${target.name} has what you need behind minimal security. Move now or wait for a better window.` : "Pick the target, keep the crew moving, and deliver the merchandise to the fence.";
           return /* @__PURE__ */ React.createElement("div", { className: `card boost-target${availability.available ? "" : " locked"}`, key: target.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, target.name, /* @__PURE__ */ React.createElement("small", null, "TIER ", target.tier, " \xB7 $", target.take[0], "\u2013$", target.take[1])), /* @__PURE__ */ React.createElement("p", { className: "compact" }, encounter), /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, /* @__PURE__ */ React.createElement(Outcome, { label: "Status", value: banned ? "Banned" : hit ? "Hit today" : "Ready" }), target.tier === 2 && /* @__PURE__ */ React.createElement(Outcome, { label: "Window", value: window2 || "Unknown" })), target.tier === 2 && !discovered && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", onClick: () => dispatch({ type: "ASK_BOOST_WINDOW", targetId: target.id }) }, "Ask around", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Uses one social action")), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !availability.available, onClick: () => dispatch({ type: "BOOST", targetId: target.id }) }, "Make the lift", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, availability.available ? "Uses one part of day" : availability.reason)));
         }), state.boost.tier >= 3 && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Fence", /* @__PURE__ */ React.createElement("small", null, Math.round(C.selectors.boostFenceRate(state.boost.fenceStanding) * 100), "% RATE")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "He looks at what you brought, quotes a number. Take it or try somewhere else."), /* @__PURE__ */ React.createElement("button", { className: "btn full good-btn", disabled: !state.boost.merchandise, onClick: () => dispatch({ type: "FENCE_BOOST_GOODS" }) }, "Sell $", state.boost.merchandise, " merchandise", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Standing ", state.boost.fenceStanding, "/5 \xB7 no time cost")))));
-      }
-      function PlaceAction({ title, status, purpose, cost, time, disabled, reason, onClick }) {
-        return /* @__PURE__ */ React.createElement("div", { className: `card area-card${disabled ? " locked" : ""}` }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, title, /* @__PURE__ */ React.createElement("small", null, status)), /* @__PURE__ */ React.createElement("p", null, purpose), /* @__PURE__ */ React.createElement("div", { className: "area-meta" }, /* @__PURE__ */ React.createElement("span", null, "Cost ", cost), /* @__PURE__ */ React.createElement("span", null, time)), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled, onClick }, disabled ? "Unavailable" : "Go", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, reason)));
       }
       function Destinations({ state, dispatch, onBack }) {
         const here = state.world.currentNeighborhoodId;
@@ -12714,9 +12732,6 @@
             expandedContent: flavor ? /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, /* @__PURE__ */ React.createElement(EntityText, { text: flavor })) : null
           }
         );
-      }
-      function Modal({ title, children, onClose, className = "" }) {
-        return /* @__PURE__ */ React.createElement("div", { className: `modal-backdrop ${className ? `${className}-backdrop` : ""}` }, /* @__PURE__ */ React.createElement("div", { className: `modal ${className}`, role: "dialog", "aria-modal": "true", "aria-label": title }, /* @__PURE__ */ React.createElement("div", { className: "modal-head" }, /* @__PURE__ */ React.createElement("h2", null, title), onClose && /* @__PURE__ */ React.createElement("button", { type: "button", className: "modal-close", "aria-label": "Close", onClick: onClose }, "\xD7")), children));
       }
       function ConfirmPrompt({ title, text, confirmLabel, onConfirm, onCancel }) {
         return /* @__PURE__ */ React.createElement(Modal, { title, className: "confirm-modal" }, /* @__PURE__ */ React.createElement("p", { className: "popup-lead" }, text), /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: onCancel }, "Cancel"), /* @__PURE__ */ React.createElement("button", { className: "btn primary", onClick: onConfirm }, confirmLabel)));

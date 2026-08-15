@@ -1,0 +1,14 @@
+/* 907Hustle brand faces, latin subset, self-hosted.
+ *
+ * The game itself loads these from Google Fonts via a <link> in index.html;
+ * this sheet exists so the synced design system ships them instead of
+ * depending on a network fetch at render time. Anton, Barlow Condensed, and
+ * Share Tech Mono are all SIL Open Font License 1.1.
+ *
+ * Regenerate with the fetch documented in .design-sync/NOTES.md.
+ */
+@font-face{font-family:"Anton";font-style:normal;font-weight:400;font-display:swap;src:url("./anton-400.woff2") format("woff2")}
+@font-face{font-family:"Barlow Condensed";font-style:normal;font-weight:400;font-display:swap;src:url("./barlow-condensed-400.woff2") format("woff2")}
+@font-face{font-family:"Barlow Condensed";font-style:normal;font-weight:600;font-display:swap;src:url("./barlow-condensed-600.woff2") format("woff2")}
+@font-face{font-family:"Barlow Condensed";font-style:normal;font-weight:700;font-display:swap;src:url("./barlow-condensed-700.woff2") format("woff2")}
+@font-face{font-family:"Share Tech Mono";font-style:normal;font-weight:400;font-display:swap;src:url("./share-tech-mono-400.woff2") format("woff2")}

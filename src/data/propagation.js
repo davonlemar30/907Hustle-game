@@ -42,6 +42,10 @@ const NPC_CHANNELS = {
   // would quietly hand Curtis a window into The Nile.
   selam: ["direct", "neighborhood"],
   biniam: ["direct", "neighborhood"],
+  // Deshawn hears the block and the household, never the network. He is
+  // deliberately off Curtis's radar - his whole value is that he moves through
+  // Spenard as a neighbor, not as an operator.
+  deshawn: ["direct", "neighborhood", "household"],
 };
 
 // Curtis does not care about corner-level activity, and the whole design of his
@@ -79,6 +83,8 @@ const NPC_PRESENCE_SLOTS = {
   // Night Owl.
   selam: [0, 1, 2],
   biniam: [2, 3],
+  // Deshawn is around from midday on - mornings are his own.
+  deshawn: [1, 2, 3],
 };
 
 // Where each NPC can pick something up in person. Null means anywhere in the
@@ -93,6 +99,8 @@ const NPC_PRESENCE_AREAS = {
   // Both live and work in the building. Neither leaves Spenard.
   selam: ["north_star_lot"],
   biniam: ["north_star_lot"],
+  // Deshawn thinks in terms of the block. He does not leave it.
+  deshawn: ["north_star_lot"],
 };
 
 function channelFor(id) {

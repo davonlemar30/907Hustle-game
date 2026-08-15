@@ -32,7 +32,7 @@ test("v1.15 owns save version 11 and continues to advertise v3 through v10 migra
 
 test("fresh v5 state has authoritative Mina, Curtis, Dre, Simone, jobs, and hustle records", () => {
   const state = fresh();
-  assert.deepEqual(Object.keys(state.npc), ["yalonda", "juan", "mina", "curtis", "dre", "simone", "selam", "biniam"]);
+  assert.deepEqual(Object.keys(state.npc), ["yalonda", "juan", "mina", "curtis", "dre", "simone", "selam", "biniam", "deshawn"]);
   assert.equal(state.npc.curtis.attention, 0);
   assert.equal(state.npc.mina.cleanLifeAtRisk, false);
   assert.deepEqual(state.jobs.hired, ["day_labor"]);

@@ -1278,6 +1278,12 @@
       // and the intel counter are the whole of their bespoke state.
       selam: { met: false, visits: 0, mentionedBiniam: false, intelSent: [], lastIntelDay: null },
       biniam: { met: false, tonkGames: 0, celoRounds: 0, coffeeRounds: 0 },
+      // Deshawn was authored after the Exposure System, so like the Tesfayes
+      // his standing is only ever his ledger. Crew mechanics (loyalty, tier,
+      // wage) live in state.people.crew.deshawn; this record carries what the
+      // person knows and does: his weekly introductions and the de-escalation
+      // window his loyalty triggers read.
+      deshawn: { lastIntroDay: null, introducedContacts: [], lastDeescalationDay: null },
     };
     for (const id of EXPOSURE_NPC_IDS) {
       if (!base[id]) continue;
@@ -3433,13 +3439,22 @@
     const territoryDiscount = controlled(state, "north_star_lot") ? 0.10 : 0;
     return Math.max(1, Math.round(person.recruitCost * (1 - charismaDiscount - territoryDiscount)));
   }
+  // NPCs whose lens is inverted (THREAT archetype): a "warm" band with them
+  // means they consider the player harmless, not that they like them, so they
+  // never count as vouching contacts.
+  const INVERTED_LENS_IDS = ["curtis", "simone"];
+  function warmNpcContactCount(state) {
+    return EXPOSURE_NPC_IDS.filter((id) => id !== "deshawn" && !INVERTED_LENS_IDS.includes(id) && state.npc[id] && bandOf(state, id) >= BANDS.WARM).length;
+  }
   function deshawnRecruitmentAvailability(state) {
     if (state.flags.deshawnBusinessSevered) return { available: false, reason: "'It was business' permanently closed this route." };
     if (state.run.day < 5) return { available: false, reason: "Deshawn does not make this call before Day 5." };
     const damaged = (state.people.dealers.goodie?.robbedCount || 0) > 0;
     if (damaged && !(state.flags.goodieRestitution && state.npc.dre.cleanCompletions >= 1)) return { available: false, reason: "Repair things with Goodie and finish one clean Dre mission." };
+    // He wants proof the player doesn't burn people: two social contacts kept
+    // active, or two named people around Spenard whose ledgers read Warm.
     const activeContacts = Object.values(state.contacts).filter((record) => record.known && record.relationshipLevel > 0).length;
-    if (!damaged && activeContacts < 2) return { available: false, reason: "Build two active contacts first." };
+    if (!damaged && activeContacts < 2 && warmNpcContactCount(state) < 2) return { available: false, reason: "Build two active contacts first." };
     return { available: true, reason: "Deshawn is ready to hear the offer." };
   }
   // v1.15: the generic gates (loyalty 7 for tier 2, loyalty 9 for tier 3, plus
@@ -4570,6 +4585,14 @@
       requires: () => true, area: "downtown", earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
     { id: "tone_offer", chain: null, stage: null, classification: "character_intro", trigger: "ambient",
       requires: (s) => s.base.controlled, area: "north_star_lot", earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
+    // v1.15: Deshawn's recruitment scene. Fires at the Night Owl once his gate
+    // holds; declining sets deshawnNextOfferDay, and the cooldown plus that
+    // flag pace the re-offer at three days.
+    { id: "deshawn_offer", chain: null, stage: null, classification: "character_intro", trigger: "ambient",
+      requires: (s) => deshawnRecruitmentAvailability(s).available && !s.people.crew.deshawn.recruited
+        && recruitedCrew(s).length < crewCapacityFor(s)
+        && (!s.flags.deshawnNextOfferDay || s.run.day >= s.flags.deshawnNextOfferDay),
+      area: "north_star_lot", earliest: { day: 5, slot: 0 }, latest: null, once: false, cooldown: 3, weight: 7, exit: null },
     { id: "courier", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
       requires: () => true, area: "airport_industrial", earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
     { id: "base_watch", chain: null, stage: null, classification: "threat", trigger: "ambient",
@@ -4861,6 +4884,37 @@
       if (effect.introduceCrew !== "eli" && state.people.crew[effect.introduceCrew].contactStage === "unknown") state.people.crew[effect.introduceCrew].contactStage = "recruitable";
     }
     if (effect.setCrewStage && state.people.crew[effect.setCrewStage.id]) state.people.crew[effect.setCrewStage.id].contactStage = effect.setCrewStage.stage;
+    // v1.15: scene-driven recruitment. Unlike the garage RECRUIT_CREW action
+    // there is no cash cost - the wage is the ask - but capacity and the NPC's
+    // own gate still hold.
+    if (effect.recruitCrew && state.people.crew[effect.recruitCrew]) {
+      const crewId = effect.recruitCrew;
+      const person = CREW_BY_ID[crewId], crew = state.people.crew[crewId];
+      const eligible = !crew.recruited && recruitedCrew(state).length < crewCapacityFor(state)
+        && (crewId !== "deshawn" || deshawnRecruitmentAvailability(state).available);
+      if (eligible) {
+        crew.introduced = true; crew.recruited = true; crew.status = "active";
+        crew.contactStage = "active"; crew.tier = Math.max(1, crew.tier || 0);
+        crew.recruitedDay = state.run.day;
+        crew.loyalty = Crew.clampLoyalty(crew.loyalty + 1);
+        if (crewId === "deshawn") {
+          state.flags.extraRentGraceAvailable = true;
+          // He came around because the player robbed Goodie and then paid the
+          // cost of making it right. That path stays on the record.
+          if ((state.people.dealers.goodie?.robbedCount || 0) > 0) state.flags.deshawnRedemptionPath = true;
+        }
+        updateBoostTier(state);
+        recordBehavior(state, "connector", 3, `recruit:${crewId}`, "recruit");
+        addStreetReadEntry(state, "social", `${crewId}:recruitment`);
+        logEntry(state, `${person.name} is on the crew. The operation has another person to answer for.`, "good");
+      }
+    }
+    // Declining Deshawn's offer is not a refusal, it's a rain check - he asks
+    // again in three days as long as the gate still holds.
+    if (effect.deshawnDeclineOffer) {
+      state.flags.deshawnOfferDeclined = true;
+      state.flags.deshawnNextOfferDay = state.run.day + 3;
+    }
     if (effect.addRumor) state.effects.rumors.push({ id: `contact_${state.run.day}_${state.run.slot}_${effect.addRumor.areaId}`, ...effect.addRumor, reliable: true, expiresAt: slotNumber(state.run.day, state.run.slot) + 3 });
     if (effect.crewLoyalty && state.people.crew[effect.crewLoyalty.id]) { const record = state.people.crew[effect.crewLoyalty.id]; record.loyalty = Crew.clampLoyalty(record.loyalty + effect.crewLoyalty.delta); }
     if (effect.crewAllLoyalty) for (const person of recruitedCrew(state)) { const record = state.people.crew[person.id]; record.loyalty = Crew.clampLoyalty(record.loyalty + effect.crewAllLoyalty); }

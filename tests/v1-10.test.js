@@ -79,7 +79,7 @@ test("a v7 save folds six attributes into three by taking the best of each group
   raw.player.attributeProgress = { strength: 6, endurance: 0, reflexes: 0, presence: 0, insight: 0, discipline: 0 };
   raw.player.streetIdentity = "stickup";
   const state = C.hydrateRun(raw);
-  assert.equal(state.version, 10);
+  assert.equal(state.version, 11);
   // combat = max(strength, endurance, reflexes); charisma = max(presence,
   // discipline); intelligence = max(insight, discipline).
   assert.deepEqual(state.player.attributes, { combat: 4, charisma: 3, intelligence: 5 });
@@ -94,7 +94,7 @@ test("every supported save version arrives with exactly three attributes", () =>
     raw.version = version;
     raw.player.attributes = { strength: 3, endurance: 3, reflexes: 3, presence: 2, insight: 2, discipline: 2 };
     const state = C.hydrateRun(raw);
-    assert.equal(state.version, 10, `v${version} did not reach v9`);
+    assert.equal(state.version, 11, `v${version} did not reach v11`);
     assert.deepEqual(Object.keys(state.player.attributes).sort(), ["charisma", "combat", "intelligence"], `v${version} kept a legacy attribute key`);
   }
 });
@@ -438,8 +438,8 @@ test("standing gains halve and then quarter as they climb", () => {
   assert.equal(A.adjustedStandingGain(2, 1, "capped"), 1);
   assert.equal(A.adjustedStandingGain(3, 1, "capped"), 0.5);
   assert.equal(A.adjustedStandingGain(4, 1, "capped"), 0.25);
-  // Crew loyalty and job relationship are genuinely uncapped and keep the
-  // thresholds the spec names.
+  // Crew loyalty (clamped 0-10 as of v1.15, braking above 5 and 8) and job
+  // relationship keep the thresholds the spec names.
   assert.equal(A.adjustedStandingGain(4, 1, "open"), 1);
   assert.equal(A.adjustedStandingGain(5, 1, "open"), 0.5);
   assert.equal(A.adjustedStandingGain(8, 1, "open"), 0.25);

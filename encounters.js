@@ -9,6 +9,10 @@
   // requires nothing from here or from game-core, so this is a safe one-way
   // edge; the bundle inlines it the same way it inlines game-core's requires.
   const Attributes = require("./src/systems/attributes.js");
+  // Crew constants only (pure data): which encounters Deshawn's diplomacy
+  // cannot touch, and nothing else. Side effects of his choice (loyalty,
+  // ledger rows, heat) are settled by game-core's RESOLVE_ENCOUNTER wrapper.
+  const Crew = require("./src/data/crew.js");
 
   const AUTHORED_ENCOUNTERS = {
     mini_mart_parking_lot: {
@@ -283,6 +287,10 @@
       if (encounter.type === "authored" && (state.flags?.curtisArrangement || state.npc.curtis?.respect >= 3)) choices.push(choice("use_relationship", "Invoke Curtis's Arrangement", "Spend relationship leverage instead of blood or money."));
       if (state.player.gear?.consumables?.medical_kit > 0 && state.player.health < 100) choices.push(choice("medical_kit", "Use Medical Kit", "Recover now, but the confrontation keeps moving."));
       if (state.player.gear?.equipped?.tool === "burner_phone") choices.push(choice("burner_phone", "Burn the Phone", "Create a fast distraction; the phone will be gone afterward."));
+      const deshawn = state.people?.crew?.deshawn;
+      if (encounter.type === "random" && deshawn?.recruited && deshawn.status !== "departed" && deshawn.loyalty > 0 && !Crew.CURTIS_CREW_ENCOUNTER_IDS.includes(encounter.id)) {
+        choices.push(choice("deshawn_deescalate", "Let Deshawn Handle It", "No blood, one point of heat worked off. He notices what you choose next."));
+      }
     } else {
       if (weapon || (a.combat || 0) >= 3 || toneNearby(state, areaId)) choices.push(choice("fight", "Commit to the Fight", "The escalation is already visible."));
       choices.push(choice("run", "Take the Opening", "Leave something behind and get clear."));
@@ -442,9 +450,11 @@
       state.npc.curtis.respect = Math.max(0, state.npc.curtis.respect - 1);
       setFlag(state, "curtisArrangementUsed", true);
       finish(state, encounter, "relationship", "You repeat the arrangement exactly as Curtis gave it. The red gloves stop moving, and the three of them decide this collection belongs to somebody else.");
+    } else if (choiceId === "deshawn_deescalate") {
+      finish(state, encounter, "deescalated", "Deshawn arrives without hurrying and talks to the one doing the deciding. Nobody's voice goes up. The demand shrinks to a handshake, and the lot goes back to being a lot.");
     } else if (choiceId === "call_crew") {
       const tone = state.people.crew?.tone;
-      if (tone?.recruited && tone.loyalty > -2) tone.loyalty -= 1;
+      if (tone?.recruited && tone.loyalty > 3) tone.loyalty -= 1; // 0-10 loyalty scale: stop draining once he is already sour
       addHeat(state, encounter.type === "random" ? 2 : 1);
       let loot = null;
       if (encounter.type === "random") loot = awardLoot(state, encounter.npc, rng);

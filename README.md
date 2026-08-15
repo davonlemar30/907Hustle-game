@@ -2,11 +2,62 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-The current playable build is **v1.14: UI Architecture & Navigation Overhaul**,
-on top of **v1.13: Criminal Economy Cluster**.
+The current playable build is **v1.15: Crew System, Curtis Ambient Pressure &
+Deshawn Tier 1**, on top of **v1.14: UI Architecture & Navigation Overhaul**.
 
 New here? Read [ARCHITECTURE.md](ARCHITECTURE.md) — file map, state shape, event
 card schema, and the rules a change has to hold to.
+
+## What changed in v1.15
+
+**A systems build.** Save schema bumps to **11** (`907ogr_v11`); v3–v10 saves
+all load. Both simulation hashes moved on purpose — a new NPC, new nightly
+resolution, and new event outcomes. Three systems, built on the crew
+infrastructure that already existed rather than beside it:
+
+- **Crew loyalty is a 0–10 scale now.** Everyone starts at 5; the old
+  ±delta accumulator rescales on load (`clamp(5 + old, 0, 10)`). Tier
+  promotion is uniform and player-initiated: Tier 2 wants loyalty 7 and five
+  days on the crew, Tier 3 wants loyalty 9 and twelve, plus each member's own
+  conditions (Deshawn's truces, Pherris's blocks and buy-in). The constants
+  live in the new `src/data/crew.js`, along with the tier wage curve and the
+  commented-out soldier schema the territory build will wake up.
+- **Wages pay themselves — or don't.** At day end each active member's wage
+  auto-deducts, dirty cash first, highest loyalty paid first. A short night
+  accrues arrears; after two nights of grace, loyalty bleeds one point per
+  unpaid day, and at zero the member departs — assignments cleared, capacity
+  freed, ledger left behind. "Pay crew" now clears arrears rather than being
+  the whole system. `crewMeta.totalWagesPaid` tracks the lifetime spend.
+- **Curtis's people are looking before Curtis is a scene.**
+  `state.curtisAwareness` (0–15) rises when criminal observations genuinely
+  reach him on the network channel (+1), when Spenard sees three market
+  transactions in a day (+1), and when a robbery lands (+2). The Nile raises
+  nothing — that is the point of the building. Quiet days bleed it back down,
+  but never below a reached phase floor: ambient at 3, watching at 7,
+  approaching at 11. From ambient on, unnamed watchers surface as
+  non-blocking flavor during Spenard movement (one a day at most, seeded off
+  `stringHash`, no line repeated within three), and each phase reached pushes
+  one Word Around Town text.
+- **Deshawn is the first scene-recruited crew member.** He joins the Exposure
+  roster (STREET lens; betrayal −5, loyalty +4; neighborhood and household
+  channels, never network) and offers himself at the Night Owl from Day 5
+  when the player either keeps two contacts active / two Spenard ledgers
+  Warm, or — having robbed Goodie — paid the $120 restitution and run one
+  clean Dre mission. "It was business" still closes the route forever.
+  Declining is a three-day rain check, not a refusal.
+- **What $50/day buys:** *Let Deshawn handle it* on confrontations in both
+  encounter engines and the stick retaliation card — no health loss, one
+  point of heat worked off, a discretion row for the block — though never
+  against Curtis's own crews, and choosing violence over his judgment (or
+  within two days of it) costs a loyalty point, once per lesson. A **weekly
+  introduction**: The Nile's ground floor, then the Spenard Gym, then a Night
+  Owl regular, then a reliable market tip when the map is used up — two
+  texts each, his voice calm and short. And the **Yalonda rent grace**
+  re-arms once per rent period while he is on the crew instead of being a
+  one-shot recruitment bonus.
+- **UI:** More gains a **Crew** row that opens the People crew pages
+  directly; crew cards read loyalty as n/10, show the tier wage with the
+  auto-pay note, and grey out departed members.
 
 ## What changed in v1.14
 
@@ -598,21 +649,16 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 ## Verification
 
-- Node tests: **531 passing** (513 through v1.13, 18 new in `tests/v1-14.test.js`)
+- Node tests: **565 passing** (531 through v1.14, 34 new in `tests/v1-15.test.js`)
 - Deterministic simulations: **2,000 runs, zero crashes or dead ends**
-- Simulation SHA-256: `5d6f9b0f67b63a176cb0a601c246b4a4a816c701cdc8ee957871dfdbf23da245`
+- Simulation SHA-256: `9f471dec665356be332054827ee46df62aaf10b8f5dc0fccd3749f7d9de87f49`
   (`--total 2000`) and
-  `bd77a59cb23c35c185f44a3fd0791349aede3ef65ddf06c2946b647c3424f922`
-  (`--total 200`). **v1.14 reproduces both byte for byte**, which is the check
-  that a presentation build changed nothing a player can measure. Both moved
-  from v1.11's baselines at v1.13 on purpose: district
-  heat multipliers touch every existing robbery and boost, market buys carry
-  district price factors and awareness, and dealer robbery now pays cash even
-  when the plug is not holding. Economy delta across the thirteen strategies
-  is **−2.45%** overall; eleven of thirteen move less than 14%, the outlier
-  being `aggressive` (−44%), which trades thin margins in exactly the
-  districts that now charge for the traffic. `legal_worker`, `thief`,
-  `gambler`, and `trainer` are untouched.
+  `01c618d5df19baefb786e34c876be9d7f64d7e43f068fba3f77169edcc22df88`
+  (`--total 200`). **Both moved at v1.15 on purpose**: Deshawn joins the
+  Exposure roster (his ledger columns appear in every strategy's telemetry),
+  wages settle nightly instead of accruing, and every scripted strategy that
+  reaches his gate now accepts the Night Owl offer. The v1.14 baselines were
+  `bd77a59c…` / `5d6f9b0f…`.
 - Build: `npm run build` completes in ~30ms with no circular imports
 - Title art over the wire: 68KB at 375px, 145KB at 1280px, down from 1,976KB
 - Viewports: 320×568, 360×640, 375×812, 414×896, 640×480, 768×1024, 834×1112,

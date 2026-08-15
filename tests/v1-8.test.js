@@ -24,15 +24,15 @@ function prepareNight(state, day = 5) {
   return state;
 }
 
-test("v1.13 owns save version 10 and continues to advertise v3 through v9 migration keys", () => {
-  assert.equal(C.VERSION, 10);
-  assert.equal(C.SAVE_KEY, "907ogr_v10");
-  assert.deepEqual(C.LEGACY_SAVE_KEYS, ["907ogr_v9", "907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"]);
+test("v1.15 owns save version 11 and continues to advertise v3 through v10 migration keys", () => {
+  assert.equal(C.VERSION, 11);
+  assert.equal(C.SAVE_KEY, "907ogr_v11");
+  assert.deepEqual(C.LEGACY_SAVE_KEYS, ["907ogr_v10", "907ogr_v9", "907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"]);
 });
 
 test("fresh v5 state has authoritative Mina, Curtis, Dre, Simone, jobs, and hustle records", () => {
   const state = fresh();
-  assert.deepEqual(Object.keys(state.npc), ["yalonda", "juan", "mina", "curtis", "dre", "simone", "selam", "biniam"]);
+  assert.deepEqual(Object.keys(state.npc), ["yalonda", "juan", "mina", "curtis", "dre", "simone", "selam", "biniam", "deshawn"]);
   assert.equal(state.npc.curtis.attention, 0);
   assert.equal(state.npc.mina.cleanLifeAtRisk, false);
   assert.deepEqual(state.jobs.hired, ["day_labor"]);
@@ -60,11 +60,11 @@ test("v4 identity and employment data migrate once to v5 without replaying old r
   delete raw.jobs.activeJobId;
   delete raw.jobs.offers;
   const state = C.hydrateRun(raw);
-  assert.equal(state.version, 10);
+  assert.equal(state.version, 11);
   assert.equal(state.npc.mina.chainStage, 4);
   assert.equal(state.npc.mina.cleanLifeAtRisk, true);
   assert.equal(state.npc.curtis.attention, 6);
-  assert.equal(state.people.crew.pherris.loyalty, 4);
+  assert.equal(state.people.crew.pherris.loyalty, 9); // legacy 4 rescaled onto the 0-10 loyalty scale (5 + 4)
   assert.equal(state.people.crew.goodie, undefined);
   assert.equal(state.people.dealers.goodie.standing, 3);
   assert.equal(state.world.territories.north_star_lot.owner, "curtis");
@@ -171,9 +171,11 @@ test("Deshawn Tier 3 intercepts Curtis betrayal without losing cash or product",
   state.player.cash = 1000; state.player.dirtyCash = 1000; state.player.cleanCash = 0;
   state.player.inventory.weed = { qty: 8, avgCost: 10 };
   Object.assign(state.npc.curtis, { attention: 7, pressure: 7, friendship: "accepted", friendshipDay: 1, protectionUntilDay: 3 });
-  Object.assign(state.people.crew.deshawn, { recruited: true, introduced: true, tier: 3, loyalty: 5 });
+  Object.assign(state.people.crew.deshawn, { recruited: true, introduced: true, status: "active", tier: 3, loyalty: 8 });
   state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
-  assert.equal(state.player.dirtyCash, 1000);
+  // 1000 minus Deshawn's tier-3 wage ($200, auto-deducted since v1.15).
+  // The intercepted betrayal itself takes nothing.
+  assert.equal(state.player.dirtyCash, 800);
   assert.equal(state.player.inventory.weed.qty, 8);
   assert.equal(state.player.heat, 0);
 });
@@ -307,9 +309,9 @@ test("Pherris, Tone, and Deshawn tier prerequisites are independently enforced",
   assert.equal(C.selectors.crewTierAvailability(state, "tone").available, false);
   assert.equal(C.selectors.crewTierAvailability(state, "deshawn").available, false);
   state.world.territoryBlocks.spenard_rec_lot.owner = "player";
-  state.people.crew.pherris.loyalty = 3;
-  state.people.crew.tone.loyalty = 2;
-  state.people.crew.deshawn.loyalty = 3;
+  state.people.crew.pherris.loyalty = 7;
+  state.people.crew.tone.loyalty = 7;
+  state.people.crew.deshawn.loyalty = 7;
   assert.equal(C.selectors.crewTierAvailability(state, "pherris").available, true);
   assert.equal(C.selectors.crewTierAvailability(state, "tone").available, true);
   assert.equal(C.selectors.crewTierAvailability(state, "deshawn").available, true);
@@ -318,7 +320,7 @@ test("Pherris, Tone, and Deshawn tier prerequisites are independently enforced",
 test("Pherris Tier 3 seeds $75–$125 network income and opens the Simone conflict", () => {
   let state = fresh(18221);
   state.player.cash = 500; state.player.dirtyCash = 500;
-  Object.assign(state.people.crew.pherris, { introduced: true, recruited: true, loyalty: 4, tier: 2 });
+  Object.assign(state.people.crew.pherris, { introduced: true, recruited: true, status: "active", loyalty: 9, tier: 2 });
   state.world.territoryBlocks.spenard_rec_lot.owner = "player";
   state.world.territoryBlocks.northern_lights_motels.owner = "player";
   state = C.reduceGame(state, { type: "PROMOTE_CREW_TIER", crewId: "pherris" });

@@ -4,6 +4,37 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
+## Shipped — v1.15 Crew System + Curtis Ambient + Deshawn Tier 1
+
+Branch: `claude/crew-system-improvements-z33xv6`. Built from the "v1.15 Build
+Prompt" doc, reconciled onto the crew system that already existed instead of
+building the spec's parallel one. Save schema v11; both sim hashes moved on
+purpose; zero dead ends.
+
+- **Crew foundations**: 0–10 loyalty (start 5, departure at 0), uniform tier
+  gates (7/5d, 9/12d) in `src/data/crew.js`, tier wage curve, presence-effect
+  framework, and the soldier-system schema planted as comments for the
+  territory build.
+- **Wages auto-deduct** at day end, dirty first, loyal first; arrears after a
+  2-day grace bleed loyalty; departures free capacity on their own.
+- **Curtis ambient pressure**: `curtisAwareness` 0–15 with phase floors at
+  3/7/11, fed by network-channel reach, Spenard dealing volume, and robbery;
+  watcher flavor text and per-phase Word Around Town texts. The Nile stays
+  dark.
+- **Deshawn Tier 1**: Exposure lens off the network, Night Owl offer scene
+  with clean and redemption paths, de-escalation in both encounter engines,
+  weekly introductions, re-arming rent grace.
+
+### Next
+
+- Deshawn Tier 2/3 abilities (truce with Curtis's people, autonomous
+  negotiation) wait on the Curtis confrontation pipeline.
+- Tone and Pherris as scene-recruited crew with their own presence effects
+  (86bbe2b23, 86bbe2b20); the soldier/territory layer wakes the schema
+  comments in `src/data/crew.js`.
+- Curtis `approaching` phase currently sets atmosphere only — the
+  confrontation build cashes it in.
+
 ## Shipped — v1.13 Criminal Economy Cluster
 
 Branch: `claude/clickup-2kyd583p-15714-klwirj` (stacked on v1.9c). The

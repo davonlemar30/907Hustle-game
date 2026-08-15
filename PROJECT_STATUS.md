@@ -2,6 +2,62 @@
 
 Last updated: 2026-08-15 (America/Anchorage)
 
+## v1.15 Crew System + Curtis Ambient + Deshawn Tier 1 — shipped on this branch
+
+- Branch: `claude/crew-system-improvements-z33xv6`, on top of the v1.14 merge
+  (PR #75). Built from the "v1.15 Build Prompt — Crew System + Curtis Ambient +
+  Deshawn" doc, reconciled onto the crew system that already shipped in earlier
+  builds rather than the spec's greenfield `state.crew` schema.
+- **Save schema v11** (`907ogr_v11`). v10 saves skip the lossy legacy flat pass
+  (which rebuilds jobs and deletes `attributeProgress`) and take only the
+  loyalty rescale; v3–v9 keep the flat pass and get the rescale appended.
+- **Crew loyalty 0–10** (start 5, departure at 0): every read site shifted +5,
+  writes clamped, tier gates uniform in `Crew.TIER_REQUIREMENTS` (T2 loyalty 7
+  + 5 days, T3 loyalty 9 + 12 days, plus per-NPC extras). New
+  `src/data/crew.js` owns the constants, the tier wage curve
+  (Deshawn $50/$100/$200), the presence-effect framework, and the FUTURE
+  soldier schema as comments.
+- **Wage auto-deduction** in `settleCrewWages` at day end: dirty cash first,
+  highest loyalty first; arrears + 2-day grace, then −1 loyalty per unpaid
+  night; departure clears assignments and block managers.
+  `crewMeta.totalWagesPaid` tracks lifetime spend. `PAY_CREW` clears arrears.
+- **`state.curtisAwareness`** (0–15, phases invisible/ambient/watching/
+  approaching at 3/7/11 with sticky floors): +1 per network-channel
+  observation that actually reaches Curtis (`broadcastTracked` reads the
+  reach list), +1 for 3+ Spenard market transactions a day, +2 per robbery
+  success, nothing from The Nile or the gym. Quiet-day decay from the second
+  consecutive quiet day. Watcher flavor via `logEntry`/`pushConsequence`
+  during Spenard movement — stringHash-rolled, one per day, no repeats within
+  three — plus one Word Around Town text per phase reached.
+- **Deshawn**: Exposure lens (STREET; violence −3, discretion +3, loyalty +4,
+  betrayal −5, presence +2), channels direct/neighborhood/household — never
+  network. `deshawn_offer` ambient card at the Night Owl (Day 5+, gate:
+  business-severed block; 2 active contacts or 2 Warm Spenard ledgers; or the
+  Goodie restitution redemption path), decline = 3-day rain check.
+  De-escalation in both encounter engines and the stick retaliation card with
+  the violence-override loyalty penalty; weekly introductions
+  (Nile → gym → regulars → market tip); rent grace re-arms once per rent
+  period while active.
+
+### Verification
+
+- 565 tests passing (531 baseline + 34 in `tests/v1-15.test.js`).
+- Deterministic simulation: 200 and 2,000 runs, all complete, zero dead ends.
+- New baselines (both moved on purpose — new NPC, new nightly resolution):
+  `--total 200` `01c618d5df19baefb786e34c876be9d7f64d7e43f068fba3f77169edcc22df88`,
+  `--total 2000` `9f471dec665356be332054827ee46df62aaf10b8f5dc0fccd3749f7d9de87f49`.
+- `npm run build` clean; `ui.built.js` committed.
+
+### Known limitations
+
+- Tier 3's twelve-days-recruited gate is near-unreachable inside a 7-day
+  pressure window; it ships per spec and is centralized for tuning.
+- Word Around Town phase texts arrive in the Phone's Texts section (that is
+  what `pushPhoneMessage` feeds); the static intel accordion of the same name
+  is unchanged.
+- Deshawn's introduced-contact betrayal penalty (−3) has a narrow surface
+  today — most introduced contacts have no betrayal mechanic yet.
+
 ## v1.13 Criminal Economy Cluster — branch in progress
 
 - Branch: `claude/clickup-2kyd583p-15714-klwirj`, stacked on the v1.9c commit.

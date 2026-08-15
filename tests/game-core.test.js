@@ -55,7 +55,7 @@ function driveTo(state, id, limit = 90) {
 }
 
 test("v3 run keeps legacy migration data without exposing a starting class", () => {
-  assert.equal(C.VERSION, 10); assert.equal(C.SAVE_KEY, "907ogr_v10");
+  assert.equal(C.VERSION, 11); assert.equal(C.SAVE_KEY, "907ogr_v11");
   assert.equal(C.BACKGROUNDS.length, 3);
   assert.deepEqual(C.BACKGROUNDS.map((item) => item.name), ["Steady-Hand Shooter", "Silver-Tongued Hustler", "Strategist"]);
   assert.deepEqual(C.STARTING_EDGES.map((item) => item.id), ["shooter", "hustler"]);
@@ -458,9 +458,9 @@ test("a pre-v0.7 save migrates to v5 and gains the new fields", () => {
 
   const inspection = C.inspectSave(JSON.stringify(legacy));
   assert.equal(inspection.valid, true, inspection.error || "legacy save rejected");
-  assert.equal(C.VERSION, 10); assert.equal(C.SAVE_KEY, "907ogr_v10");
+  assert.equal(C.VERSION, 11); assert.equal(C.SAVE_KEY, "907ogr_v11");
   const hydrated = inspection.state;
-  assert.equal(hydrated.version, 10);
+  assert.equal(hydrated.version, 11);
   assert.deepEqual(hydrated.run.eventHistory, {});
   assert.equal(hydrated.run.chainStreak, 0);
   assert.equal(hydrated.npc.mina.chainStage, 0);
@@ -693,7 +693,7 @@ test("a pre-v0.7.1 save hydrates and gains the dealer record", () => {
   delete legacy.people.dealers;
   const inspection = C.inspectSave(JSON.stringify(legacy));
   assert.equal(inspection.valid, true, inspection.error || "rejected");
-  assert.equal(inspection.state.version, 10);
+  assert.equal(inspection.state.version, 11);
   assert.equal(inspection.state.people.dealers.goodie.known, false);
   assert.equal(inspection.state.people.dealers.goodie.robbedCount, 0);
   assert.equal(C.selectors.dealerSupplyFactor(inspection.state, "north_star_lot", "weed"), 1);
@@ -814,7 +814,7 @@ function operatorSetup(seed = 42000) {
   state.people.crew.eli.introduced = true; state.people.crew.eli.contactStage = "recruitable"; state.base.visiting = true;
   state = C.reduceGame(state, { type: "RECRUIT_CREW", crewId: "eli" });
   clearModals(state);
-  state.people.crew.eli.loyalty = 3; state.base.visiting = false;
+  state.people.crew.eli.loyalty = 8; state.base.visiting = false;
   return state;
 }
 
@@ -827,10 +827,10 @@ function promotedEliSetup(seed = 42000) {
 
 test("Eli lieutenant promotion is gated on loyalty, not garage presence", () => {
   let state = operatorSetup(42001);
-  state.people.crew.eli.loyalty = 0;
+  state.people.crew.eli.loyalty = 5;
   const blocked = C.reduceGame(state, { type: "PROMOTE_LIEUTENANT", crewId: "eli" });
   assert.equal(blocked.people.crew.eli.lieutenantStage, "none");
-  state.people.crew.eli.loyalty = 3;
+  state.people.crew.eli.loyalty = 8;
   const promoted = C.reduceGame(state, { type: "PROMOTE_LIEUTENANT", crewId: "eli" });
   assert.equal(promoted.people.crew.eli.lieutenantStage, "operations_lieutenant");
   assert.equal(promoted.base.visiting, false, "promotion does not require visiting the garage");
@@ -906,7 +906,8 @@ test("soldier income resolves during normal time advancement and consumes zero e
   const next = quietAdvance(state);
   assert.equal(next.run.day, beforeDay + 1);
   assert.equal(next.run.slot, 0);
-  assert.ok(next.player.dirtyCash > beforeDirty, "soldiers on a controlled block generate passive dirty income overnight");
+  // v1.15: Eli's $45 wage auto-deducts at day end, so compare net of wages.
+  assert.ok(next.player.dirtyCash + 45 > beforeDirty, "soldiers on a controlled block generate passive dirty income overnight");
   assert.equal(next.world.territoryBlocks.spenard_rec_lot.incomeCollected > 0, true);
 });
 
@@ -1153,7 +1154,7 @@ test("cash equals dirty plus clean after purchases, debt payments, recruitment, 
   state = C.reduceGame(state, { type: "RECRUIT_CREW", crewId: "eli" }); clearModals(state); checkInvariant(state, "after crew recruitment");
   state.player.cash += 400; state.player.dirtyCash += 400;
   state = C.reduceGame(state, { type: "PAY_DEBT", amount: 200 }); checkInvariant(state, "after a debt payment");
-  state.people.crew.eli.loyalty = 3; state.base.visiting = false;
+  state.people.crew.eli.loyalty = 8; state.base.visiting = false;
   state = C.reduceGame(state, { type: "PROMOTE_LIEUTENANT", crewId: "eli" }); clearModals(state); checkInvariant(state, "after lieutenant promotion");
   state.player.cash += 5000; state.player.dirtyCash += 5000;
   state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state); checkInvariant(state, "after soldier recruitment");

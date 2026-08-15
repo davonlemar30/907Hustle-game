@@ -239,6 +239,20 @@ function activeEvent(id, state) {
       { label: "Offer him money to square it", effect: { cash: -120, setFlags: { paidOffDeshawn: true, goodieRestitution: true } }, requires: "cash120", preview: "−$120. It settles the debt without settling what he thinks.", result: "He takes it because turning it down would be a performance and he is not interested in performing. He counts it once, puts it away, and tells you the corner is somebody else's problem now. He does not ask where the money came from, which is its own answer." },
       { label: "Tell him it was business", effect: { influence: { areaId: "north_star_lot", delta: -1 }, rivalRespect: 1, setFlags: { dismissedDeshawn: true, deshawnBusinessSevered: true } }, preview: "Costs block standing. The version Curtis hears is that you do not flinch.", result: "\"Business.\" He repeats it back without any weight on it at all, nods once, and walks off toward Minnesota. Within two days three people who used to nod at you outside the Mini-Mart have stopped doing it, and one of them tells Curtis's driver why." },
     ]),
+    deshawn_offer: () => {
+      // The opening line depends on how the player got here. Clean path: he
+      // watched them not burn anyone. Redemption path: they robbed Goodie and
+      // then paid the cost of making it right.
+      const redemption = (state.people?.dealers?.goodie?.robbedCount || 0) > 0;
+      return event("deshawn_offer", "Deshawn Has Time",
+        redemption
+          ? "Deshawn takes the stool beside you at the Night Owl. \"You made it right with Goodie. That cost you something. Most people don't pay that cost. I respect it. I got time if you got space.\" Fifty a day."
+          : "Deshawn takes the stool beside you at the Night Owl. \"I been watching how you move. You don't burn people. That's rare out here. I got time if you got space.\" Fifty a day. Nothing else in the pitch.",
+        [
+          { label: "Bring him on", effect: { recruitCrew: "deshawn" }, preview: "Deshawn joins the crew. $50 a day, paid at day end.", result: "He nods once, like the matter was settled before he sat down. \"Two things I do. I keep small problems small, and I know people you should know.\" He finishes the coffee, leaves a dollar under the cup, and tells you Yalonda already likes him, which turns out to be true." },
+          { label: "Not right now", effect: { deshawnDeclineOffer: true }, preview: "He takes no offense. He will ask again in a few days.", result: "\"All right.\" No weight on it, no salesman's second try. He puts a dollar under the cup anyway and stands. \"Offer keeps. I'm around.\" He says good night to Cal by name on the way out." },
+        ]);
+    },
     wet_bricks: () => event("wet_bricks", "The Tarp Tore Past Palmer", "The load rode forty miles in freezing rain after the tarp tore past Palmer. The man unstrapping it wants it off his truck before his shift ends, and offers the whole lot at a little over half.", [
       { label: "Buy the whole lot", requires: "cash190", effect: { cash: -190, addProduct: { id: "weed", qty: 6, unitCost: 32 }, setFlags: { boughtWetLot: true } }, preview: "−$190 for six units of weed. Condition stays unverified until you try to move it.", result: "He helps you load it, which is the first generous thing he has done all night, and is gone before you finish counting. Two of the seals are soft at the corner. The rest you will find out about at the sale." },
       { label: "Buy two and check the seals", requires: "cash70", effect: { cash: -70, addProduct: { id: "weed", qty: 2, unitCost: 35 } }, preview: "−$70 for two units you inspect before committing to the rest.", result: "You take the two off the dry end of the pallet and hold each one up to the bay light. They are fine. He watches you check, decides you are not worth the argument, and re-straps what is left." },

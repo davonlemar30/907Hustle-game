@@ -170,7 +170,7 @@ test("legacy v3 saves hydrate directly into pressure with inferred lender state"
   assert.equal(loaded.run.checkpointDay, 7);
   assert.equal(loaded.lender.status, "active");
   assert.ok(loaded.onboarding);
-  assert.equal(C.SAVE_KEY, "907ogr_v10");
+  assert.equal(C.SAVE_KEY, "907ogr_v11");
 });
 
 test("Night Owl postings rotate deterministically and regulars keep separate relationships", () => {

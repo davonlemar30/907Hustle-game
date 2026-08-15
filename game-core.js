@@ -19,14 +19,16 @@
   const Nile = require("./src/data/nile.js");
   const Gambling = require("./src/data/gambling.js");
   const GamblingEvents = require("./src/events/gambling-events.js");
+  const Crew = require("./src/data/crew.js");
+  const CurtisAwareness = require("./src/data/curtis-awareness.js");
 
-  const VERSION = 10;
+  const VERSION = 11;
   const RUN_DAYS = 7;
   const PRESSURE_DAYS = 7;
   const MAX_ENERGY = 4;
   const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
-  const SAVE_KEY = "907ogr_v10";
-  const LEGACY_SAVE_KEYS = ["907ogr_v9", "907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"];
+  const SAVE_KEY = "907ogr_v11";
+  const LEGACY_SAVE_KEYS = ["907ogr_v10", "907ogr_v9", "907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"];
   const PHONE_BILL = 75;
   const WEEKLY_RENT = 150;
   const WORKING_CAPITAL_RESERVE = 150;
@@ -110,7 +112,7 @@
   const DRE_COLLECTOR_KILL_INTEREST_BUMP = 0.25;
   const DRE_COLLECTOR_INTEREST_CAP = 3.0;
 
-  const ELI_LIEUTENANT_UNLOCK = { minLoyalty: 3 };
+  const ELI_LIEUTENANT_UNLOCK = { minLoyalty: 8 }; // 0-10 loyalty scale (was 3 on the old ±delta scale)
   const SHARK_BORROWERS = [
     { id: "nora", name: "Nora Pike", risk: 0.08, riskLabel: "Low", max: 100, description: "Food-cart owner covering a repair before the lunch rush." },
     { id: "jamal", name: "Jamal Briggs", risk: 0.18, riskLabel: "Medium", max: 250, description: "Dock worker bridging the week before overtime clears." },
@@ -184,6 +186,22 @@
   // reaches each adjacent district a day later. Every 3 points = one
   // difficulty step for that track in that district.
   function recordCriminalActivity(state, areaId, track) {
+    // v1.15: any criminal activity resets Curtis's quiet-day clock, and
+    // high-volume Spenard dealing (3+ market transactions in a day) reads as
+    // exactly the kind of new operation his people get paid to notice.
+    const awareness = curtisAwarenessOf(state);
+    awareness.lastCriminalDay = state.run.day;
+    if (track === "market" && areaId === "north_star_lot") {
+      if (awareness.spenardMarketTxDay !== state.run.day) {
+        awareness.spenardMarketTxDay = state.run.day;
+        awareness.spenardMarketTxCount = 0;
+      }
+      awareness.spenardMarketTxCount += 1;
+      if (awareness.spenardMarketTxCount >= 3 && awareness.marketBumpDay !== state.run.day) {
+        awareness.marketBumpDay = state.run.day;
+        raiseCurtisAwareness(state, 1);
+      }
+    }
     const profile = state.criminalProfile;
     if (!profile) return;
     if (!profile.districtAwareness[areaId]) profile.districtAwareness[areaId] = { market: 0, boost: 0, stick: 0 };
@@ -684,10 +702,82 @@
   //
   // Adding a new action is two entries and no new code: a tier shape in
   // OUTCOME_SHAPES and an observation map in OUTCOME_OBSERVATIONS.
+  // --- Curtis ambient awareness (v1.15) ------------------------------------
+  // How hard Curtis's people are looking for the player. Fed by criminal
+  // observations that actually reach Curtis through the network channel, plus
+  // volume signals (heavy Spenard dealing, successful robberies). Distinct
+  // from his disposition ledger and from police district awareness.
+  function curtisAwarenessOf(state) {
+    if (!state.curtisAwareness) {
+      state.curtisAwareness = {
+        level: 0, phase: "invisible", floor: 0, lastIncrementDay: null,
+        watchersSeen: 0, lastWatcherDay: null, recentWatcherLines: [],
+        quietStreak: 0, lastCriminalDay: null,
+        spenardMarketTxDay: null, spenardMarketTxCount: 0, marketBumpDay: null,
+        phaseMessagesSent: [],
+      };
+    }
+    return state.curtisAwareness;
+  }
+  function refreshAwarenessPhase(state) {
+    const awareness = curtisAwarenessOf(state);
+    const phase = CurtisAwareness.phaseForLevel(awareness.level);
+    if (phase === awareness.phase) return;
+    awareness.phase = phase;
+    const floor = CurtisAwareness.phaseFloor(phase);
+    if (floor > awareness.floor) awareness.floor = floor;
+    // One Word Around Town text per phase reached, ever - not daily spam.
+    const message = CurtisAwareness.PHASE_MESSAGES[phase];
+    if (message && !awareness.phaseMessagesSent.includes(phase)) {
+      awareness.phaseMessagesSent.push(phase);
+      pushPhoneMessage(state, "Word Around Town", message);
+    }
+  }
+  function raiseCurtisAwareness(state, amount) {
+    const awareness = curtisAwarenessOf(state);
+    awareness.level = clamp(awareness.level + amount, 0, CurtisAwareness.AWARENESS_MAX);
+    awareness.lastIncrementDay = state.run.day;
+    refreshAwarenessPhase(state);
+  }
+  // Broadcast an observation and, when it genuinely lands on Curtis through
+  // the network channel, count it against the player's ambient visibility.
+  // The Nile stays dark: nothing that happens inside raises awareness, which
+  // matches the propagation rule that its broadcasts never ride network.
+  function broadcastTracked(state, spec) {
+    const reached = Exposure.broadcastObservation(state, spec);
+    const location = spec.location || state.world.currentNeighborhoodId;
+    if (spec.channel === "network" && Array.isArray(reached) && reached.includes("curtis") && location !== Nile.NILE_LOCATION_ID) {
+      raiseCurtisAwareness(state, 1);
+    }
+    return reached;
+  }
+  // Watcher encounters: ambient, non-blocking flavor while moving through
+  // Spenard once Curtis's people are looking. At most one per day. Rolled off
+  // stringHash, never the rng stream, so runs that never qualify keep their
+  // exact event sequence. These are UI texture, not observations - no ledger
+  // row, no card, nothing to resolve.
+  function maybeWatcherEncounter(state, context, oldDay, oldSlot) {
+    const awareness = curtisAwarenessOf(state);
+    if (awareness.phase === "invisible") return;
+    if (state.world.currentNeighborhoodId !== "north_star_lot") return;
+    if (!CurtisAwareness.WATCHER_ELIGIBLE_REASONS.includes(context.reason)) return;
+    if (awareness.lastWatcherDay === oldDay) return;
+    const roll = (stringHash(`${state.run.seed}:curtis:watcher:${oldDay}:${oldSlot}`) % 10000) / 10000;
+    if (roll >= CurtisAwareness.watcherChance(awareness.level)) return;
+    const pool = CurtisAwareness.WATCHER_LINES[awareness.phase] || CurtisAwareness.WATCHER_LINES.ambient;
+    const fresh = pool.filter((line) => !awareness.recentWatcherLines.includes(line));
+    const candidates = fresh.length ? fresh : pool;
+    const line = candidates[stringHash(`${state.run.seed}:curtis:watcher:line:${awareness.watchersSeen}`) % candidates.length];
+    awareness.watchersSeen += 1;
+    awareness.lastWatcherDay = oldDay;
+    awareness.recentWatcherLines = [...awareness.recentWatcherLines, line].slice(-3);
+    logEntry(state, line, "warn");
+    pushConsequence(state, line, "warn");
+  }
   function broadcastOutcome(state, actionType, tier, value) {
     const specs = AttributeData.OUTCOME_OBSERVATIONS[actionType]?.[tier] || [];
     for (const spec of specs) {
-      Exposure.broadcastObservation(state, {
+      broadcastTracked(state, {
         ...spec,
         location: spec.location || state.world.currentNeighborhoodId,
         value: value == null ? spec.value ?? null : value,
@@ -1119,10 +1209,10 @@
 
   function createCrewState() {
     return Object.fromEntries(CREW.map((person) => [person.id, {
-      introduced: false, recruited: false, loyalty: 0, wageDue: 0, assignment: null,
+      introduced: false, recruited: false, loyalty: Crew.CREW_LOYALTY_START, wageDue: 0, assignment: null,
       contactStage: "unknown", crisisResolved: false, status: "outside", outcomes: [],
       tier: 0, lieutenantStage: "none", lieutenantEffectiveness: 0, operationPolicy: "manual",
-      networkActive: false, trucesBrokered: 0,
+      networkActive: false, trucesBrokered: 0, recruitedDay: null, wageMissedSince: null,
     }]));
   }
 
@@ -1188,6 +1278,12 @@
       // and the intel counter are the whole of their bespoke state.
       selam: { met: false, visits: 0, mentionedBiniam: false, intelSent: [], lastIntelDay: null },
       biniam: { met: false, tonkGames: 0, celoRounds: 0, coffeeRounds: 0 },
+      // Deshawn was authored after the Exposure System, so like the Tesfayes
+      // his standing is only ever his ledger. Crew mechanics (loyalty, tier,
+      // wage) live in state.people.crew.deshawn; this record carries what the
+      // person knows and does: his weekly introductions and the de-escalation
+      // window his loyalty triggers read.
+      deshawn: { lastIntroDay: null, introducedContacts: [], lastDeescalationDay: null },
     };
     for (const id of EXPOSURE_NPC_IDS) {
       if (!base[id]) continue;
@@ -1319,6 +1415,14 @@
       },
       npc: createNpcState(),
       obligations: { rentDueDay: 7 },
+      crewMeta: { totalWagesPaid: 0 },
+      curtisAwareness: {
+        level: 0, phase: "invisible", floor: 0, lastIncrementDay: null,
+        watchersSeen: 0, lastWatcherDay: null, recentWatcherLines: [],
+        quietStreak: 0, lastCriminalDay: null,
+        spenardMarketTxDay: null, spenardMarketTxCount: 0, marketBumpDay: null,
+        phaseMessagesSent: [],
+      },
       plugs: createPlugState(),
       market: { visible: false },
       hustle: {
@@ -1408,9 +1512,29 @@
     return { attempts, successes, failures, totalPayout, lastAttemptedDay, attempted: attempts > 0, success: successes > 0, payout: totalPayout };
   }
 
+  // v11: crew loyalty moves from a delta accumulator centered on 0 to a 0-10
+  // scale that starts at 5. Everything else in v11 (crewMeta, curtisAwareness,
+  // Deshawn's npc record, recruitedDay) is additive and defaults in through
+  // mergeDefaults, so the rescale is the only transform old saves need.
+  function applyV11CrewMigration(migrated) {
+    for (const crew of Object.values(migrated.people?.crew || {})) {
+      crew.loyalty = clamp(5 + Math.round(Number(crew.loyalty) || 0), 0, 10);
+    }
+    return migrated;
+  }
+
   function migrateSave(value) {
     if (!value || typeof value !== "object") return null;
     if (value.version === VERSION) return value;
+    // A v10 save is already modern: the legacy flat pass below would be lossy
+    // for it (it rebuilds jobs.hired/offers, re-clamps curtis.attention, and
+    // deletes attributeProgress). Only the v11 crew transform applies.
+    if (value.version === 10) {
+      if (!value.run || !value.world || !value.player) return null;
+      const modern = applyV11CrewMigration(JSON.parse(JSON.stringify(value)));
+      modern.version = VERSION;
+      return modern;
+    }
     if (![3, 4, 5, 6, 7, 8, 9].includes(value.version) || !value.run || !value.world || !value.player) return null;
     const migrated = JSON.parse(JSON.stringify(value));
     const oldHousehold = migrated.people?.household || {};
@@ -1542,6 +1666,7 @@
       delete player.behavior.pendingIdentityNights;
       delete player.behavior.lastEvaluatedDay;
     }
+    applyV11CrewMigration(migrated);
     migrated.version = VERSION;
     return migrated;
   }
@@ -1933,7 +2058,7 @@
       if (target.tier === 3) {
         state.boost.merchandise += take;
         const crew = state.people.crew[state.boost.crewAssigned];
-        if (crew) crew.loyalty += standingGain(crew, crew.loyalty, 1, "open");
+        if (crew) crew.loyalty = Crew.clampLoyalty(crew.loyalty + standingGain(crew, crew.loyalty, 1, "open"));
         logEntry(state, `${target.name} lands. $${take} in merchandise is waiting for the fence.`, "good");
       } else {
         addDirtyCash(state, take);
@@ -2044,6 +2169,8 @@
   // Retaliation is decided when the card is built so the choices carry plain
   // declarative effects; hash-keyed, so replaying the morning is stable.
   function stickRetaliationEvent(state, entry) {
+    const deshawnRecord = state.people.crew.deshawn;
+    const deshawnActive = !!(deshawnRecord?.recruited && deshawnRecord.status !== "departed" && deshawnRecord.loyalty > 0);
     const target = STICK_TARGET_BY_ID[entry.targetId];
     const name = target ? target.name : "the last mark";
     const won = stringHash(`${state.run.seed}:retaliation:${state.run.day}:${entry.targetId}`) % 100 < clamp(35 + combatCompat(state) * 10, 20, 85);
@@ -2054,9 +2181,10 @@
       description: `People connected to ${name} caught up with you. Two ways this goes.`,
       choices: [
         won
-          ? { label: "Stand your ground", effect: { heat: 1 }, preview: "Hold the corner.", result: "You do not blink. They decide you are not worth it and move on." }
-          : { label: "Stand your ground", effect: { heat: 1, health: -14 }, preview: "Hold the corner.", result: "It costs you. You keep your feet, barely, and they leave a warning." },
+          ? { label: "Stand your ground", effect: { heat: 1, ...(deshawnActive ? { deshawnViolentChoice: true } : {}) }, preview: "Hold the corner.", result: "You do not blink. They decide you are not worth it and move on." }
+          : { label: "Stand your ground", effect: { heat: 1, health: -14, ...(deshawnActive ? { deshawnViolentChoice: true } : {}) }, preview: "Hold the corner.", result: "It costs you. You keep your feet, barely, and they leave a warning." },
         { label: "Pay them off", effect: { cash: -payoff }, preview: payoff > 0 ? `Hand over $${payoff}.` : "Empty pockets talk too.", result: "Money calms the conversation. Nobody swings." },
+        ...(deshawnActive ? [{ label: "Let Deshawn handle it", effect: { deshawnDeescalate: true }, preview: "No blood, −1 Heat. He remembers being trusted with it.", result: "Deshawn hears them out all the way through, which nobody has done for them yet. He names a number lower than they wanted and a reason better than they had. They take both." }] : []),
       ],
     };
   }
@@ -3314,30 +3442,49 @@
     const territoryDiscount = controlled(state, "north_star_lot") ? 0.10 : 0;
     return Math.max(1, Math.round(person.recruitCost * (1 - charismaDiscount - territoryDiscount)));
   }
+  // NPCs whose lens is inverted (THREAT archetype): a "warm" band with them
+  // means they consider the player harmless, not that they like them, so they
+  // never count as vouching contacts.
+  const INVERTED_LENS_IDS = ["curtis", "simone"];
+  function warmNpcContactCount(state) {
+    return EXPOSURE_NPC_IDS.filter((id) => id !== "deshawn" && !INVERTED_LENS_IDS.includes(id) && state.npc[id] && bandOf(state, id) >= BANDS.WARM).length;
+  }
   function deshawnRecruitmentAvailability(state) {
     if (state.flags.deshawnBusinessSevered) return { available: false, reason: "'It was business' permanently closed this route." };
     if (state.run.day < 5) return { available: false, reason: "Deshawn does not make this call before Day 5." };
     const damaged = (state.people.dealers.goodie?.robbedCount || 0) > 0;
     if (damaged && !(state.flags.goodieRestitution && state.npc.dre.cleanCompletions >= 1)) return { available: false, reason: "Repair things with Goodie and finish one clean Dre mission." };
+    // He wants proof the player doesn't burn people: two social contacts kept
+    // active, or two named people around Spenard whose ledgers read Warm.
     const activeContacts = Object.values(state.contacts).filter((record) => record.known && record.relationshipLevel > 0).length;
-    if (!damaged && activeContacts < 2) return { available: false, reason: "Build two active contacts first." };
+    if (!damaged && activeContacts < 2 && warmNpcContactCount(state) < 2) return { available: false, reason: "Build two active contacts first." };
     return { available: true, reason: "Deshawn is ready to hear the offer." };
   }
+  // v1.15: the generic gates (loyalty 7 for tier 2, loyalty 9 for tier 3, plus
+  // days on the crew) live in Crew.TIER_REQUIREMENTS; each member keeps their
+  // own extra conditions on top. Promotion stays player-initiated.
   function crewTierAvailability(state, crewId) {
     const crew = state.people.crew[crewId];
     const blocks = controlledBlockCount(state);
     if (!crew?.recruited) return { available: false, reason: "Recruit this contact first." };
+    if (crew.status === "departed") return { available: false, reason: "They are no longer on the crew." };
+    const targetTier = crew.tier < 2 ? 2 : crew.tier < 3 ? 3 : null;
+    if (!targetTier) return { available: false, reason: "This track is fully developed." };
+    const req = Crew.TIER_REQUIREMENTS[targetTier];
+    if (!Crew.tierRequirementMet(crew, targetTier, state.run.day)) {
+      return { available: false, reason: `Tier ${targetTier} needs loyalty ${req.loyalty} and ${req.daysRecruited} days on the crew.` };
+    }
     if (crewId === "pherris") {
-      if (crew.tier < 2) return crew.loyalty >= 3 && blocks >= 1 ? { available: true, tier: 2, cost: 0 } : { available: false, reason: "Tier 2 needs loyalty 3 and one controlled block." };
-      if (crew.tier < 3) return crew.loyalty >= 4 && blocks >= 2 && state.player.cash >= 500 ? { available: true, tier: 3, cost: 500 } : { available: false, reason: "Tier 3 needs loyalty 4, two blocks, and $500." };
+      if (targetTier === 2) return blocks >= 1 ? { available: true, tier: 2, cost: 0 } : { available: false, reason: "Tier 2 needs one controlled block." };
+      return blocks >= 2 && state.player.cash >= 500 ? { available: true, tier: 3, cost: 500 } : { available: false, reason: "Tier 3 needs two blocks and $500." };
     }
     if (crewId === "tone") {
-      if (crew.tier < 2) return crew.loyalty >= 2 ? { available: true, tier: 2, cost: 0 } : { available: false, reason: "Tier 2 needs loyalty 2." };
-      if (crew.tier < 3) return crew.loyalty >= 4 && blocks >= 2 ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs loyalty 4 and two blocks." };
+      if (targetTier === 2) return { available: true, tier: 2, cost: 0 };
+      return blocks >= 2 ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs two controlled blocks." };
     }
     if (crewId === "deshawn") {
-      if (crew.tier < 2) return crew.loyalty >= 3 ? { available: true, tier: 2, cost: 0 } : { available: false, reason: "Tier 2 needs loyalty 3." };
-      if (crew.tier < 3) return crew.loyalty >= 5 && crew.trucesBrokered >= 2 && blocks >= 2 ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs loyalty 5, two truces, and two blocks." };
+      if (targetTier === 2) return { available: true, tier: 2, cost: 0 };
+      return crew.trucesBrokered >= 2 && blocks >= 2 ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs two truces and two blocks." };
     }
     return { available: false, reason: "This track is fully developed." };
   }
@@ -3350,7 +3497,7 @@
     let power = operationGearPower(state) + state.base.tracks.operations;
     for (const person of recruitedCrew(state)) {
       const crew = state.people.crew[person.id];
-      power += person.power + clamp(crew.loyalty, 0, 3) - (crew.wageDue > 0 ? 2 : 0);
+      power += person.power + clamp(crew.loyalty - Crew.CREW_LOYALTY_START, 0, 3) - (crew.wageDue > 0 ? 2 : 0);
       if (person.id === "tone" && crew.tier >= 2) power += crew.tier === 3 ? 4 : 2;
     }
     if (includePlayer) {
@@ -3576,7 +3723,7 @@
     if (eli.lieutenantStage === "operations_lieutenant") return { available: false, reason: "Eli already runs Operations." };
     // Softened by one for a run that has covered enough ground. The player only
     // ever sees the loyalty number that is actually being asked of them.
-    const required = Math.max(1, ELI_LIEUTENANT_UNLOCK.minLoyalty - streetReadAccessBonus(state));
+    const required = Math.max(Crew.CREW_LOYALTY_START + 1, ELI_LIEUTENANT_UNLOCK.minLoyalty - streetReadAccessBonus(state));
     if (eli.loyalty < required) return { available: false, reason: `Eli's loyalty needs to reach ${required}.` };
     return { available: true, reason: "Eli is ready to run Operations." };
   }
@@ -3681,7 +3828,7 @@
   }
 
   function operationScore(state) {
-    const crew = recruitedCrew(state).reduce((sum, person) => sum + Math.max(0, state.people.crew[person.id].loyalty + 2) * 35, 0);
+    const crew = recruitedCrew(state).reduce((sum, person) => sum + Math.max(0, state.people.crew[person.id].loyalty - Crew.CREW_LOYALTY_START + 2) * 35, 0);
     const influence = Object.values(state.world.influence).reduce((sum, value) => sum + value * 70, 0);
     const relationships = Math.max(0, dispositionOf(state, "mina")) * 12 + Math.max(0, dispositionOf(state, "dre")) * 7 + Math.max(0, dispositionOf(state, "curtis")) * 7;
     const access = Object.values(state.world.productAccess).filter(Boolean).length * 45;
@@ -3865,7 +4012,7 @@
       if (!crew.recruited || !crew.assignment) continue;
       const assignment = crew.assignment;
       crew.assignment = null;
-      const loyaltyBonus = clamp(crew.loyalty, -2, 4) * 0.04;
+      const loyaltyBonus = clamp(crew.loyalty - Crew.CREW_LOYALTY_START, -2, 4) * 0.04;
       if (person.id === "eli") {
         const success = random.next() < 0.58 + intelligenceCompat(state) * 0.05 + loyaltyBonus - (assignment === "outer_run" ? 0.14 : 0);
         if (success) {
@@ -3874,7 +4021,7 @@
           influenceChange(state, assignment === "outer_run" ? "airport_industrial" : "north_star_lot", 1);
           logEntry(state, `Eli returns through the garage side door with $${gain} and a route nobody followed.`, "good");
         } else {
-          crew.loyalty -= 1;
+          crew.loyalty = Crew.clampLoyalty(crew.loyalty - 1);
           state.flags.runnerSentOuter = assignment === "outer_run";
           state.player.heat = clamp(state.player.heat + 1, 0, 15);
           logEntry(state, "Eli misses the check-in. His burner rings once, then goes dark.", "bad");
@@ -3885,7 +4032,7 @@
         const area = assignment === "source_meth" ? AREA_BY_ID.airport_industrial : AREA_BY_ID.downtown;
         const product = assignment === "source_meth" ? PRODUCT_BY_ID.meth : PRODUCT_BY_ID.cocaine;
         state.effects.rumors.push({ id: `pherris_${state.run.day}_${state.run.slot}`, text: `Pherris says ${product.name} is moving through ${area.name}, but the window will not stay open.`, areaId: area.id, productId: product.id, reliable: true, expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
-        crew.loyalty += standingGain(crew, crew.loyalty, 1, "open");
+        crew.loyalty = Crew.clampLoyalty(crew.loyalty + standingGain(crew, crew.loyalty, 1, "open"));
         logEntry(state, "Pherris circles one name on her list and tears the rest of the page away.", "good");
       } else if (person.id === "tone") {
         if (assignment === "guard_base") {
@@ -4017,6 +4164,89 @@
     }
   }
 
+  // v1.15: Deshawn's weekly introduction. Every seven days on the crew he
+  // connects the player to something they have not found yet - the Nile's
+  // ground floor, the gym, a Night Owl regular - and when the map is used up,
+  // a reliable market tip instead. Two texts: his, then the contact's.
+  function resolveDeshawnIntro(state) {
+    const crew = state.people.crew.deshawn;
+    if (!crew?.recruited || crew.status !== "active") return;
+    const record = state.npc.deshawn;
+    const day = state.run.day;
+    const since = record.lastIntroDay == null ? (crew.recruitedDay == null ? 7 : day - crew.recruitedDay) : day - record.lastIntroDay;
+    if (since < 7) return;
+    record.lastIntroDay = day;
+    if (!state.world.locations.theNile.discovered) {
+      discoverNile(state, Nile.DISCOVERY_METHODS.deshawn);
+      record.introducedContacts.push("selam");
+      pushPhoneMessage(state, "Deshawn", "Got somebody you should meet. She works mornings at the blue building on Spenard. Tell her D sent you.");
+      pushPhoneMessage(state, "Selam", "Deshawn says you carry yourself right. Wellness desk is open from morning. Ask for Selam.");
+      return;
+    }
+    if (!state.discovered.spenardGym) {
+      state.discovered.spenardGym = true;
+      record.introducedContacts.push("spenard_gym");
+      pushPhoneMessage(state, "Deshawn", "Gym past the laundromat, same block. Ask about the week pass. Tell them I sent you.");
+      pushPhoneMessage(state, "Spenard Gym", "D's people get the first week on the house. Doors open early. Come through.");
+      return;
+    }
+    const unmetRegular = NIGHT_OWL_REGULARS.find((person) => !state.nightOwl.regulars[person.id]?.met);
+    if (unmetRegular) {
+      state.nightOwl.regulars[unmetRegular.id].met = true;
+      if (state.contacts[unmetRegular.id]) state.contacts[unmetRegular.id].known = true;
+      record.introducedContacts.push(unmetRegular.id);
+      pushPhoneMessage(state, "Deshawn", `You know ${unmetRegular.name.split(" ")[0]} from the Night Owl? You should. Good people. I told them about you.`);
+      pushPhoneMessage(state, unmetRegular.name.split(" ")[0], `Deshawn gave me your number. I'm at the Night Owl most nights. Come say hey.`);
+      return;
+    }
+    // Everything findable is found: a market tip instead. Reliable by
+    // definition - his name is on it.
+    const product = PRODUCTS[stringHash(`${state.run.seed}:deshawn:tip:${day}`) % PRODUCTS.length];
+    const area = AREA_BY_ID.north_star_lot;
+    state.effects.rumors.push({ id: `deshawn_tip_${day}`, areaId: area.id, productId: product.id, reliable: true, text: `Deshawn heard ${product.name} is moving in ${area.name}. His information is never loose.`, expiresAt: slotNumber(day, 3) + 4 });
+    pushPhoneMessage(state, "Deshawn", `Nobody new to meet this week. One thing instead: ${product.name} is moving in Spenard. Quietly. Do what you want with that.`);
+  }
+  // v1.15: wages come out of cash automatically at day end, dirty money first
+  // (criminal income paying criminal workers). Highest loyalty gets paid first,
+  // so when the roll runs short the arrears land on whoever trusts the player
+  // least. A missed night accrues as wageDue; the first two nights are grace,
+  // every night after costs the member a loyalty point. Loyalty 0 means they
+  // walk. PAY_CREW remains the way to clear arrears mid-run.
+  function settleCrewWages(state) {
+    if (!state.crewMeta) state.crewMeta = { totalWagesPaid: 0 };
+    const roster = recruitedCrew(state)
+      .map((person) => ({ person, crew: state.people.crew[person.id] }))
+      .sort((a, b) => b.crew.loyalty - a.crew.loyalty);
+    for (const { person, crew } of roster) {
+      const wage = Crew.wageFor(person, crew.tier);
+      if (spendCash(state, wage)) {
+        state.crewMeta.totalWagesPaid += wage;
+        state.stats.moneySpent.crew += wage;
+        if (crew.wageDue <= 0) crew.wageMissedSince = null;
+      } else {
+        crew.wageDue += wage;
+        if (crew.wageMissedSince == null) crew.wageMissedSince = state.run.day;
+        state.flags.crewUnderpaid = true;
+        if (state.run.day - crew.wageMissedSince >= Crew.CREW_WAGE_GRACE_DAYS) {
+          crew.loyalty = Crew.clampLoyalty(crew.loyalty - 1);
+          logEntry(state, `${person.name.split(" ")[0]}'s pay is short again. The patience is visibly thinner.`, "bad");
+        } else {
+          logEntry(state, `No cash for ${person.name.split(" ")[0]}'s wage tonight. It goes on the ledger.`, "bad");
+        }
+      }
+    }
+    for (const { person, crew } of roster) {
+      if (crew.loyalty > Crew.CREW_LOYALTY_MIN) continue;
+      crew.status = "departed";
+      crew.assignment = null;
+      if (state.boost.crewAssigned === person.id) state.boost.crewAssigned = null;
+      for (const block of Object.values(state.world.territoryBlocks || {})) {
+        if (block.managerId === person.id) block.managerId = null;
+      }
+      logEntry(state, `${person.name.split(" ")[0]} is gone. No note, no argument. The unpaid ledger stays behind.`, "bad");
+      pushConsequence(state, `${person.name.split(" ")[0]} left the crew. Loyalty ran out.`, "bad");
+    }
+  }
   function applyPressure(state, context, crossedDay) {
     const area = AREA_BY_ID[state.world.currentNeighborhoodId];
     const pressureActive = state.run.phase === "pressure";
@@ -4053,15 +4283,25 @@
         const record = state.people.dealers?.[dealer.id];
         if (record && record.supplyChoked > 0) record.supplyChoked -= 1;
       }
-      for (const person of recruitedCrew(state)) {
-        const crew = state.people.crew[person.id];
-        if (crew.wageDue > 0) {
-          crew.loyalty -= 1;
-          state.flags.crewUnderpaid = true;
-          logEntry(state, `${person.name.split(" ")[0]} sees yesterday's pay still sitting unpaid on the garage ledger.`, "bad");
+      settleCrewWages(state);
+      // v1.15: Curtis's people lose interest slowly. A day with no criminal
+      // activity extends the quiet streak; from the second consecutive quiet
+      // day on, awareness bleeds one point per day - but never below the floor
+      // of a phase already reached. Once Curtis notices you, he doesn't fully
+      // forget.
+      {
+        const awareness = curtisAwarenessOf(state);
+        if (awareness.lastCriminalDay === state.run.day) {
+          awareness.quietStreak = 0;
+        } else {
+          awareness.quietStreak += 1;
+          if (awareness.quietStreak >= 2 && awareness.level > awareness.floor) {
+            awareness.level = Math.max(awareness.floor, awareness.level - 1);
+            refreshAwarenessPhase(state);
+          }
         }
-        crew.wageDue += person.wage;
       }
+      resolveDeshawnIntro(state);
       if (state.run.day >= state.phone.billDueDay) {
         state.phone.daysPastDue += 1;
         if (state.phone.daysPastDue > 2 && state.phone.active) {
@@ -4071,12 +4311,23 @@
       }
       const rentDue = state.obligations.rentDueDay;
       const currentRentDue = state.run.day >= rentDue ? rentDue + Math.floor((state.run.day - rentDue) / 7) * 7 : rentDue;
+      // v1.15: while Deshawn is on the crew the grace re-arms once per rent
+      // period - he will talk to Yalonda every week, but only once a week. If
+      // he departs, whatever grace is banked is the last one.
+      {
+        const deshawnCrew = state.people.crew.deshawn;
+        if (deshawnCrew?.recruited && deshawnCrew.status === "active" && !state.flags.extraRentGraceAvailable
+          && state.flags.extraRentGraceUsedDueDay != null && state.flags.extraRentGraceUsedDueDay !== currentRentDue) {
+          state.flags.extraRentGraceAvailable = true;
+        }
+      }
       const missedThisDue = state.obligations.lastMissedDueDay === currentRentDue;
       if (state.run.day >= rentDue && !missedThisDue) {
         state.obligations.lastMissedDueDay = currentRentDue;
         if (state.flags.extraRentGraceAvailable) {
           state.flags.extraRentGraceAvailable = false;
-          logEntry(state, "Deshawn de-escalates the rent conversation and buys one extra grace intervention this week.", "good");
+          state.flags.extraRentGraceUsedDueDay = currentRentDue;
+          logEntry(state, "Deshawn talks to Yalonda before the envelope comes out. The rent conversation waits one more day.", "good");
         } else {
           state.npc.yalonda.rentMissed += 1;
           Exposure.recordObservation(state, "yalonda", { type: "financial", event: "missed_obligation", source: "household" });
@@ -4391,6 +4642,14 @@
       requires: () => true, area: "downtown", earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
     { id: "tone_offer", chain: null, stage: null, classification: "character_intro", trigger: "ambient",
       requires: (s) => s.base.controlled, area: "north_star_lot", earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
+    // v1.15: Deshawn's recruitment scene. Fires at the Night Owl once his gate
+    // holds; declining sets deshawnNextOfferDay, and the cooldown plus that
+    // flag pace the re-offer at three days.
+    { id: "deshawn_offer", chain: null, stage: null, classification: "character_intro", trigger: "ambient",
+      requires: (s) => deshawnRecruitmentAvailability(s).available && !s.people.crew.deshawn.recruited
+        && recruitedCrew(s).length < crewCapacityFor(s)
+        && (!s.flags.deshawnNextOfferDay || s.run.day >= s.flags.deshawnNextOfferDay),
+      area: "north_star_lot", earliest: { day: 5, slot: 0 }, latest: null, once: false, cooldown: 3, weight: 7, exit: null },
     { id: "courier", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
       requires: () => true, area: "airport_industrial", earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
     { id: "base_watch", chain: null, stage: null, classification: "threat", trigger: "ambient",
@@ -4682,9 +4941,42 @@
       if (effect.introduceCrew !== "eli" && state.people.crew[effect.introduceCrew].contactStage === "unknown") state.people.crew[effect.introduceCrew].contactStage = "recruitable";
     }
     if (effect.setCrewStage && state.people.crew[effect.setCrewStage.id]) state.people.crew[effect.setCrewStage.id].contactStage = effect.setCrewStage.stage;
+    // v1.15: scene-driven recruitment. Unlike the garage RECRUIT_CREW action
+    // there is no cash cost - the wage is the ask - but capacity and the NPC's
+    // own gate still hold.
+    if (effect.recruitCrew && state.people.crew[effect.recruitCrew]) {
+      const crewId = effect.recruitCrew;
+      const person = CREW_BY_ID[crewId], crew = state.people.crew[crewId];
+      const eligible = !crew.recruited && recruitedCrew(state).length < crewCapacityFor(state)
+        && (crewId !== "deshawn" || deshawnRecruitmentAvailability(state).available);
+      if (eligible) {
+        crew.introduced = true; crew.recruited = true; crew.status = "active";
+        crew.contactStage = "active"; crew.tier = Math.max(1, crew.tier || 0);
+        crew.recruitedDay = state.run.day;
+        crew.loyalty = Crew.clampLoyalty(crew.loyalty + 1);
+        if (crewId === "deshawn") {
+          state.flags.extraRentGraceAvailable = true;
+          // He came around because the player robbed Goodie and then paid the
+          // cost of making it right. That path stays on the record.
+          if ((state.people.dealers.goodie?.robbedCount || 0) > 0) state.flags.deshawnRedemptionPath = true;
+        }
+        updateBoostTier(state);
+        recordBehavior(state, "connector", 3, `recruit:${crewId}`, "recruit");
+        addStreetReadEntry(state, "social", `${crewId}:recruitment`);
+        logEntry(state, `${person.name} is on the crew. The operation has another person to answer for.`, "good");
+      }
+    }
+    if (effect.deshawnDeescalate) applyDeshawnDeescalation(state);
+    if (effect.deshawnViolentChoice) noteViolentChoice(state, true);
+    // Declining Deshawn's offer is not a refusal, it's a rain check - he asks
+    // again in three days as long as the gate still holds.
+    if (effect.deshawnDeclineOffer) {
+      state.flags.deshawnOfferDeclined = true;
+      state.flags.deshawnNextOfferDay = state.run.day + 3;
+    }
     if (effect.addRumor) state.effects.rumors.push({ id: `contact_${state.run.day}_${state.run.slot}_${effect.addRumor.areaId}`, ...effect.addRumor, reliable: true, expiresAt: slotNumber(state.run.day, state.run.slot) + 3 });
-    if (effect.crewLoyalty && state.people.crew[effect.crewLoyalty.id]) state.people.crew[effect.crewLoyalty.id].loyalty += effect.crewLoyalty.delta;
-    if (effect.crewAllLoyalty) for (const person of recruitedCrew(state)) state.people.crew[person.id].loyalty += effect.crewAllLoyalty;
+    if (effect.crewLoyalty && state.people.crew[effect.crewLoyalty.id]) { const record = state.people.crew[effect.crewLoyalty.id]; record.loyalty = Crew.clampLoyalty(record.loyalty + effect.crewLoyalty.delta); }
+    if (effect.crewAllLoyalty) for (const person of recruitedCrew(state)) { const record = state.people.crew[person.id]; record.loyalty = Crew.clampLoyalty(record.loyalty + effect.crewAllLoyalty); }
     if (effect.baseWatched !== undefined) state.base.watched = effect.baseWatched;
     if (effect.access) state.world.productAccess[effect.access] = true;
     if (effect.promoteEliLieutenant) {
@@ -4749,7 +5041,7 @@
     if (plan === "partner" && atLeastBand(state, "curtis", BANDS.WARM)) return "curtis_partner";
     if (plan === "challenge" && Object.values(state.world.influence).reduce((a, b) => a + b, 0) >= 5) return "takeover";
     if (state.flags.acceptedSecondNote && state.lender.balance <= 0) return "dre_expansion";
-    if (plan === "defend" && recruitedCrew(state).some((person) => state.people.crew[person.id].loyalty >= 1)) return "crew_saved";
+    if (plan === "defend" && recruitedCrew(state).some((person) => state.people.crew[person.id].loyalty >= 6)) return "crew_saved";
     if (plan === "last_score" && operationScore(state) >= 1300 && state.lender.balance <= 0) return "one_good_run";
     if (state.lender.balance > 0) return "still_owing";
     if (operationScore(state) >= 800) return "quiet_operation";
@@ -4828,7 +5120,7 @@
     // it actually happened in, which is what the presence checks read.
     const observed = OBSERVED_ACTIONS[context.reason];
     if (observed) {
-      Exposure.broadcastObservation(state, {
+      broadcastTracked(state, {
         ...observed,
         // The district is the right default - most actions are just "somewhere
         // in Spenard". A row that names its own location keeps it, which is how
@@ -4855,6 +5147,7 @@
     resolveCrewAssignments(state, random);
     resolveSoldierOperations(state, random, false);
     applyPressure(state, context, false);
+    maybeWatcherEncounter(state, context, oldDay, oldSlot);
     if (state.run.phase === "week_zero" && weekZeroProgress(state).ready) startPressurePhase(state);
     if (state.run.phase === "pressure" && dreIntroductionEligible(state) && !state.run.pendingEvent && !state.run.pendingEncounter) {
       state.npc.dre.known = true;
@@ -4896,7 +5189,7 @@
     const friendshipMature = curtis.friendship === "accepted" && curtis.friendshipDay != null && state.run.day >= curtis.friendshipDay + 2;
     if (!curtis.betrayed && friendshipMature && curtisPressureScore(state) >= 8 && state.run.day > curtis.protectionUntilDay) {
       const deshawn = state.people.crew.deshawn;
-      if (deshawn?.recruited && deshawn.tier >= 3 && deshawn.loyalty >= 5) {
+      if (deshawn?.recruited && deshawn.status !== "departed" && deshawn.tier >= 3 && deshawn.loyalty >= 8) {
         curtis.betrayed = true;
         logEntry(state, "Deshawn catches Curtis's move before it reaches your cash or product.", "good");
       } else if (state.npc.simone.leverage > 0) {
@@ -5030,6 +5323,36 @@
     return state;
   }
 
+  // --- Deshawn tier-1 de-escalation (v1.15) --------------------------------
+  // Shared by the legacy encounter engine, the consequence engine, and the
+  // stick retaliation card. Resolves a confrontation without violence: no
+  // health loss, one point of heat worked off quietly, a discretion row for
+  // the neighbors (discretion never clears Curtis's network filter, so this
+  // stays local), and Deshawn remembers being trusted with it.
+  function applyDeshawnDeescalation(state) {
+    const crew = state.people.crew.deshawn;
+    if (!crew?.recruited || crew.status === "departed") return;
+    crew.loyalty = Crew.clampLoyalty(crew.loyalty + Crew.DESHAWN_LOYALTY_TRIGGERS.deescalateUsed);
+    state.npc.deshawn.lastDeescalationDay = state.run.day;
+    state.player.heat = clamp(state.player.heat - 1, 0, 15);
+    // He was standing there for it - his row is first-hand, not gossip. The
+    // neighborhood hears its own version on the usual delay.
+    Exposure.recordObservation(state, "deshawn", { type: "discretion", event: "deshawn_deescalation", source: "witnessed" });
+    broadcastTracked(state, { type: "discretion", event: "deshawn_deescalation", channel: "neighborhood", day: state.run.day });
+  }
+  // Choosing violence right after (or instead of) his diplomacy costs a point
+  // of loyalty - once per de-escalation, so a single loud choice is a lesson
+  // rather than a spiral.
+  function noteViolentChoice(state, deescalateWasAvailable) {
+    const crew = state.people.crew.deshawn;
+    if (!crew?.recruited || crew.status === "departed") return;
+    const record = state.npc.deshawn;
+    const withinWindow = record.lastDeescalationDay != null && state.run.day - record.lastDeescalationDay <= Crew.DESHAWN_VIOLENCE_WINDOW_DAYS;
+    if (!deescalateWasAvailable && !withinWindow) return;
+    crew.loyalty = Crew.clampLoyalty(crew.loyalty + Crew.DESHAWN_LOYALTY_TRIGGERS.violenceAfterDeescalate);
+    if (withinWindow) record.lastDeescalationDay = null;
+    logEntry(state, "Deshawn watches you choose the loud way. He does not say anything, which says it.", "warn");
+  }
   function healthModifier(health) { return health > 75 ? 0.05 : health < 40 ? -0.12 : 0; }
   function freeCargoRatio(state) { return clamp((cargoCapacity(state) - cargoUsed(state)) / Math.max(1, cargoCapacity(state)), 0, 1); }
   function encounterChoices(state) {
@@ -5048,8 +5371,10 @@
     if (weapon?.type === "firearm") choices.push({ id: "draw", label: `Draw ${weapon.name}`, description: "Combat and weapon accuracy matter. Firing raises heat." });
     if (intelligenceCompat(state) >= 3) choices.push({ id: "intimidate", label: "Name their weak position", description: "Use Intelligence to make the threat feel too expensive." });
     const tone = state.people.crew.tone;
-    if (tone.recruited && tone.loyalty >= 0) choices.push({ id: "call_tone", label: "Call Tone", description: "Spend crew loyalty to end this on his terms." });
+    if (tone.recruited && tone.status !== "departed" && tone.loyalty >= 5) choices.push({ id: "call_tone", label: "Call Tone", description: "Spend crew loyalty to end this on his terms." });
     if (encounter.id === "mina_sedan_night" && state.npc.mina.met) choices.push({ id: "call_mina", label: "Signal Mina", description: "Trust Mina to trigger the Night Owl alarm. This spends some of the trust between you." });
+    const deshawnCrew = state.people.crew.deshawn;
+    if (deshawnCrew.recruited && deshawnCrew.status !== "departed" && deshawnCrew.loyalty > 0 && !Crew.CURTIS_CREW_ENCOUNTER_IDS.includes(encounter.id)) choices.push({ id: "deshawn_deescalate", label: "Let Deshawn handle it", description: "No blood, one point of heat worked off. He notices what you choose next." });
     if (encounter.id === "late" && state.base.tracks.security >= 1) choices.push({ id: "use_base", label: "Fall back to the garage", description: "Security and crew assignments determine the result." });
     if (state.player.gear.consumables.medical_kit > 0 && state.player.health < 100) choices.push({ id: "medical_kit", label: "Use medical kit", description: "Recover before making the next move." });
     return choices;
@@ -5109,15 +5434,20 @@
         return state;
       }
       const random = makeRandom(inputState.run.rngState);
+      const deescalateWasAvailable = EncounterSystem.getEligibleChoices(inputState.run.pendingEncounter, inputState).some((item) => item.id === "deshawn_deescalate");
       const state = EncounterSystem.resolveEncounterChoice(inputState.run.pendingEncounter, action.choiceId, inputState, random);
       if (state === inputState) return inputState;
       state.run.rngState = random.state;
+      // Exposure and crew side effects stay out of encounters.js on purpose -
+      // the engine finishes the scene, game-core settles what it cost.
+      if (action.choiceId === "deshawn_deescalate") applyDeshawnDeescalation(state);
+      if (["fight", "draw"].includes(action.choiceId)) noteViolentChoice(state, deescalateWasAvailable);
       if (state.run.pendingEncounter?.resolved) {
         const choice = action.choiceId === "draw" ? "fight" : ["fight", "run", "talk", "pay"].includes(action.choiceId) ? action.choiceId : "other";
         state.stats.encounterChoices[choice] += 1;
         if (["fight", "draw"].includes(action.choiceId)) recordBehavior(state, "stickup", action.choiceId === "draw" ? 2 : 1, `encounter:${state.run.pendingEncounter.id}`, "confrontation");
-        else if (["talk", "call_crew", "use_relationship"].includes(action.choiceId)) recordBehavior(state, "connector", 1, `encounter:${state.run.pendingEncounter.id}`, "relationship");
-        logEntry(state, state.run.pendingEncounter.result?.prose || "The confrontation ends and the run keeps moving.", ["won", "escaped", "talked", "crew_win", "relationship"].includes(state.run.pendingEncounter.result?.outcome) ? "good" : "warn");
+        else if (["talk", "call_crew", "use_relationship", "deshawn_deescalate"].includes(action.choiceId)) recordBehavior(state, "connector", 1, `encounter:${state.run.pendingEncounter.id}`, "relationship");
+        logEntry(state, state.run.pendingEncounter.result?.prose || "The confrontation ends and the run keeps moving.", ["won", "escaped", "talked", "crew_win", "relationship", "deescalated"].includes(state.run.pendingEncounter.result?.outcome) ? "good" : "warn");
       }
       state.stats.highestHeat = Math.max(state.stats.highestHeat, state.player.heat);
       if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
@@ -5132,7 +5462,7 @@
     const random = makeRandom(state.run.rngState);
     const choice = action.choiceId;
     if (["fight", "draw", "intimidate"].includes(choice)) recordBehavior(state, "stickup", choice === "draw" ? 2 : 1, `encounter:${encounter.id}`, "confrontation");
-    else if (["talk", "call_tone", "call_mina"].includes(choice)) recordBehavior(state, "connector", 1, `encounter:${encounter.id}`, "relationship");
+    else if (["talk", "call_tone", "call_mina", "deshawn_deescalate"].includes(choice)) recordBehavior(state, "connector", 1, `encounter:${encounter.id}`, "relationship");
     if (["fight", "draw", "run", "talk", "pay"].includes(choice)) state.stats.encounterChoices[choice === "draw" ? "fight" : choice] += 1;
     else state.stats.encounterChoices.other += 1;
 
@@ -5144,13 +5474,16 @@
       const lost = loseInventory(state, encounter.id === "late" ? 3 : 2);
       finishEncounter(state, "surrendered", lost ? `You set down ${lost.lost} ${lost.product.name}. They take the product and let you keep your pulse.` : "The empty bag buys you a few seconds to leave.");
     } else if (choice === "call_tone") {
-      state.people.crew.tone.loyalty -= 1;
+      state.people.crew.tone.loyalty = Crew.clampLoyalty(state.people.crew.tone.loyalty - 1);
       state.player.heat = clamp(state.player.heat + 2, 0, 15);
       finishEncounter(state, "win", "Tone arrives without raising his voice. The other side leaves, and two nearby windows close their blinds.");
     } else if (choice === "call_mina") {
       Exposure.recordObservation(state, "mina", { type: "defiance", event: "called_her_into_it", source: "witnessed" });
       state.player.heat = clamp(state.player.heat + 1, 0, 15);
       finishEncounter(state, "escape", "Mina hits the Mini-Mart alarm. The collector runs before the patrol car reaches the lot.");
+    } else if (choice === "deshawn_deescalate") {
+      applyDeshawnDeescalation(state);
+      finishEncounter(state, "talk", "Deshawn crosses the lot like he was already headed this way. Four sentences, none of them raised. The other side leaves with something that lets everyone keep face, and the street forgets it by morning.");
     } else if (choice === "use_base") {
       const defense = state.base.tracks.security + (state.people.crew.tone.assignment === "guard_base" ? 1 : 0);
       if (random.next() < 0.38 + defense * 0.18) finishEncounter(state, "win", "The reinforced garage door holds while the camera catches every face outside it.");
@@ -5186,6 +5519,7 @@
         finishEncounter(state, "escape", lost ? `You clear the lane but drop ${lost.lost} ${lost.product.name} under the fence.` : "You saw the open lane before they did and reach the street with the bag intact.");
       } else failEncounterStep(state, random, "The escape");
     } else if (choice === "fight" || choice === "draw") {
+      noteViolentChoice(state, available.includes("deshawn_deescalate"));
       const weapon = equippedWeapon(state);
       const firearm = choice === "draw";
       // The combat term is gone from the chance on purpose: the attribute acts
@@ -5257,6 +5591,7 @@
       state.player.heat = clamp(state.player.heat + addedHeat, 0, 15);
       state.stick.rep += 1;
       updateStickTier(state);
+      raiseCurtisAwareness(state, 2); // a successful robbery is loud in Curtis's world
       if (!clean) Exposure.recordObservation(state, "curtis", { type: "violence", event: "stickup", count: Math.min(3, attemptNumber), source: "network" });
       state.stats.robbery.successes += 1;
       addStreetReadEntry(state, "risk", `rob:${state.world.currentNeighborhoodId}`);
@@ -5333,6 +5668,7 @@
       state.player.cash += payout;
       state.stick.rep += 1;
       updateStickTier(state);
+      raiseCurtisAwareness(state, 2); // a successful robbery is loud in Curtis's world
       addStreetReadEntry(state, "risk", `robbery:${state.world.currentNeighborhoodId}`);
       if (productId) applyEventEffect(state, { addProduct: { id: productId, qty: units, unitCost: 0 } }, random);
       const takenHeat = dealerHeatScale(outcome.tier === "clean" ? 1 : 2);
@@ -5396,13 +5732,13 @@
     const random = makeRandom(state.run.rngState);
     state.player.cash -= availability.cost;
     state.stats.moneySpent.crew += availability.cost;
-    const successChance = clamp(0.52 + intelligenceCompat(state) * 0.06 + Math.max(0, state.people.crew.eli.loyalty) * 0.03 - state.player.heat * 0.01, 0.42, 0.78);
+    const successChance = clamp(0.52 + intelligenceCompat(state) * 0.06 + Math.max(0, state.people.crew.eli.loyalty - Crew.CREW_LOYALTY_START) * 0.03 - state.player.heat * 0.01, 0.42, 0.78);
     const success = random.next() < successChance;
     let result;
     if (success) {
       const payout = random.int(50, 80);
       state.player.cash += payout;
-      state.people.crew.eli.loyalty += standingGain(state.people.crew.eli, state.people.crew.eli.loyalty, 1, "open");
+      state.people.crew.eli.loyalty = Crew.clampLoyalty(state.people.crew.eli.loyalty + standingGain(state.people.crew.eli, state.people.crew.eli.loyalty, 1, "open"));
       result = { kind: "eli_test_route", tone: "good", title: "Eli Clears the Test Route", summary: `Eli uses the warehouse access road, delivers the package, and returns with $${payout}. He is now available to recruit at North Star Garage.`, effects: [`-$${availability.cost} route cost`, `+$${payout} delivery cash`, "+1 Eli loyalty", "Eli is recruitable"] };
     } else {
       const damage = random.int(5, 9);
@@ -6018,7 +6354,7 @@
       const crew = state.people.crew[action.crewId];
       if (!crew.recruited || crew.wageDue <= 0 || state.player.cash < crew.wageDue) return inputState;
       const amount = crew.wageDue;
-      state.player.cash -= amount; crew.wageDue = 0; crew.loyalty += standingGain(crew, crew.loyalty, 1, "open"); state.stats.moneySpent.crew += amount;
+      state.player.cash -= amount; crew.wageDue = 0; crew.wageMissedSince = null; crew.loyalty = Crew.clampLoyalty(crew.loyalty + standingGain(crew, crew.loyalty, 1, "open")); state.stats.moneySpent.crew += amount;
       recordBehavior(state, "earner", 2, `crew_pay:${action.crewId}:${state.run.day}`, "crew_pay");
       logEntry(state, `${CREW_BY_ID[action.crewId].name.split(" ")[0]} folds the full $${amount} into a pocket and stays for the next plan.`, "good");
       reconcileCash(state);
@@ -6125,7 +6461,7 @@
       const pay = outcome === "failed" ? 0 : mission.pay[0] + (stringHash(`${state.run.seed}:${mission.id}:${state.run.day}`) % (mission.pay[1] - mission.pay[0] + 1));
       if (pay) addDirtyCash(state, pay);
       if (outcome === "clean") { state.npc.dre.cleanCompletions += 1; Exposure.recordObservation(state, "dre", { type: "loyalty", event: "clean_mission", source: "witnessed" }); }
-      else if (outcome === "violent") { state.player.heat = clamp(state.player.heat + 2, 0, 15); Exposure.broadcastObservation(state, { type: "violence", event: "mission_went_loud", channel: "network" }); }
+      else if (outcome === "violent") { state.player.heat = clamp(state.player.heat + 2, 0, 15); broadcastTracked(state, { type: "violence", event: "mission_went_loud", channel: "network" }); }
       else if (outcome === "soft") { if (mission.id === "intelligence") Exposure.recordObservation(state, "dre", { type: "loyalty", event: "useful_intel", source: "witnessed" }); }
       else Exposure.recordObservation(state, "dre", { type: "defiance", event: "botched_mission", source: "witnessed" });
       state.npc.dre.missionHistory.push({ ...active, outcome, pay, day: state.run.day });
@@ -6690,6 +7026,7 @@
         else addDirtyCash(base, take);
         base.player.heat = clamp(base.player.heat + addedHeat, 0, 15);
         base.stick.rep += 1;
+        raiseCurtisAwareness(base, 2); // a successful robbery is loud in Curtis's world
         base.stats.robbery.successes += 1;
         base.stats.robbery.totalPayout += take;
         base.stats.robbery.success = true;
@@ -7016,7 +7353,7 @@
       if ((!crew.introduced && person.id !== "deshawn") || crew.recruited || state.player.cash < cost || (person.id === "eli" && crew.contactStage !== "recruitable")) return inputState;
       if (person.id === "deshawn" && !deshawnRecruitmentAvailability(state).available) return inputState;
       if (person.id === "deshawn") crew.introduced = true;
-      base.player.cash -= cost; crew.recruited = true; crew.status = "active"; crew.loyalty += 1; crew.wageDue = person.wage; base.stats.moneySpent.crew += cost;
+      base.player.cash -= cost; crew.recruited = true; crew.status = "active"; crew.loyalty = Crew.clampLoyalty(crew.loyalty + 1); crew.recruitedDay = base.run.day; base.stats.moneySpent.crew += cost;
       crew.contactStage = "active"; crew.tier = Math.max(1, crew.tier || 0);
       if (person.id === "deshawn") base.flags.extraRentGraceAvailable = true;
       updateBoostTier(base);
@@ -7436,6 +7773,7 @@
     LISTING_ITEMS, LISTING_CAPACITY, MARKET: Market, marketEvents: MarketEvents, NIGHT_OWL_REGULARS, NIGHT_OWL_BOARD, HOUSEHOLD_NPCS, SOCIAL_CONTACTS, STORY_CONTACTS, PHONE_INTEL, DOWNTOWN_CONTENT_STUBS, DOWNTOWN_AMBIENT,
     SPENARD_BLOCKS, SOLDIER_RECRUIT_COST, SOLDIER_BASE_CAPACITY, SOLDIER_CAPACITY_PER_BLOCK, SOLDIERS_PER_BLOCK_CAP,
     SHARK_BORROWERS, SHARK_TERMS, DRE_MISSIONS, DRE_COLLECTOR_TIERS, ELI_LIEUTENANT_UNLOCK, RESPECT_STAGE_THRESHOLDS,
+    Crew, CREW_LOYALTY_MAX: Crew.CREW_LOYALTY_MAX, CREW_LOYALTY_START: Crew.CREW_LOYALTY_START, TIER_REQUIREMENTS: Crew.TIER_REQUIREMENTS,
     DISTRICT_CONTROL_TIERS, DISTRICT_CONTROL_CAPSTONE_BLOCKS, DISTRICT_CONTROL_LABEL, ELI_OPERATION_POLICIES,
     buildEventForTest: activeEvent, storyCandidatesForTest: storyCandidates,
     recordBehaviorForTest: recordBehavior,
@@ -7467,7 +7805,7 @@
       streetIdentity, streetIdentityView, identityProfile: (state) => Attributes.identityProfile(state),
       operationScore, baseValue, gearValue, heatBand, priceSignal, influenceLabel, encounterChoices, endingLabel,
       crewCapacityFor, gearShopStock, gearPrice, treatmentCost, debtGuidanceAvailable,
-      recruitedCrew, workingCapital, safeDebtPayment, debtPaymentPreview, featureAvailability, activityAvailability, layLowPreview, controlled, recruitmentCost, operationGearPower, crewPower,
+      recruitedCrew, getActiveCrew: Crew.getActiveCrew, curtisAwareness: (state) => curtisAwarenessOf(state), workingCapital, safeDebtPayment, debtPaymentPreview, featureAvailability, activityAvailability, layLowPreview, controlled, recruitmentCost, operationGearPower, crewPower,
       territoryPowerEstimate, territoryBenefits, tradeUnitPrices, tradeProjection, takeoverReadiness, robAvailability, eliTestRouteAvailability, minaThreatEligible,
       dealerRecord, dealerActions, dealerStandingLabel, dealerSupplyFactor,
       visibleMarketProducts, plugMaxUnits, unlockedPlugForProduct,

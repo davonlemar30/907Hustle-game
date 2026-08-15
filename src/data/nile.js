@@ -39,6 +39,7 @@ const DISCOVERY_METHODS = {
   board: "night_owl_board",
   juan: "juan_mention",
   wander: "spenard_wander",
+  deshawn: "deshawn_intro",
 };
 
 // The wander roll ramps so a player who keeps walking always gets there. Same

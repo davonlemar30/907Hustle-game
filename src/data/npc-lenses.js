@@ -167,6 +167,14 @@ const NPC_LENSES = {
     weights: { violence: -2, discretion: 3, presence: 1.5, defiance: -2, growth: 2 },
     sourceMultipliers: { network: 0 },
   },
+  // Deshawn judges one thing: whether you burn people. Violence is expensive
+  // in his ledger, discretion and loyalty are what he stakes his name on, and
+  // a betrayal - of anyone - costs more with him than with anyone else on the
+  // block, because he expected better.
+  deshawn: {
+    archetype: "STREET",
+    weights: { violence: -3, discretion: 3, loyalty: 4, betrayal: -5, presence: 2 },
+  },
 };
 
 const EXPOSURE_NPC_IDS = Object.keys(NPC_LENSES);

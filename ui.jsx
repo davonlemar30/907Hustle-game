@@ -1,3 +1,7 @@
+// Presentational primitives live in src/ds/ so one definition serves both the
+// game and the synced design system (see src/ds/primitives.jsx).
+import { CategoryCard, Chip, Hud, MenuRow, Modal, Outcome, PageHead, PlaceAction, StatTile } from "./src/ds/primitives.jsx";
+
 const { useEffect, useMemo, useReducer, useRef, useState } = React;
 const C = window.GameCore;
 const money = (value) => `$${Math.round(value || 0)}`;
@@ -59,16 +63,6 @@ function TitleScreen({ saveInfo, onLoad, onNew }) {
       </div>
     </div>
   </div>;
-}
-
-function Hud({ label, value, danger, good, flash }) {
-  return <div className={`hud-item${danger ? " danger" : ""}${good ? " good" : ""}`} data-flash={flash || undefined}><span className="k">{label}</span><span className="v">{value}</span></div>;
-}
-// Secondary-row pressure indicators (Heat/Dre/Respect). Same label={} JSX
-// shape as Hud so existing ui-contract token checks still find them, but
-// carries its own escalation-tone styling instead of a single danger flag.
-function Chip({ label, value, tone, flash }) {
-  return <div className={`status-chip${tone ? ` ${tone}` : ""}`} data-flash={flash || undefined}><span className="k">{label}</span><span className="v">{value}</span></div>;
 }
 
 // Numbers changed silently, so the player had to remember the old value to
@@ -195,13 +189,6 @@ function Navigation({ tab, setTab, hustleVisible }) {
 // Back button and the title block are flex siblings. The title and subtitle
 // share one column so a subtitle that wraps stays beside the button instead of
 // running under it and out of the header band.
-function PageHead({ title, sub, onBack }) { return <div className="page-head">{onBack && <button className="back-btn" onClick={onBack}>← Back</button>}<div className="page-head-text"><h1>{title}</h1><p>{sub}</p></div></div>; }
-function Outcome({ label, value }) { return <div className="outcome"><span className="muted">{label}</span><b>{value}</b></div>; }
-function CategoryCard({ title, status, description, onClick, disabled }) { return <button className={`card category-card${disabled ? " locked" : ""}`} disabled={disabled} onClick={onClick}><div className="card-title">{title}<small>{status}</small></div><p>{description}</p><span className="category-arrow">Open →</span></button>; }
-// Menu-hub row. Shorter than CategoryCard: hubs list destinations, and a wall
-// of paragraphs is the density problem this pass exists to remove.
-function MenuRow({ title, status, description, onClick, disabled, tone }) { return <button className={`menu-row${tone ? ` ${tone}` : ""}${disabled ? " locked" : ""}`} disabled={disabled} onClick={onClick}><span className="menu-row-main"><b>{title}</b>{description && <small>{description}</small>}</span><span className="menu-row-meta">{status}<span className="menu-row-arrow" aria-hidden="true">›</span></span></button>; }
-function StatTile({ label, value, note, tone, text }) { return <div className={`stat-tile${tone ? ` ${tone}` : ""}${text ? " text" : ""}`}><span className="k">{label}</span><span className="v">{value}</span>{note && <span className="n">{note}</span>}</div>; }
 
 // Home priorities are not a task list — they are shortcuts to the one screen
 // that can actually resolve the pressure they name.
@@ -300,10 +287,6 @@ function Boost({ state, dispatch }) {
     })}
     {state.boost.tier >= 3 && <div className="card"><div className="card-title">Fence<small>{Math.round(C.selectors.boostFenceRate(state.boost.fenceStanding) * 100)}% RATE</small></div><p className="compact">He looks at what you brought, quotes a number. Take it or try somewhere else.</p><button className="btn full good-btn" disabled={!state.boost.merchandise} onClick={() => dispatch({ type: "FENCE_BOOST_GOODS" })}>Sell ${state.boost.merchandise} merchandise<span className="action-copy">Standing {state.boost.fenceStanding}/5 · no time cost</span></button></div>}
   </div></>;
-}
-
-function PlaceAction({ title, status, purpose, cost, time, disabled, reason, onClick }) {
-  return <div className={`card area-card${disabled ? " locked" : ""}`}><div className="card-title">{title}<small>{status}</small></div><p>{purpose}</p><div className="area-meta"><span>Cost {cost}</span><span>{time}</span></div><button className="btn full secondary" disabled={disabled} onClick={onClick}>{disabled ? "Unavailable" : "Go"}<span className="action-copy">{reason}</span></button></div>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1335,12 +1318,6 @@ function PopupBody({ text, flavor }) {
     expandedContent={flavor ? <p className="popup-flavor"><EntityText text={flavor} /></p> : null} />;
 }
 
-function Modal({ title, children, onClose, className = "" }) {
-  return <div className={`modal-backdrop ${className ? `${className}-backdrop` : ""}`}><div className={`modal ${className}`} role="dialog" aria-modal="true" aria-label={title}>
-    <div className="modal-head"><h2>{title}</h2>{onClose && <button type="button" className="modal-close" aria-label="Close" onClick={onClose}>×</button>}</div>
-    {children}
-  </div></div>;
-}
 function ConfirmPrompt({ title, text, confirmLabel, onConfirm, onCancel }) {
   return <Modal title={title} className="confirm-modal"><p className="popup-lead">{text}</p><div className="btn-row"><button className="btn secondary" onClick={onCancel}>Cancel</button><button className="btn primary" onClick={onConfirm}>{confirmLabel}</button></div></Modal>;
 }

@@ -1,0 +1,26 @@
+{
+  "projectId": "8462322f-7877-461e-b17b-d7481de92f5b",
+  "shape": "package",
+  "pkg": "907hustle-game",
+  "globalName": "Hustle907",
+  "buildCmd": "npm run build:ds",
+  "srcDir": "src/ds",
+  "cssEntry": "v05.css",
+  "docsDir": "docs/ds",
+  "readmeHeader": ".design-sync/conventions.md",
+  "extraFonts": ["assets/fonts/fonts.css"],
+  "overrides": {
+    "Modal": { "cardMode": "column", "primaryStory": "Confirm" }
+  },
+  "componentSrcMap": {
+    "Hud": "src/ds/primitives.jsx",
+    "Chip": "src/ds/primitives.jsx",
+    "PageHead": "src/ds/primitives.jsx",
+    "Outcome": "src/ds/primitives.jsx",
+    "CategoryCard": "src/ds/primitives.jsx",
+    "MenuRow": "src/ds/primitives.jsx",
+    "StatTile": "src/ds/primitives.jsx",
+    "PlaceAction": "src/ds/primitives.jsx",
+    "Modal": "src/ds/primitives.jsx"
+  }
+}

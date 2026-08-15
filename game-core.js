@@ -5335,6 +5335,9 @@
     crew.loyalty = Crew.clampLoyalty(crew.loyalty + Crew.DESHAWN_LOYALTY_TRIGGERS.deescalateUsed);
     state.npc.deshawn.lastDeescalationDay = state.run.day;
     state.player.heat = clamp(state.player.heat - 1, 0, 15);
+    // He was standing there for it - his row is first-hand, not gossip. The
+    // neighborhood hears its own version on the usual delay.
+    Exposure.recordObservation(state, "deshawn", { type: "discretion", event: "deshawn_deescalation", source: "witnessed" });
     broadcastTracked(state, { type: "discretion", event: "deshawn_deescalation", channel: "neighborhood", day: state.run.day });
   }
   // Choosing violence right after (or instead of) his diplomacy costs a point

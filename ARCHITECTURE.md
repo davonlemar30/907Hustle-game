@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.10**.
+How 907Hustle: One Good Run is put together, current as of **v1.15**.
 
 This file is meant to be the only thing you need to read before changing code.
 For *why* the game is designed the way it is, see the ClickUp docs at the bottom.
@@ -57,6 +57,11 @@ src/data/             Static definitions. No logic, no state.
                       dice combinations, odds, settlement, observation
                       thresholds. stringHash only, never game-core.
   propagation.js      CHANNELS, NPC_CHANNELS, Curtis's filter, heat thresholds, presence tables
+  crew.js             Crew loyalty scale (0-10), tier requirements and wage
+                      curve, presence-effect framework, the FUTURE soldier
+                      schema as comments. Pure data + pure functions.
+  curtis-awareness.js  Awareness phase thresholds/floors, watcher line pools,
+                      per-phase phone texts, the watcher chance formula.
   disposition-bands.js  BANDS, bandFor()
 
 src/events/
@@ -105,6 +110,8 @@ tests/                node --test, no runner config
 | Tooltip copy for a name | `ENTITY_REGISTRY` in `src/events/registry.js` |
 | Ambient street lines | `AMBIENT_FLAVOR` in `src/events/registry.js` |
 | A new action the player can take | a case in `reduceGame` (`game-core.js`) |
+| A crew tier gate, wage number, or presence effect | `src/data/crew.js` |
+| Watcher copy or an awareness threshold | `src/data/curtis-awareness.js` |
 | A new screen | `ui.jsx` |
 | A reusable piece of chrome two screens both want | `src/ds/primitives.jsx` + its props in `src/ds/index.d.ts` |
 
@@ -153,6 +160,7 @@ memberships          world      base       lender     people     npc
 obligations          plugs      market     hustle     jobs       contacts
 onboarding           nightOwl   nineZeroSevenList     rob        boost
 home      flags      encounterLog          effects    stats      streetRead   log
+stick     criminalProfile       crewMeta   curtisAwareness
 ```
 
 Notable ones:
@@ -162,11 +170,20 @@ Notable ones:
   `pendingObservations` (gossip in transit)
 - `player` — `cash` / `dirtyCash` / `cleanCash` (money is split by provenance),
   `heat`, `health`, `energy`, `attributes`, `streetIdentity`
-- `npc` — `yalonda`, `juan`, `mina`, `curtis`, `dre`, `simone`. Each carries a
-  `ledger` (array of observations) and `channels` (what they hear on). The
-  surviving `trust` / `attention` / `respect` integers are **inert**: they exist
-  so a v5 save has somewhere to land during migration, and nothing gates on them
-- `people` — `household`, `crew`, `dealers`
+- `npc` — `yalonda`, `juan`, `mina`, `curtis`, `dre`, `simone`, `selam`,
+  `biniam`, `deshawn`. Each carries a `ledger` (array of observations) and
+  `channels` (what they hear on). The surviving `trust` / `attention` /
+  `respect` integers are **inert**: they exist so a v5 save has somewhere to
+  land during migration, and nothing gates on them
+- `people` — `household`, `crew`, `dealers`. Crew records carry `loyalty`
+  (0-10, starts 5), `tier`, `recruitedDay`, `wageDue` (arrears only —
+  wages auto-deduct at day end), `wageMissedSince`, `status`
+  (`outside` | `active` | `departed`)
+- `crewMeta` — lifetime `totalWagesPaid`
+- `curtisAwareness` — how hard Curtis's people are looking (0-15, phase
+  floors at 3/7/11, watcher-line memory, per-phase message latch). Distinct
+  from `npc.curtis.ledger` (what he feels) and
+  `criminalProfile.districtAwareness` (police difficulty)
 - `nineZeroSevenList` — the 907List broker track. `tier`, `flipCount`,
   `disputes`, `categoryFlips`, `specialist`, `inventory[]`, `pendingSells[]`,
   `buyerRequests[]`, `bulkDeal`, `taken`. **`tier` and `specialist` are mirrors,
@@ -561,16 +578,15 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 Compare after. A matching hash proves you changed nothing the player can see.
 
-**v1.10 baselines.** Attribute checks moved every wired roll off `run.rngState`
-and onto seed hashes, which reorders the shared stream for every strategy, so the
-hash necessarily changed and proves nothing on its own. Check the per-strategy
-metric blocks instead. These replace the v1.9b hashes of `d4474787…` /
-`ddd76695…`:
+**v1.15 baselines.** The crew build adds a new Exposure NPC, nightly wage
+settlement, and the Deshawn offer card, all of which move both hashes on
+purpose. Check the per-strategy metric blocks when a hash moves. These replace
+the v1.13-era hashes of `bd77a59c…` / `5d6f9b0f…`:
 
 | Run | SHA-256 |
 |---|---|
-| `--total 200` | `77b09d7bb1ea9be7440bccac517175679fce3008e83f02923e3cb0a3f4c573ac` |
-| `--total 2000` | `8f68db014f0fe466f38edad05454f632fb90ca2eef0c9c8af4707bb30714990b` |
+| `--total 200` | `01c618d5df19baefb786e34c876be9d7f64d7e43f068fba3f77169edcc22df88` |
+| `--total 2000` | `9f471dec665356be332054827ee46df62aaf10b8f5dc0fccd3749f7d9de87f49` |
 
 Note the two forms differ: `--total 200` splits 200 runs across the thirteen
 strategies, while a bare `200` runs 200 *per strategy*.

@@ -2169,6 +2169,8 @@
   // Retaliation is decided when the card is built so the choices carry plain
   // declarative effects; hash-keyed, so replaying the morning is stable.
   function stickRetaliationEvent(state, entry) {
+    const deshawnRecord = state.people.crew.deshawn;
+    const deshawnActive = !!(deshawnRecord?.recruited && deshawnRecord.status !== "departed" && deshawnRecord.loyalty > 0);
     const target = STICK_TARGET_BY_ID[entry.targetId];
     const name = target ? target.name : "the last mark";
     const won = stringHash(`${state.run.seed}:retaliation:${state.run.day}:${entry.targetId}`) % 100 < clamp(35 + combatCompat(state) * 10, 20, 85);
@@ -2179,9 +2181,10 @@
       description: `People connected to ${name} caught up with you. Two ways this goes.`,
       choices: [
         won
-          ? { label: "Stand your ground", effect: { heat: 1 }, preview: "Hold the corner.", result: "You do not blink. They decide you are not worth it and move on." }
-          : { label: "Stand your ground", effect: { heat: 1, health: -14 }, preview: "Hold the corner.", result: "It costs you. You keep your feet, barely, and they leave a warning." },
+          ? { label: "Stand your ground", effect: { heat: 1, ...(deshawnActive ? { deshawnViolentChoice: true } : {}) }, preview: "Hold the corner.", result: "You do not blink. They decide you are not worth it and move on." }
+          : { label: "Stand your ground", effect: { heat: 1, health: -14, ...(deshawnActive ? { deshawnViolentChoice: true } : {}) }, preview: "Hold the corner.", result: "It costs you. You keep your feet, barely, and they leave a warning." },
         { label: "Pay them off", effect: { cash: -payoff }, preview: payoff > 0 ? `Hand over $${payoff}.` : "Empty pockets talk too.", result: "Money calms the conversation. Nobody swings." },
+        ...(deshawnActive ? [{ label: "Let Deshawn handle it", effect: { deshawnDeescalate: true }, preview: "No blood, −1 Heat. He remembers being trusted with it.", result: "Deshawn hears them out all the way through, which nobody has done for them yet. He names a number lower than they wanted and a reason better than they had. They take both." }] : []),
       ],
     };
   }
@@ -4909,6 +4912,8 @@
         logEntry(state, `${person.name} is on the crew. The operation has another person to answer for.`, "good");
       }
     }
+    if (effect.deshawnDeescalate) applyDeshawnDeescalation(state);
+    if (effect.deshawnViolentChoice) noteViolentChoice(state, true);
     // Declining Deshawn's offer is not a refusal, it's a rain check - he asks
     // again in three days as long as the gate still holds.
     if (effect.deshawnDeclineOffer) {
@@ -5264,6 +5269,33 @@
     return state;
   }
 
+  // --- Deshawn tier-1 de-escalation (v1.15) --------------------------------
+  // Shared by the legacy encounter engine, the consequence engine, and the
+  // stick retaliation card. Resolves a confrontation without violence: no
+  // health loss, one point of heat worked off quietly, a discretion row for
+  // the neighbors (discretion never clears Curtis's network filter, so this
+  // stays local), and Deshawn remembers being trusted with it.
+  function applyDeshawnDeescalation(state) {
+    const crew = state.people.crew.deshawn;
+    if (!crew?.recruited || crew.status === "departed") return;
+    crew.loyalty = Crew.clampLoyalty(crew.loyalty + Crew.DESHAWN_LOYALTY_TRIGGERS.deescalateUsed);
+    state.npc.deshawn.lastDeescalationDay = state.run.day;
+    state.player.heat = clamp(state.player.heat - 1, 0, 15);
+    broadcastTracked(state, { type: "discretion", event: "deshawn_deescalation", channel: "neighborhood", day: state.run.day });
+  }
+  // Choosing violence right after (or instead of) his diplomacy costs a point
+  // of loyalty - once per de-escalation, so a single loud choice is a lesson
+  // rather than a spiral.
+  function noteViolentChoice(state, deescalateWasAvailable) {
+    const crew = state.people.crew.deshawn;
+    if (!crew?.recruited || crew.status === "departed") return;
+    const record = state.npc.deshawn;
+    const withinWindow = record.lastDeescalationDay != null && state.run.day - record.lastDeescalationDay <= Crew.DESHAWN_VIOLENCE_WINDOW_DAYS;
+    if (!deescalateWasAvailable && !withinWindow) return;
+    crew.loyalty = Crew.clampLoyalty(crew.loyalty + Crew.DESHAWN_LOYALTY_TRIGGERS.violenceAfterDeescalate);
+    if (withinWindow) record.lastDeescalationDay = null;
+    logEntry(state, "Deshawn watches you choose the loud way. He does not say anything, which says it.", "warn");
+  }
   function healthModifier(health) { return health > 75 ? 0.05 : health < 40 ? -0.12 : 0; }
   function freeCargoRatio(state) { return clamp((cargoCapacity(state) - cargoUsed(state)) / Math.max(1, cargoCapacity(state)), 0, 1); }
   function encounterChoices(state) {
@@ -5284,6 +5316,8 @@
     const tone = state.people.crew.tone;
     if (tone.recruited && tone.status !== "departed" && tone.loyalty >= 5) choices.push({ id: "call_tone", label: "Call Tone", description: "Spend crew loyalty to end this on his terms." });
     if (encounter.id === "mina_sedan_night" && state.npc.mina.met) choices.push({ id: "call_mina", label: "Signal Mina", description: "Trust Mina to trigger the Night Owl alarm. This spends some of the trust between you." });
+    const deshawnCrew = state.people.crew.deshawn;
+    if (deshawnCrew.recruited && deshawnCrew.status !== "departed" && deshawnCrew.loyalty > 0 && !Crew.CURTIS_CREW_ENCOUNTER_IDS.includes(encounter.id)) choices.push({ id: "deshawn_deescalate", label: "Let Deshawn handle it", description: "No blood, one point of heat worked off. He notices what you choose next." });
     if (encounter.id === "late" && state.base.tracks.security >= 1) choices.push({ id: "use_base", label: "Fall back to the garage", description: "Security and crew assignments determine the result." });
     if (state.player.gear.consumables.medical_kit > 0 && state.player.health < 100) choices.push({ id: "medical_kit", label: "Use medical kit", description: "Recover before making the next move." });
     return choices;
@@ -5343,15 +5377,20 @@
         return state;
       }
       const random = makeRandom(inputState.run.rngState);
+      const deescalateWasAvailable = EncounterSystem.getEligibleChoices(inputState.run.pendingEncounter, inputState).some((item) => item.id === "deshawn_deescalate");
       const state = EncounterSystem.resolveEncounterChoice(inputState.run.pendingEncounter, action.choiceId, inputState, random);
       if (state === inputState) return inputState;
       state.run.rngState = random.state;
+      // Exposure and crew side effects stay out of encounters.js on purpose -
+      // the engine finishes the scene, game-core settles what it cost.
+      if (action.choiceId === "deshawn_deescalate") applyDeshawnDeescalation(state);
+      if (["fight", "draw"].includes(action.choiceId)) noteViolentChoice(state, deescalateWasAvailable);
       if (state.run.pendingEncounter?.resolved) {
         const choice = action.choiceId === "draw" ? "fight" : ["fight", "run", "talk", "pay"].includes(action.choiceId) ? action.choiceId : "other";
         state.stats.encounterChoices[choice] += 1;
         if (["fight", "draw"].includes(action.choiceId)) recordBehavior(state, "stickup", action.choiceId === "draw" ? 2 : 1, `encounter:${state.run.pendingEncounter.id}`, "confrontation");
-        else if (["talk", "call_crew", "use_relationship"].includes(action.choiceId)) recordBehavior(state, "connector", 1, `encounter:${state.run.pendingEncounter.id}`, "relationship");
-        logEntry(state, state.run.pendingEncounter.result?.prose || "The confrontation ends and the run keeps moving.", ["won", "escaped", "talked", "crew_win", "relationship"].includes(state.run.pendingEncounter.result?.outcome) ? "good" : "warn");
+        else if (["talk", "call_crew", "use_relationship", "deshawn_deescalate"].includes(action.choiceId)) recordBehavior(state, "connector", 1, `encounter:${state.run.pendingEncounter.id}`, "relationship");
+        logEntry(state, state.run.pendingEncounter.result?.prose || "The confrontation ends and the run keeps moving.", ["won", "escaped", "talked", "crew_win", "relationship", "deescalated"].includes(state.run.pendingEncounter.result?.outcome) ? "good" : "warn");
       }
       state.stats.highestHeat = Math.max(state.stats.highestHeat, state.player.heat);
       if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
@@ -5366,7 +5405,7 @@
     const random = makeRandom(state.run.rngState);
     const choice = action.choiceId;
     if (["fight", "draw", "intimidate"].includes(choice)) recordBehavior(state, "stickup", choice === "draw" ? 2 : 1, `encounter:${encounter.id}`, "confrontation");
-    else if (["talk", "call_tone", "call_mina"].includes(choice)) recordBehavior(state, "connector", 1, `encounter:${encounter.id}`, "relationship");
+    else if (["talk", "call_tone", "call_mina", "deshawn_deescalate"].includes(choice)) recordBehavior(state, "connector", 1, `encounter:${encounter.id}`, "relationship");
     if (["fight", "draw", "run", "talk", "pay"].includes(choice)) state.stats.encounterChoices[choice === "draw" ? "fight" : choice] += 1;
     else state.stats.encounterChoices.other += 1;
 
@@ -5385,6 +5424,9 @@
       Exposure.recordObservation(state, "mina", { type: "defiance", event: "called_her_into_it", source: "witnessed" });
       state.player.heat = clamp(state.player.heat + 1, 0, 15);
       finishEncounter(state, "escape", "Mina hits the Mini-Mart alarm. The collector runs before the patrol car reaches the lot.");
+    } else if (choice === "deshawn_deescalate") {
+      applyDeshawnDeescalation(state);
+      finishEncounter(state, "talk", "Deshawn crosses the lot like he was already headed this way. Four sentences, none of them raised. The other side leaves with something that lets everyone keep face, and the street forgets it by morning.");
     } else if (choice === "use_base") {
       const defense = state.base.tracks.security + (state.people.crew.tone.assignment === "guard_base" ? 1 : 0);
       if (random.next() < 0.38 + defense * 0.18) finishEncounter(state, "win", "The reinforced garage door holds while the camera catches every face outside it.");
@@ -5420,6 +5462,7 @@
         finishEncounter(state, "escape", lost ? `You clear the lane but drop ${lost.lost} ${lost.product.name} under the fence.` : "You saw the open lane before they did and reach the street with the bag intact.");
       } else failEncounterStep(state, random, "The escape");
     } else if (choice === "fight" || choice === "draw") {
+      noteViolentChoice(state, available.includes("deshawn_deescalate"));
       const weapon = equippedWeapon(state);
       const firearm = choice === "draw";
       // The combat term is gone from the chance on purpose: the attribute acts

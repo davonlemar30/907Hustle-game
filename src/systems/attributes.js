@@ -21,6 +21,9 @@ const {
   GYM_ACTIVITY_BY_ID,
   GYM_STREAK_REQUIREMENT,
   GYM_STREAK_BONUS,
+  NILE_STREAK_REQUIREMENT,
+  NILE_STREAK_BONUS,
+  GROWTH_ATTRIBUTES,
   IDENTITY_BEHAVIOR_COLUMNS,
   IDENTITY_BALANCE_MARGIN,
   IDENTITY_RECENT_DAYS,
@@ -88,8 +91,26 @@ function gymStreakBonus(state, attribute) {
   return streak >= GYM_STREAK_REQUIREMENT ? GYM_STREAK_BONUS : 0;
 }
 
+// The Nile's streak works the same way and pays out to whichever attribute the
+// player trained most recently there - the building teaches two things, so the
+// streak has to know which one it earned.
+function nileStreakBonus(state, attribute) {
+  const player = (state && state.player) || {};
+  if (attribute !== player.nileStreakAttribute) return 0;
+  const streak = Number(player.nileStreak) || 0;
+  return streak >= NILE_STREAK_REQUIREMENT ? NILE_STREAK_BONUS : 0;
+}
+
+// Both streaks are readable at once but can never stack, because they never
+// address the same attribute: the gym only trains Combat and The Nile only
+// trains Charisma and Intelligence. Summing is still the honest expression -
+// if a third venue ever trains Combat, this keeps working without an edit.
+function streakBonus(state, attribute) {
+  return gymStreakBonus(state, attribute) + nileStreakBonus(state, attribute);
+}
+
 function effectiveAttribute(state, attribute) {
-  return clamp(attributeValue(state, attribute) + gymStreakBonus(state, attribute), ATTRIBUTE_MIN, ATTRIBUTE_MAX);
+  return clamp(attributeValue(state, attribute) + streakBonus(state, attribute), ATTRIBUTE_MIN, ATTRIBUTE_MAX);
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +187,22 @@ function attributeGrowth(currentValue, sessionCount, activity) {
   const diminishing = 1 / Math.log2(sessions + 2);
   const capPenalty = (Number(currentValue) || 0) >= GROWTH_CAP_PENALTY_FLOOR ? GROWTH_CAP_PENALTY : 1;
   return baseGrowth * diminishing * capPenalty;
+}
+
+// Which attribute a growth source feeds. Null for an unknown id, so a typo at a
+// call site fails visibly instead of quietly training nothing.
+function growthAttribute(activity) {
+  return GROWTH_ATTRIBUTES[activity] || null;
+}
+
+// The whole growth read for one source in one call: what it trains, and how much
+// this particular session is worth given the player's current value and how many
+// times they have done it before. The reducer owns the write.
+function growthFor(state, activity, sessionCount) {
+  const attribute = growthAttribute(activity);
+  if (!attribute) return null;
+  const current = normalizedAttributes(state)[attribute];
+  return { attribute, growth: attributeGrowth(current, sessionCount, activity) };
 }
 
 function gymActivityAvailable(state, activityId) {
@@ -290,6 +327,10 @@ module.exports = {
   attributeLabel,
   effectiveAttribute,
   gymStreakBonus,
+  nileStreakBonus,
+  streakBonus,
+  growthAttribute,
+  growthFor,
   buildOutcomePool,
   resolveWithAttribute,
   resolveAction,

@@ -51,8 +51,12 @@ test("Around actions are filtered to the current district", () => {
   state.world.locations.gamblingKnown = true;
   state.run.slot = 2;
   const spenard = C.selectors.aroundActions(state).map((entry) => entry.id);
-  for (const id of ["explore_spenard", "local_intel", "spenard_gambling"]) assert.ok(spenard.includes(id), id);
+  for (const id of ["explore_spenard", "local_intel"]) assert.ok(spenard.includes(id), id);
+  // v1.11 retired spenard_gambling. The Nile replaced it and is a Places door
+  // rather than an Around action, the same as the Night Owl and the gym.
+  assert.ok(!spenard.includes("spenard_gambling"), "the abstract backroom game is gone");
   assert.ok(!spenard.includes("night_owl")); assert.ok(!spenard.includes("spenard_gym"));
+  assert.ok(!spenard.includes("the_nile")); assert.ok(!spenard.includes("the_nile_den"));
   assert.ok(!spenard.includes("return_spenard"));
 
   for (const area of C.NEIGHBORHOODS.filter((entry) => entry.id !== C.HOME_DISTRICT_ID)) {
@@ -166,7 +170,8 @@ test("Walk back costs 3 Health, consumes two parts, clamps at Night, and bypasse
 
 test("wrong-district reducers reject Spenard actions while valid Spenard actions still run", () => {
   const state = place(fresh(91000), "downtown", { cash: 500, slot: 2 });
-  state.world.locations.gamblingKnown = true;
+  state.world.locations.theNile.discovered = true;
+  state.world.locations.theNile.secondFloorAccess = true;
   state.jobs.discovered = C.SPENARD_JOBS.map((job) => job.id);
   state.npc.mina.met = true;
   state.npc.mina.available = true;
@@ -174,7 +179,10 @@ test("wrong-district reducers reject Spenard actions while valid Spenard actions
     { type: "WANDER_SPENARD" },
     { type: "EXPLORE_SPENARD" },
     { type: "TRAIN_ATTRIBUTE", attribute: "strength" },
-    { type: "GAMBLE", stake: 20, approach: "read" },
+    { type: "NILE_WELLNESS" },
+    { type: "NILE_COFFEE" },
+    { type: "NILE_TONK_SIT", buyIn: 20 },
+    { type: "NILE_CELO_SIT", buyIn: 20 },
     { type: "SHOPLIFT" },
     { type: "VIEW_NIGHT_OWL_BOARD" },
     { type: "BUY_COFFEE" },

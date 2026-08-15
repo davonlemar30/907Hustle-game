@@ -2,10 +2,77 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-The current playable build is **v1.10: Unified Stat Architecture**.
+The current playable build is **v1.11: Attribute Growth Triangle + The Nile**.
 
 New here? Read [ARCHITECTURE.md](ARCHITECTURE.md) — file map, state shape, event
 card schema, and the rules a change has to hold to.
+
+## What changed in v1.11
+
+**Charisma and Intelligence stopped being dead ends.** v1.10 made attributes the
+engine behind every outcome and shipped with a hole it named itself: only Combat
+had a way up. Two thirds of the system gated real checks — job interviews,
+negotiation, market reads — with no path to improve them. v1.11 closes the
+triangle by opening **The Nile**, a two-floor Ethiopian-owned building on Spenard
+Road, and by making three things that were already happening finally count.
+
+- **Six new growth sources.** Charisma from a wellness visit (0.25), a hand of
+  Tonk (0.4), and a night at the Night Owl (0.15). Intelligence from a round of
+  Cee-lo (0.4), a 907List flip that clears a 1.3x margin (0.2), and watching
+  Biniam work the coffee ceremony (0.15). All six taper on the same log2 curve
+  the gym uses, and none of them can carry a player past *Solid* alone.
+- **The Nile, two floors.** Downstairs is Blue Nile Wellness: $30 and a part of
+  the day buys back 15 health, which makes **Selam Tesfaye** the cheapest recovery
+  in the run and the reason you find the building before you find the room above
+  it. Upstairs is **Biniam Tesfaye**'s room, open Evening and Night behind a
+  code-locked door that only a vouch opens.
+- **Two games that are actually games.** Tonk deals five cards from a real
+  52-card deck; you form spreads and runs, drive your hand toward zero, and drop
+  when you think it is the lowest at the table — drop wrong and you pay double.
+  Cee-lo is three dice, a banker's point, 4-5-6 and trips and 1-2-3, and real
+  odds. Neither is a stat check with animation.
+- **The attribute buys information, never outcomes.** At Charisma 3–5 one
+  opponent visibly hesitates; at 6+ you read their hand's category. At
+  Intelligence 3–5 you get a phrase for the odds; at 6+ you get the exact number
+  *and* the option to press or back off. Crucially the *read itself* is a roll:
+  in the middle band it can be wrong, and a catastrophic read shows the tell
+  backwards. Reaching 6 removes the catastrophic tier entirely, so what the high
+  band actually buys is **certainty**, not a bigger edge.
+- **The Nile is quiet, and that is the point.** Nothing that happens in that
+  building reaches Curtis's network channel. Observations propagate on
+  neighborhood and household only. A player under rival pressure can build social
+  capital here without feeding the attention system, which makes The Nile
+  strategically valuable rather than merely new.
+- **The abstract backroom game retired.** `spenard_gambling` was a stat check
+  with a stake. Cal's discovery scene at the Night Owl survives as a real
+  narrative beat and now points at The Nile's second floor. Nobody rolls fake
+  dice ten feet from real Cee-lo.
+
+**Two bugs the playtest caught that the tests could not.** Selam was speaking her
+Warm line whenever her *brother* liked the player, because one shared `band` was
+serving two people. And the dice were badly biased: deriving three throws from
+keys differing only in their last character reads correlated bits out of FNV-1a,
+which produced 1-2-3 at 14% against a true 2.8% and a real point at 0.8% against
+a true 41.7%. Every rules test still passed, because they all used hand-built
+dice. Both are fixed and both now have tests — including a 60,000-throw
+distribution assertion.
+
+**Saves are v9.** v3 through v8 all migrate. New fields default in through
+`mergeDefaults`, so a v8 save arrives with The Nile undiscovered and the tables
+at zero.
+
+**Balance, measured over 2,000 seeded runs.** Every strategy except the gambler
+sits within 4.6% of its v1.10 average, and the eleven non-gambling strategies
+move **+0.19%** overall — the new content is additive rather than disruptive. The
+gambler is **+34%**, which is the system working: real decisions at a real table
+beat the EV-negative single roll it replaced.
+
+| Track | Sessions/day | Reaches 3 |
+|---|---|---|
+| Charisma (spa + Tonk) | 2 | **Day 6** |
+| Intelligence (Cee-lo + coffee) | 2 | **Day 7** |
+| Either, one session/day | 1 | Day 11–14 |
+| Any track, alone | 3 | **never reaches 6** |
 
 ## What changed in v1.10
 
@@ -268,9 +335,11 @@ All primary controls target a minimum 44px touch area. The shell is designed for
 
 ## Save compatibility
 
-v1.10 saves use schema version **8** and local-storage key `907ogr_v8`.
+v1.11 saves use schema version **9** and local-storage key `907ogr_v9`.
 
-The loader continues to read `907ogr_v6`, `907ogr_v5`, `907ogr_v4`, and `907ogr_v3` once, migrate them to v7, and preserve:
+The loader continues to read `907ogr_v8`, `907ogr_v7`, `907ogr_v6`, `907ogr_v5`, `907ogr_v4`, and `907ogr_v3` once, migrate them to v9, and preserve:
+
+- everything a v8 save had, plus The Nile defaulted in undiscovered, the gambling counters at zero, and Selam and Biniam arriving Neutral with empty ledgers
 
 - every 907List field a v6 save had, plus the broker track defaulted in: old sales carry over as the flip count they would have been, and the old string tier (`"basic"` / `"upgraded"`) is dropped and re-derived rather than trusted
 

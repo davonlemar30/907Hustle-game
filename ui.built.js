@@ -65,7 +65,33 @@
       ];
       var ADVANTAGE_THRESHOLD = 3;
       var CATASTROPHE_IMMUNITY_THRESHOLD = 6;
-      var GROWTH_RATES = { bag_work: 0.3, cardio: 0.2, sparring: 0.5 };
+      var GROWTH_RATES = {
+        // Combat - the Spenard Gym.
+        bag_work: 0.3,
+        cardio: 0.2,
+        sparring: 0.5,
+        // Charisma - The Nile's two floors, plus the Night Owl nights that were
+        // already happening and simply never counted for anything.
+        nile_social: 0.25,
+        tonk_game: 0.4,
+        night_owl_social: 0.15,
+        // Intelligence - reading a table, reading a listing, reading a man's hands
+        // while he pours coffee.
+        celo_game: 0.4,
+        list_flip: 0.2,
+        coffee_ceremony: 0.15
+      };
+      var GROWTH_ATTRIBUTES = {
+        bag_work: "combat",
+        cardio: "combat",
+        sparring: "combat",
+        nile_social: "charisma",
+        tonk_game: "charisma",
+        night_owl_social: "charisma",
+        celo_game: "intelligence",
+        list_flip: "intelligence",
+        coffee_ceremony: "intelligence"
+      };
       var GYM_ACTIVITIES = [
         {
           id: "bag_work",
@@ -96,6 +122,8 @@
       var GYM_STREAK_BONUS = 1;
       var GROWTH_CAP_PENALTY_FLOOR = 6;
       var GROWTH_CAP_PENALTY = 0.5;
+      var NILE_STREAK_REQUIREMENT = 3;
+      var NILE_STREAK_BONUS = 1;
       var IDENTITY_BEHAVIOR_COLUMNS = {
         violence: "violence",
         defiance: "violence",
@@ -165,7 +193,15 @@
         job_interview: { success: { clean: 0.45, messy: 0.55 }, failure: { failure: 1 } },
         night_owl: { success: { clean: 0.5, messy: 0.5 }, failure: { failure: 0.85, catastrophic: 0.15 } },
         gambling: { success: { clean: 0.4, messy: 0.6 }, failure: { failure: 0.8, catastrophic: 0.2 } },
-        market_meetup: { success: { clean: 0.7, messy: 0.3 }, failure: { failure: 0.55, catastrophic: 0.45 } }
+        market_meetup: { success: { clean: 0.7, messy: 0.3 }, failure: { failure: 0.55, catastrophic: 0.45 } },
+        // The two Nile tables read opponents rather than resolving the hand - the
+        // hand is played for real in src/data/gambling.js. What these pools decide is
+        // how much the player gets to SEE: a clean read surfaces a tell, a catastrophe
+        // surfaces a false one. Neither can go worse than that, which is why neither
+        // carries a catastrophic tier that costs money. Losing money is the game's
+        // job, not the attribute's.
+        tonk_read: { success: { clean: 0.5, messy: 0.5 }, failure: { failure: 0.75, catastrophic: 0.25 } },
+        celo_read: { success: { clean: 0.55, messy: 0.45 }, failure: { failure: 0.75, catastrophic: 0.25 } }
       };
       var ACTION_ATTRIBUTE_MAP = {
         robbery: "combat",
@@ -176,7 +212,9 @@
         job_interview: "charisma",
         night_owl: "charisma",
         gambling: "charisma",
-        market_meetup: "intelligence"
+        market_meetup: "intelligence",
+        tonk_read: "charisma",
+        celo_read: "intelligence"
       };
       var OUTCOME_OBSERVATIONS = {
         robbery: {
@@ -238,6 +276,11 @@
           failure: [],
           catastrophic: [{ type: "financial", event: "gambling_debt", channel: "neighborhood" }]
         },
+        // Reading a table is not an event anybody reports. Both maps are empty on
+        // purpose - what The Nile broadcasts is the money at the end of the night, and
+        // gamblingObservations() prices that by how much of it there was.
+        tonk_read: { clean: [], messy: [], failure: [], catastrophic: [] },
+        celo_read: { clean: [], messy: [], failure: [], catastrophic: [] },
         market_meetup: {
           // A clean meetup writes nothing. The flip itself already broadcasts
           // `financial / 907list_profit` when it settles; a well-run handoff in a
@@ -262,12 +305,15 @@
         ADVANTAGE_THRESHOLD,
         CATASTROPHE_IMMUNITY_THRESHOLD,
         GROWTH_RATES,
+        GROWTH_ATTRIBUTES,
         GYM_ACTIVITIES,
         GYM_ACTIVITY_BY_ID,
         SPARRING_INJURY_CHANCE,
         SPARRING_INJURY_HEALTH,
         GYM_STREAK_REQUIREMENT,
         GYM_STREAK_BONUS,
+        NILE_STREAK_REQUIREMENT,
+        NILE_STREAK_BONUS,
         GROWTH_CAP_PENALTY_FLOOR,
         GROWTH_CAP_PENALTY,
         IDENTITY_BEHAVIOR_COLUMNS,
@@ -469,10 +515,191 @@
     }
   });
 
+  // src/data/disposition-bands.js
+  var require_disposition_bands = __commonJS({
+    "src/data/disposition-bands.js"(exports, module) {
+      var BANDS = {
+        HOSTILE: 0,
+        COLD: 1,
+        NEUTRAL: 2,
+        WARM: 3,
+        TRUSTED: 4,
+        BONDED: 5
+      };
+      var BAND_IDS = ["hostile", "cold", "neutral", "warm", "trusted", "bonded"];
+      var BAND_LABELS = {
+        hostile: "Hostile",
+        cold: "Cold",
+        neutral: "Neutral",
+        warm: "Warm",
+        trusted: "Trusted",
+        bonded: "Bonded"
+      };
+      var BAND_FLOORS = [
+        [BANDS.BONDED, 9],
+        [BANDS.TRUSTED, 6],
+        [BANDS.WARM, 3],
+        [BANDS.NEUTRAL, 0],
+        [BANDS.COLD, -5]
+      ];
+      function bandFor(score) {
+        const value = Number(score) || 0;
+        for (const [band, floor] of BAND_FLOORS) if (value >= floor) return band;
+        return BANDS.HOSTILE;
+      }
+      function bandId(band) {
+        return BAND_IDS[band] || BAND_IDS[BANDS.NEUTRAL];
+      }
+      function bandLabel(band) {
+        return BAND_LABELS[bandId(band)];
+      }
+      module.exports = { BANDS, BAND_IDS, BAND_LABELS, BAND_FLOORS, bandFor, bandId, bandLabel };
+    }
+  });
+
+  // src/data/nile.js
+  var require_nile = __commonJS({
+    "src/data/nile.js"(exports, module) {
+      var { BANDS } = require_disposition_bands();
+      var NILE_LOCATION_ID = "the_nile";
+      var WELLNESS_SLOTS = [0, 1, 2];
+      var DEN_SLOTS = [2, 3];
+      var WELLNESS_COST = 30;
+      var WELLNESS_HEALTH = 15;
+      var DISCOVERY_METHODS = {
+        board: "night_owl_board",
+        juan: "juan_mention",
+        wander: "spenard_wander"
+      };
+      var WANDER_BASE_CHANCE = 0.05;
+      var WANDER_RAMP = 0.03;
+      var WANDER_MAX_CHANCE = 0.45;
+      function wanderChance(misses) {
+        const count = Math.max(0, Math.floor(Number(misses) || 0));
+        return Math.min(WANDER_MAX_CHANCE, WANDER_BASE_CHANCE + count * WANDER_RAMP);
+      }
+      var JUAN_MENTION_BAND = BANDS.WARM;
+      var DEN_ACCESS_METHODS = {
+        selam: "selam_bridge",
+        juan: "juan_vouch",
+        regular: "night_owl_regular"
+      };
+      var SELAM_BRIDGE_BAND = BANDS.WARM;
+      var JUAN_VOUCH_BAND = BANDS.TRUSTED;
+      var REGULAR_VOUCH_LEVEL = 2;
+      var BOARD_FLYER = {
+        id: "blue_nile",
+        title: "Blue Nile Wellness",
+        body: "Steam, stones, and traditional bodywork on Spenard Road. Walk-ins welcome until eight."
+      };
+      var AMBIENT = {
+        wellness: {
+          0: [
+            "Frankincense hits you at the door. The woman at the front desk smiles without looking up from her phone.",
+            "Someone is running the steam generator in the back. The hallway is warm and smells like eucalyptus."
+          ],
+          1: [
+            "Steam curls under a treatment room door. Someone laughs inside, muffled.",
+            "A framed photo of a mountain range you do not recognize. The colors are oversaturated."
+          ],
+          2: [
+            "The light through the front window has gone orange. A jebena is going somewhere out of sight.",
+            "Two women talk over the front desk in a language you do not have. Neither one looks up."
+          ]
+        },
+        den: {
+          2: [
+            "The hookah haze sits at shoulder height. Someone's jebena bubbles on the charcoal.",
+            "A TV mounted high is showing a match nobody is watching closely.",
+            "Shoes are lined up at the edge of the raised platform. You add yours to the row."
+          ],
+          3: [
+            "Dice hit felt. Three languages react at once.",
+            "Someone's phone rings and the whole table goes quiet until it stops.",
+            "Through the floor, the wellness center's speaker blends with the TV commentary. Two kinds of distant."
+          ]
+        }
+      };
+      function ambientFor(floor, slot, day) {
+        const lines = (AMBIENT[floor] || {})[slot];
+        if (!lines || !lines.length) return null;
+        return lines[Math.abs(Number(day) || 0) % lines.length];
+      }
+      var SELAM_LINES = {
+        [BANDS.HOSTILE]: "We are fully booked. I am sorry.",
+        [BANDS.COLD]: "Thirty dollars for the steam room. Towels are by the door.",
+        [BANDS.NEUTRAL]: "Thirty dollars for the steam room. Towels are by the door.",
+        [BANDS.WARM]: "You are becoming a regular. That is good. Regulars get the good oil. My brother has people upstairs most evenings. Tell him I sent you.",
+        [BANDS.TRUSTED]: "Ayzoh. Sit. You look like you have been carrying something heavy all week.",
+        [BANDS.BONDED]: "Tiru. I saved you the room at the end, it is quieter. We will talk after."
+      };
+      var SELAM_INTEL = [
+        "A man was asking about someone matching your description at the corner store. Be careful.",
+        "The police were parked on Spenard Road most of this morning. They are gone now. I thought you should know.",
+        "One of my clients watches the other clients. I do not like that. Keep your business away from my door."
+      ];
+      var BINIAM_LINES = {
+        [BANDS.HOSTILE]: "Not tonight. Come back when you have thought about it.",
+        [BANDS.COLD]: "Selam's brother? Have some coffee. Watch.",
+        [BANDS.NEUTRAL]: "Sit down. Take the coffee. The Tonk table has room.",
+        [BANDS.WARM]: "Second cup. The dice are running tonight if you want them.",
+        [BANDS.TRUSTED]: "Third round. You are welcome here. There are people I want you to meet on a Saturday.",
+        [BANDS.BONDED]: "Third round, and we should talk about something other than dice."
+      };
+      function coffeeCups(band) {
+        if (band >= BANDS.TRUSTED) return 3;
+        if (band >= BANDS.WARM) return 2;
+        return 1;
+      }
+      var TONK_BAND = BANDS.NEUTRAL;
+      var CELO_BAND = BANDS.WARM;
+      var PRIVATE_BAND = BANDS.TRUSTED;
+      function tableAccess(band) {
+        return {
+          watch: true,
+          tonk: band >= TONK_BAND,
+          celo: band >= CELO_BAND,
+          // Future content. Named so the UI can say "not yet" rather than hide it.
+          privateGames: band >= PRIVATE_BAND,
+          cups: coffeeCups(band)
+        };
+      }
+      module.exports = {
+        NILE_LOCATION_ID,
+        WELLNESS_SLOTS,
+        DEN_SLOTS,
+        WELLNESS_COST,
+        WELLNESS_HEALTH,
+        DISCOVERY_METHODS,
+        WANDER_BASE_CHANCE,
+        WANDER_RAMP,
+        WANDER_MAX_CHANCE,
+        wanderChance,
+        JUAN_MENTION_BAND,
+        DEN_ACCESS_METHODS,
+        SELAM_BRIDGE_BAND,
+        JUAN_VOUCH_BAND,
+        REGULAR_VOUCH_LEVEL,
+        BOARD_FLYER,
+        AMBIENT,
+        ambientFor,
+        SELAM_LINES,
+        SELAM_INTEL,
+        BINIAM_LINES,
+        coffeeCups,
+        TONK_BAND,
+        CELO_BAND,
+        PRIVATE_BAND,
+        tableAccess
+      };
+    }
+  });
+
   // src/data/npc-lenses.js
   var require_npc_lenses = __commonJS({
     "src/data/npc-lenses.js"(exports, module) {
       var { OBSERVATION_CATEGORIES } = require_observations();
+      var { NILE_LOCATION_ID } = require_nile();
       var CIVILIAN = {
         presence: 1,
         honesty: 1.5,
@@ -564,6 +791,30 @@
           // omitted so a missing lens is always a bug, never a silent default.
           archetype: "THREAT",
           weights: {}
+        },
+        // Selam runs the ground floor of The Nile and reads one axis above all
+        // others: is this person a threat to the building. Her father's building is
+        // the family's only real asset and a raid upstairs closes her business by
+        // association, so heat and violence at her door are existential rather than
+        // merely bad.
+        selam: {
+          archetype: "CIVILIAN",
+          weights: { heat_exposure: -4, discretion: 3, presence: 2, growth: 2, violence: -4 },
+          // Hypervigilant about her own address specifically. A fight two districts
+          // over is a fight; a fight outside her window is her livelihood.
+          locationWeights: { [NILE_LOCATION_ID]: { violence: 2, heat_exposure: 2 } },
+          // She does not care how the dice went. Her character doc is explicit that
+          // gambling behavior carries no weight with her - it is her brother's
+          // business and she has said so out loud.
+          eventWeights: { gambling_profit: 0, gambling_loss: 0 }
+        },
+        // Biniam watches what happens in his house and nothing else. The single most
+        // characterful line in his lens is the source multiplier: street gossip about
+        // his guests is worth exactly zero to him.
+        biniam: {
+          archetype: "STREET",
+          weights: { violence: -2, discretion: 3, presence: 1.5, defiance: -2, growth: 2 },
+          sourceMultipliers: { network: 0 }
         }
       };
       var EXPOSURE_NPC_IDS = Object.keys(NPC_LENSES);
@@ -581,7 +832,8 @@
           inverted: INVERTED_ARCHETYPES.has(definition.archetype),
           weights,
           eventWeights: { ...SHARED_EVENT_WEIGHTS, ...definition.eventWeights || {} },
-          sourceMultipliers: definition.sourceMultipliers || {}
+          sourceMultipliers: definition.sourceMultipliers || {},
+          locationWeights: definition.locationWeights || {}
         };
       }
       module.exports = {
@@ -592,48 +844,6 @@
         EXPOSURE_NPC_IDS,
         resolveLens
       };
-    }
-  });
-
-  // src/data/disposition-bands.js
-  var require_disposition_bands = __commonJS({
-    "src/data/disposition-bands.js"(exports, module) {
-      var BANDS = {
-        HOSTILE: 0,
-        COLD: 1,
-        NEUTRAL: 2,
-        WARM: 3,
-        TRUSTED: 4,
-        BONDED: 5
-      };
-      var BAND_IDS = ["hostile", "cold", "neutral", "warm", "trusted", "bonded"];
-      var BAND_LABELS = {
-        hostile: "Hostile",
-        cold: "Cold",
-        neutral: "Neutral",
-        warm: "Warm",
-        trusted: "Trusted",
-        bonded: "Bonded"
-      };
-      var BAND_FLOORS = [
-        [BANDS.BONDED, 9],
-        [BANDS.TRUSTED, 6],
-        [BANDS.WARM, 3],
-        [BANDS.NEUTRAL, 0],
-        [BANDS.COLD, -5]
-      ];
-      function bandFor(score) {
-        const value = Number(score) || 0;
-        for (const [band, floor] of BAND_FLOORS) if (value >= floor) return band;
-        return BANDS.HOSTILE;
-      }
-      function bandId(band) {
-        return BAND_IDS[band] || BAND_IDS[BANDS.NEUTRAL];
-      }
-      function bandLabel(band) {
-        return BAND_LABELS[bandId(band)];
-      }
-      module.exports = { BANDS, BAND_IDS, BAND_LABELS, BAND_FLOORS, bandFor, bandId, bandLabel };
     }
   });
 
@@ -655,7 +865,13 @@
         mina: ["direct", "neighborhood", "network"],
         curtis: ["direct", "network", "reputation"],
         dre: ["direct", "network"],
-        simone: ["direct", "network"]
+        simone: ["direct", "network"],
+        // Neither Tesfaye is on the network, and that is the point of the building.
+        // Selam's information comes from the people who walk through her own door;
+        // Biniam's comes from the room he is standing in. Wiring either to `network`
+        // would quietly hand Curtis a window into The Nile.
+        selam: ["direct", "neighborhood"],
+        biniam: ["direct", "neighborhood"]
       };
       var CURTIS_NETWORK_CATEGORIES = /* @__PURE__ */ new Set(["violence", "defiance", "growth"]);
       var CURTIS_VOLUME_THRESHOLD = 200;
@@ -670,7 +886,13 @@
         mina: [2, 3],
         curtis: [1, 2, 3],
         dre: [1, 2, 3],
-        simone: [1, 2, 3]
+        simone: [1, 2, 3],
+        // Selam is behind the desk from opening through the early evening. Biniam's
+        // room does not open until six, so a Morning sighting never becomes something
+        // he knows - the same rule that keeps Mina from hearing about a Morning at the
+        // Night Owl.
+        selam: [0, 1, 2],
+        biniam: [2, 3]
       };
       var NPC_PRESENCE_AREAS = {
         yalonda: ["north_star_lot"],
@@ -678,7 +900,10 @@
         mina: ["north_star_lot"],
         curtis: ["north_star_lot", "downtown"],
         dre: ["north_star_lot", "downtown"],
-        simone: ["north_star_lot", "downtown"]
+        simone: ["north_star_lot", "downtown"],
+        // Both live and work in the building. Neither leaves Spenard.
+        selam: ["north_star_lot"],
+        biniam: ["north_star_lot"]
       };
       function channelFor(id) {
         return CHANNELS[id] || CHANNELS.direct;
@@ -737,9 +962,12 @@
         return record.ledger;
       }
       function rowWeight(lens, row) {
+        var _a;
         const base = row.event && row.event in lens.eventWeights ? lens.eventWeights[row.event] : lens.weights[row.type];
-        const multiplier = lens.sourceMultipliers[row.source] || 1;
-        return base * multiplier * effectiveCount(row);
+        const multiplier = (_a = lens.sourceMultipliers[row.source]) != null ? _a : 1;
+        const byLocation = (lens.locationWeights || {})[row.location];
+        const locationScale = byLocation && row.type in byLocation ? byLocation[row.type] : 1;
+        return base * multiplier * locationScale * effectiveCount(row);
       }
       function getDisposition(npcId, state) {
         const lens = resolveLens(npcId);
@@ -842,18 +1070,22 @@
       function describeDisposition(state, npcId) {
         const lens = resolveLens(npcId);
         if (!lens) return null;
-        const rows = ledgerOf(state, npcId).map((row) => ({
-          type: row.type,
-          event: row.event,
-          location: row.location,
-          source: row.source,
-          count: row.count,
-          day: row.day,
-          baseWeight: row.event && row.event in lens.eventWeights ? lens.eventWeights[row.event] : lens.weights[row.type],
-          sourceMultiplier: lens.sourceMultipliers[row.source] || 1,
-          effectiveCount: Math.round(effectiveCount(row) * 100) / 100,
-          contribution: Math.round(rowWeight(lens, row) * 100) / 100
-        })).sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
+        const rows = ledgerOf(state, npcId).map((row) => {
+          var _a, _b;
+          return {
+            type: row.type,
+            event: row.event,
+            location: row.location,
+            source: row.source,
+            count: row.count,
+            day: row.day,
+            baseWeight: row.event && row.event in lens.eventWeights ? lens.eventWeights[row.event] : lens.weights[row.type],
+            sourceMultiplier: (_a = lens.sourceMultipliers[row.source]) != null ? _a : 1,
+            locationScale: (_b = ((lens.locationWeights || {})[row.location] || {})[row.type]) != null ? _b : 1,
+            effectiveCount: Math.round(effectiveCount(row) * 100) / 100,
+            contribution: Math.round(rowWeight(lens, row) * 100) / 100
+          };
+        }).sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
         const score = getDisposition(npcId, state);
         const band = bandFor(score);
         return {
@@ -901,6 +1133,9 @@
         GYM_ACTIVITY_BY_ID,
         GYM_STREAK_REQUIREMENT,
         GYM_STREAK_BONUS,
+        NILE_STREAK_REQUIREMENT,
+        NILE_STREAK_BONUS,
+        GROWTH_ATTRIBUTES,
         IDENTITY_BEHAVIOR_COLUMNS,
         IDENTITY_BALANCE_MARGIN,
         IDENTITY_RECENT_DAYS,
@@ -943,8 +1178,17 @@
         const streak = Number(state && state.player && state.player.gymStreak) || 0;
         return streak >= GYM_STREAK_REQUIREMENT ? GYM_STREAK_BONUS : 0;
       }
+      function nileStreakBonus(state, attribute) {
+        const player = state && state.player || {};
+        if (attribute !== player.nileStreakAttribute) return 0;
+        const streak = Number(player.nileStreak) || 0;
+        return streak >= NILE_STREAK_REQUIREMENT ? NILE_STREAK_BONUS : 0;
+      }
+      function streakBonus(state, attribute) {
+        return gymStreakBonus(state, attribute) + nileStreakBonus(state, attribute);
+      }
       function effectiveAttribute(state, attribute) {
-        return clamp(attributeValue(state, attribute) + gymStreakBonus(state, attribute), ATTRIBUTE_MIN, ATTRIBUTE_MAX);
+        return clamp(attributeValue(state, attribute) + streakBonus(state, attribute), ATTRIBUTE_MIN, ATTRIBUTE_MAX);
       }
       function buildOutcomePool(actionType, chance) {
         const shape = OUTCOME_SHAPES[actionType];
@@ -990,6 +1234,15 @@
         const diminishing = 1 / Math.log2(sessions + 2);
         const capPenalty = (Number(currentValue) || 0) >= GROWTH_CAP_PENALTY_FLOOR ? GROWTH_CAP_PENALTY : 1;
         return baseGrowth * diminishing * capPenalty;
+      }
+      function growthAttribute(activity) {
+        return GROWTH_ATTRIBUTES[activity] || null;
+      }
+      function growthFor(state, activity, sessionCount) {
+        const attribute = growthAttribute(activity);
+        if (!attribute) return null;
+        const current = normalizedAttributes(state)[attribute];
+        return { attribute, growth: attributeGrowth(current, sessionCount, activity) };
       }
       function gymActivityAvailable(state, activityId) {
         const activity = GYM_ACTIVITY_BY_ID[activityId];
@@ -1075,6 +1328,10 @@
         attributeLabel,
         effectiveAttribute,
         gymStreakBonus,
+        nileStreakBonus,
+        streakBonus,
+        growthAttribute,
+        growthFor,
         buildOutcomePool,
         resolveWithAttribute,
         resolveAction,
@@ -2842,6 +3099,449 @@
     }
   });
 
+  // src/data/gambling.js
+  var require_gambling = __commonJS({
+    "src/data/gambling.js"(exports, module) {
+      var { stringHash, seededShuffle, makeRandom } = require_random();
+      var SUITS = ["S", "H", "D", "C"];
+      var RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+      var RANK_VALUES = { A: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, 10: 10, J: 10, Q: 10, K: 10 };
+      var RANK_ORDER = Object.fromEntries(RANKS.map((rank, index) => [rank, index]));
+      function buildDeck() {
+        const deck = [];
+        for (const suit of SUITS) {
+          for (const rank of RANKS) deck.push({ id: `${rank}${suit}`, rank, suit, value: RANK_VALUES[rank] });
+        }
+        return deck;
+      }
+      function shuffledDeck(seed, day, gameCount) {
+        return seededShuffle(buildDeck(), seed, stringHash(`tonk:${day}:${gameCount}`));
+      }
+      var TONK_HAND_SIZE = 5;
+      function findSpreads(cards) {
+        const byRank = {};
+        for (const card of cards) (byRank[card.rank] = byRank[card.rank] || []).push(card);
+        return Object.values(byRank).filter((group) => group.length >= 3);
+      }
+      function findRuns(cards) {
+        const runs = [];
+        for (const suit of SUITS) {
+          const inSuit = cards.filter((card) => card.suit === suit).sort((a, b) => RANK_ORDER[a.rank] - RANK_ORDER[b.rank]);
+          let current = [];
+          for (const card of inSuit) {
+            const previous = current[current.length - 1];
+            if (previous && RANK_ORDER[card.rank] === RANK_ORDER[previous.rank] + 1) current.push(card);
+            else current = [card];
+            if (current.length >= 3) {
+              if (runs.length && runs[runs.length - 1][0] === current[0]) runs[runs.length - 1] = current.slice();
+              else runs.push(current.slice());
+            }
+          }
+        }
+        return runs;
+      }
+      function meldedCards(cards) {
+        const melded = /* @__PURE__ */ new Set();
+        for (const group of [...findSpreads(cards), ...findRuns(cards)]) {
+          for (const card of group) melded.add(card.id);
+        }
+        return melded;
+      }
+      function handValue(cards) {
+        const melded = meldedCards(cards);
+        return cards.reduce((total, card) => melded.has(card.id) ? total : total + card.value, 0);
+      }
+      function describeHand(cards) {
+        const spreads = findSpreads(cards);
+        const runs = findRuns(cards);
+        return {
+          value: handValue(cards),
+          spreads: spreads.map((group) => group.map((card) => card.id)),
+          runs: runs.map((group) => group.map((card) => card.id)),
+          canDrop: true
+        };
+      }
+      var TONK_STYLES = [
+        { id: "aggressive", label: "the trucker", dropAt: 18, tell: 0.8, discardsHigh: true },
+        { id: "conservative", label: "the quiet one", dropAt: 8, tell: 0.25, discardsHigh: true },
+        { id: "erratic", label: "the loud one", dropAt: 25, tell: 0.6, discardsHigh: false }
+      ];
+      var TONK_STYLE_BY_ID = Object.fromEntries(TONK_STYLES.map((style) => [style.id, style]));
+      function opponentStyles(seed, day, gameCount, count) {
+        const rotated = seededShuffle(TONK_STYLES, seed, stringHash(`tonk:styles:${day}:${gameCount}`));
+        return rotated.slice(0, Math.max(1, Math.min(TONK_STYLES.length, count)));
+      }
+      function opponentTurn(hand, discardTop, style) {
+        const withDiscard = discardTop ? [...hand, discardTop] : hand;
+        const drawFromDiscard = !!discardTop && handValue(withDiscard) < handValue(hand);
+        return { drawFromDiscard, dropIntent: handValue(hand) <= style.dropAt };
+      }
+      function opponentDiscard(hand, style) {
+        const melded = meldedCards(hand);
+        const loose = hand.filter((card) => !melded.has(card.id));
+        const pool = loose.length ? loose : hand;
+        const sorted = pool.slice().sort((a, b) => b.value - a.value);
+        return style.discardsHigh ? sorted[0] : sorted[sorted.length - 1];
+      }
+      var TONK_MIN_BUY_IN = 10;
+      var TONK_MAX_BUY_IN = 50;
+      var HOUSE_RAKE_FLOOR = 50;
+      var HOUSE_RAKE = 0.1;
+      function rakeFor(pot) {
+        return pot > HOUSE_RAKE_FLOOR ? Math.floor(pot * HOUSE_RAKE) : 0;
+      }
+      function settleTonk({ dropper, hands, buyIn, tonk }) {
+        const values = hands.map((hand, seat) => ({ seat, value: handValue(hand) }));
+        const lowest = values.reduce((best, entry) => entry.value < best.value ? entry : best, values[0]);
+        const pot = buyIn * hands.length;
+        if (tonk) {
+          const winnings = buyIn * 2 * (hands.length - 1);
+          return { winner: dropper, tonk: true, caught: false, pot, rake: rakeFor(winnings), payout: winnings - rakeFor(winnings) };
+        }
+        const caught = lowest.seat !== dropper;
+        if (caught) {
+          return { winner: lowest.seat, tonk: false, caught: true, pot, rake: 0, payout: -(buyIn * 2) };
+        }
+        const rake = rakeFor(pot);
+        return { winner: dropper, tonk: false, caught: false, pot, rake, payout: pot - rake - buyIn };
+      }
+      var CELO_MIN_BUY_IN = 20;
+      var CELO_MAX_BUY_IN = 100;
+      var CELO_MAX_ROLLS = 3;
+      function rollDice(seed, key) {
+        const random = makeRandom(stringHash(`${seed}:celo:${key}`));
+        return [random.int(1, 6), random.int(1, 6), random.int(1, 6)].sort((a, b) => a - b);
+      }
+      function rollDie(seed, key) {
+        return makeRandom(stringHash(`${seed}:celo:${key}`)).int(1, 6);
+      }
+      function readDice(dice) {
+        const sorted = dice.slice().sort((a, b) => a - b);
+        const [low, mid, high] = sorted;
+        if (low === 4 && mid === 5 && high === 6) return { kind: "instant_win", point: 7, dice: sorted };
+        if (low === 1 && mid === 2 && high === 3) return { kind: "instant_loss", point: 0, dice: sorted };
+        if (low === mid && mid === high) return { kind: "trips", point: 6 + low, dice: sorted, trip: low };
+        if (low === mid) return { kind: "point", point: high, dice: sorted };
+        if (mid === high) return { kind: "point", point: low, dice: sorted };
+        return { kind: "no_result", point: null, dice: sorted };
+      }
+      function celoRank(reading) {
+        if (!reading) return -1;
+        if (reading.kind === "instant_win") return 100;
+        if (reading.kind === "trips") return 50 + reading.trip;
+        if (reading.kind === "instant_loss") return -1;
+        if (reading.kind === "point") return reading.point;
+        return 0;
+      }
+      function establishPoint(seed, key) {
+        const attempts = [];
+        for (let roll = 0; roll < CELO_MAX_ROLLS; roll += 1) {
+          const reading = readDice(rollDice(seed, `${key}:${roll}`));
+          attempts.push(reading);
+          if (reading.kind !== "no_result") return { reading, attempts };
+        }
+        return { reading: attempts[attempts.length - 1], attempts };
+      }
+      function winProbability(bankerReading) {
+        const bankerRank = celoRank(bankerReading);
+        let wins = 0;
+        let losses = 0;
+        let pushes = 0;
+        for (let a = 1; a <= 6; a += 1) {
+          for (let b = 1; b <= 6; b += 1) {
+            for (let c = 1; c <= 6; c += 1) {
+              const reading = readDice([a, b, c]);
+              if (reading.kind === "no_result") {
+                pushes += 1;
+                continue;
+              }
+              const rank = celoRank(reading);
+              if (rank > bankerRank) wins += 1;
+              else if (rank < bankerRank) losses += 1;
+              else pushes += 1;
+            }
+          }
+        }
+        const decided = wins + losses;
+        return { wins, losses, pushes, probability: decided ? wins / decided : 0 };
+      }
+      var CELO_ODDS_BANDS = [
+        { floor: 0.66, label: "strong odds" },
+        { floor: 0.5, label: "better than even" },
+        { floor: 0.34, label: "against you" },
+        { floor: 0, label: "long odds" }
+      ];
+      function describeOdds(probability) {
+        const band = CELO_ODDS_BANDS.find((entry) => probability >= entry.floor);
+        return band ? band.label : CELO_ODDS_BANDS[CELO_ODDS_BANDS.length - 1].label;
+      }
+      var PRESS_MULTIPLIER = 2;
+      var BACK_OFF_MULTIPLIER = 0.5;
+      function adjustedBet(bet, adjustment) {
+        const base = Math.max(0, Math.floor(Number(bet) || 0));
+        if (adjustment === "press") return base * PRESS_MULTIPLIER;
+        if (adjustment === "back_off") return Math.max(1, Math.floor(base * BACK_OFF_MULTIPLIER));
+        return base;
+      }
+      function settleCelo({ bankerReading, playerReading, bet }) {
+        const bankerRank = celoRank(bankerReading);
+        const playerRank = celoRank(playerReading);
+        const stake = Math.max(0, Math.floor(Number(bet) || 0));
+        if (playerRank > bankerRank) return { result: "win", payout: stake };
+        if (playerRank < bankerRank) return { result: "loss", payout: -stake };
+        return { result: "push", payout: 0 };
+      }
+      var MAX_GAMES_PER_DAY = 3;
+      var GAMBLING_PROFIT_NEIGHBORHOOD = 50;
+      var GAMBLING_PROFIT_HOUSEHOLD = 100;
+      var GAMBLING_LOSS_HOUSEHOLD = 100;
+      function gamblingObservations(net) {
+        const delta = Math.round(Number(net) || 0);
+        const out = [];
+        if (delta >= GAMBLING_PROFIT_NEIGHBORHOOD) {
+          out.push({ type: "financial", event: "gambling_profit", channel: "neighborhood", value: delta });
+          if (delta >= GAMBLING_PROFIT_HOUSEHOLD) {
+            out.push({ type: "financial", event: "gambling_profit", channel: "household", value: delta });
+          }
+        } else if (-delta >= GAMBLING_LOSS_HOUSEHOLD) {
+          out.push({ type: "financial", event: "gambling_loss", channel: "household", value: delta });
+        }
+        return out;
+      }
+      module.exports = {
+        SUITS,
+        RANKS,
+        RANK_VALUES,
+        RANK_ORDER,
+        buildDeck,
+        shuffledDeck,
+        TONK_HAND_SIZE,
+        findSpreads,
+        findRuns,
+        meldedCards,
+        handValue,
+        describeHand,
+        TONK_STYLES,
+        TONK_STYLE_BY_ID,
+        opponentStyles,
+        opponentTurn,
+        opponentDiscard,
+        TONK_MIN_BUY_IN,
+        TONK_MAX_BUY_IN,
+        HOUSE_RAKE_FLOOR,
+        HOUSE_RAKE,
+        rakeFor,
+        settleTonk,
+        CELO_MIN_BUY_IN,
+        CELO_MAX_BUY_IN,
+        CELO_MAX_ROLLS,
+        rollDie,
+        rollDice,
+        readDice,
+        celoRank,
+        establishPoint,
+        winProbability,
+        CELO_ODDS_BANDS,
+        describeOdds,
+        PRESS_MULTIPLIER,
+        BACK_OFF_MULTIPLIER,
+        adjustedBet,
+        settleCelo,
+        MAX_GAMES_PER_DAY,
+        GAMBLING_PROFIT_NEIGHBORHOOD,
+        GAMBLING_PROFIT_HOUSEHOLD,
+        GAMBLING_LOSS_HOUSEHOLD,
+        gamblingObservations
+      };
+    }
+  });
+
+  // src/events/gambling-events.js
+  var require_gambling_events = __commonJS({
+    "src/events/gambling-events.js"(exports, module) {
+      var Gambling = require_gambling();
+      var Attributes = require_attributes2();
+      var { ADVANTAGE_THRESHOLD, CATASTROPHE_IMMUNITY_THRESHOLD } = require_attributes();
+      var TONK_TIERS = { tells: ADVANTAGE_THRESHOLD, estimates: CATASTROPHE_IMMUNITY_THRESHOLD };
+      var CELO_TIERS = { odds: ADVANTAGE_THRESHOLD, exact: CATASTROPHE_IMMUNITY_THRESHOLD };
+      function tonkVision(charisma) {
+        const value = Number(charisma) || 0;
+        return {
+          // 0-2: they play, you watch, and you learn nothing you did not bring.
+          tells: value >= TONK_TIERS.tells,
+          estimates: value >= TONK_TIERS.estimates
+        };
+      }
+      function celoVision(intelligence) {
+        const value = Number(intelligence) || 0;
+        return {
+          odds: value >= CELO_TIERS.odds,
+          exact: value >= CELO_TIERS.exact,
+          // Press and back off arrive with the exact number, because pressing on a
+          // feeling is not a decision, it is a mood.
+          canAdjust: value >= CELO_TIERS.exact
+        };
+      }
+      function dealTonk(seed, day, gameCount, opponentCount) {
+        const seats = Math.max(2, Math.min(4, opponentCount + 1));
+        const deck = Gambling.shuffledDeck(seed, day, gameCount);
+        const hands = [];
+        let cursor = 0;
+        for (let seat = 0; seat < seats; seat += 1) {
+          hands.push(deck.slice(cursor, cursor + Gambling.TONK_HAND_SIZE));
+          cursor += Gambling.TONK_HAND_SIZE;
+        }
+        const discard = [deck[cursor]];
+        const stock = deck.slice(cursor + 1);
+        return {
+          hands,
+          stock,
+          discard,
+          styles: Gambling.opponentStyles(seed, day, gameCount, seats - 1),
+          turn: 0,
+          seats
+        };
+      }
+      var TELL_WINDOW = 6;
+      var ESTIMATE_BANDS = [
+        { floor: 25, label: "looks lost" },
+        { floor: 15, label: "looks patient" },
+        { floor: 8, label: "looks confident" },
+        { floor: 0, label: "looks ready" }
+      ];
+      function estimateLabel(value) {
+        const band = ESTIMATE_BANDS.find((entry) => value >= entry.floor);
+        return band ? band.label : ESTIMATE_BANDS[ESTIMATE_BANDS.length - 1].label;
+      }
+      function readOpponents(table, charisma, seed) {
+        const vision = tonkVision(charisma);
+        return table.styles.map((style, index) => {
+          const seat = index + 1;
+          const value = Gambling.handValue(table.hands[seat]);
+          const close = value <= style.dropAt + TELL_WINDOW;
+          const telegraphs = style.tell >= 0.5;
+          let hesitates = false;
+          if (vision.tells && telegraphs) {
+            const pool = Attributes.buildOutcomePool("tonk_read", style.tell);
+            const outcome = Attributes.resolveWithAttribute(pool, charisma, `${seed}:tonk:read:${table.gameIndex}:${seat}`);
+            const tier = outcome ? outcome.tier : "failure";
+            if (Attributes.isSuccessTier(tier)) hesitates = close;
+            else if (tier === "catastrophic") hesitates = !close;
+          }
+          return {
+            seat,
+            style: style.id,
+            label: style.label,
+            hesitates,
+            estimate: vision.estimates ? estimateLabel(value) : null
+          };
+        });
+      }
+      function runOpponentTurns(table) {
+        const events = [];
+        let dropper = null;
+        for (let seat = 1; seat < table.seats; seat += 1) {
+          const style = table.styles[seat - 1];
+          const hand = table.hands[seat];
+          const decision = Gambling.opponentTurn(hand, table.discard[table.discard.length - 1], style);
+          if (decision.drawFromDiscard && table.discard.length) {
+            hand.push(table.discard.pop());
+          } else if (table.stock.length) {
+            hand.push(table.stock.shift());
+          }
+          const pitched = Gambling.opponentDiscard(hand, style);
+          hand.splice(hand.indexOf(pitched), 1);
+          table.discard.push(pitched);
+          events.push({ seat, drew: decision.drawFromDiscard ? "discard" : "stock", discarded: pitched.id });
+          if (Gambling.handValue(hand) === 0) {
+            dropper = seat;
+            events.push({ seat, tonk: true });
+            break;
+          }
+          if (decision.dropIntent) {
+            dropper = seat;
+            events.push({ seat, dropped: true });
+            break;
+          }
+        }
+        return { events, dropper };
+      }
+      function resolveTonk({ table, dropper, buyIn }) {
+        const tonk = Gambling.handValue(table.hands[dropper]) === 0;
+        const settlement = Gambling.settleTonk({ dropper, hands: table.hands, buyIn, tonk });
+        return {
+          ...settlement,
+          playerWon: settlement.winner === 0,
+          handValues: table.hands.map((hand) => Gambling.handValue(hand))
+        };
+      }
+      var TONK_WIN_BONUS = 0.1;
+      var CELO_SMART_PRESS_BONUS = 0.15;
+      function tonkGrowth(state, sessions, playerWon) {
+        const base = Attributes.growthFor(state, "tonk_game", sessions);
+        if (!base) return null;
+        return { ...base, growth: base.growth + (playerWon ? TONK_WIN_BONUS : 0) };
+      }
+      function openCeloRound(seed, day, round) {
+        const banker = Gambling.establishPoint(seed, `bank:${day}:${round}`);
+        const odds = banker.reading.kind === "no_result" ? null : Gambling.winProbability(banker.reading);
+        return { banker: banker.reading, attempts: banker.attempts, odds };
+      }
+      function celoBriefing(round, intelligence, seed) {
+        const vision = celoVision(intelligence);
+        if (!round.odds) return { vision, probability: null, label: null, misread: false };
+        const exact = Math.round(round.odds.probability * 1e3) / 1e3;
+        if (vision.exact) return { vision, probability: exact, label: Gambling.describeOdds(round.odds.probability), misread: false };
+        if (!vision.odds) return { vision, probability: null, label: null, misread: false };
+        const pool = Attributes.buildOutcomePool("celo_read", round.odds.probability);
+        const outcome = Attributes.resolveWithAttribute(pool, intelligence, `${seed}:celo:read:${round.roundIndex}`);
+        const tier = outcome ? outcome.tier : "failure";
+        const shown = tier === "catastrophic" ? 1 - round.odds.probability : round.odds.probability;
+        return {
+          vision,
+          probability: null,
+          label: Gambling.describeOdds(shown),
+          misread: tier === "catastrophic"
+        };
+      }
+      function resolveCelo({ seed, day, round, bankerReading, bet }) {
+        const player = Gambling.establishPoint(seed, `player:${day}:${round}`);
+        const settlement = Gambling.settleCelo({ bankerReading, playerReading: player.reading, bet });
+        return { ...settlement, player: player.reading, attempts: player.attempts };
+      }
+      function celoGrowth(state, sessions, { won, pressed, probability }) {
+        const base = Attributes.growthFor(state, "celo_game", sessions);
+        if (!base) return null;
+        const smart = won && pressed && Number(probability) > 0 && Number(probability) < 0.5;
+        return { ...base, growth: base.growth + (smart ? CELO_SMART_PRESS_BONUS : 0) };
+      }
+      function sessionObservations(net, locationId) {
+        return Gambling.gamblingObservations(net).map((row) => ({ ...row, location: locationId }));
+      }
+      module.exports = {
+        TONK_TIERS,
+        CELO_TIERS,
+        tonkVision,
+        celoVision,
+        dealTonk,
+        TELL_WINDOW,
+        ESTIMATE_BANDS,
+        estimateLabel,
+        readOpponents,
+        runOpponentTurns,
+        resolveTonk,
+        TONK_WIN_BONUS,
+        CELO_SMART_PRESS_BONUS,
+        tonkGrowth,
+        openCeloRound,
+        celoBriefing,
+        resolveCelo,
+        celoGrowth,
+        sessionObservations
+      };
+    }
+  });
+
   // src/data/products.js
   var require_products = __commonJS({
     "src/data/products.js"(exports, module) {
@@ -3163,13 +3863,16 @@
         const MarketEvents = require_market_events();
         const AttributeData = require_attributes();
         const Attributes = require_attributes2();
-        const VERSION = 8;
+        const Nile = require_nile();
+        const Gambling = require_gambling();
+        const GamblingEvents = require_gambling_events();
+        const VERSION = 9;
         const RUN_DAYS = 7;
         const PRESSURE_DAYS = 7;
         const MAX_ENERGY = 4;
         const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
-        const SAVE_KEY = "907ogr_v8";
-        const LEGACY_SAVE_KEYS = ["907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"];
+        const SAVE_KEY = "907ogr_v9";
+        const LEGACY_SAVE_KEYS = ["907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"];
         const PHONE_BILL = 75;
         const WEEKLY_RENT = 150;
         const WORKING_CAPITAL_RESERVE = 150;
@@ -3291,13 +3994,15 @@
           { id: "garage", title: "North Star Garage", body: "$650 deposit. Heat works. Door sticks in winter." },
           { id: "opportunity", title: "Cash work", body: "A number is torn off every tab except one." },
           { id: "laptop", title: "Used laptop \xB7 $250", body: "Battery is tired. Browser works. Charger included." },
-          { id: "gym", title: "Community gym", body: "First membership is $30. Training costs extra." }
+          { id: "gym", title: "Community gym", body: "First membership is $30. Training costs extra." },
+          Nile.BOARD_FLYER
         ];
         const DOWNTOWN_CONTENT_STUBS = ["circle_k", "fourth_avenue_bars", "rei"];
         const DOWNTOWN_AMBIENT = [
           "Construction on 4th Ave. A few bars gear up for the evening. Nothing pulls at you yet.",
           "Downtown foot traffic. People in work clothes head somewhere with purpose. You are just passing through."
         ];
+        const PROFITABLE_FLIP_MARGIN = 1.3;
         const ALL_DAY_SLOTS = [0, 1, 2, 3];
         const DISTRICT_ACTIONS = {
           explore_spenard: {
@@ -3360,18 +4065,105 @@
             around: false,
             order: 45
           },
-          spenard_gambling: {
-            id: "spenard_gambling",
+          // The Nile. Two entries because they are two floors with different hours and
+          // different gates, the same way night_owl and its sub-actions are separate
+          // rows rather than one entry with a mode flag.
+          //
+          // v1.11 retired `spenard_gambling` (the abstract GAMBLE stat-check) in favour
+          // of these. The discovery path that used to open it - Cal at the Night Owl -
+          // now opens the Den, so the narrative beat survived and only the fake dice
+          // roll went away.
+          the_nile: {
+            id: "the_nile",
             areaId: HOME_DISTRICT_ID,
-            slots: [2, 3],
-            cashCost: (_state, params) => Math.max(0, Math.floor(params.stake || 0)),
+            slots: Nile.WELLNESS_SLOTS,
+            cashCost: 0,
+            timeCost: 0,
+            healthCost: 0,
+            action: null,
+            around: false,
+            order: 35,
+            closedReason: "Blue Nile closes at eight.",
+            visibleWhen: (state) => {
+              var _a;
+              return !!((_a = state.world.locations.theNile) == null ? void 0 : _a.discovered);
+            }
+          },
+          the_nile_wellness: {
+            id: "the_nile_wellness",
+            areaId: HOME_DISTRICT_ID,
+            slots: Nile.WELLNESS_SLOTS,
+            cashCost: Nile.WELLNESS_COST,
             timeCost: 1,
             healthCost: 0,
-            action: { type: "GAMBLE" },
-            around: true,
-            order: 50,
-            visibleWhen: (state) => !!state.world.locations.gamblingKnown,
-            closedReason: "The game runs in the Evening and at Night."
+            action: { type: "NILE_WELLNESS" },
+            around: false,
+            closedReason: "Blue Nile closes at eight.",
+            visibleWhen: (state) => {
+              var _a;
+              return !!((_a = state.world.locations.theNile) == null ? void 0 : _a.discovered);
+            }
+          },
+          the_nile_den: {
+            id: "the_nile_den",
+            areaId: HOME_DISTRICT_ID,
+            slots: Nile.DEN_SLOTS,
+            cashCost: 0,
+            timeCost: 0,
+            healthCost: 0,
+            action: null,
+            around: false,
+            order: 36,
+            closedReason: "The stairwell door stays shut until evening.",
+            visibleWhen: (state) => {
+              var _a;
+              return !!((_a = state.world.locations.theNile) == null ? void 0 : _a.secondFloorAccess);
+            }
+          },
+          the_nile_coffee: {
+            id: "the_nile_coffee",
+            areaId: HOME_DISTRICT_ID,
+            slots: Nile.DEN_SLOTS,
+            cashCost: 0,
+            timeCost: 1,
+            healthCost: 0,
+            action: { type: "NILE_COFFEE" },
+            around: false,
+            closedReason: "The stairwell door stays shut until evening.",
+            visibleWhen: (state) => {
+              var _a;
+              return !!((_a = state.world.locations.theNile) == null ? void 0 : _a.secondFloorAccess);
+            }
+          },
+          the_nile_tonk: {
+            id: "the_nile_tonk",
+            areaId: HOME_DISTRICT_ID,
+            slots: Nile.DEN_SLOTS,
+            cashCost: (_state, params) => Math.max(0, Math.floor(params.buyIn || 0)),
+            timeCost: 1,
+            healthCost: 0,
+            action: { type: "NILE_TONK_SIT" },
+            around: false,
+            closedReason: "The stairwell door stays shut until evening.",
+            visibleWhen: (state) => {
+              var _a;
+              return !!((_a = state.world.locations.theNile) == null ? void 0 : _a.secondFloorAccess);
+            }
+          },
+          the_nile_celo: {
+            id: "the_nile_celo",
+            areaId: HOME_DISTRICT_ID,
+            slots: Nile.DEN_SLOTS,
+            cashCost: (_state, params) => Math.max(0, Math.floor(params.buyIn || 0)),
+            timeCost: 1,
+            healthCost: 0,
+            action: { type: "NILE_CELO_SIT" },
+            around: false,
+            closedReason: "The stairwell door stays shut until evening.",
+            visibleWhen: (state) => {
+              var _a;
+              return !!((_a = state.world.locations.theNile) == null ? void 0 : _a.secondFloorAccess);
+            }
           },
           northern_value_shoplift: {
             id: "northern_value_shoplift",
@@ -3497,9 +4289,12 @@
           EXPLORE_SPENARD: "explore_spenard",
           TRAIN_ATTRIBUTE: "spenard_gym",
           PAY_PHONE_BILL: "spenard_phone_store",
-          GAMBLE: "spenard_gambling",
           SHOPLIFT: "northern_value_shoplift",
           VIEW_NIGHT_OWL_BOARD: "night_owl_board",
+          NILE_WELLNESS: "the_nile_wellness",
+          NILE_COFFEE: "the_nile_coffee",
+          NILE_TONK_SIT: "the_nile_tonk",
+          NILE_CELO_SIT: "the_nile_celo",
           BUY_COFFEE: "night_owl_coffee",
           TALK_NIGHT_OWL_REGULAR: "night_owl_regular",
           VISIT_NIGHT_OWL: "night_owl_visit",
@@ -3821,6 +4616,11 @@
             state.player.gymStreak = 0;
             state.player.gymStreakDay = null;
           }
+          if (Attributes.nileStreakBonus(state, attribute)) {
+            state.player.nileStreak = 0;
+            state.player.nileStreakDay = null;
+            state.player.nileStreakAttribute = null;
+          }
           return outcome;
         }
         function standingGain(record, current, rawGain, ladder) {
@@ -3976,7 +4776,10 @@
           TRAIN_ATTRIBUTE: "explore",
           BUY_GEAR: "explore",
           UPGRADE_BASE: "explore",
-          GAMBLE: "gamble",
+          NILE_TONK_SIT: "gamble",
+          NILE_CELO_SIT: "gamble",
+          NILE_WELLNESS: "heal",
+          NILE_COFFEE: "social",
           TRAVEL: "travel",
           BUS_TRAVEL: "travel",
           WALK_HOME: "travel",
@@ -3998,12 +4801,19 @@
           CLAIM_BLOCK: { type: "defiance", event: "territory_claim", channel: "network" },
           SHOPLIFT: { type: "financial", event: "petty_theft", channel: "neighborhood" },
           BOOST: { type: "financial", event: "boosting", channel: "network" },
-          GAMBLE: { type: "financial", event: "gambling", channel: "neighborhood" }
           // ROB and ROB_DEALER used to live here as one flat row apiece. They are
           // tiered now (see OUTCOME_OBSERVATIONS in src/data/attributes.js), which says
           // the same thing with more fidelity - keeping both would record every
-          // robbery twice and inflate every disposition that heard about it. GAMBLE
-          // stays because its tiers only describe the night that went badly.
+          // robbery twice and inflate every disposition that heard about it.
+          //
+          // GAMBLE was the last flat row of that kind and it is gone with the action
+          // in v1.11. The Nile broadcasts from its own reducer cases instead, keyed on
+          // the money that actually changed hands, because a $12 night at the Tonk
+          // table and a $300 night at the dice are not the same fact about a person.
+          // Those broadcasts never use the network channel; see gamblingObservations
+          // in src/data/gambling.js and the isolation test in tests/v1-11.test.js.
+          NILE_WELLNESS: { type: "presence", event: "the_nile", channel: "direct", location: Nile.NILE_LOCATION_ID },
+          NILE_COFFEE: { type: "presence", event: "the_nile", channel: "direct", location: Nile.NILE_LOCATION_ID }
         };
         const STREET_READ_INTEL = {
           north_star_lot: [
@@ -4277,7 +5087,12 @@
               leverage: 0,
               truce: false,
               outcomes: []
-            }
+            },
+            // The Tesfayes. Neither carries a trust integer - they were authored after
+            // the Exposure System, so their standing is only ever their ledger. `met`
+            // and the intel counter are the whole of their bespoke state.
+            selam: { met: false, visits: 0, mentionedBiniam: false, intelSent: [], lastIntelDay: null },
+            biniam: { met: false, tonkGames: 0, celoRounds: 0, coffeeRounds: 0 }
           };
           for (const id of EXPOSURE_NPC_IDS) {
             if (!base[id]) continue;
@@ -4378,6 +5193,11 @@
               attributeProgress: { combat: 0, charisma: 0, intelligence: 0 },
               gymStreak: 0,
               gymStreakDay: null,
+              // The Nile's streak carries the attribute it earned, because the
+              // building trains two of them and the bonus has to know which.
+              nileStreak: 0,
+              nileStreakDay: null,
+              nileStreakAttribute: null,
               behavior: { scores: { mover: 0, earner: 0, stickup: 0, connector: 0 }, meaningfulActions: 0, history: [], caps: {} },
               cash: 0,
               dirtyCash: 0,
@@ -4395,6 +5215,18 @@
             knowledge: { knows907List: false },
             discovered: { spenardGym: false },
             memberships: { gym: false },
+            // Table state. `table` and `round` hold a game in progress between
+            // dispatches - a hand of Tonk spans several actions, and the player is
+            // allowed to close the app in the middle of one.
+            gambling: {
+              tonkGamesPlayed: 0,
+              celoRoundsPlayed: 0,
+              sessionProfit: 0,
+              dailyGamesPlayed: 0,
+              dailyGamesDay: null,
+              table: null,
+              round: null
+            },
             world: {
               currentNeighborhoodId: "north_star_lot",
               markets,
@@ -4408,7 +5240,19 @@
                 gamblingKnown: false,
                 downtownAmbientSeen: [],
                 gym: { sessionDay: null, sessionsToday: 0, activitySessions: { bag_work: 0, cardio: 0, sparring: 0 } },
+                // Kept from the retired backroom game. The counters still mean what
+                // they meant - plays, wins, losses, net - they are just fed by real
+                // Tonk and Cee-lo now instead of by a single roll.
                 gambling: { plays: 0, wins: 0, losses: 0, net: 0 },
+                theNile: {
+                  discovered: false,
+                  secondFloorAccess: false,
+                  discoveryMethod: null,
+                  accessMethod: null,
+                  wanderMisses: 0,
+                  lastVisitDay: null,
+                  activitySessions: { nile_social: 0, tonk_game: 0, celo_game: 0, coffee_ceremony: 0 }
+                },
                 discountStore: { name: "Northern Value", suspicion: 0, lastAttemptDay: null },
                 employer: { name: "Ship Creek Freight", standing: 0, lastShiftDay: null, keptCommitments: 0, missedCommitments: 0 }
               },
@@ -4492,6 +5336,7 @@
             nightOwl: {
               boardViewedDays: [],
               ambientSeen: [],
+              socialSessions: 0,
               regulars: Object.fromEntries(NIGHT_OWL_REGULARS.map((person) => [person.id, { met: false, relationship: 0, lastTalkDay: null }]))
             },
             // v1.9b: the broker track. `tier` is derived on every read by marketTier()
@@ -4582,7 +5427,7 @@
           var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w;
           if (!value || typeof value !== "object") return null;
           if (value.version === VERSION) return value;
-          if (![3, 4, 5, 6, 7].includes(value.version) || !value.run || !value.world || !value.player) return null;
+          if (![3, 4, 5, 6, 7, 8].includes(value.version) || !value.run || !value.world || !value.player) return null;
           const migrated = JSON.parse(JSON.stringify(value));
           const oldHousehold = ((_a = migrated.people) == null ? void 0 : _a.household) || {};
           const legacyNpc = migrated.npc || {};
@@ -5162,7 +6007,10 @@
           "WORK_SHIFT",
           "LEASE_GARAGE",
           "TRAIN_ATTRIBUTE",
-          "GAMBLE",
+          "NILE_WELLNESS",
+          "NILE_COFFEE",
+          "NILE_TONK_SIT",
+          "NILE_CELO_SIT",
           "SHOPLIFT",
           "BOOST",
           "WANDER_SPENARD",
@@ -5268,6 +6116,179 @@
           }
           logEntry(state, "Three days straight. Juan noticed the bag gloves by the door.", "good");
         }
+        function growAtNightOwl(state) {
+          const read = Attributes.growthFor(state, "night_owl_social", state.nightOwl.socialSessions - 1);
+          if (!read) return false;
+          return improveAttribute(state, read.attribute, read.growth);
+        }
+        function growAtNile(state, activity, priorSessions) {
+          const read = Attributes.growthFor(state, activity, priorSessions);
+          if (!read) return false;
+          const improved = improveAttribute(state, read.attribute, read.growth);
+          if (improved) addStreetReadEntry(state, "exploration", `${state.world.currentNeighborhoodId}:the_nile`);
+          return improved;
+        }
+        function registerNileDay(state, attribute) {
+          const day = state.run.day;
+          state.player.nileStreakAttribute = attribute;
+          state.world.locations.theNile.lastVisitDay = day;
+          if (state.player.nileStreakDay === day) return;
+          state.player.nileStreak = state.player.nileStreakDay === day - 1 ? (state.player.nileStreak || 0) + 1 : 1;
+          state.player.nileStreakDay = day;
+          if (state.player.nileStreak !== AttributeData.NILE_STREAK_REQUIREMENT) return;
+          for (const channel of ["household", "neighborhood"]) {
+            Exposure.broadcastObservation(state, {
+              type: "growth",
+              event: "nile_consistent",
+              location: Nile.NILE_LOCATION_ID,
+              channel
+            });
+          }
+          logEntry(state, "Three days running at The Nile. The front desk stops asking your name.", "good");
+        }
+        function rollNileDiscovery(state) {
+          const nile = state.world.locations.theNile;
+          if (nile.discovered) return false;
+          const chance = Nile.wanderChance(nile.wanderMisses);
+          const roll = stringHash(`${state.run.seed}:nile:wander:${nile.wanderMisses}`) % 1e3 / 1e3;
+          if (roll >= chance) {
+            nile.wanderMisses += 1;
+            return false;
+          }
+          discoverNile(state, Nile.DISCOVERY_METHODS.wander);
+          logEntry(state, "Four men go into the wellness place on Spenard Road inside ten minutes. None of them look like they came for a massage.", "");
+          return true;
+        }
+        function maybeJuanNileMention(state) {
+          const band = bandOf(state, "juan");
+          if (band >= Nile.JUAN_VOUCH_BAND && !state.world.locations.theNile.secondFloorAccess) {
+            logEntry(state, "Juan says he called ahead. The Ethiopian spot on Spenard, upstairs. Ask for Biniam and say the name Hernandez.", "good");
+            return grantDenAccess(state, Nile.DEN_ACCESS_METHODS.juan);
+          }
+          if (band >= Nile.JUAN_MENTION_BAND && !state.world.locations.theNile.discovered) {
+            logEntry(state, "Juan mentions a wellness place on Spenard Road run by a family he did some work for. Says the steam is worth the thirty dollars.", "good");
+            return discoverNile(state, Nile.DISCOVERY_METHODS.juan);
+          }
+          return false;
+        }
+        function discoverNile(state, method) {
+          const nile = state.world.locations.theNile;
+          if (nile.discovered) return false;
+          nile.discovered = true;
+          nile.discoveryMethod = method;
+          queueUnlock(state, "gambling");
+          logEntry(state, "Blue Nile Wellness, on Spenard Road. Beige siding, blue neon, and frankincense before you are through the door.", "good");
+          return true;
+        }
+        function grantDenAccess(state, method) {
+          const nile = state.world.locations.theNile;
+          if (nile.secondFloorAccess) return false;
+          if (!nile.discovered) discoverNile(state, method);
+          nile.secondFloorAccess = true;
+          nile.accessMethod = method;
+          state.world.locations.gamblingKnown = true;
+          logEntry(state, "The code for the stairwell door changes weekly. You have this week's.", "good");
+          return true;
+        }
+        function maybeSelamBridge(state) {
+          if (state.npc.selam.mentionedBiniam) return false;
+          if (bandOf(state, "selam") < Nile.SELAM_BRIDGE_BAND) return false;
+          state.npc.selam.mentionedBiniam = true;
+          logEntry(state, `Selam Tesfaye, on her way past: "${Nile.SELAM_LINES[BANDS.WARM]}"`, "good");
+          return grantDenAccess(state, Nile.DEN_ACCESS_METHODS.selam);
+        }
+        function maybeSelamIntel(state) {
+          if (bandOf(state, "selam") < BANDS.TRUSTED) return false;
+          if (state.npc.selam.lastIntelDay === state.run.day) return false;
+          const unsent = Nile.SELAM_INTEL.filter((text2) => !state.npc.selam.intelSent.includes(text2));
+          if (!unsent.length) return false;
+          const text = unsent[stringHash(`${state.run.seed}:selam:intel:${state.run.day}`) % unsent.length];
+          state.npc.selam.intelSent.push(text);
+          state.npc.selam.lastIntelDay = state.run.day;
+          pushPhoneMessage(state, "Selam", text);
+          return true;
+        }
+        function registerGameStart(state) {
+          const gambling = state.gambling;
+          if (gambling.dailyGamesDay !== state.run.day) {
+            gambling.dailyGamesDay = state.run.day;
+            gambling.dailyGamesPlayed = 0;
+          }
+          gambling.dailyGamesPlayed += 1;
+        }
+        function gamesPlayedToday(state) {
+          return state.gambling.dailyGamesDay === state.run.day ? state.gambling.dailyGamesPlayed : 0;
+        }
+        function lowestTonkSeat(table) {
+          let best = 0;
+          for (let seat = 1; seat < table.hands.length; seat += 1) {
+            if (Gambling.handValue(table.hands[seat]) < Gambling.handValue(table.hands[best])) best = seat;
+          }
+          return best;
+        }
+        function settleNileSession(state, net) {
+          const game = state.world.locations.gambling;
+          game.plays += 1;
+          game[net > 0 ? "wins" : "losses"] += 1;
+          game.net += net;
+          state.gambling.sessionProfit += net;
+          if (game.plays === 1) recordBehavior(state, "connector", 1, "gambling:first_contact", "gambling_contact");
+          addStreetReadEntry(state, "exploration", `${state.world.currentNeighborhoodId}:gambling`);
+          Exposure.recordObservation(state, "biniam", {
+            type: net >= 0 ? "presence" : "discretion",
+            event: net >= 0 ? "played_clean" : "lost_well",
+            location: Nile.NILE_LOCATION_ID,
+            source: "witnessed"
+          });
+          for (const row of GamblingEvents.sessionObservations(net, Nile.NILE_LOCATION_ID)) {
+            Exposure.broadcastObservation(state, { ...row, day: state.run.day, slot: state.run.slot });
+          }
+        }
+        function finishTonk(state, dropper) {
+          const table = state.gambling.table;
+          const result = GamblingEvents.resolveTonk({ table, dropper, buyIn: table.buyIn });
+          const net = result.playerWon ? result.payout : -table.buyIn;
+          if (result.playerWon && result.payout > 0) state.player.cash += table.buyIn + result.payout;
+          else if (result.caught && dropper === 0) spendCash(state, Math.min(state.player.cash, table.buyIn));
+          state.gambling.tonkGamesPlayed += 1;
+          state.npc.biniam.tonkGames += 1;
+          const nile = state.world.locations.theNile;
+          nile.activitySessions.tonk_game = (nile.activitySessions.tonk_game || 0) + 1;
+          const read = GamblingEvents.tonkGrowth(state, nile.activitySessions.tonk_game - 1, result.playerWon);
+          if (read) improveAttribute(state, read.attribute, read.growth);
+          settleNileSession(state, net);
+          logEntry(
+            state,
+            result.tonk && result.playerWon ? `Tonk. Hand of nothing, and the table pays double. Up $${result.payout}.` : result.playerWon ? `You drop with ${result.handValues[0]} and it holds. Up $${result.payout}.` : result.caught && dropper === 0 ? `You drop with ${result.handValues[0]} and somebody had less. That one costs double.` : `Seat ${dropper} drops before you do. Your $${table.buyIn} stays on the table.`,
+            result.playerWon ? "good" : "bad"
+          );
+          state.gambling.table = null;
+          registerNileDay(state, "charisma");
+          return advanceRun(state, { reason: "NILE_TONK_SIT" });
+        }
+        function finishCelo(state, { round, result, bet, adjustment }) {
+          if (result.payout > 0) state.player.cash += bet + result.payout;
+          else if (result.result === "push") state.player.cash += bet;
+          state.gambling.celoRoundsPlayed += 1;
+          state.npc.biniam.celoRounds += 1;
+          const nile = state.world.locations.theNile;
+          nile.activitySessions.celo_game = (nile.activitySessions.celo_game || 0) + 1;
+          const read = GamblingEvents.celoGrowth(state, nile.activitySessions.celo_game - 1, {
+            won: result.result === "win",
+            pressed: adjustment === "press",
+            probability: round.odds ? round.odds.probability : null
+          });
+          if (read) improveAttribute(state, read.attribute, read.growth);
+          settleNileSession(state, result.payout);
+          logEntry(
+            state,
+            result.result === "win" ? `${result.player.dice.join("-")} against the bank's ${round.banker.dice.join("-")}. Up $${result.payout}.` : result.result === "push" ? `${result.player.dice.join("-")}. Nobody moves. The bet comes back.` : `${result.player.dice.join("-")} against ${round.banker.dice.join("-")}. The bank takes it.`,
+            result.result === "win" ? "good" : result.result === "push" ? "" : "bad"
+          );
+          state.gambling.round = null;
+          registerNileDay(state, "intelligence");
+          return advanceRun(state, { reason: "NILE_CELO_SIT" });
+        }
         function gymActivityOptions(state) {
           return AttributeData.GYM_ACTIVITIES.map((activity) => {
             const details = gymSessionDetails(state, activity.id);
@@ -5334,13 +6355,16 @@
             result.reason = gym.sessionsToday ? "Coming back the same day costs more and does less." : "The first session of the day is the one that counts.";
             return result;
           }
-          if (actionId === "spenard_gambling") {
-            if (params.stake != null && ![20, 50, 100].includes(Math.floor(params.stake))) {
-              result.reason = "Choose a listed stake.";
+          if (actionId === "the_nile_tonk" || actionId === "the_nile_celo") {
+            const tonk = actionId === "the_nile_tonk";
+            const floor = tonk ? Gambling.TONK_MIN_BUY_IN : Gambling.CELO_MIN_BUY_IN;
+            const ceiling = tonk ? Gambling.TONK_MAX_BUY_IN : Gambling.CELO_MAX_BUY_IN;
+            if (params.buyIn != null && (params.buyIn < floor || params.buyIn > ceiling)) {
+              result.reason = `Buy-in runs $${floor} to $${ceiling}.`;
               return result;
             }
             result.available = true;
-            result.reason = "Seeded risk. Reading the room helps without guaranteeing profit.";
+            result.reason = tonk ? "Cards. Five each, and the low hand takes it." : "Dice. Three throws to set a point.";
             return result;
           }
           result.available = true;
@@ -5364,7 +6388,7 @@
           var _a, _b, _c;
           const actionId = districtActionIdFor(action);
           if (!actionId) return true;
-          const params = action.type === "GAMBLE" ? { stake: action.stake } : action.type === "WORK_JOB" && action.jobId === "night_owl" && ((_c = (_b = (_a = state.jobs) == null ? void 0 : _a.records) == null ? void 0 : _b.night_owl) == null ? void 0 : _c.rank) >= 1 ? { slots: [2, 3] } : {};
+          const params = action.type === "NILE_TONK_SIT" || action.type === "NILE_CELO_SIT" ? { buyIn: action.buyIn } : action.type === "WORK_JOB" && action.jobId === "night_owl" && ((_c = (_b = (_a = state.jobs) == null ? void 0 : _a.records) == null ? void 0 : _b.night_owl) == null ? void 0 : _c.rank) >= 1 ? { slots: [2, 3] } : {};
           return districtActionAvailability(state, actionId, params).available;
         }
         function marketTier(state) {
@@ -5521,6 +6545,10 @@
           list.categoryFlips[item.category] = (list.categoryFlips[item.category] || 0) + 1;
           if (payout < cost) list.disputes += 1;
           addCleanCash(state, payout);
+          if (cost > 0 && payout > cost * PROFITABLE_FLIP_MARGIN) {
+            const read = Attributes.growthFor(state, "list_flip", list.flipCount - 1);
+            if (read) improveAttribute(state, read.attribute, read.growth);
+          }
           Exposure.broadcastObservation(state, {
             type: "financial",
             event: "907list_profit",
@@ -5626,7 +6654,10 @@
             WALK_HOME: "Walked home",
             TRAVEL: "Traveled",
             TRAIN_ATTRIBUTE: "Trained",
-            GAMBLE: "Played the backroom game",
+            NILE_WELLNESS: "Steam room at The Nile",
+            NILE_COFFEE: "Coffee upstairs at The Nile",
+            NILE_TONK_SIT: "Played Tonk at The Nile",
+            NILE_CELO_SIT: "Played Cee-lo at The Nile",
             SLEEP_HOME: "Rested at home",
             LAY_LOW: "Laid low",
             PAY_DEBT: "Paid Dre",
@@ -5660,6 +6691,77 @@
             recovery: { available: state.player.health < 100 || state.player.heat > 1 || state.flags.recoveryIntroduced || returning, hint: "Take an injury or pick up Heat to unlock Recovery." }
           };
         }
+        function nileAvailability(state) {
+          const nile = state.world.locations.theNile;
+          const home = state.world.currentNeighborhoodId === HOME_DISTRICT_ID;
+          const wellness = districtActionAvailability(state, "the_nile_wellness");
+          const den = districtActionAvailability(state, "the_nile_den");
+          const band = bandOf(state, "biniam");
+          const selamBand = bandOf(state, "selam");
+          const access = Nile.tableAccess(band);
+          const played = gamesPlayedToday(state);
+          const capped = played >= Gambling.MAX_GAMES_PER_DAY;
+          const midGame = !!(state.gambling.table || state.gambling.round);
+          const deny = (reason) => ({ available: false, reason });
+          const table = (allowed, gate, floor, ceiling) => {
+            if (!home) return deny("Return to Spenard.");
+            if (!nile.secondFloorAccess) return deny("You do not have the code for the stairwell door.");
+            if (!den.available) return deny(den.reason);
+            if (!allowed) return deny(gate);
+            if (midGame) return deny("Finish the hand you are in.");
+            if (capped) return deny("Three games is enough for one day.");
+            if (state.player.cash < floor) return deny(`Buy-in starts at $${floor}.`);
+            return { available: true, reason: `Buy-in $${floor}-$${ceiling}.` };
+          };
+          return {
+            discovered: !!nile.discovered,
+            secondFloorAccess: !!nile.secondFloorAccess,
+            band,
+            selamBand,
+            cups: access.cups,
+            gamesToday: played,
+            maxGames: Gambling.MAX_GAMES_PER_DAY,
+            wellness: !home ? deny("Return to Spenard.") : !nile.discovered ? deny("You have not found the place yet.") : !wellness.available ? deny(wellness.reason) : state.player.cash < Nile.WELLNESS_COST ? deny(`The steam room is $${Nile.WELLNESS_COST}.`) : { available: true, reason: `$${Nile.WELLNESS_COST} \xB7 restores ${Nile.WELLNESS_HEALTH} health` },
+            coffee: !home ? deny("Return to Spenard.") : !nile.secondFloorAccess ? deny("You do not have the code for the stairwell door.") : !den.available ? deny(den.reason) : midGame ? deny("Finish the hand you are in.") : { available: true, reason: "Free \xB7 one part of day" },
+            tonk: table(access.tonk, "Biniam has not offered you a seat yet.", Gambling.TONK_MIN_BUY_IN, Gambling.TONK_MAX_BUY_IN),
+            celo: table(access.celo, "The dice are for people he knows better.", Gambling.CELO_MIN_BUY_IN, Gambling.CELO_MAX_BUY_IN),
+            privateGames: access.privateGames
+          };
+        }
+        function nileAmbient(state, floor) {
+          return Nile.ambientFor(floor, state.run.slot, state.run.day);
+        }
+        function tonkView(state) {
+          const table = state.gambling.table;
+          if (!table) return null;
+          const charisma = Attributes.effectiveAttribute(state, "charisma");
+          const hand = table.hands[0];
+          return {
+            buyIn: table.buyIn,
+            pot: table.buyIn * table.seats,
+            hand: hand.map((card) => ({ id: card.id, rank: card.rank, suit: card.suit, value: card.value })),
+            ...Gambling.describeHand(hand),
+            discardTop: table.discard.length ? table.discard[table.discard.length - 1] : null,
+            stockLeft: table.stock.length,
+            opponents: GamblingEvents.readOpponents(table, charisma, state.run.seed),
+            vision: GamblingEvents.tonkVision(charisma)
+          };
+        }
+        function celoView(state) {
+          const round = state.gambling.round;
+          if (!round) return null;
+          const intelligence = Attributes.effectiveAttribute(state, "intelligence");
+          const briefing = GamblingEvents.celoBriefing(round, intelligence, state.run.seed);
+          return {
+            buyIn: round.buyIn,
+            banker: round.banker,
+            bankerNoResult: round.banker.kind === "no_result",
+            ...briefing,
+            pressTo: Gambling.adjustedBet(round.buyIn, "press"),
+            backOffTo: Gambling.adjustedBet(round.buyIn, "back_off"),
+            canPress: briefing.vision.canAdjust && state.player.cash >= Gambling.adjustedBet(round.buyIn, "press") - round.buyIn
+          };
+        }
         function activityAvailability(state) {
           var _a;
           const employer = state.world.locations.employer;
@@ -5667,7 +6769,6 @@
           const store = state.world.locations.discountStore;
           const explore = districtActionAvailability(state, "explore_spenard");
           const gymAccess = districtActionAvailability(state, "spenard_gym");
-          const gamblingAccess = districtActionAvailability(state, "spenard_gambling");
           const downtown = travelAvailability(state, "downtown");
           const industrial = travelAvailability(state, "airport_industrial");
           return {
@@ -5676,7 +6777,14 @@
             busDowntown: { available: downtown.available, reason: downtown.reason, cost: downtown.cashCost },
             industrial: { available: industrial.available, reason: industrial.reason, cost: industrial.cashCost },
             gym: { available: gymAccess.available, reason: gymAccess.visible ? gymAccess.reason : "Return to Spenard to use the gym.", cost: gym.cost, sessionsToday: gym.sessionsToday, activities: gymActivityOptions(state), streak: state.player.gymStreak || 0 },
-            gambling: state.world.currentNeighborhoodId !== HOME_DISTRICT_ID ? { available: false, reason: "Return to Spenard for the game." } : !state.world.locations.gamblingKnown ? { available: false, reason: "Nobody has trusted you with the game's address yet." } : { available: gamblingAccess.available, reason: gamblingAccess.reason },
+            // `gambling` now means "is there a table you can sit at tonight", and the
+            // tables are at The Nile. Kept under the old key because the Street page,
+            // the unlock celebration, and the simulator all read it by that name.
+            gambling: (() => {
+              const nile = nileAvailability(state);
+              if (nile.tonk.available || nile.celo.available) return { available: true, reason: nile.celo.available ? "Cards and dice are both running." : "The Tonk table has room." };
+              return { available: false, reason: nile.tonk.reason };
+            })(),
             shoplifting: state.world.currentNeighborhoodId !== HOME_DISTRICT_ID ? { available: false, reason: "Return to Spenard first." } : ((_a = state.boost) == null ? void 0 : _a.visible) ? { available: false, reason: "Use the Boost tab for known targets." } : store.lastAttemptDay === state.run.day ? { available: false, reason: "Northern Value is watching for you today." } : { available: true, reason: "One attempt per day. Reflexes lead; Insight, Heat, and suspicion matter." }
           };
         }
@@ -7863,10 +8971,8 @@
             state.npc.dre.known = true;
           }
           if (effect.discoverGambling) {
-            const firstDiscovery = !state.world.locations.gamblingKnown;
-            state.world.locations.gamblingKnown = true;
             if (!state.world.locations.discoveries.includes("informal_game")) state.world.locations.discoveries.push("informal_game");
-            if (firstDiscovery) queueUnlock(state, "gambling");
+            grantDenAccess(state, Nile.DEN_ACCESS_METHODS.regular);
           }
           if (effect.discover907List) {
             state.knowledge.knows907List = true;
@@ -8083,7 +9189,11 @@
           if (observed) {
             Exposure.broadcastObservation(state, {
               ...observed,
-              location: state.world.currentNeighborhoodId,
+              // The district is the right default - most actions are just "somewhere
+              // in Spenard". A row that names its own location keeps it, which is how
+              // a Nile visit reaches Selam's location lens as `the_nile` rather than
+              // being flattened into the neighborhood it sits in.
+              location: observed.location || state.world.currentNeighborhoodId,
               value: Math.abs(Number(context.cashDelta) || 0),
               day: oldDay,
               slot: oldSlot
@@ -8120,7 +9230,7 @@
           if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
           else {
             const encounterContext = encounterActivityContext(state, context, oldSlot, completedVisit);
-            const chosenRisk = ["ROB", "ROB_DEALER", "TAKEOVER", "GAMBLE", "SHOPLIFT", "BOOST"].includes(context.reason);
+            const chosenRisk = ["ROB", "ROB_DEALER", "TAKEOVER", "NILE_TONK_SIT", "NILE_CELO_SIT", "SHOPLIFT", "BOOST"].includes(context.reason);
             const triggered = state.run.phase === "pressure" || chosenRisk ? EncounterSystem == null ? void 0 : EncounterSystem.checkEncounterTrigger(state, oldDay, oldSlot, { ...encounterContext, rng: random }) : null;
             if (triggered) {
               triggered.choices = EncounterSystem.getEligibleChoices(triggered, state).map((item) => item.id);
@@ -8224,6 +9334,13 @@
             state.player.gymStreak = 0;
             state.player.gymStreakDay = null;
           }
+          if (state.player.nileStreakDay !== oldDay) {
+            state.player.nileStreak = 0;
+            state.player.nileStreakDay = null;
+            state.player.nileStreakAttribute = null;
+          }
+          state.gambling.dailyGamesPlayed = 0;
+          state.gambling.dailyGamesDay = null;
           recalculateStreetRead(state);
           checkHomeContraband(state, random);
           resolveSoldierOperations(state, random, true);
@@ -8752,9 +9869,10 @@
         function gamblingDiscoveryEvent(source) {
           const person = SOCIAL_CONTACTS[source];
           const fromCoworker = person && source !== "cal";
-          return event("gambling_discovery", "A Door After Closing", fromCoworker ? `${person.name.split(" ")[0]} gives you a side-door address. The game starts after the storefront closes.` : "Cal lowers his voice and gives you a side-door address. The table opens after the storefront closes.", [
-            { label: "Keep the address", effect: { discoverGambling: true }, preview: "Unlock the backroom game in Spenard.", result: "You fold the address into your pocket. The door will open when the tables are running." }
-          ], fromCoworker ? `${person.name.split(" ")[0]} checks the room before speaking. The address stays covered under one hand.` : "Cal scratches the address onto a coffee sleeve. His chair stays angled toward the front door while he writes.");
+          const teller = fromCoworker ? person.name.split(" ")[0] : "Cal";
+          return event("gambling_discovery", "A Door After Closing", fromCoworker ? `${teller} gives you an address on Spenard Road. Two floors, blue neon, and a stairwell behind the front desk.` : "Cal lowers his voice. There is a wellness place on Spenard Road, he says, and a room above it that runs after six.", [
+            { label: "Keep the address", effect: { discoverGambling: true }, preview: "Opens the room above Blue Nile Wellness.", result: "You fold the address into your pocket. He says the door code changes weekly and that Biniam will text you this one." }
+          ], fromCoworker ? `${teller} checks the room before speaking. The address stays covered under one hand.` : "Cal scratches it onto a coffee sleeve. His chair stays angled toward the front door while he writes.");
         }
         function coworkerForShift(state, job) {
           if (!job.coworkers.length) return null;
@@ -9169,6 +10287,7 @@
               if (!state.npc.juan.infoShared.includes("work:ship_creek")) state.npc.juan.infoShared.push("work:ship_creek");
               state.effects.rumors.push({ id: `juan_${state.run.day}`, areaId: "north_star_lot", productId: "weed", reliable: true, text: "Juan says Ship Creek hires early and his warehouse dock keeps a short callback list.", expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
               pushConsequence(state, "Juan writes a loading-dock name on your receipt.", "good");
+              maybeJuanNileMention(state);
             } else {
               Exposure.recordObservation(state, "yalonda", { type: "loyalty", event: "sat_and_talked", source: "household" });
               state.effects.rumors.push({ id: `yalonda_${state.run.day}`, areaId: "north_star_lot", productId: "weed", reliable: true, text: "Yalonda says somebody asked questions outside, then describes the coat.", expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
@@ -9458,6 +10577,7 @@
             if (!base.nightOwl.boardViewedDays.includes(base.run.day)) base.nightOwl.boardViewedDays.push(base.run.day);
             const board = nightOwlBoardItems(base);
             if (board.some((entry) => entry.id === "gym")) applyEventEffect(base, { discoverGym: true }, random);
+            if (board.some((entry) => entry.id === Nile.BOARD_FLYER.id)) discoverNile(base, Nile.DISCOVERY_METHODS.board);
             if (base.run.phase === "week_zero" && !base.nightOwl.ambientSeen.includes("board_opportunity")) {
               base.nightOwl.ambientSeen.push("board_opportunity");
               logEntry(base, "One board tab promises opportunity without naming the work. Someone has taken every phone number but one.", "");
@@ -9487,6 +10607,8 @@
             const present = nightOwlRegularFor(state);
             const relationship = regular && base.nightOwl.regulars[regular.id];
             if (!regular || present.id !== regular.id || relationship.lastTalkDay === base.run.day) return inputState;
+            base.nightOwl.socialSessions += 1;
+            growAtNightOwl(base);
             const outcome = resolveOutcome(base, "night_owl", 0.78, `${base.run.seed}:night_owl:${base.run.day}:${regular.id}`);
             const landed = Attributes.isSuccessTier(outcome.tier);
             relationship.met = true;
@@ -9641,6 +10763,8 @@
             recordVisitedLocation(base, "night_owl");
             addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:night_owl`);
             if (base.npc.mina.met) addStreetReadEntry(base, "social", "mina:visit");
+            base.nightOwl.socialSessions += 1;
+            growAtNightOwl(base);
             logEntry(base, state.npc.mina.met ? "Mina sets a clean cup beside the register and waits for you to choose the conversation." : "Mina looks up from the register and gives you enough time to introduce yourself.", "");
             if (base.run.status === "playing" && !base.npc.mina.met && !base.run.pendingEvent) fireStory(base, STORY_BY_ID.mina_intro);
             return base;
@@ -9686,30 +10810,107 @@
             registerGymDay(base);
             return advanceRun(base, { reason: "TRAIN_ATTRIBUTE" });
           }
-          if (action.type === "GAMBLE") {
-            const available = activityAvailability(state).gambling;
-            const stake = Math.floor(action.stake || 0);
-            if (!available.available || ![20, 50, 100].includes(stake) || state.player.cash < stake) return inputState;
-            const random2 = makeRandom(base.run.rngState);
-            const approach = ["read", "steady", "press"].includes(action.approach) ? action.approach : "read";
-            const approachEdge = approach === "read" ? 0.05 : approach === "steady" ? 0.03 : 0;
-            const chance = clamp(0.35 + approachEdge - stake / 2e3, 0.32, 0.54);
-            const outcome = resolveOutcome(base, "gambling", chance, `${base.run.seed}:gambling:${base.run.day}:${base.run.slot}:${stake}`);
-            const won = Attributes.isSuccessTier(outcome.tier);
-            base.player.cash -= stake;
-            const payout = !won ? 0 : outcome.tier === "clean" ? stake * 2 : Math.round(stake * 1.5);
-            base.player.cash += payout;
-            const game = base.world.locations.gambling;
-            game.plays += 1;
-            game[won ? "wins" : "losses"] += 1;
-            game.net += payout - stake;
-            if (game.plays === 1) recordBehavior(base, "connector", 1, "gambling:first_contact", "gambling_contact");
-            addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:gambling`);
-            broadcastOutcome(base, "gambling", outcome.tier, payout - stake);
-            if (outcome.tier === "catastrophic") base.player.financialHeat = clamp(base.player.financialHeat + 1, 0, 10);
-            base.run.rngState = random2.state;
-            logEntry(base, won ? `The ${approach} approach holds. You leave the game $${payout - stake} ahead.` : outcome.tier === "catastrophic" ? `The room takes your $${stake} and watches you decide whether to stay. Everybody sees which way you lean.` : `The room takes your $${stake}. Nobody offers credit, and the next choice is yours.`, won ? "good" : "bad");
-            return advanceRun(base, { reason: "GAMBLE" });
+          if (action.type === "NILE_WELLNESS") {
+            const access = nileAvailability(state).wellness;
+            if (!access.available || state.player.cash < Nile.WELLNESS_COST) return inputState;
+            const nile = base.world.locations.theNile;
+            recordVisitedLocation(base, "the_nile");
+            spendCash(base, Nile.WELLNESS_COST);
+            base.player.health = clamp(base.player.health + Nile.WELLNESS_HEALTH, 0, 100);
+            base.npc.selam.met = true;
+            base.npc.selam.visits += 1;
+            nile.activitySessions.nile_social = (nile.activitySessions.nile_social || 0) + 1;
+            growAtNile(base, "nile_social", nile.activitySessions.nile_social - 1);
+            Exposure.recordObservation(base, "selam", {
+              type: "presence",
+              event: "wellness_regular",
+              location: Nile.NILE_LOCATION_ID,
+              source: "witnessed"
+            });
+            logEntry(base, "Steam, hot stones, and forty minutes of nobody wanting anything from you.", "good");
+            maybeSelamBridge(base);
+            maybeSelamIntel(base);
+            registerNileDay(base, "charisma");
+            return advanceRun(base, { reason: "NILE_WELLNESS" });
+          }
+          if (action.type === "NILE_COFFEE") {
+            const access = nileAvailability(state).coffee;
+            if (!access.available) return inputState;
+            const nile = base.world.locations.theNile;
+            base.npc.biniam.met = true;
+            base.npc.biniam.coffeeRounds += 1;
+            nile.activitySessions.coffee_ceremony = (nile.activitySessions.coffee_ceremony || 0) + 1;
+            growAtNile(base, "coffee_ceremony", nile.activitySessions.coffee_ceremony - 1);
+            Exposure.recordObservation(base, "biniam", {
+              type: "presence",
+              event: "sat_and_watched",
+              location: Nile.NILE_LOCATION_ID,
+              source: "witnessed"
+            });
+            logEntry(base, "Three rounds, small cups, no sugar. You watch his hands more than the cards.", "good");
+            registerNileDay(base, "intelligence");
+            return advanceRun(base, { reason: "NILE_COFFEE" });
+          }
+          if (action.type === "NILE_TONK_SIT" || action.type === "NILE_CELO_SIT") {
+            const tonk = action.type === "NILE_TONK_SIT";
+            const access = nileAvailability(state)[tonk ? "tonk" : "celo"];
+            const buyIn = Math.floor(action.buyIn || 0);
+            const floor = tonk ? Gambling.TONK_MIN_BUY_IN : Gambling.CELO_MIN_BUY_IN;
+            const ceiling = tonk ? Gambling.TONK_MAX_BUY_IN : Gambling.CELO_MAX_BUY_IN;
+            if (!access.available || buyIn < floor || buyIn > ceiling || state.player.cash < buyIn) return inputState;
+            if (base.gambling.table || base.gambling.round) return inputState;
+            recordVisitedLocation(base, "the_nile");
+            base.npc.biniam.met = true;
+            spendCash(base, buyIn);
+            registerGameStart(base);
+            if (tonk) {
+              const table = GamblingEvents.dealTonk(base.run.seed, base.run.day, base.gambling.tonkGamesPlayed, 2);
+              base.gambling.table = { ...table, buyIn, gameIndex: base.gambling.tonkGamesPlayed };
+              logEntry(base, `You buy in for $${buyIn}. Five cards, two other players, and a discard face up.`, "good");
+              return base;
+            }
+            const round = GamblingEvents.openCeloRound(base.run.seed, base.run.day, base.gambling.celoRoundsPlayed);
+            base.gambling.round = { ...round, buyIn, bet: buyIn, adjusted: null, roundIndex: base.gambling.celoRoundsPlayed };
+            logEntry(base, round.banker.kind === "no_result" ? "Three throws and the bank never landed on anything. The dice come to you." : `The bank sets on ${round.banker.dice.join("-")}.`, "good");
+            return base;
+          }
+          if (action.type === "NILE_TONK_TURN") {
+            const table = base.gambling.table;
+            if (!table) return inputState;
+            const hand = table.hands[0];
+            if (action.draw === "discard" && table.discard.length) hand.push(table.discard.pop());
+            else if (table.stock.length) hand.push(table.stock.shift());
+            else return finishTonk(base, 0);
+            const pitched = hand.find((card) => card.id === action.discardId) || hand[hand.length - 1];
+            hand.splice(hand.indexOf(pitched), 1);
+            table.discard.push(pitched);
+            const { dropper } = GamblingEvents.runOpponentTurns(table);
+            if (dropper != null) return finishTonk(base, dropper);
+            if (!table.stock.length) return finishTonk(base, lowestTonkSeat(table));
+            return base;
+          }
+          if (action.type === "NILE_TONK_DROP") {
+            if (!base.gambling.table) return inputState;
+            return finishTonk(base, 0);
+          }
+          if (action.type === "NILE_CELO_ROLL") {
+            const round = base.gambling.round;
+            if (!round) return inputState;
+            const vision = GamblingEvents.celoVision(Attributes.effectiveAttribute(base, "intelligence"));
+            const adjustment = vision.canAdjust && ["press", "back_off"].includes(action.adjust) ? action.adjust : null;
+            const bet = Gambling.adjustedBet(round.buyIn, adjustment);
+            const extra = Math.max(0, bet - round.buyIn);
+            if (extra > base.player.cash) return inputState;
+            if (extra) spendCash(base, extra);
+            if (bet < round.buyIn) base.player.cash += round.buyIn - bet;
+            const result = GamblingEvents.resolveCelo({
+              seed: base.run.seed,
+              day: base.run.day,
+              round: round.roundIndex,
+              bankerReading: round.banker,
+              bet
+            });
+            return finishCelo(base, { round, result, bet, adjustment });
           }
           if (action.type === "ASSIGN_BOOST_CREW") {
             const crew = base.people.crew[action.crewId];
@@ -9758,9 +10959,10 @@
             recordVisitedLocation(base, "spenard_streets");
             addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:explore`);
             const jobDiscovered = rollJobDiscovery(base, random2, count);
+            const nileFound = rollNileDiscovery(base);
             const meetsGoodie = base.run.day >= 2 && !base.flags.goodieEncounterSeen;
             const meetsBoost = !meetsGoodie && !base.flags.boostOpportunitySeen && !base.boost.visible && (count === 0 || base.world.locations.gamblingKnown);
-            if (!meetsBoost && !meetsGoodie && !jobDiscovered) {
+            if (!meetsBoost && !meetsGoodie && !jobDiscovered && !nileFound) {
               const discoveries = [
                 "Juan's bus advice matches the posted Downtown timetable.",
                 "A freight worker confirms Ship Creek hires before breakfast.",
@@ -10357,7 +11559,10 @@
           SHOPLIFT: "Attempt Resolved",
           BOOST: "Boost Resolved",
           ASK_BOOST_WINDOW: "Window Learned",
-          GAMBLE: "Game Resolved",
+          NILE_TONK_SIT: "Hand Resolved",
+          NILE_CELO_SIT: "Round Resolved",
+          NILE_WELLNESS: "Session Done",
+          NILE_COFFEE: "Coffee Done",
           END_MARKET: "Market Visit Closed",
           SLEEP_HOME: "Night Passed",
           LAY_LOW: "Laid Low",
@@ -10496,6 +11701,9 @@
           STARTER_JOB_IDS,
           JOB_APPROACHES,
           JOB_RANK_THRESHOLDS,
+          NILE: Nile,
+          GAMBLING: Gambling,
+          gamblingEvents: GamblingEvents,
           LISTING_ITEMS,
           LISTING_CAPACITY,
           MARKET: Market,
@@ -10672,6 +11880,12 @@
             travelAvailability,
             householdPresence,
             nineZeroSevenListAccess,
+            // The Nile. `nileAvailability` is the one read the two floors need; the
+            // table reads exist so the UI can render a hand without the reducer.
+            nileAvailability,
+            nileAmbient,
+            tonkView,
+            celoView,
             nightOwlStashUsed,
             nightOwlStashAvailability,
             relationshipLabel,
@@ -10801,7 +12015,7 @@
         const showRespect = state.npc.curtis.respect > 0;
         const showCrew = C.selectors.recruitedCrew(state).length > 0;
         const showCurtis = state.npc.curtis.relationship !== "unaware";
-        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.10"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", value: /* @__PURE__ */ React.createElement(React.Fragment, null, `${state.run.day}${state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""} \xB7 ${C.SLOTS[state.run.slot]} \xB7 ${area.name}`, /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })), good: true }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "" })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
+        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.11"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", value: /* @__PURE__ */ React.createElement(React.Fragment, null, `${state.run.day}${state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""} \xB7 ${C.SLOTS[state.run.slot]} \xB7 ${area.name}`, /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })), good: true }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "" })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
       }
       var NAV_ICONS = {
         home: "M12 3 3 10.4V21h6v-6h6v6h6V10.4z",
@@ -10916,6 +12130,69 @@
         const covered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
         return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Transit", sub: "Fares, day passes, and weekly passes", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "People Mover", /* @__PURE__ */ React.createElement("small", null, state.world.transport.weekPass ? "7-DAY PASS" : covered ? "DAY PASS" : "$5 A RIDE")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "A single ride costs $5. A pass covers every ride it is valid for, and buying one costs no time."), /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, /* @__PURE__ */ React.createElement(Outcome, { label: "Rides taken", value: state.world.transport.busRides }), /* @__PURE__ */ React.createElement(Outcome, { label: "Today's fares", value: covered ? "Covered" : "$5 each" })), /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", disabled: state.player.cash < 12 || covered, onClick: () => dispatch({ type: "BUY_BUS_PASS", passType: "day" }) }, "Day pass \xB7 $12", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, covered ? "Already covered today" : "No time cost")), /* @__PURE__ */ React.createElement("button", { className: "btn secondary", disabled: state.player.cash < 45 || state.world.transport.weekPass, onClick: () => dispatch({ type: "BUY_BUS_PASS", passType: "week" }) }, "7-day pass \xB7 $45", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, state.world.transport.weekPass ? "Already held" : "No time cost")))), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Industrial Route", /* @__PURE__ */ React.createElement("small", null, state.world.transport.industrialRouteKnown ? "KNOWN" : "UNKNOWN")), /* @__PURE__ */ React.createElement("p", { className: "compact muted" }, state.world.transport.industrialRouteKnown ? "A trusted route out to the service roads is available whenever you want it." : "The service roads need Eli, a trusted ride, or a specific route. No fare buys the way in."))));
       }
+      var SUIT_GLYPH = { S: "\u2660", H: "\u2665", D: "\u2666", C: "\u2663" };
+      var RED_SUITS = ["H", "D"];
+      function PlayingCard({ card, selected, melded, disabled, onSelect }) {
+        const label = `${card.rank} of ${{ S: "spades", H: "hearts", D: "diamonds", C: "clubs" }[card.suit]}`;
+        return /* @__PURE__ */ React.createElement(
+          "button",
+          {
+            type: "button",
+            className: `play-card${selected ? " selected" : ""}${melded ? " melded" : ""}${RED_SUITS.includes(card.suit) ? " red" : ""}`,
+            "aria-label": `${label}${melded ? ", part of a spread or run" : ""}`,
+            "aria-pressed": !!selected,
+            disabled,
+            onClick: () => onSelect && onSelect(card)
+          },
+          /* @__PURE__ */ React.createElement("span", { className: "play-card-rank" }, card.rank),
+          /* @__PURE__ */ React.createElement("span", { className: "play-card-suit" }, SUIT_GLYPH[card.suit])
+        );
+      }
+      function Die({ value }) {
+        return /* @__PURE__ */ React.createElement("span", { className: `die die-${value}`, role: "img", "aria-label": `Die showing ${value}` }, [0, 1, 2, 3, 4, 5, 6].slice(0, value).map((pip) => /* @__PURE__ */ React.createElement("i", { key: pip, className: "pip" })));
+      }
+      function TonkTable({ state, dispatch }) {
+        const view = C.selectors.tonkView(state);
+        const [selected, setSelected] = useState(null);
+        const [draw, setDraw] = useState("stock");
+        if (!view) return null;
+        const meldedIds = [...view.spreads.flat(), ...view.runs.flat()];
+        const canPlay = !!selected;
+        return /* @__PURE__ */ React.createElement("div", { className: "card nile-table" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Tonk", /* @__PURE__ */ React.createElement("small", null, "POT ", money(view.pot))), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Your hand is worth ", /* @__PURE__ */ React.createElement("b", null, view.value), ". Drop when you think it is the lowest at the table."), /* @__PURE__ */ React.createElement("div", { className: "card-fan" }, view.hand.map((card) => /* @__PURE__ */ React.createElement(
+          PlayingCard,
+          {
+            key: card.id,
+            card,
+            "card-id": card.id,
+            selected: selected === card.id,
+            melded: meldedIds.includes(card.id),
+            onSelect: (picked) => setSelected(picked.id)
+          }
+        ))), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, meldedIds.length ? `${view.spreads.length} spread${view.spreads.length === 1 ? "" : "s"}, ${view.runs.length} run${view.runs.length === 1 ? "" : "s"} laid down.` : "Nothing lays down yet. Three of a kind, or three in a row in one suit."), /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, /* @__PURE__ */ React.createElement("button", { className: `btn ${draw === "stock" ? "primary" : "secondary"}`, onClick: () => setDraw("stock") }, "Draw from stock", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, view.stockLeft, " left")), /* @__PURE__ */ React.createElement("button", { className: `btn ${draw === "discard" ? "primary" : "secondary"}`, disabled: !view.discardTop, onClick: () => setDraw("discard") }, "Take the discard", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, view.discardTop ? `${view.discardTop.rank}${SUIT_GLYPH[view.discardTop.suit]} showing` : "Nothing showing"))), /* @__PURE__ */ React.createElement("div", { className: "detail-list" }, view.opponents.map((opponent) => /* @__PURE__ */ React.createElement("span", { key: opponent.seat }, /* @__PURE__ */ React.createElement("b", null, "Seat ", opponent.seat), " \u2014 ", opponent.label, opponent.hesitates ? /* @__PURE__ */ React.createElement("em", { className: "warn" }, " hesitates before drawing.") : "", opponent.estimate ? /* @__PURE__ */ React.createElement("em", { className: "muted" }, " ", opponent.estimate, ".") : ""))), !view.vision.tells && /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "They give you nothing. Reading a table is a Charisma skill and yours is not there yet."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !canPlay, onClick: () => {
+          dispatch({ type: "NILE_TONK_TURN", draw, discardId: selected });
+          setSelected(null);
+        } }, canPlay ? "Draw and discard" : "Pick a card to discard", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, canPlay ? "Then the table answers" : "Tap a card above")), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", onClick: () => dispatch({ type: "NILE_TONK_DROP" }) }, "Drop with ", view.value, /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Lowest hand takes the pot. Wrong and you pay double.")));
+      }
+      function CeloTable({ state, dispatch }) {
+        const view = C.selectors.celoView(state);
+        const [adjust, setAdjust] = useState(null);
+        if (!view) return null;
+        const bet = adjust === "press" ? view.pressTo : adjust === "back_off" ? view.backOffTo : view.buyIn;
+        return /* @__PURE__ */ React.createElement("div", { className: "card nile-table" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Cee-lo", /* @__PURE__ */ React.createElement("small", null, "BET ", money(bet))), view.bankerNoResult ? /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Three throws and the bank never landed. Your point stands on its own.") : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("p", { className: "compact" }, "The bank set on:"), /* @__PURE__ */ React.createElement("div", { className: "dice-row" }, view.banker.dice.map((value, index) => /* @__PURE__ */ React.createElement(Die, { key: index, value })))), view.probability != null ? /* @__PURE__ */ React.createElement("p", { className: "compact" }, /* @__PURE__ */ React.createElement("b", null, Math.round(view.probability * 100), "%"), " to beat that.") : view.label ? /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Reading the table, it looks ", /* @__PURE__ */ React.createElement("b", null, view.label), ".") : /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "You have no read on this. Just dice."), view.vision.canAdjust && /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, /* @__PURE__ */ React.createElement("button", { className: `btn ${adjust === "press" ? "primary" : "secondary"}`, disabled: !view.canPress, onClick: () => setAdjust(adjust === "press" ? null : "press") }, "Press to ", money(view.pressTo), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, view.canPress ? "Double it" : "Not enough cash")), /* @__PURE__ */ React.createElement("button", { className: `btn ${adjust === "back_off" ? "primary" : "secondary"}`, onClick: () => setAdjust(adjust === "back_off" ? null : "back_off") }, "Back off to ", money(view.backOffTo), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Take half off the table"))), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", onClick: () => dispatch({ type: "NILE_CELO_ROLL", adjust }) }, "Roll", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, money(bet), " on it \xB7 one part of day")));
+      }
+      function TheNileHub({ state, dispatch, onBack }) {
+        const nile = C.selectors.nileAvailability(state);
+        const [floor, setFloor] = useState("wellness");
+        const upstairs = floor === "den" && nile.secondFloorAccess;
+        const ambient = C.selectors.nileAmbient(state, upstairs ? "den" : "wellness");
+        const inGame = !!(state.gambling.table || state.gambling.round);
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: upstairs ? "The Nile" : "Blue Nile Wellness", sub: upstairs ? "Coffee, cards, and dice above the spa" : "Steam, stones, and traditional bodywork", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, ambient && /* @__PURE__ */ React.createElement("p", { className: "ambient compact" }, ambient), !upstairs && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Steam and stones", /* @__PURE__ */ React.createElement("small", null, money(30))), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Forty minutes and nobody wanting anything from you. Cheaper than the clinic and it is open in the daytime."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !nile.wellness.available, onClick: () => dispatch({ type: "NILE_WELLNESS" }) }, "Book a session", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, nile.wellness.reason))), nile.secondFloorAccess && /* @__PURE__ */ React.createElement(MenuRow, { title: "Go upstairs", status: nile.band >= 3 ? "Expected" : "Known", description: "A stairwell behind the front desk. The door has a code and you have this week's.", onClick: () => setFloor("den") })), upstairs && /* @__PURE__ */ React.createElement(React.Fragment, null, !inGame && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Biniam Tesfaye", /* @__PURE__ */ React.createElement("small", null, "\u25CF".repeat(nile.cups), " ", nile.cups, " CUP", nile.cups === 1 ? "" : "S")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, C.NILE.BINIAM_LINES[nile.band] || C.NILE.BINIAM_LINES[2]), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !nile.coffee.available, onClick: () => dispatch({ type: "NILE_COFFEE" }) }, "Sit with the coffee", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, nile.coffee.available ? "Free \xB7 one part of day \xB7 you learn by watching" : nile.coffee.reason))), state.gambling.table ? /* @__PURE__ */ React.createElement(TonkTable, { state, dispatch }) : state.gambling.round ? /* @__PURE__ */ React.createElement(CeloTable, { state, dispatch }) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(BuyInCard, { label: "Tonk", blurb: "Five cards each. Lay down spreads and runs, drive your hand to nothing, and drop before anyone else does.", access: nile.tonk, min: 10, max: 50, onSit: (buyIn) => dispatch({ type: "NILE_TONK_SIT", buyIn }) }), /* @__PURE__ */ React.createElement(BuyInCard, { label: "Cee-lo", blurb: "Three dice. The bank sets a point, you answer it. Four-five-six takes it, one-two-three loses it, trips beat everything between.", access: nile.celo, min: 20, max: 100, onSit: (buyIn) => dispatch({ type: "NILE_CELO_SIT", buyIn }) }), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, nile.gamesToday, " of ", nile.maxGames, " games today."), nile.privateGames && /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "Biniam has mentioned a Saturday game with people he wants you to meet. Not this week.")), /* @__PURE__ */ React.createElement(MenuRow, { title: "Back downstairs", status: "Wellness", description: "The front desk, the treatment rooms, and Selam.", onClick: () => setFloor("wellness") })), !upstairs && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Selam Tesfaye", /* @__PURE__ */ React.createElement("small", null, state.npc.selam.visits ? `${state.npc.selam.visits} VISIT${state.npc.selam.visits === 1 ? "" : "S"}` : "FRONT DESK")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, C.NILE.SELAM_LINES[nile.selamBand] || C.NILE.SELAM_LINES[2]))));
+      }
+      function BuyInCard({ label, blurb, access, min, max, onSit }) {
+        const mid = Math.round((min + max) / 2 / 5) * 5;
+        const stakes = [min, mid, max];
+        return /* @__PURE__ */ React.createElement("div", { className: `card${access.available ? "" : " locked"}` }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, label, /* @__PURE__ */ React.createElement("small", null, money(min), "\u2013", money(max))), /* @__PURE__ */ React.createElement("p", { className: "compact" }, blurb), /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, stakes.map((stake) => /* @__PURE__ */ React.createElement("button", { className: "btn secondary", key: stake, disabled: !access.available, onClick: () => onSit(stake) }, "Sit for ", money(stake)))), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, access.reason));
+      }
       function NightOwlStash({ state, dispatch }) {
         const [cashAmount, setCashAmount] = useState(50);
         const available = C.selectors.nightOwlStashAvailability(state);
@@ -10961,6 +12238,7 @@
         const jobs = C.selectors.discoveredJobs(state);
         const contacts = C.selectors.knownSocialContacts(state);
         const nightOwl = C.selectors.districtActionAvailability(state, "night_owl");
+        const nile = C.selectors.nileAvailability(state);
         const closedNightOwlPage = page === "nightowl" && !nightOwl.available;
         const effectivePage = closedNightOwlPage ? "places" : page;
         useEffect(() => {
@@ -10971,6 +12249,7 @@
           return /* @__PURE__ */ React.createElement(JobDetail, { state, dispatch, job, onBack: () => setPage("jobs") });
         }
         if (effectivePage === "nightowl") return /* @__PURE__ */ React.createElement(NightOwlHub, { state, dispatch, onBack: () => setPage("places") });
+        if (effectivePage === "nile") return /* @__PURE__ */ React.createElement(TheNileHub, { state, dispatch, onBack: () => setPage("places") });
         if (effectivePage === "jobs") return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Spenard Jobs", sub: "Found work still requires an application and callback", onBack: () => setPage("activities") }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, jobs.map((job) => {
           const record = state.jobs.records[job.id];
           const pay = C.selectors.jobPayRange(state, job.id);
@@ -10979,9 +12258,9 @@
           return /* @__PURE__ */ React.createElement(MenuRow, { key: job.id, title: job.name, status: `${money(pay.min)}\u2013${money(pay.max)}`, description: `${slots.map((slot) => C.SLOTS[slot]).join(" / ")} \xB7 Risk: ${job.risk} \xB7 Rank ${record.rank} \xB7 ${availability.available ? "Available" : availability.reason}`, tone: availability.available ? "" : "muted", onClick: () => setPage(`job:${job.id}`) });
         })));
         if (effectivePage === "contacts") return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Contacts", sub: "Personal and social contacts in one place", onBack: () => setPage("activities") }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(SocialContacts, { state, dispatch })));
-        if (effectivePage === "places") return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Places", sub: "Specific doors in Spenard", onBack: () => setPage("root") }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(MenuRow, { title: "Night Owl", status: nightOwl.available ? "Open" : nightOwl.reason, description: "Coffee, community board, Mina, regulars, and a counter job.", disabled: !nightOwl.available, onClick: () => setPage("nightowl") }), state.discovered.spenardGym && /* @__PURE__ */ React.createElement(GymCard, { state, dispatch }), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Phone Store", /* @__PURE__ */ React.createElement("small", null, "WALK-IN")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Pay in person even after service shuts off."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: state.run.day < state.phone.billDueDay || state.player.cash < C.PHONE_BILL, onClick: () => dispatch({ type: "PAY_PHONE_BILL", surface: "store" }) }, "Pay phone bill \xB7 ", money(C.PHONE_BILL), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free \xB7 no time passes")))));
+        if (effectivePage === "places") return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Places", sub: "Specific doors in Spenard", onBack: () => setPage("root") }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(MenuRow, { title: "Night Owl", status: nightOwl.available ? "Open" : nightOwl.reason, description: "Coffee, community board, Mina, regulars, and a counter job.", disabled: !nightOwl.available, onClick: () => setPage("nightowl") }), state.discovered.spenardGym && /* @__PURE__ */ React.createElement(GymCard, { state, dispatch }), nile.discovered && /* @__PURE__ */ React.createElement(MenuRow, { title: "The Nile", status: nile.wellness.available ? "Open" : nile.secondFloorAccess && nile.coffee.available ? "Upstairs open" : nile.wellness.reason, description: nile.secondFloorAccess ? "Blue Nile Wellness, and the room above it." : "Blue Nile Wellness. Steam, stones, and the woman who runs the building.", onClick: () => setPage("nile") }), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Phone Store", /* @__PURE__ */ React.createElement("small", null, "WALK-IN")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Pay in person even after service shuts off."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: state.run.day < state.phone.billDueDay || state.player.cash < C.PHONE_BILL, onClick: () => dispatch({ type: "PAY_PHONE_BILL", surface: "store" }) }, "Pay phone bill \xB7 ", money(C.PHONE_BILL), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free \xB7 no time passes")))));
         if (effectivePage === "activities") return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Activities", sub: "Work, wandering, and people", onBack: () => setPage("root") }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(MenuRow, { title: "Wander", status: `${state.world.locations.explorationCount} walks`, description: "Walk around, discover work, and see what happens.", onClick: () => dispatch({ type: "WANDER_SPENARD" }) }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Jobs", status: `${jobs.length} found`, description: "Applications, callbacks, and available shifts.", onClick: () => setPage("jobs") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Contacts", status: `${C.selectors.personalContacts(state).length + contacts.length} known`, description: "Personal and social contacts.", onClick: () => setPage("contacts") })));
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Explore Spenard", sub: "Learn what the neighborhood has to offer", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(MenuRow, { title: "Places", status: state.discovered.spenardGym ? "3 known" : "2 known", description: "Night Owl, community gym, and phone store.", onClick: () => setPage("places") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Activities", status: `${jobs.length} jobs`, description: "Wander, Jobs, and Contacts.", onClick: () => setPage("activities") })));
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Explore Spenard", sub: "Learn what the neighborhood has to offer", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(MenuRow, { title: "Places", status: `${2 + (state.discovered.spenardGym ? 1 : 0) + (nile.discovered ? 1 : 0)} known`, description: nile.discovered ? "Night Owl, The Nile, community gym, and phone store." : "Night Owl, community gym, and phone store.", onClick: () => setPage("places") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Activities", status: `${jobs.length} jobs`, description: "Wander, Jobs, and Contacts.", onClick: () => setPage("activities") })));
       }
       function NightOwlHub({ state, dispatch, onBack }) {
         const board = C.selectors.nightOwlBoardItems(state);
@@ -11002,7 +12281,6 @@
         return /* @__PURE__ */ React.createElement("div", { className: "return-actions" }, /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !ride.available, onClick: () => dispatch(C.DISTRICT_ACTIONS.return_spenard.action) }, "Return to Spenard", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, ride.available ? `${ride.cashCost ? "$5 fare" : "Pass covers fare"} \xB7 one part of day` : ride.reason)), walk.visible && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", onClick: () => dispatch(C.DISTRICT_ACTIONS.walk_spenard.action) }, "Walk back", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "$0 \xB7 two parts of day \xB7 \u22123 Health")));
       }
       function AroundHere({ state, dispatch, onBack, initialPage = "root" }) {
-        const [gambleApproach, setGambleApproach] = useState("read");
         const [page, setPage] = useState(initialPage);
         const available = C.selectors.activityAvailability(state);
         const area = areaOf(state);
@@ -11016,7 +12294,7 @@
         if (effectivePage === "intel") return /* @__PURE__ */ React.createElement(LocalIntel, { state, dispatch, onBack: () => setPage("root") });
         if (effectivePage !== "root") return /* @__PURE__ */ React.createElement(ExploreSpenard, { state, dispatch, page: effectivePage, setPage, onBack: () => setPage("root") });
         const localActions = actions.filter((entry) => !["return_spenard", "walk_spenard"].includes(entry.id));
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: `Around ${area.name}`, sub: "What you can do without leaving the neighborhood", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(ReturnToSpenardActions, { state, dispatch }), actionOf("explore_spenard") && /* @__PURE__ */ React.createElement(MenuRow, { title: "Explore Spenard", status: state.world.locations.explorationCount ? `${state.world.locations.explorationCount} walks` : "New arrival", description: "Jobs, wandering, and people you meet through work.", onClick: () => setPage("explore") }), actionOf("local_intel") && /* @__PURE__ */ React.createElement(MenuRow, { title: "Local Intel", status: `${state.world.locations.explorationCount} walks`, description: "Routes, discoveries, and word collected around Spenard.", onClick: () => setPage("intel") }), actionOf("spenard_gambling") && /* @__PURE__ */ React.createElement("div", { className: `card${available.gambling.available ? "" : " locked"}` }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Informal Game", /* @__PURE__ */ React.createElement("small", null, "EVENING / NIGHT")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Choose an approach, then risk $20, $50, or $100. Attributes inform the seeded result but never guarantee profit. No debt is offered."), /* @__PURE__ */ React.createElement("select", { "aria-label": "Gambling approach", value: gambleApproach, onChange: (event) => setGambleApproach(event.target.value) }, /* @__PURE__ */ React.createElement("option", { value: "read" }, "Read the room"), /* @__PURE__ */ React.createElement("option", { value: "steady" }, "Play disciplined"), /* @__PURE__ */ React.createElement("option", { value: "press" }, "Work the table")), /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, [20, 50, 100].map((stake) => /* @__PURE__ */ React.createElement("button", { className: "btn secondary", key: stake, disabled: !available.gambling.available || state.player.cash < stake, onClick: () => dispatch({ type: "GAMBLE", stake, approach: gambleApproach }) }, "Risk $", stake))), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, available.gambling.reason)), area.id === "downtown" && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Downtown", /* @__PURE__ */ React.createElement("small", null, "EARLY SCAFFOLD")), /* @__PURE__ */ React.createElement("p", { className: "compact muted" }, "No local jobs, people, or activities are available here yet.")), !localActions.length && area.id !== "downtown" && /* @__PURE__ */ React.createElement("div", { className: "card locked" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "No local actions"), /* @__PURE__ */ React.createElement("p", { className: "compact muted" }, "Only the route back to Spenard is available here."))));
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: `Around ${area.name}`, sub: "What you can do without leaving the neighborhood", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(ReturnToSpenardActions, { state, dispatch }), actionOf("explore_spenard") && /* @__PURE__ */ React.createElement(MenuRow, { title: "Explore Spenard", status: state.world.locations.explorationCount ? `${state.world.locations.explorationCount} walks` : "New arrival", description: "Jobs, wandering, and people you meet through work.", onClick: () => setPage("explore") }), actionOf("local_intel") && /* @__PURE__ */ React.createElement(MenuRow, { title: "Local Intel", status: `${state.world.locations.explorationCount} walks`, description: "Routes, discoveries, and word collected around Spenard.", onClick: () => setPage("intel") }), area.id === "downtown" && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Downtown", /* @__PURE__ */ React.createElement("small", null, "EARLY SCAFFOLD")), /* @__PURE__ */ React.createElement("p", { className: "compact muted" }, "No local jobs, people, or activities are available here yet.")), !localActions.length && area.id !== "downtown" && /* @__PURE__ */ React.createElement("div", { className: "card locked" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "No local actions"), /* @__PURE__ */ React.createElement("p", { className: "compact muted" }, "Only the route back to Spenard is available here."))));
       }
       function Household({ state, dispatch, onBack }) {
         var _a;
@@ -11062,7 +12340,7 @@
         const covered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
         const area = areaOf(state);
         const shift = C.selectors.quickShift(state);
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Travel", sub: "Where to go, how to get there, and what is around you" }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, shift && /* @__PURE__ */ React.createElement("button", { className: `quick-shift${shift.available ? "" : " locked"}`, disabled: !shift.available, onClick: () => setPage(`around:job:${shift.jobId}`) }, /* @__PURE__ */ React.createElement("span", { className: "quick-shift-main" }, /* @__PURE__ */ React.createElement("b", null, shift.name, " shift"), /* @__PURE__ */ React.createElement("small", null, shift.available ? `${money(shift.pay.min)}\u2013${money(shift.pay.max)} \xB7 one part of day` : shift.reason)), /* @__PURE__ */ React.createElement("span", { className: "quick-shift-go", "aria-hidden": "true" }, "\u203A")), /* @__PURE__ */ React.createElement(MenuRow, { title: `Around ${area.name}`, status: state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? "You are here" : "Return route ready", description: state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? "Explore Places and Activities, gamble, or check Local Intel." : "Local actions and the route back to Spenard.", onClick: () => setPage("around") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Home", status: state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? `${state.people.household.warnings}/3 warnings` : covered ? "Pass covers return" : "$5 return", description: "Storage, Yalonda, Juan, and sleep.", disabled: state.people.household.evicted, onClick: () => setPage("household") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Leave Spenard", status: state.world.transport.weekPass ? "7-day pass" : covered ? "Day pass" : "$5 a ride", description: "Known non-Spenard destinations and pass controls.", onClick: () => setPage("destinations") })));
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Travel", sub: "Where to go, how to get there, and what is around you" }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, shift && /* @__PURE__ */ React.createElement("button", { className: `quick-shift${shift.available ? "" : " locked"}`, disabled: !shift.available, onClick: () => setPage(`around:job:${shift.jobId}`) }, /* @__PURE__ */ React.createElement("span", { className: "quick-shift-main" }, /* @__PURE__ */ React.createElement("b", null, shift.name, " shift"), /* @__PURE__ */ React.createElement("small", null, shift.available ? `${money(shift.pay.min)}\u2013${money(shift.pay.max)} \xB7 one part of day` : shift.reason)), /* @__PURE__ */ React.createElement("span", { className: "quick-shift-go", "aria-hidden": "true" }, "\u203A")), /* @__PURE__ */ React.createElement(MenuRow, { title: `Around ${area.name}`, status: state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? "You are here" : "Return route ready", description: state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? "Explore Places and Activities, or check Local Intel." : "Local actions and the route back to Spenard.", onClick: () => setPage("around") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Home", status: state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? `${state.people.household.warnings}/3 warnings` : covered ? "Pass covers return" : "$5 return", description: "Storage, Yalonda, Juan, and sleep.", disabled: state.people.household.evicted, onClick: () => setPage("household") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Leave Spenard", status: state.world.transport.weekPass ? "7-day pass" : covered ? "Day pass" : "$5 a ride", description: "Known non-Spenard destinations and pass controls.", onClick: () => setPage("destinations") })));
       }
       function StreetScreen({ state, dispatch, page, setPage, onTrade }) {
         if (page === "people") return /* @__PURE__ */ React.createElement(People, { state, dispatch, navigateMore: () => setPage("root") });
@@ -11543,7 +12821,7 @@
           ExpandableMoreSection,
           {
             collapsedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-lead" }, "Autosave is on. This run saves to your browser after every action."),
-            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.10 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
+            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.11 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
             moreLabel: "Save detail",
             lessLabel: "Hide detail"
           }
@@ -11568,7 +12846,7 @@
         if (typeof window !== "undefined" && typeof window.__907sfx === "function") window.__907sfx(name);
       }
       function TabUnlockedOverlay({ unlock, onDismiss }) {
-        const names = { market: "Market", boost: "Boost", rob: "Rob", gambling: "Gambling" };
+        const names = { market: "Market", boost: "Boost", rob: "Rob", gambling: "The Nile" };
         const dismissRef = React.useRef(onDismiss);
         dismissRef.current = onDismiss;
         useEffect(() => {

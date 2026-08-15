@@ -66,13 +66,47 @@ const ADVANTAGE_THRESHOLD = 3;
 const CATASTROPHE_IMMUNITY_THRESHOLD = 6;
 
 // ---------------------------------------------------------------------------
-// Gym
+// Growth
 // ---------------------------------------------------------------------------
 
 // Base rate per session, before log2 diminishing returns. Bag work is the
 // reliable floor, cardio the slow build, sparring the fast lane you have to be
 // good enough to survive.
-const GROWTH_RATES = { bag_work: 0.3, cardio: 0.2, sparring: 0.5 };
+//
+// v1.11 opens the other two corners of the triangle. Every rate here is one
+// number in one table on purpose: attributeGrowth() takes an activity id and
+// nothing else, so a new growth source is a row rather than a code path.
+const GROWTH_RATES = {
+  // Combat - the Spenard Gym.
+  bag_work: 0.3,
+  cardio: 0.2,
+  sparring: 0.5,
+  // Charisma - The Nile's two floors, plus the Night Owl nights that were
+  // already happening and simply never counted for anything.
+  nile_social: 0.25,
+  tonk_game: 0.4,
+  night_owl_social: 0.15,
+  // Intelligence - reading a table, reading a listing, reading a man's hands
+  // while he pours coffee.
+  celo_game: 0.4,
+  list_flip: 0.2,
+  coffee_ceremony: 0.15,
+};
+
+// Which attribute each growth source feeds. Split from GROWTH_RATES so a
+// reducer never has to hard-code "this one is Charisma" at the call site, and
+// so a source with no attribute is a loud failure rather than silent no-op.
+const GROWTH_ATTRIBUTES = {
+  bag_work: "combat",
+  cardio: "combat",
+  sparring: "combat",
+  nile_social: "charisma",
+  tonk_game: "charisma",
+  night_owl_social: "charisma",
+  celo_game: "intelligence",
+  list_flip: "intelligence",
+  coffee_ceremony: "intelligence",
+};
 
 const GYM_ACTIVITIES = [
   {
@@ -109,6 +143,15 @@ const GYM_STREAK_BONUS = 1;
 // Growth past Dangerous needs real experience, not another session on the bag.
 const GROWTH_CAP_PENALTY_FLOOR = 6;
 const GROWTH_CAP_PENALTY = 0.5;
+
+// The Nile runs the same streak rule as the gym, with one difference that comes
+// out of the building itself: the gym only ever trains Combat, so its streak has
+// one attribute to pay out to. The Nile trains Charisma downstairs and either
+// attribute upstairs, so the streak pays out to whichever one you trained most
+// recently. Three days of Tonk and one wellness visit is a Charisma streak; swap
+// the last day for Cee-lo and the same three days pay Intelligence.
+const NILE_STREAK_REQUIREMENT = 3;
+const NILE_STREAK_BONUS = 1;
 
 // ---------------------------------------------------------------------------
 // Street Identity
@@ -216,6 +259,14 @@ const OUTCOME_SHAPES = {
   night_owl: { success: { clean: 0.5, messy: 0.5 }, failure: { failure: 0.85, catastrophic: 0.15 } },
   gambling: { success: { clean: 0.4, messy: 0.6 }, failure: { failure: 0.8, catastrophic: 0.2 } },
   market_meetup: { success: { clean: 0.7, messy: 0.3 }, failure: { failure: 0.55, catastrophic: 0.45 } },
+  // The two Nile tables read opponents rather than resolving the hand - the
+  // hand is played for real in src/data/gambling.js. What these pools decide is
+  // how much the player gets to SEE: a clean read surfaces a tell, a catastrophe
+  // surfaces a false one. Neither can go worse than that, which is why neither
+  // carries a catastrophic tier that costs money. Losing money is the game's
+  // job, not the attribute's.
+  tonk_read: { success: { clean: 0.5, messy: 0.5 }, failure: { failure: 0.75, catastrophic: 0.25 } },
+  celo_read: { success: { clean: 0.55, messy: 0.45 }, failure: { failure: 0.75, catastrophic: 0.25 } },
 };
 
 // Which attribute shapes which action.
@@ -229,6 +280,8 @@ const ACTION_ATTRIBUTE_MAP = {
   night_owl: "charisma",
   gambling: "charisma",
   market_meetup: "intelligence",
+  tonk_read: "charisma",
+  celo_read: "intelligence",
 };
 
 // What the neighborhood ends up knowing.
@@ -316,6 +369,11 @@ const OUTCOME_OBSERVATIONS = {
     failure: [],
     catastrophic: [{ type: "financial", event: "gambling_debt", channel: "neighborhood" }],
   },
+  // Reading a table is not an event anybody reports. Both maps are empty on
+  // purpose - what The Nile broadcasts is the money at the end of the night, and
+  // gamblingObservations() prices that by how much of it there was.
+  tonk_read: { clean: [], messy: [], failure: [], catastrophic: [] },
+  celo_read: { clean: [], messy: [], failure: [], catastrophic: [] },
   market_meetup: {
     // A clean meetup writes nothing. The flip itself already broadcasts
     // `financial / 907list_profit` when it settles; a well-run handoff in a
@@ -354,12 +412,15 @@ module.exports = {
   ADVANTAGE_THRESHOLD,
   CATASTROPHE_IMMUNITY_THRESHOLD,
   GROWTH_RATES,
+  GROWTH_ATTRIBUTES,
   GYM_ACTIVITIES,
   GYM_ACTIVITY_BY_ID,
   SPARRING_INJURY_CHANCE,
   SPARRING_INJURY_HEALTH,
   GYM_STREAK_REQUIREMENT,
   GYM_STREAK_BONUS,
+  NILE_STREAK_REQUIREMENT,
+  NILE_STREAK_BONUS,
   GROWTH_CAP_PENALTY_FLOOR,
   GROWTH_CAP_PENALTY,
   IDENTITY_BEHAVIOR_COLUMNS,

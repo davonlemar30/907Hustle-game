@@ -36,6 +36,12 @@ const NPC_CHANNELS = {
   curtis: ["direct", "network", "reputation"],
   dre: ["direct", "network"],
   simone: ["direct", "network"],
+  // Neither Tesfaye is on the network, and that is the point of the building.
+  // Selam's information comes from the people who walk through her own door;
+  // Biniam's comes from the room he is standing in. Wiring either to `network`
+  // would quietly hand Curtis a window into The Nile.
+  selam: ["direct", "neighborhood"],
+  biniam: ["direct", "neighborhood"],
 };
 
 // Curtis does not care about corner-level activity, and the whole design of his
@@ -67,6 +73,12 @@ const NPC_PRESENCE_SLOTS = {
   curtis: [1, 2, 3],
   dre: [1, 2, 3],
   simone: [1, 2, 3],
+  // Selam is behind the desk from opening through the early evening. Biniam's
+  // room does not open until six, so a Morning sighting never becomes something
+  // he knows - the same rule that keeps Mina from hearing about a Morning at the
+  // Night Owl.
+  selam: [0, 1, 2],
+  biniam: [2, 3],
 };
 
 // Where each NPC can pick something up in person. Null means anywhere in the
@@ -78,6 +90,9 @@ const NPC_PRESENCE_AREAS = {
   curtis: ["north_star_lot", "downtown"],
   dre: ["north_star_lot", "downtown"],
   simone: ["north_star_lot", "downtown"],
+  // Both live and work in the building. Neither leaves Spenard.
+  selam: ["north_star_lot"],
+  biniam: ["north_star_lot"],
 };
 
 function channelFor(id) {

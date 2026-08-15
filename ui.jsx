@@ -145,7 +145,7 @@ function Header({ state, onMenu }) {
   // 50px row of branding above every page, so it is now a screen-reader
   // heading and the Menu button rides the HUD line instead.
   return <header className="top">
-    <h1 className="sr-only">907Hustle: One Good Run · v1.10</h1>
+    <h1 className="sr-only">907Hustle: One Good Run · v1.11</h1>
     <div className="hud primary-hud">
       <Hud label="Day / Time" value={<>{`${state.run.day}${state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""} · ${C.SLOTS[state.run.slot]} · ${area.name}`}<SlotPips slot={state.run.slot} /></>} good />
       <Hud label="Cash" value={money(state.player.cash)} good flash={cashFlash} />
@@ -363,6 +363,148 @@ function Transit({ state, dispatch, onBack }) {
   </div></>;
 }
 
+// ---------------------------------------------------------------------------
+// The Nile
+// ---------------------------------------------------------------------------
+
+const SUIT_GLYPH = { S: "♠", H: "♥", D: "♦", C: "♣" };
+const RED_SUITS = ["H", "D"];
+
+// One playing card. The whole card is the tap target so it clears 44px without
+// needing a separate hit area, and aria-pressed carries the selection to a
+// screen reader rather than relying on the border colour alone.
+function PlayingCard({ card, selected, melded, disabled, onSelect }) {
+  const label = `${card.rank} of ${{ S: "spades", H: "hearts", D: "diamonds", C: "clubs" }[card.suit]}`;
+  return <button
+    type="button"
+    className={`play-card${selected ? " selected" : ""}${melded ? " melded" : ""}${RED_SUITS.includes(card.suit) ? " red" : ""}`}
+    aria-label={`${label}${melded ? ", part of a spread or run" : ""}`}
+    aria-pressed={!!selected}
+    disabled={disabled}
+    onClick={() => onSelect && onSelect(card)}
+  >
+    <span className="play-card-rank">{card.rank}</span>
+    <span className="play-card-suit">{SUIT_GLYPH[card.suit]}</span>
+  </button>;
+}
+
+// CSS-only pips, no canvas. The die reads as a die at 320px and as a number to
+// anything that cannot see it.
+function Die({ value }) {
+  return <span className={`die die-${value}`} role="img" aria-label={`Die showing ${value}`}>
+    {[0, 1, 2, 3, 4, 5, 6].slice(0, value).map((pip) => <i key={pip} className="pip" />)}
+  </span>;
+}
+
+function TonkTable({ state, dispatch }) {
+  const view = C.selectors.tonkView(state);
+  const [selected, setSelected] = useState(null);
+  const [draw, setDraw] = useState("stock");
+  if (!view) return null;
+  const meldedIds = [...view.spreads.flat(), ...view.runs.flat()];
+  const canPlay = !!selected;
+  return <div className="card nile-table">
+    <div className="card-title">Tonk<small>POT {money(view.pot)}</small></div>
+    <p className="compact">Your hand is worth <b>{view.value}</b>. Drop when you think it is the lowest at the table.</p>
+    <div className="card-fan">{view.hand.map((card) => <PlayingCard
+      key={card.id} card={card} card-id={card.id}
+      selected={selected === card.id}
+      melded={meldedIds.includes(card.id)}
+      onSelect={(picked) => setSelected(picked.id)}
+    />)}</div>
+    <p className="muted compact">{meldedIds.length ? `${view.spreads.length} spread${view.spreads.length === 1 ? "" : "s"}, ${view.runs.length} run${view.runs.length === 1 ? "" : "s"} laid down.` : "Nothing lays down yet. Three of a kind, or three in a row in one suit."}</p>
+    <div className="btn-row">
+      <button className={`btn ${draw === "stock" ? "primary" : "secondary"}`} onClick={() => setDraw("stock")}>Draw from stock<span className="action-copy">{view.stockLeft} left</span></button>
+      <button className={`btn ${draw === "discard" ? "primary" : "secondary"}`} disabled={!view.discardTop} onClick={() => setDraw("discard")}>Take the discard<span className="action-copy">{view.discardTop ? `${view.discardTop.rank}${SUIT_GLYPH[view.discardTop.suit]} showing` : "Nothing showing"}</span></button>
+    </div>
+    <div className="detail-list">{view.opponents.map((opponent) => <span key={opponent.seat}>
+      <b>Seat {opponent.seat}</b> — {opponent.label}
+      {opponent.hesitates ? <em className="warn"> hesitates before drawing.</em> : ""}
+      {opponent.estimate ? <em className="muted"> {opponent.estimate}.</em> : ""}
+    </span>)}</div>
+    {!view.vision.tells && <p className="muted compact">They give you nothing. Reading a table is a Charisma skill and yours is not there yet.</p>}
+    <button className="btn full primary" disabled={!canPlay} onClick={() => { dispatch({ type: "NILE_TONK_TURN", draw, discardId: selected }); setSelected(null); }}>
+      {canPlay ? "Draw and discard" : "Pick a card to discard"}<span className="action-copy">{canPlay ? "Then the table answers" : "Tap a card above"}</span>
+    </button>
+    <button className="btn full secondary" onClick={() => dispatch({ type: "NILE_TONK_DROP" })}>Drop with {view.value}<span className="action-copy">Lowest hand takes the pot. Wrong and you pay double.</span></button>
+  </div>;
+}
+
+function CeloTable({ state, dispatch }) {
+  const view = C.selectors.celoView(state);
+  const [adjust, setAdjust] = useState(null);
+  if (!view) return null;
+  const bet = adjust === "press" ? view.pressTo : adjust === "back_off" ? view.backOffTo : view.buyIn;
+  return <div className="card nile-table">
+    <div className="card-title">Cee-lo<small>BET {money(bet)}</small></div>
+    {view.bankerNoResult
+      ? <p className="compact">Three throws and the bank never landed. Your point stands on its own.</p>
+      : <><p className="compact">The bank set on:</p><div className="dice-row">{view.banker.dice.map((value, index) => <Die key={index} value={value} />)}</div></>}
+    {view.probability != null
+      ? <p className="compact"><b>{Math.round(view.probability * 100)}%</b> to beat that.</p>
+      : view.label
+        ? <p className="compact">Reading the table, it looks <b>{view.label}</b>.</p>
+        : <p className="muted compact">You have no read on this. Just dice.</p>}
+    {view.vision.canAdjust && <div className="btn-row">
+      <button className={`btn ${adjust === "press" ? "primary" : "secondary"}`} disabled={!view.canPress} onClick={() => setAdjust(adjust === "press" ? null : "press")}>Press to {money(view.pressTo)}<span className="action-copy">{view.canPress ? "Double it" : "Not enough cash"}</span></button>
+      <button className={`btn ${adjust === "back_off" ? "primary" : "secondary"}`} onClick={() => setAdjust(adjust === "back_off" ? null : "back_off")}>Back off to {money(view.backOffTo)}<span className="action-copy">Take half off the table</span></button>
+    </div>}
+    <button className="btn full primary" onClick={() => dispatch({ type: "NILE_CELO_ROLL", adjust })}>Roll<span className="action-copy">{money(bet)} on it · one part of day</span></button>
+  </div>;
+}
+
+function TheNileHub({ state, dispatch, onBack }) {
+  const nile = C.selectors.nileAvailability(state);
+  const [floor, setFloor] = useState("wellness");
+  const upstairs = floor === "den" && nile.secondFloorAccess;
+  const ambient = C.selectors.nileAmbient(state, upstairs ? "den" : "wellness");
+  const inGame = !!(state.gambling.table || state.gambling.round);
+  return <><PageHead title={upstairs ? "The Nile" : "Blue Nile Wellness"} sub={upstairs ? "Coffee, cards, and dice above the spa" : "Steam, stones, and traditional bodywork"} onBack={onBack} /><div className="scroll">
+    {ambient && <p className="ambient compact">{ambient}</p>}
+    {!upstairs && <>
+      <div className="card"><div className="card-title">Steam and stones<small>{money(30)}</small></div>
+        <p className="compact">Forty minutes and nobody wanting anything from you. Cheaper than the clinic and it is open in the daytime.</p>
+        <button className="btn full primary" disabled={!nile.wellness.available} onClick={() => dispatch({ type: "NILE_WELLNESS" })}>Book a session<span className="action-copy">{nile.wellness.reason}</span></button>
+      </div>
+      {nile.secondFloorAccess && <MenuRow title="Go upstairs" status={nile.band >= 3 ? "Expected" : "Known"} description="A stairwell behind the front desk. The door has a code and you have this week's." onClick={() => setFloor("den")} />}
+    </>}
+    {upstairs && <>
+      {!inGame && <div className="card"><div className="card-title">Biniam Tesfaye<small>{"●".repeat(nile.cups)} {nile.cups} CUP{nile.cups === 1 ? "" : "S"}</small></div>
+        <p className="compact">{C.NILE.BINIAM_LINES[nile.band] || C.NILE.BINIAM_LINES[2]}</p>
+        <button className="btn full secondary" disabled={!nile.coffee.available} onClick={() => dispatch({ type: "NILE_COFFEE" })}>Sit with the coffee<span className="action-copy">{nile.coffee.available ? "Free · one part of day · you learn by watching" : nile.coffee.reason}</span></button>
+      </div>}
+      {state.gambling.table
+        ? <TonkTable state={state} dispatch={dispatch} />
+        : state.gambling.round
+          ? <CeloTable state={state} dispatch={dispatch} />
+          : <>
+            <BuyInCard label="Tonk" blurb="Five cards each. Lay down spreads and runs, drive your hand to nothing, and drop before anyone else does." access={nile.tonk} min={10} max={50} onSit={(buyIn) => dispatch({ type: "NILE_TONK_SIT", buyIn })} />
+            <BuyInCard label="Cee-lo" blurb="Three dice. The bank sets a point, you answer it. Four-five-six takes it, one-two-three loses it, trips beat everything between." access={nile.celo} min={20} max={100} onSit={(buyIn) => dispatch({ type: "NILE_CELO_SIT", buyIn })} />
+            <p className="muted compact">{nile.gamesToday} of {nile.maxGames} games today.</p>
+            {nile.privateGames && <p className="muted compact">Biniam has mentioned a Saturday game with people he wants you to meet. Not this week.</p>}
+          </>}
+      <MenuRow title="Back downstairs" status="Wellness" description="The front desk, the treatment rooms, and Selam." onClick={() => setFloor("wellness")} />
+    </>}
+    {!upstairs && <div className="card"><div className="card-title">Selam Tesfaye<small>{state.npc.selam.visits ? `${state.npc.selam.visits} VISIT${state.npc.selam.visits === 1 ? "" : "S"}` : "FRONT DESK"}</small></div>
+      <p className="compact">{C.NILE.SELAM_LINES[nile.selamBand] || C.NILE.SELAM_LINES[2]}</p>
+    </div>}
+  </div></>;
+}
+
+// Buy-in chooser. Three listed amounts rather than a slider, because a slider at
+// 320px is a worse tap target than three buttons and the exact number matters
+// less than the commitment.
+function BuyInCard({ label, blurb, access, min, max, onSit }) {
+  const mid = Math.round((min + max) / 2 / 5) * 5;
+  const stakes = [min, mid, max];
+  return <div className={`card${access.available ? "" : " locked"}`}>
+    <div className="card-title">{label}<small>{money(min)}–{money(max)}</small></div>
+    <p className="compact">{blurb}</p>
+    <div className="btn-row">{stakes.map((stake) => <button className="btn secondary" key={stake} disabled={!access.available} onClick={() => onSit(stake)}>Sit for {money(stake)}</button>)}</div>
+    <p className="muted compact">{access.reason}</p>
+  </div>;
+}
+
 function NightOwlStash({ state, dispatch }) {
   const [cashAmount, setCashAmount] = useState(50);
   const available = C.selectors.nightOwlStashAvailability(state);
@@ -432,16 +574,19 @@ function ExploreSpenard({ state, dispatch, page, setPage, onBack }) {
   const jobs = C.selectors.discoveredJobs(state);
   const contacts = C.selectors.knownSocialContacts(state);
   const nightOwl = C.selectors.districtActionAvailability(state, "night_owl");
+  const nile = C.selectors.nileAvailability(state);
   const closedNightOwlPage = page === "nightowl" && !nightOwl.available;
   const effectivePage = closedNightOwlPage ? "places" : page;
   useEffect(() => { if (closedNightOwlPage) setPage("places"); }, [closedNightOwlPage]);
   if (page.startsWith("job:")) { const job = C.SPENARD_JOBS.find((item) => item.id === page.split(":")[1]); return <JobDetail state={state} dispatch={dispatch} job={job} onBack={() => setPage("jobs")} />; }
   if (effectivePage === "nightowl") return <NightOwlHub state={state} dispatch={dispatch} onBack={() => setPage("places")} />;
+  if (effectivePage === "nile") return <TheNileHub state={state} dispatch={dispatch} onBack={() => setPage("places")} />;
   if (effectivePage === "jobs") return <><PageHead title="Spenard Jobs" sub="Found work still requires an application and callback" onBack={() => setPage("activities")} /><div className="scroll">{jobs.map((job) => { const record = state.jobs.records[job.id]; const pay = C.selectors.jobPayRange(state, job.id); const availability = C.selectors.jobAvailability(state, job.id); const slots = job.id === "night_owl" && record.rank >= 1 ? [2, 3] : job.slots; return <MenuRow key={job.id} title={job.name} status={`${money(pay.min)}–${money(pay.max)}`} description={`${slots.map((slot) => C.SLOTS[slot]).join(" / ")} · Risk: ${job.risk} · Rank ${record.rank} · ${availability.available ? "Available" : availability.reason}`} tone={availability.available ? "" : "muted"} onClick={() => setPage(`job:${job.id}`)} />; })}</div></>;
   if (effectivePage === "contacts") return <><PageHead title="Contacts" sub="Personal and social contacts in one place" onBack={() => setPage("activities")} /><div className="scroll"><SocialContacts state={state} dispatch={dispatch} /></div></>;
   if (effectivePage === "places") return <><PageHead title="Places" sub="Specific doors in Spenard" onBack={() => setPage("root")} /><div className="scroll">
     <MenuRow title="Night Owl" status={nightOwl.available ? "Open" : nightOwl.reason} description="Coffee, community board, Mina, regulars, and a counter job." disabled={!nightOwl.available} onClick={() => setPage("nightowl")} />
     {state.discovered.spenardGym && <GymCard state={state} dispatch={dispatch} />}
+    {nile.discovered && <MenuRow title="The Nile" status={nile.wellness.available ? "Open" : nile.secondFloorAccess && nile.coffee.available ? "Upstairs open" : nile.wellness.reason} description={nile.secondFloorAccess ? "Blue Nile Wellness, and the room above it." : "Blue Nile Wellness. Steam, stones, and the woman who runs the building."} onClick={() => setPage("nile")} />}
     <div className="card"><div className="card-title">Phone Store<small>WALK-IN</small></div><p className="compact">Pay in person even after service shuts off.</p><button className="btn full primary" disabled={state.run.day < state.phone.billDueDay || state.player.cash < C.PHONE_BILL} onClick={() => dispatch({ type: "PAY_PHONE_BILL", surface: "store" })}>Pay phone bill · {money(C.PHONE_BILL)}<span className="action-copy">Free · no time passes</span></button></div>
   </div></>;
   if (effectivePage === "activities") return <><PageHead title="Activities" sub="Work, wandering, and people" onBack={() => setPage("root")} /><div className="scroll">
@@ -450,7 +595,7 @@ function ExploreSpenard({ state, dispatch, page, setPage, onBack }) {
     <MenuRow title="Contacts" status={`${C.selectors.personalContacts(state).length + contacts.length} known`} description="Personal and social contacts." onClick={() => setPage("contacts")} />
   </div></>;
   return <><PageHead title="Explore Spenard" sub="Learn what the neighborhood has to offer" onBack={onBack} /><div className="scroll">
-    <MenuRow title="Places" status={state.discovered.spenardGym ? "3 known" : "2 known"} description="Night Owl, community gym, and phone store." onClick={() => setPage("places")} />
+    <MenuRow title="Places" status={`${2 + (state.discovered.spenardGym ? 1 : 0) + (nile.discovered ? 1 : 0)} known`} description={nile.discovered ? "Night Owl, The Nile, community gym, and phone store." : "Night Owl, community gym, and phone store."} onClick={() => setPage("places")} />
     <MenuRow title="Activities" status={`${jobs.length} jobs`} description="Wander, Jobs, and Contacts." onClick={() => setPage("activities")} />
   </div></>;
 }
@@ -488,7 +633,6 @@ function ReturnToSpenardActions({ state, dispatch }) {
 // What can I do without leaving? The registry filters local actions before
 // this page renders them; reducer preflight enforces the same boundary.
 function AroundHere({ state, dispatch, onBack, initialPage = "root" }) {
-  const [gambleApproach, setGambleApproach] = useState("read");
   const [page, setPage] = useState(initialPage);
   const available = C.selectors.activityAvailability(state);
   const area = areaOf(state);
@@ -504,7 +648,6 @@ function AroundHere({ state, dispatch, onBack, initialPage = "root" }) {
     <ReturnToSpenardActions state={state} dispatch={dispatch} />
     {actionOf("explore_spenard") && <MenuRow title="Explore Spenard" status={state.world.locations.explorationCount ? `${state.world.locations.explorationCount} walks` : "New arrival"} description="Jobs, wandering, and people you meet through work." onClick={() => setPage("explore")} />}
     {actionOf("local_intel") && <MenuRow title="Local Intel" status={`${state.world.locations.explorationCount} walks`} description="Routes, discoveries, and word collected around Spenard." onClick={() => setPage("intel")} />}
-    {actionOf("spenard_gambling") && <div className={`card${available.gambling.available ? "" : " locked"}`}><div className="card-title">Informal Game<small>EVENING / NIGHT</small></div><p className="compact">Choose an approach, then risk $20, $50, or $100. Attributes inform the seeded result but never guarantee profit. No debt is offered.</p><select aria-label="Gambling approach" value={gambleApproach} onChange={(event) => setGambleApproach(event.target.value)}><option value="read">Read the room</option><option value="steady">Play disciplined</option><option value="press">Work the table</option></select><div className="btn-row">{[20, 50, 100].map((stake) => <button className="btn secondary" key={stake} disabled={!available.gambling.available || state.player.cash < stake} onClick={() => dispatch({ type: "GAMBLE", stake, approach: gambleApproach })}>Risk ${stake}</button>)}</div><p className="muted compact">{available.gambling.reason}</p></div>}
     {area.id === "downtown" && <div className="card"><div className="card-title">Downtown<small>EARLY SCAFFOLD</small></div><p className="compact muted">No local jobs, people, or activities are available here yet.</p></div>}
     {!localActions.length && area.id !== "downtown" && <div className="card locked"><div className="card-title">No local actions</div><p className="compact muted">Only the route back to Spenard is available here.</p></div>}
   </div></>;
@@ -658,7 +801,7 @@ function Travel({ state, dispatch, page, setPage }) {
       <span className="quick-shift-main"><b>{shift.name} shift</b><small>{shift.available ? `${money(shift.pay.min)}–${money(shift.pay.max)} · one part of day` : shift.reason}</small></span>
       <span className="quick-shift-go" aria-hidden="true">›</span>
     </button>}
-    <MenuRow title={`Around ${area.name}`} status={state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? "You are here" : "Return route ready"} description={state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? "Explore Places and Activities, gamble, or check Local Intel." : "Local actions and the route back to Spenard."} onClick={() => setPage("around")} />
+    <MenuRow title={`Around ${area.name}`} status={state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? "You are here" : "Return route ready"} description={state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? "Explore Places and Activities, or check Local Intel." : "Local actions and the route back to Spenard."} onClick={() => setPage("around")} />
     <MenuRow title="Home" status={state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? `${state.people.household.warnings}/3 warnings` : covered ? "Pass covers return" : "$5 return"} description="Storage, Yalonda, Juan, and sleep." disabled={state.people.household.evicted} onClick={() => setPage("household")} />
     <MenuRow title="Leave Spenard" status={state.world.transport.weekPass ? "7-day pass" : covered ? "Day pass" : "$5 a ride"} description="Known non-Spenard destinations and pass controls." onClick={() => setPage("destinations")} />
   </div></>;
@@ -1328,7 +1471,7 @@ function MenuModal({ state, dispatch, onClose, onTitle }) {
   return <><Modal title="Run menu" onClose={onClose}>
     <ExpandableMoreSection
       collapsedContent={<p className="popup-lead">Autosave is on. This run saves to your browser after every action.</p>}
-      expandedContent={<p className="popup-flavor">907Hustle v1.10 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
+      expandedContent={<p className="popup-flavor">907Hustle v1.11 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
       moreLabel="Save detail" lessLabel="Hide detail" />
     <button className="btn full primary" onClick={onTitle}>Return to Title</button>
     <button className="btn full secondary choice" onClick={() => setConfirmRestart(true)}>Restart Run<span>Creates a new seed and returns to Street Name entry.</span></button>
@@ -1378,7 +1521,7 @@ function playSound(name) {
   if (typeof window !== "undefined" && typeof window.__907sfx === "function") window.__907sfx(name);
 }
 function TabUnlockedOverlay({ unlock, onDismiss }) {
-  const names = { market: "Market", boost: "Boost", rob: "Rob", gambling: "Gambling" };
+  const names = { market: "Market", boost: "Boost", rob: "Rob", gambling: "The Nile" };
   const dismissRef = React.useRef(onDismiss);
   dismissRef.current = onDismiss;
   useEffect(() => {

@@ -10,6 +10,7 @@
 // should be one base and a handful of numbers, not a new relationship system.
 
 const { OBSERVATION_CATEGORIES } = require("./observations.js");
+const { NILE_LOCATION_ID } = require("./nile.js");
 
 // CIVILIAN reads stability. Showing up and paying what you owe count; heat and
 // violence at their door cost more than anything you could do to earn it back.
@@ -108,6 +109,9 @@ const INVERTED_ARCHETYPES = new Set(["THREAT"]);
 // `eventWeights` overrides a single named event inside a category, which is how
 // Yalonda can care about rent specifically without caring about money in
 // general. `sourceMultipliers` scales by how the news arrived.
+// `locationWeights` scales a category by WHERE it happened, which is how Selam
+// can be ordinary about violence in general and hypervigilant about violence at
+// her own address.
 const NPC_LENSES = {
   mina: {
     archetype: "ROMANTIC",
@@ -139,6 +143,30 @@ const NPC_LENSES = {
     archetype: "THREAT",
     weights: {},
   },
+  // Selam runs the ground floor of The Nile and reads one axis above all
+  // others: is this person a threat to the building. Her father's building is
+  // the family's only real asset and a raid upstairs closes her business by
+  // association, so heat and violence at her door are existential rather than
+  // merely bad.
+  selam: {
+    archetype: "CIVILIAN",
+    weights: { heat_exposure: -4, discretion: 3, presence: 2, growth: 2, violence: -4 },
+    // Hypervigilant about her own address specifically. A fight two districts
+    // over is a fight; a fight outside her window is her livelihood.
+    locationWeights: { [NILE_LOCATION_ID]: { violence: 2, heat_exposure: 2 } },
+    // She does not care how the dice went. Her character doc is explicit that
+    // gambling behavior carries no weight with her - it is her brother's
+    // business and she has said so out loud.
+    eventWeights: { gambling_profit: 0, gambling_loss: 0 },
+  },
+  // Biniam watches what happens in his house and nothing else. The single most
+  // characterful line in his lens is the source multiplier: street gossip about
+  // his guests is worth exactly zero to him.
+  biniam: {
+    archetype: "STREET",
+    weights: { violence: -2, discretion: 3, presence: 1.5, defiance: -2, growth: 2 },
+    sourceMultipliers: { network: 0 },
+  },
 };
 
 const EXPOSURE_NPC_IDS = Object.keys(NPC_LENSES);
@@ -163,6 +191,7 @@ function resolveLens(npcId) {
     weights,
     eventWeights: { ...SHARED_EVENT_WEIGHTS, ...(definition.eventWeights || {}) },
     sourceMultipliers: definition.sourceMultipliers || {},
+    locationWeights: definition.locationWeights || {},
   };
 }
 

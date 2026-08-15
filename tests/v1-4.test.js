@@ -170,7 +170,7 @@ test("legacy v3 saves hydrate directly into pressure with inferred lender state"
   assert.equal(loaded.run.checkpointDay, 7);
   assert.equal(loaded.lender.status, "active");
   assert.ok(loaded.onboarding);
-  assert.equal(C.SAVE_KEY, "907ogr_v8");
+  assert.equal(C.SAVE_KEY, "907ogr_v9");
 });
 
 test("Night Owl postings rotate deterministically and regulars keep separate relationships", () => {
@@ -195,7 +195,13 @@ test("Cal Level 2 and Lena's third shift both unlock gambling through a scene", 
   cal = C.reduceGame(cal, { type: "TALK_NIGHT_OWL_REGULAR", regularId: "cal" });
   assert.equal(cal.run.pendingEvent?.id, "gambling_discovery");
   cal = C.reduceGame(cal, { type: "RESOLVE_EVENT", choiceIndex: 0 });
+  // v1.11: Cal's vouch opens the room above Blue Nile Wellness. `gamblingKnown`
+  // still flips because the Street page reads it, but the fact that matters is
+  // that the player now has the stairwell code.
   assert.equal(cal.world.locations.gamblingKnown, true);
+  assert.equal(cal.world.locations.theNile.secondFloorAccess, true, "Cal's vouch opens the Den");
+  assert.equal(cal.world.locations.theNile.discovered, true, "and the ground floor with it");
+  assert.equal(cal.world.locations.theNile.accessMethod, "night_owl_regular");
 
   let lena = fresh(12);
   lena.jobs.discovered = ["wash_go"];

@@ -24,15 +24,15 @@ function prepareNight(state, day = 5) {
   return state;
 }
 
-test("v1.10 owns save version 8 and continues to advertise v3 through v7 migration keys", () => {
-  assert.equal(C.VERSION, 8);
-  assert.equal(C.SAVE_KEY, "907ogr_v8");
-  assert.deepEqual(C.LEGACY_SAVE_KEYS, ["907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"]);
+test("v1.11 owns save version 9 and continues to advertise v3 through v8 migration keys", () => {
+  assert.equal(C.VERSION, 9);
+  assert.equal(C.SAVE_KEY, "907ogr_v9");
+  assert.deepEqual(C.LEGACY_SAVE_KEYS, ["907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"]);
 });
 
 test("fresh v5 state has authoritative Mina, Curtis, Dre, Simone, jobs, and hustle records", () => {
   const state = fresh();
-  assert.deepEqual(Object.keys(state.npc), ["yalonda", "juan", "mina", "curtis", "dre", "simone"]);
+  assert.deepEqual(Object.keys(state.npc), ["yalonda", "juan", "mina", "curtis", "dre", "simone", "selam", "biniam"]);
   assert.equal(state.npc.curtis.attention, 0);
   assert.equal(state.npc.mina.cleanLifeAtRisk, false);
   assert.deepEqual(state.jobs.hired, ["day_labor"]);
@@ -60,7 +60,7 @@ test("v4 identity and employment data migrate once to v5 without replaying old r
   delete raw.jobs.activeJobId;
   delete raw.jobs.offers;
   const state = C.hydrateRun(raw);
-  assert.equal(state.version, 8);
+  assert.equal(state.version, 9);
   assert.equal(state.npc.mina.chainStage, 4);
   assert.equal(state.npc.mina.cleanLifeAtRisk, true);
   assert.equal(state.npc.curtis.attention, 6);

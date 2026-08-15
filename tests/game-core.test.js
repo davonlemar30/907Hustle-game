@@ -906,7 +906,8 @@ test("soldier income resolves during normal time advancement and consumes zero e
   const next = quietAdvance(state);
   assert.equal(next.run.day, beforeDay + 1);
   assert.equal(next.run.slot, 0);
-  assert.ok(next.player.dirtyCash > beforeDirty, "soldiers on a controlled block generate passive dirty income overnight");
+  // v1.15: Eli's $45 wage auto-deducts at day end, so compare net of wages.
+  assert.ok(next.player.dirtyCash + 45 > beforeDirty, "soldiers on a controlled block generate passive dirty income overnight");
   assert.equal(next.world.territoryBlocks.spenard_rec_lot.incomeCollected > 0, true);
 });
 

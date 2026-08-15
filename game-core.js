@@ -1320,6 +1320,7 @@
       },
       npc: createNpcState(),
       obligations: { rentDueDay: 7 },
+      crewMeta: { totalWagesPaid: 0 },
       plugs: createPlugState(),
       market: { visible: false },
       hustle: {
@@ -4049,6 +4050,47 @@
     }
   }
 
+  // v1.15: wages come out of cash automatically at day end, dirty money first
+  // (criminal income paying criminal workers). Highest loyalty gets paid first,
+  // so when the roll runs short the arrears land on whoever trusts the player
+  // least. A missed night accrues as wageDue; the first two nights are grace,
+  // every night after costs the member a loyalty point. Loyalty 0 means they
+  // walk. PAY_CREW remains the way to clear arrears mid-run.
+  function settleCrewWages(state) {
+    if (!state.crewMeta) state.crewMeta = { totalWagesPaid: 0 };
+    const roster = recruitedCrew(state)
+      .map((person) => ({ person, crew: state.people.crew[person.id] }))
+      .sort((a, b) => b.crew.loyalty - a.crew.loyalty);
+    for (const { person, crew } of roster) {
+      const wage = Crew.wageFor(person, crew.tier);
+      if (spendCash(state, wage)) {
+        state.crewMeta.totalWagesPaid += wage;
+        state.stats.moneySpent.crew += wage;
+        if (crew.wageDue <= 0) crew.wageMissedSince = null;
+      } else {
+        crew.wageDue += wage;
+        if (crew.wageMissedSince == null) crew.wageMissedSince = state.run.day;
+        state.flags.crewUnderpaid = true;
+        if (state.run.day - crew.wageMissedSince >= Crew.CREW_WAGE_GRACE_DAYS) {
+          crew.loyalty = Crew.clampLoyalty(crew.loyalty - 1);
+          logEntry(state, `${person.name.split(" ")[0]}'s pay is short again. The patience is visibly thinner.`, "bad");
+        } else {
+          logEntry(state, `No cash for ${person.name.split(" ")[0]}'s wage tonight. It goes on the ledger.`, "bad");
+        }
+      }
+    }
+    for (const { person, crew } of roster) {
+      if (crew.loyalty > Crew.CREW_LOYALTY_MIN) continue;
+      crew.status = "departed";
+      crew.assignment = null;
+      if (state.boost.crewAssigned === person.id) state.boost.crewAssigned = null;
+      for (const block of Object.values(state.world.territoryBlocks || {})) {
+        if (block.managerId === person.id) block.managerId = null;
+      }
+      logEntry(state, `${person.name.split(" ")[0]} is gone. No note, no argument. The unpaid ledger stays behind.`, "bad");
+      pushConsequence(state, `${person.name.split(" ")[0]} left the crew. Loyalty ran out.`, "bad");
+    }
+  }
   function applyPressure(state, context, crossedDay) {
     const area = AREA_BY_ID[state.world.currentNeighborhoodId];
     const pressureActive = state.run.phase === "pressure";
@@ -4085,15 +4127,7 @@
         const record = state.people.dealers?.[dealer.id];
         if (record && record.supplyChoked > 0) record.supplyChoked -= 1;
       }
-      for (const person of recruitedCrew(state)) {
-        const crew = state.people.crew[person.id];
-        if (crew.wageDue > 0) {
-          crew.loyalty -= 1;
-          state.flags.crewUnderpaid = true;
-          logEntry(state, `${person.name.split(" ")[0]} sees yesterday's pay still sitting unpaid on the garage ledger.`, "bad");
-        }
-        crew.wageDue += person.wage;
-      }
+      settleCrewWages(state);
       if (state.run.day >= state.phone.billDueDay) {
         state.phone.daysPastDue += 1;
         if (state.phone.daysPastDue > 2 && state.phone.active) {

@@ -173,7 +173,9 @@ test("Deshawn Tier 3 intercepts Curtis betrayal without losing cash or product",
   Object.assign(state.npc.curtis, { attention: 7, pressure: 7, friendship: "accepted", friendshipDay: 1, protectionUntilDay: 3 });
   Object.assign(state.people.crew.deshawn, { recruited: true, introduced: true, status: "active", tier: 3, loyalty: 8 });
   state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
-  assert.equal(state.player.dirtyCash, 1000);
+  // 1000 minus Deshawn's tier-3 wage ($200, auto-deducted since v1.15).
+  // The intercepted betrayal itself takes nothing.
+  assert.equal(state.player.dirtyCash, 800);
   assert.equal(state.player.inventory.weed.qty, 8);
   assert.equal(state.player.heat, 0);
 });

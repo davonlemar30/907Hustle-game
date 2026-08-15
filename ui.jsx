@@ -383,7 +383,7 @@ function Market({ state, onTrade }) {
   const products = C.selectors.visibleMarketProducts(state);
   const compact = products.length < MARKET_TABLE_MIN;
   const detail = (product) => ({ signal: C.selectors.priceSignal(state, area.id, product.id), prices: C.selectors.tradeUnitPrices(state, product.id), owned: state.player.inventory[product.id].qty });
-  return <><PageHead title="Street Market" sub={`${area.name} · buy and sell freely; finishing the visit uses one part of day`} /><div className="scroll">
+  return <><PageHead title="Street Market" sub={state.run.currentVisit.trades > 0 ? `${area.name} · leaving advances to ${nextPartLabel(state)}` : `${area.name} · browse freely; trading and leaving uses one part of day`} /><div className="scroll">
     {!compact && <div className="market-grid market-head"><span>Product</span><span>Buy</span><span>Signal</span><span>Own</span></div>}
     {products.map((product) => { const { signal, prices, owned } = detail(product);
       if (compact) return <div key={product.id} className={`card product-card signal-${signal.id}`} role="button" tabIndex={0} onClick={() => onTrade(product.id)} onKeyDown={(event) => event.key === "Enter" && onTrade(product.id)}>
@@ -1381,7 +1381,7 @@ function Recovery({ state, dispatch, onBack }) {
   return <><PageHead title="Recovery" sub="Essential care first; larger options appear when the damage justifies them" onBack={onBack} /><div className="scroll"><div className="card"><div className="card-title">Health<small>{state.player.health}/100</small></div><div className="meter"><span style={{ width: `${state.player.health}%`, background: state.player.health < 40 ? "var(--red)" : "var(--green)" }} /></div></div><div className="card inventory-row"><div><div className="card-title">First aid</div><div className="muted">Immediate care · restore up to 18 Health</div></div><button className="btn good-btn" disabled={state.player.cash < firstAidCost || state.player.health >= 100} onClick={() => dispatch({ type: "USE_FIRST_AID", amount: 18, cost: firstAidCost })}>{money(firstAidCost)}<span className="action-copy">Free · no time passes</span></button></div>{state.player.health <= 82 && treatment(40, 135, "Clinic visit", "Larger treatment for a serious injury")}{state.player.health <= 55 && (doctorOpen ? treatment(75, 290, "No-Questions Doctor", "Private care unlocked through trust or Safehouse recovery") : <div className="card locked"><div className="card-title">Private medical contact<small>Locked</small></div><p className="muted">Build a trusted medical relationship or install the Safe Room recovery upgrade.</p></div>)}<div className="card"><div className="card-title">Lay Low<small>Next part of day</small></div><p>Expected immediate result: lower Heat by {layLow.heatReduction}. Debt, wages, markets, and Curtis continue moving while the lights are off.</p><button className="btn full secondary" onClick={() => dispatch({ type: "LAY_LOW" })}>Lay Low<span className="action-copy">Lowers Heat and advances time</span></button></div></div></>;
 }
 
-function Help({ onBack, marketVisible }) { return <><PageHead title="How to Play" sub="The four-part rhythm of One Good Run" onBack={onBack} /><div className="scroll"><div className="card"><h2>Your run</h2><p>Each day contains Morning, Afternoon, Evening, and Night. Week Zero establishes your life in Spenard. A later approach sets the checkpoint.</p></div>{marketVisible && <div className="card"><h2>Market visits</h2><p>Buy and sell several times at locked prices. Trading does not advance time until you close the visit.</p></div>}<div className="card"><h2>Major actions</h2><p>Travel, recovery, meetings, debt payments, and operations advance to the next part of day. Resolve an event choice without paying a second time cost.</p></div><div className="card"><h2>The pressure phase</h2><p>Protect working capital, manage Heat and Health, build relationships, and decide whether territory or a clean exit is worth the risk.</p></div></div></>; }
+function Help({ onBack, marketVisible }) { return <><PageHead title="How to Play" sub="The four-part rhythm of One Good Run" onBack={onBack} /><div className="scroll"><div className="card"><h2>Your run</h2><p>Each day contains Morning, Afternoon, Evening, and Night. Week Zero establishes your life in Spenard. A later approach sets the checkpoint.</p></div>{marketVisible && <div className="card"><h2>Market visits</h2><p>Buy and sell several times at locked prices. Walking away after a trade uses one part of day. Looking costs nothing.</p></div>}<div className="card"><h2>Major actions</h2><p>Travel, recovery, meetings, debt payments, and operations advance to the next part of day. Resolve an event choice without paying a second time cost.</p></div><div className="card"><h2>The pressure phase</h2><p>Protect working capital, manage Heat and Health, build relationships, and decide whether territory or a clean exit is worth the risk.</p></div></div></>; }
 
 function Character({ state, onBack }) {
   const identity = C.selectors.streetIdentityView(state);
@@ -1861,6 +1861,7 @@ function GameShell({ state, dispatch, onTitle }) {
   // flushed synchronously. Browsers without the API take the plain path and
   // swap instantly, exactly as before.
   function navigate(nextTab, more = "root", sub = null, street = "root") {
+    closeMarketIfTraded((nextTab === "street" || nextTab === "hustle") && street === "market");
     const apply = () => { setNav((prev) => ({ tab: nextTab, more, sub, token: prev.token + 1 })); if (nextTab === "street") setStreetPage(street); if (nextTab === "hustle") setHustlePage(street); };
     if (typeof document === "undefined" || typeof document.startViewTransition !== "function") { apply(); return; }
     // Switching tabs faster than a transition can finish makes the browser
@@ -1873,6 +1874,19 @@ function GameShell({ state, dispatch, onTitle }) {
   }
   const setTab = (nextTab) => navigate(nextTab);
   const setMorePage = (page) => setNav((prev) => ({ ...prev, more: page, sub: null }));
+
+  // v1.17 — the Leave Market button is gone. Walking away from the Market is
+  // what ends the visit, and only a visit where something changed hands costs
+  // a part of day: END_MARKET fires on the way out when this visit recorded a
+  // buy or sell (run.currentVisit.trades > 0), and window shopping stays free.
+  // The reducer is untouched; the shell is the only dispatcher, same as the
+  // button was.
+  const marketOpen = (tab === "hustle" && hustlePage === "market") || (tab === "street" && streetPage === "market");
+  function closeMarketIfTraded(nextIsMarket) {
+    if (marketOpen && !nextIsMarket && state.run.currentVisit.trades > 0) act({ type: "END_MARKET" });
+  }
+  const setStreetPageSafe = (page) => { if (tab === "street") closeMarketIfTraded(page === "market"); setStreetPage(page); };
+  const setHustlePageSafe = (page) => { if (tab === "hustle") closeMarketIfTraded(page === "market"); setHustlePage(page); };
 
   // Every dispatch is routed through `act` so the shell can diff the committed
   // state before and after. The reducer is untouched — this is a pure read,
@@ -1901,8 +1915,8 @@ function GameShell({ state, dispatch, onTitle }) {
   const navigateMore = () => navigate("more", "finances", "debt");
   const screens = {
     home: <Home state={state} dispatch={act} navigate={navigate} />,
-    street: <StreetScreen state={state} dispatch={act} page={streetPage} setPage={setStreetPage} onTrade={setTrade} />,
-    hustle: <HustleScreen state={state} dispatch={act} page={hustlePage} setPage={setHustlePage} onTrade={setTrade} />,
+    street: <StreetScreen state={state} dispatch={act} page={streetPage} setPage={setStreetPageSafe} onTrade={setTrade} />,
+    hustle: <HustleScreen state={state} dispatch={act} page={hustlePage} setPage={setHustlePageSafe} onTrade={setTrade} />,
     phone: <PhoneScreen state={state} dispatch={act} openList={() => navigate("more", "907list")} navigateMore={navigateMore} />,
     more: <More state={state} dispatch={act} features={features} page={nav.more} setPage={setMorePage} sub={nav.sub} subToken={nav.token} />,
   };
@@ -1915,7 +1929,6 @@ function GameShell({ state, dispatch, onTitle }) {
       <AmbientTicker state={state} />
       <Feed entries={state.log} />
       {tonkLive && !tonkFullscreen && <div className="action-bar one"><button className="btn secondary" onClick={() => setTonkFullscreen(true)}>Back to the table<small>Your hand is still live upstairs at The Nile</small></button></div>}
-      {((tab === "hustle" && hustlePage === "market") || (tab === "street" && streetPage === "market")) && <div className="action-bar one"><button className="btn primary" onClick={() => act({ type: "END_MARKET" })}>Leave Market · advance to {nextPartLabel(state)}<small>Ends your market visit</small></button></div>}
       {state.run.overtimeArmed && <div className="action-bar one"><button className="btn secondary" onClick={() => act({ type: "CONFIRM_END_DAY" })}>End Day Now<small>Cancel the armed extension and process tonight</small></button></div>}
       <Navigation tab={tab} setTab={setTab} hustleVisible={state.hustle.visible} phoneBadge={state.phone.active ? state.phone.inbox.length : 0} />
     </div>

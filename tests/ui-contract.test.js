@@ -69,16 +69,23 @@ test("title artwork declares all three aspect tiers and a letterbox backdrop", (
   // Tier A must stay exactly as shipped in v0.6 so mobile does not move.
   assert.match(css, /\.title-art\{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top\}/);
 });
-// v1.14: "Finish Trading" named a bookkeeping step, not the thing it does —
-// END_MARKET is a TIME_ACTIONS member, so the button spends a part of the day.
-// The label now leads with the move and its price; the dispatch is unchanged.
-test("the market close action names the player action and its destination", () => {
-  assert.match(ui, /Leave Market · advance to \{nextPartLabel\(state\)\}/);
+// v1.17: the Leave Market button confused players into thinking they had to
+// "finish" a session before doing anything else. The button is gone; leaving
+// the Market is the close, and only a visit with a buy or sell costs time.
+// The reducer is untouched — the shell fires the same END_MARKET dispatch on
+// the way out, gated on run.currentVisit.trades.
+test("leaving the market is the close action, and browsing stays free", () => {
+  assert.doesNotMatch(ui, />Leave Market/);
   assert.doesNotMatch(ui, />End Market</);
   assert.doesNotMatch(ui, /Finish Trading/);
-  assert.match(ui, /nextPartLabel/);
-  assert.ok(ui.includes("<small>Ends your market visit</small>"));
+  assert.doesNotMatch(ui, /Ends your market visit/);
+  assert.match(ui, /function closeMarketIfTraded/);
+  assert.ok(ui.includes("state.run.currentVisit.trades > 0"));
   assert.ok(ui.includes('act({ type: "END_MARKET" })'));
+  // The subtitle still teaches the cost, and names the destination once the
+  // visit has a trade on it.
+  assert.match(ui, /leaving advances to \$\{nextPartLabel\(state\)\}/);
+  assert.match(ui, /browse freely; trading and leaving uses one part of day/);
 });
 test("the required Street Name is offered before classless confirmation and shown on the save", () => {
   assert.match(ui, /Street Name/); assert.match(ui, /maxLength=\{C\.STREET_NAME_MAX\}/);

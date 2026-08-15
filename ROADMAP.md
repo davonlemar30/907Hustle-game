@@ -4,6 +4,48 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
+## Shipped — v1.9c UX Polish Pass
+
+Branch: `claude/clickup-2kyd583p-15714-klwirj`. The UX pass deferred from the
+1.9 series, shipping after v1.12a. UI-only: `game-core.js` untouched, both
+simulation hashes byte-identical, save schema v9 unchanged.
+
+- **Quiet time receipts.** The action receipt renders only when it has delta
+  lines; pure time passage updates the HUD pill and feed silently. The day-end
+  confirmation gate stays the run's one natural pause.
+- **The Phone becomes an accordion hub** — Texts, Contacts, Bills, Today's Log,
+  Word Around Town — opening with only Texts expanded. Contacts reuses
+  `SocialContacts` wholesale (same tier gating and `CONTACT_*` dispatches);
+  Bills is a display-only obligations list (phone, rent, crew wages, debt)
+  whose header badges what needs attention within two days.
+- **The active job lives on Home**: employer, schedule, and a one-tap WORK
+  SHIFT button on the same `WORK_JOB` dispatch as Street → Jobs, with real
+  disable reasons including the previously silent energy and day-end gates.
+- **Travel row renamed** so Street → Travel → Around Spenard never repeats a
+  label between parent and child.
+
+### Next
+
+- Mark texts read: the inbox stores `read: false` but nothing flips it, so the
+  Texts badge is a message count, not an unread count. A `MARK_TEXTS_READ`
+  reducer case (schema-safe) would make the badge honest.
+- Bills rows could deep-link to their pay surfaces once `navigate()` grows a
+  Phone-section target (the shell already deep-links Home → Finances → Debt).
+- The standalone Contacts screens are now redundant with the Phone section —
+  removing them is a Place Shell decision, deliberately out of v1.9c scope.
+
+## Shipped — v1.12a Home Screen Visual Overhaul
+
+Branch: `claude/home-screen-visual-overhaul-akig08`, merged as PR #72.
+Recorded here after the fact — it shipped without a ROADMAP entry.
+
+- Home rebuilt as an atmospheric game surface: HUD bar, segmented pressure
+  chips, the Spenard Road hero, three Needs Attention rows, the dominant
+  Wander button, Yalonda's apartment card, and Home centred and glowing in the
+  bottom bar.
+- One reducer-side change (`homePriorities()` cap two → three); the 200-run
+  simulation hash stayed byte-identical to v1.11's.
+
 ## Shipped — v1.11 Attribute Growth Triangle + The Nile
 
 Branch: `codex/v1-11-attribute-growth`.

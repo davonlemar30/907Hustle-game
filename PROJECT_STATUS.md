@@ -1,6 +1,59 @@
 # 907Hustle: One Good Run — Project Status
 
-Last updated: 2026-08-14 (America/Anchorage)
+Last updated: 2026-08-15 (America/Anchorage)
+
+## v1.9c UX Polish Pass — branch in progress
+
+- Branch: `claude/clickup-2kyd583p-15714-klwirj`, based on `main` commit
+  `460a094` containing merged PR #72 (v1.12a). The build ships the UX pass
+  deferred from the 1.9 series: quiet time receipts, the Phone accordion hub,
+  and the Home shift shortcut.
+- **`game-core.js` untouched.** The receipt gate lives in `GameShell`'s diff
+  effect: a receipt with no delta lines is pure time passage and never renders.
+  Receipts with lines keep their amber time band; the day-end gate is
+  unchanged.
+- **Phone accordion** (`PhoneSection`): Texts / Contacts / Bills / Today's Log /
+  Word Around Town, only Texts expanded on open, fold state React-only,
+  `grid-template-rows 0fr→1fr` at 200ms with a reduced-motion opt-out. The
+  Contacts panel renders the same `SocialContacts` component as the standalone
+  screens; the Bills panel (`phoneBills`) is display-only over existing state
+  (phone, rent, crew wages, Dre's debt — memberships carry no recurring cost in
+  code, so no membership rows).
+- **Home Active Job card** (`HomeJobCard`): employer, schedule, rank, and a
+  WORK SHIFT button dispatching the canonical `WORK_JOB` with the standard
+  approach; availability via `jobAvailability` plus explicit reasons for the
+  two silent reducer gates (energy, armed day-end). Jobless state is a prompt,
+  not a dead button.
+- **Street's travel row renamed "Travel"** so no screen repeats its parent's
+  label (the "Around Spenard → Around Spenard" playtest complaint).
+- **Save schema v9** under `907ogr_v9`, unchanged; the accordion fold state is
+  never persisted.
+
+### Verification
+
+- **501/501 tests passing**, up from 493. 8 new in `tests/v1-9c.test.js`
+  (source contracts over `ui.jsx` + `v05.css`).
+- **Simulation hashes byte-identical to v1.11/v1.12a** — the build never touches
+  the reducer: 200-run `febd42d1d7d9349106f03f68a06e109e1c79f538fcc10d7696d71bff0c02ccab`,
+  2,000-run `86e726cc241a071a5edc8170cd50e571fb5944bc49988759f809d71ad4932eb9`.
+  Zero dead ends.
+- **Browser pass** (Chromium, seeded saves): only Texts expanded at 375×667;
+  Bills badge and tones track due dates (Day 6 shows two "Due soon" ambers);
+  full-health sleep advances the clock silently while a delta-bearing sleep
+  shows its receipt and time band; employed and jobless Home cards render with
+  live reasons; zero horizontal overflow at 320/375/1440; zero console errors.
+
+## v1.12a Home Screen Visual Overhaul — shipped (PR #72)
+
+- A presentation build recorded here after the fact (it shipped without a
+  PROJECT_STATUS entry). Home rebuilt as an atmospheric surface: HUD bar,
+  segmented pressure chips, Spenard Road hero photo, three-row Needs Attention,
+  the dominant Wander button, Yalonda's apartment card, and Home centred in the
+  bottom bar with the glow treatment.
+- One `game-core.js` change: `homePriorities()` cap raised from two to three.
+  The 200-run simulation hash stayed byte-identical to v1.11's.
+- Save schema v9, unchanged. Full notes in `README.md` §"What changed in
+  v1.12a".
 
 ## v1.11 Attribute Growth Triangle + The Nile — branch in progress
 

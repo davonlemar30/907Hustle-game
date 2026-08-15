@@ -635,3 +635,43 @@ body{background:
   .home-hero-msg{top:24px;left:20px}
   .yalonda-split{grid-template-columns:1fr 1.25fr}
 }
+
+/* --- v1.9c: Phone accordion hub ------------------------------------------- */
+/* Each section header is a 44px row; the panel animates grid rows 0fr -> 1fr
+   (the least-bad height animation) and visibility trails the collapse so the
+   closed sections' buttons drop out of the tab order. */
+.phone-section{margin-bottom:8px;border:1px solid var(--line);background:var(--panel)}
+.phone-section-head{display:flex;align-items:center;gap:8px;width:100%;min-height:44px;padding:10px 12px;border:0;background:none;color:var(--white);text-align:left;cursor:pointer}
+.phone-section-title{flex:1;display:flex;align-items:baseline;gap:8px;font-family:var(--head);font-size:.92rem;letter-spacing:.06em;text-transform:uppercase}
+.phone-section-title small{font-family:var(--mono);font-size:.64rem;letter-spacing:0;text-transform:none;color:var(--muted)}
+.phone-badge{flex:none;min-width:20px;padding:2px 7px;border-radius:9px;background:var(--panel3);font-family:var(--mono);font-size:.66rem;font-weight:700;text-align:center}
+.phone-badge.warn{background:var(--amber);color:#000}
+.phone-badge.bad{background:var(--red);color:var(--white);box-shadow:0 0 8px rgba(211,41,32,.6)}
+.phone-section-chevron{flex:none;color:var(--muted);font-size:.9rem;transition:transform 200ms ease-out}
+.phone-section.open .phone-section-chevron{transform:rotate(90deg)}
+.phone-section-panel{display:grid;grid-template-rows:0fr;visibility:hidden;transition:grid-template-rows 200ms ease-out,visibility 0s 200ms}
+.phone-section.open .phone-section-panel{grid-template-rows:1fr;visibility:visible;transition:grid-template-rows 200ms ease-out}
+.phone-section-inner{overflow:hidden;min-height:0;padding:0 10px}
+.phone-section.open .phone-section-inner{padding-bottom:10px}
+@media(prefers-reduced-motion:reduce){.phone-section-panel,.phone-section-chevron{transition:none}}
+
+/* v1.9c: Bills rows are display-only readouts, not buttons. */
+.bill-row{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid #262626}
+.bill-row:last-of-type{border-bottom:0}
+.bill-name{flex:1;min-width:0;display:flex;flex-direction:column}
+.bill-name b{font-size:.82rem}
+.bill-name small{margin-top:1px;font-size:.6rem;color:var(--muted)}
+.bill-meta{flex:none;display:flex;flex-direction:column;align-items:flex-end;text-align:right}
+.bill-meta b{font-family:var(--mono);font-size:.8rem}
+.bill-status{margin-top:1px;font-size:.62rem;color:var(--muted)}
+.bill-row.warn .bill-status{color:var(--amber)}
+.bill-row.bad .bill-status{color:var(--red2)}
+.bill-row.paid .bill-status{color:var(--green)}
+
+/* v1.9c: Home active-job card — the shift shortcut mirrors Wander's weight. */
+.job-card{padding:10px 12px;margin-bottom:12px}
+.work-shift-btn{position:relative;display:block;width:100%;min-height:52px;margin-top:8px;padding:9px 12px;border:1px solid rgba(255,90,70,.55);border-radius:7px;background:linear-gradient(180deg,#d32920 0%,#8c1710 62%,#5f0f0a 100%);color:var(--white);text-align:center;cursor:pointer;box-shadow:0 0 14px rgba(211,41,32,.3),inset 0 0 24px rgba(0,0,0,.38)}
+.work-shift-btn b{display:block;font-family:var(--head);font-weight:400;font-size:1.15rem;letter-spacing:.12em;text-transform:uppercase;text-shadow:-1px -1px 0 rgba(0,0,0,.5),0 2px 10px rgba(0,0,0,.6)}
+.work-shift-btn small{display:block;margin-top:3px;font-size:.64rem;font-weight:600;color:rgba(255,255,255,.72)}
+.work-shift-btn:active:not(:disabled){transform:scale(.98)}
+.work-shift-btn:disabled{cursor:not-allowed;border-color:rgba(255,255,255,.1);filter:saturate(.3) brightness(.55);box-shadow:inset 0 0 24px rgba(0,0,0,.5)}

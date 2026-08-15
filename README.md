@@ -2,11 +2,59 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-The current playable build is **v1.12a: Home Screen Visual Overhaul**, on top of
-**v1.11: Attribute Growth Triangle + The Nile**.
+The current playable build is **v1.9c: UX Polish Pass**, on top of
+**v1.12a: Home Screen Visual Overhaul**.
 
 New here? Read [ARCHITECTURE.md](ARCHITECTURE.md) — file map, state shape, event
 card schema, and the rules a change has to hold to.
+
+## What changed in v1.9c
+
+**The UX pass deferred from the 1.9 series, shipping after v1.12a.** Three
+playtest complaints, one build: time-slot popups interrupted flow, the Phone was
+an information dump, and the daily shift took four taps. `game-core.js` is
+untouched — the reducer, save schema (**9**), and both seeded simulation hashes
+are byte-identical to v1.12a's.
+
+- **Quiet time receipts.** The action receipt only appears when it has delta
+  lines to show (cash, Heat, Health, an attribute). An action that only moved
+  the clock — a walk, a full-health sleep, an empty travel leg — updates the
+  HUD time pill and the feed silently instead of popping "MORNING → AFTERNOON"
+  over the screen. Receipts that do appear keep their amber time band, and the
+  day-end confirmation gate is untouched.
+- **The Phone is an accordion hub.** Five collapsible sections — Texts,
+  Contacts, Bills, Today's Log, Word Around Town — each a 44px header with a
+  count, opening with only Texts expanded. The fold state is React-only session
+  state, animated `grid-template-rows: 0fr → 1fr` over 200ms with a
+  `prefers-reduced-motion` opt-out. At 375×667 nothing renders below the fold
+  until the player asks for it.
+- **Contacts ride the phone.** The Contacts section renders the same
+  `SocialContacts` component as the standalone screens — same Call/Text/Visit
+  tier gating, same `CONTACT_*` dispatches, zero duplicated logic. Phone
+  service off disables Call and Text with the existing reason copy; Visit still
+  works.
+- **A unified Bills panel.** Phone service ($75), rent ($150), crew wages, and
+  Dre's debt in one display-only list: amount, due day, and a status that walks
+  paid → upcoming → due-soon (amber) → past-due (red). The collapsed header
+  badges the count of obligations needing attention within two days. Each row
+  names its canonical pay surface instead of duplicating pay buttons. (The
+  build doc listed memberships as a data source, but the gym membership is a
+  one-time $30 join fee and bus passes carry no expiry day, so neither is a
+  recurring bill in the code. Phone and rent exist from Day 1, so the "No
+  bills yet." empty state is defensive only.)
+- **The active job lives on Home.** An "Active Job" card between Needs
+  Attention and Wander: employer, schedule, rank, and a full-width red WORK
+  SHIFT button that dispatches the exact `WORK_JOB` action the Street job page
+  uses (standard approach). Availability comes from the same `jobAvailability`
+  selector — wrong slot, already worked, heat — plus spelled-out reasons for
+  the two silent reducer gates (no energy, day-end armed). With no active job
+  the card is a prompt ("No job yet. Explore Street to find work."), not a dead
+  button. The v1.12a Wander wiring was verified in place and unchanged.
+- **Travel row de-duplicated.** Street's first row was titled "Around Spenard"
+  but opened the Travel screen, whose own "Around Spenard" row opened the
+  actual Around Spenard screen. The Street row is now titled "Travel" with the
+  current district as its status, so every row title matches the screen it
+  opens and no screen repeats its parent's label.
 
 ## What changed in v1.12a
 
@@ -374,8 +422,9 @@ All primary controls target a minimum 44px touch area. The shell is designed for
 
 ## Save compatibility
 
-v1.12a changes no state, so saves are unchanged: schema version **9** and
-local-storage key `907ogr_v9`, exactly as v1.11 wrote them.
+v1.9c and v1.12a change no state, so saves are unchanged: schema version **9**
+and local-storage key `907ogr_v9`, exactly as v1.11 wrote them. The v1.9c
+accordion fold state is React session state and is never persisted.
 
 The loader continues to read `907ogr_v8`, `907ogr_v7`, `907ogr_v6`, `907ogr_v5`, `907ogr_v4`, and `907ogr_v3` once, migrate them to v9, and preserve:
 
@@ -445,14 +494,13 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 ## Verification
 
-- Node tests: **401 passing**
+- Node tests: **501 passing** (493 through v1.12a, 8 new v1.9c source contracts)
 - Deterministic simulations: **2,000 runs, zero crashes or dead ends**
-- Simulation SHA-256: `8f68db014f0fe466f38edad05454f632fb90ca2eef0c9c8af4707bb30714990b`
+- Simulation SHA-256: `86e726cc241a071a5edc8170cd50e571fb5944bc49988759f809d71ad4932eb9`
   (`--total 2000`) and
-  `77b09d7bb1ea9be7440bccac517175679fce3008e83f02923e3cb0a3f4c573ac`
-  (`--total 200`). Both moved from v1.9a on purpose: 907List gameplay changed and
-  two strategies were added. The eleven pre-existing strategies stay within 3.5%
-  of their v1.9a averages, and the economy overall within 0.34%.
+  `febd42d1d7d9349106f03f68a06e109e1c79f538fcc10d7696d71bff0c02ccab`
+  (`--total 200`). Both hashes are byte-identical to v1.11's — v1.9c and
+  v1.12a are UI builds and the simulator never loads `ui.jsx`.
 - Build: `npm run build` completes in ~30ms with no circular imports
 - Title art over the wire: 68KB at 375px, 145KB at 1280px, down from 1,976KB
 - Viewports: 320×568, 360×640, 375×812, 414×896, 640×480, 768×1024, 834×1112,
@@ -460,6 +508,10 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
   tap target under 44px
 - Browser criteria: zero console errors, usable Phone/Hustle locked states,
   correct five-tab navigation, and no Babel in the page
+- v1.9c browser pass: Phone opens with only Texts expanded at 375×667; Bills
+  badge and row tones track due dates; a full-health sleep advances the clock
+  with no popup while a delta-bearing action still shows its receipt and time
+  band; the employed and jobless Home cards both render with live reasons
 
 ## Documentation
 

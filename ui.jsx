@@ -143,7 +143,7 @@ function Header({ state, onMenu }) {
   // them as five segments; the exact number stays the accessible name.
   const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil((value / ceiling) * 5))), total: 5 });
   return <header className="top">
-    <h1 className="sr-only">907Hustle: One Good Run · v1.12a</h1>
+    <h1 className="sr-only">907Hustle: One Good Run · v1.9c</h1>
     <div className="hud primary-hud">
       <Hud label="Day / Time" bare value={<><b className="hud-day">Day {state.run.day}{state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""}</b><span className="hud-slot">{C.SLOTS[state.run.slot]}</span><SlotPips slot={state.run.slot} /></>} />
       <Hud label="District" bare accent="muted" value={<><span className="hud-diamond" aria-hidden="true">◆</span>{area.name}</>} />
@@ -260,6 +260,32 @@ function Photo({ name, alt, width, height, className, eager }) {
   </picture>;
 }
 
+// v1.9c — the player's daily bread, one tap from the calmest screen. A
+// shortcut to the exact WORK_JOB dispatch the Street job page uses; the
+// selector owns every availability rule except energy and the armed day-end,
+// which the reducer enforces silently, so those two get spelled out here.
+function HomeJobCard({ state, dispatch }) {
+  const job = C.SPENARD_JOBS.find((item) => item.id === state.jobs.activeJobId);
+  if (!job) return <><div className="section-label">Active Job</div><div className="card locked job-card"><div className="card-title">No job yet</div><p className="compact muted">Explore Street to find work.</p></div></>;
+  const record = state.jobs.records[job.id];
+  const slots = job.id === "night_owl" && record.rank >= 1 ? [2, 3] : job.slots;
+  const pay = C.selectors.jobPayRange(state, job.id);
+  const availability = C.selectors.jobAvailability(state, job.id);
+  const noEnergy = state.player.energy < (state.run.overtimeArmed ? 2 : 1);
+  const blocked = !availability.available || state.run.dayEndPending || noEnergy;
+  const reason = !availability.available ? availability.reason
+    : state.run.dayEndPending ? "The day is done. Settle tonight first."
+    : noEnergy ? "No energy left today."
+    : `${money(pay.min)}–${money(pay.max)} · one part of day`;
+  return <><div className="section-label">Active Job</div><div className="card job-card">
+    <div className="card-title">{job.name}<small>{slots.map((slot) => C.SLOTS[slot]).join(" / ")} · Rank {record.rank}</small></div>
+    <button className="work-shift-btn" disabled={blocked} onClick={() => dispatch({ type: "WORK_JOB", jobId: job.id, approach: "work_hard" })}>
+      <b>Work Shift</b>
+      <small>{reason}</small>
+    </button>
+  </div></>;
+}
+
 // The calmest screen in the game. Where am I, what time is it, what do I have,
 // what is pressing, and where might I go — nothing else. Everything below the
 // situation block is gated on progression, so Day 1 renders four tiles and a
@@ -313,6 +339,7 @@ function Home({ state, dispatch, navigate }) {
         </button>)}
       </div>
     </>}
+    <HomeJobCard state={state} dispatch={dispatch} />
     <button className="wander-btn" disabled={!wander.available} onClick={() => dispatch({ type: "WANDER_SPENARD" })}>
       <span className="wander-grain" aria-hidden="true" />
       <b>Wander Spenard</b>
@@ -341,7 +368,7 @@ function Home({ state, dispatch, navigate }) {
       {showDebtTile && <StatTile label="Debt" value={view.debt.label} note={view.debt.note} tone={view.debt.tone} />}
     </div>
     {atHome && <>
-      <MenuRow title={state.phone.active ? "Phone" : "No Service"} status={state.phone.active ? `${state.phone.inbox.length} texts` : "Restoration directions"} description={state.phone.active ? "Texts, today's log, and word around town." : "Open the phone to see how to restore service."} onClick={() => navigate("phone")} />
+      <MenuRow title={state.phone.active ? "Phone" : "No Service"} status={state.phone.active ? `${state.phone.inbox.length} texts` : "Restoration directions"} description={state.phone.active ? "Texts, contacts, bills, and word around town." : "Open the phone to see how to restore service."} onClick={() => navigate("phone")} />
       {state.inventory.laptop && C.selectors.nineZeroSevenListAccess(state, "home").visible && <MenuRow title="907List Laptop" status={`${C.selectors.marketTierConfig(state).listings} today`} description="Open the day's listings with condition and seller history." onClick={() => navigate("more", "907list", "home")} />}
     </>}
   </div>;
@@ -895,7 +922,7 @@ function StreetScreen({ state, dispatch, page, setPage, onTrade }) {
   if (page.startsWith("travel:")) return <Travel state={state} dispatch={dispatch} page={page.slice(7)} setPage={(next) => setPage(`travel:${next}`)} />;
   const area = areaOf(state);
   return <><PageHead title="Street" sub="Destinations, local places, activities, and people" /><div className="scroll">
-    <MenuRow title={`Around ${area.name}`} status="Places & activities" description="Travel, explore, work, train, and handle local business." onClick={() => setPage("travel:root")} />
+    <MenuRow title="Travel" status={`In ${area.name}`} description="Travel, explore, work, train, and handle local business." onClick={() => setPage("travel:root")} />
     <MenuRow title="People" status={`${C.selectors.personalContacts(state).length} personal contacts`} description="Contacts, street suppliers, crew, and relationship history." onClick={() => setPage("people")} />
     {!state.hustle.visible && state.market.visible && <MenuRow title="Street Market" status="Discovered" description="Buy and make the first sale here. Hustle unlocks after dirty income lands." onClick={() => setPage("market")} />}
   </div></>;
@@ -1282,17 +1309,96 @@ function Character({ state, onBack }) {
   </div></>;
 }
 
-function PhoneScreen({ state, dispatch, onBack, openList }) {
+function PhoneScreen({ state, dispatch, onBack, openList, navigateMore }) {
+  // v1.9c — accordion hub. Expanded/collapsed is React-only session state;
+  // the phone always opens with Texts alone expanded.
+  const [openSections, setOpenSections] = useState({ texts: true });
+  const toggle = (id) => setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }));
+  const offline = !state.phone.active;
   const today = `Day ${state.run.day} ·`;
   const dayLog = state.log.filter((entry) => entry.stamp.startsWith(today));
-  const intel = C.selectors.phoneIntel(state);
-  if (!state.phone.active) return <><PageHead title="No Service" sub="The phone stays available even when the network does not" onBack={onBack} /><div className="scroll"><div className="card locked"><div className="card-title">Signal unavailable<small>{state.phone.daysPastDue} days past due</small></div><p>Pay {money(C.PHONE_BILL)} at Night Owl to start restoration. Online payment requires active service and a laptop.</p><button className="btn full primary" disabled={state.player.cash < C.PHONE_BILL} onClick={() => dispatch({ type: "PAY_PHONE_BILL", surface: "store" })}>Pay at Night Owl · {money(C.PHONE_BILL)}<span className="action-copy">Free · service restores after the next action</span></button></div><div className="section-label">Held messages</div><div className="card compact muted">{state.phone.heldInbox.length} message{state.phone.heldInbox.length === 1 ? " is" : "s are"} waiting for service.</div></div></>;
-  return <><PageHead title="Phone" sub="Texts, today's log, and word around town" onBack={onBack} /><div className="scroll">
-    <div className="section-label">Texts</div>{state.phone.inbox.length ? state.phone.inbox.map((message) => <div className="card compact" key={message.id}><div className="card-title">{message.from}<small>DAY {message.day} · {C.SLOTS[message.slot]}</small></div><p className="compact">{message.text}</p></div>) : <div className="card compact muted">No messages yet.</div>}
-    <div className="section-label">Day Log</div>{dayLog.length ? dayLog.map((entry, index) => <div className={`card compact ${entry.tone || ""}`} key={index}>{entry.text}</div>) : <div className="card compact muted">Nothing logged today.</div>}
-    <div className="section-label">Word Around Town</div>{intel.map((line, index) => <div className="card compact" key={index}>{line}</div>)}
+  const intel = offline ? [] : C.selectors.phoneIntel(state);
+  const knownContacts = C.selectors.personalContacts(state).length + C.selectors.knownSocialContacts(state).filter((person) => !["yalonda", "juan"].includes(person.id)).length;
+  const bills = phoneBills(state);
+  const billsDueSoon = bills.filter((row) => row.severity > 0).length;
+  return <><PageHead title={offline ? "No Service" : "Phone"} sub={offline ? "The phone stays available even when the network does not" : "Texts, contacts, bills, and word around town"} onBack={onBack} /><div className="scroll">
+    {offline && <div className="card locked"><div className="card-title">Signal unavailable<small>{state.phone.daysPastDue} days past due</small></div><p>Pay {money(C.PHONE_BILL)} at Night Owl to start restoration. Online payment requires active service and a laptop.</p><button className="btn full primary" disabled={state.player.cash < C.PHONE_BILL} onClick={() => dispatch({ type: "PAY_PHONE_BILL", surface: "store" })}>Pay at Night Owl · {money(C.PHONE_BILL)}<span className="action-copy">Free · service restores after the next action</span></button></div>}
+    <PhoneSection id="texts" title="Texts" meta={offline ? `${state.phone.heldInbox.length} held` : `${state.phone.inbox.length} text${state.phone.inbox.length === 1 ? "" : "s"}`} open={!!openSections.texts} onToggle={() => toggle("texts")}>
+      {offline ? <div className="card compact muted">{state.phone.heldInbox.length} message{state.phone.heldInbox.length === 1 ? " is" : "s are"} waiting for service.</div>
+        : state.phone.inbox.length ? state.phone.inbox.map((message) => <div className="card compact" key={message.id}><div className="card-title">{message.from}<small>DAY {message.day} · {C.SLOTS[message.slot]}</small></div><p className="compact">{message.text}</p></div>) : <div className="card compact muted">No messages yet.</div>}
+    </PhoneSection>
+    <PhoneSection id="contacts" title="Contacts" meta={`${knownContacts} known`} open={!!openSections.contacts} onToggle={() => toggle("contacts")}>
+      <SocialContacts state={state} dispatch={dispatch} navigateMore={navigateMore} />
+    </PhoneSection>
+    <PhoneSection id="bills" title="Bills" badge={billsDueSoon} badgeTone={bills.some((row) => row.severity === 2) ? "bad" : "warn"} open={!!openSections.bills} onToggle={() => toggle("bills")}>
+      {bills.length ? bills.map((row) => <div className={`bill-row${row.severity === 2 ? " bad" : row.severity === 1 ? " warn" : row.paid ? " paid" : ""}`} key={row.id}>
+        <span className="bill-name"><b>{row.name}</b><small>{row.where}</small></span>
+        <span className="bill-meta"><b>{money(row.amount)}</b><small className="bill-status">{row.due} · {row.status}</small></span>
+      </div>) : <div className="card compact muted">No bills yet.</div>}
+    </PhoneSection>
+    <PhoneSection id="log" title="Today's Log" meta={`${dayLog.length} today`} open={!!openSections.log} onToggle={() => toggle("log")}>
+      {dayLog.length ? dayLog.map((entry, index) => <div className={`card compact ${entry.tone || ""}`} key={index}>{entry.text}</div>) : <div className="card compact muted">Nothing logged today.</div>}
+    </PhoneSection>
+    <PhoneSection id="intel" title="Word Around Town" open={!!openSections.intel} onToggle={() => toggle("intel")}>
+      {offline ? <div className="card compact muted">Word comes back when service does.</div>
+        : intel.length ? intel.map((line, index) => <div className="card compact" key={index}>{line}</div>) : <div className="card compact muted">Nothing on the wire yet.</div>}
+    </PhoneSection>
     {state.knowledge.knows907List && <MenuRow title="907List" status={state.phone.active ? `${C.selectors.marketTierConfig(state).listings} listings` : "No service"} description="Local resale listings." disabled={!state.phone.active} onClick={openList} />}
   </div></>;
+}
+
+// v1.9c — one collapsible section of the Phone hub. The header is a 44px
+// button; the panel animates grid rows 0fr -> 1fr with no height cap, and
+// visibility trails the collapse so closed controls drop out of the tab order.
+function PhoneSection({ id, title, meta, badge, badgeTone, open, onToggle, children }) {
+  const panelId = useDomId(`phone-panel-${id}`);
+  return <div className={`phone-section${open ? " open" : ""}`}>
+    <button type="button" className="phone-section-head" aria-expanded={open} aria-controls={panelId} onClick={onToggle}>
+      <span className="phone-section-title">{title}{meta != null && <small>{meta}</small>}</span>
+      {badge != null && badge !== 0 && <span className={`phone-badge ${badgeTone || ""}`}>{badge}</span>}
+      <span className="phone-section-chevron" aria-hidden="true">›</span>
+    </button>
+    <div className="phone-section-panel" id={panelId} role="region" aria-label={title}>
+      <div className="phone-section-inner">{children}</div>
+    </div>
+  </div>;
+}
+
+// v1.9c — assembles the Bills rows from existing state only. Severity 2 needs
+// action now (red), 1 is due within two days (amber), 0 is routine. Rows are
+// display-only; each names its canonical pay surface instead of duplicating
+// the pay dispatch and its gating here.
+function phoneBills(state) {
+  const day = state.run.day;
+  const rows = [];
+  const upcoming = (dueDay) => (dueDay - day <= 2 ? { status: "Due soon", severity: 1 } : { status: "Upcoming", severity: 0 });
+  const phoneDue = state.phone.billDueDay;
+  rows.push({ id: "phone", name: "Phone service", amount: C.PHONE_BILL, where: "Pay at Night Owl or the Phone Store", due: `Day ${phoneDue}`,
+    ...(!state.phone.active ? { status: "Service off", severity: 2 }
+      : state.phone.daysPastDue > 0 ? { status: "Past due", severity: 2 }
+      : day >= phoneDue ? { status: "Due today", severity: 1 }
+      : upcoming(phoneDue)) });
+  if (!state.people.household.evicted) {
+    const rentDue = state.obligations.rentDueDay;
+    rows.push({ id: "rent", name: "Rent", amount: C.WEEKLY_RENT, where: "Pay at Home", due: `Day ${rentDue}`,
+      ...(day > rentDue ? { status: "Past due", severity: 2 }
+        : day === rentDue ? { status: "Due now", severity: 2 }
+        : upcoming(rentDue)) });
+  }
+  const crew = C.selectors.recruitedCrew(state);
+  if (crew.length) {
+    const owed = crew.reduce((sum, person) => sum + (state.people.crew[person.id].wageDue || 0), 0);
+    rows.push({ id: "wages", name: "Crew wages", amount: owed || crew.reduce((sum, person) => sum + person.wage, 0), where: "Pay at the garage", due: "Daily",
+      ...(owed > 0 ? { status: "Unpaid", severity: 2 } : { status: "Paid up", severity: 0, paid: true }) });
+  }
+  if (state.lender.balance > 0) {
+    const daysLeft = state.lender.dueDay - day;
+    rows.push({ id: "debt", name: "Dre — debt", amount: state.lender.balance, where: "Pay in Finances", due: `Day ${state.lender.dueDay}`,
+      ...(daysLeft < 0 ? { status: "Overdue", severity: 2 }
+        : daysLeft === 0 ? { status: "Due tonight", severity: 2 }
+        : upcoming(state.lender.dueDay)) });
+  }
+  return rows;
 }
 
 
@@ -1547,7 +1653,7 @@ function MenuModal({ state, dispatch, onClose, onTitle }) {
   return <><Modal title="Run menu" onClose={onClose}>
     <ExpandableMoreSection
       collapsedContent={<p className="popup-lead">Autosave is on. This run saves to your browser after every action.</p>}
-      expandedContent={<p className="popup-flavor">907Hustle v1.12a · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
+      expandedContent={<p className="popup-flavor">907Hustle v1.9c · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
       moreLabel="Save detail" lessLabel="Hide detail" />
     <button className="btn full primary" onClick={onTitle}>Return to Title</button>
     <button className="btn full secondary choice" onClick={() => setConfirmRestart(true)}>Restart Run<span>Creates a new seed and returns to Street Name entry.</span></button>
@@ -1682,7 +1788,10 @@ function GameShell({ state, dispatch, onTitle }) {
     const record = pending.current;
     pending.current = null;
     if (!record || record.before === state) return;
-    setResult(C.selectors.actionResult(record.before, state, record.type));
+    // A receipt with no delta lines is pure time passage — the header clock
+    // and the feed already carry it, so it earns no popup (v1.9c).
+    const receipt = C.selectors.actionResult(record.before, state, record.type);
+    setResult(receipt && receipt.lines.length ? receipt : null);
   }, [state]);
 
   useEffect(() => { if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult || state.run.status === "ended") setTrade(null); }, [state.run.pendingEvent, state.run.pendingEncounter, state.run.pendingOperationResult, state.run.status]);
@@ -1692,7 +1801,7 @@ function GameShell({ state, dispatch, onTitle }) {
     home: <Home state={state} dispatch={act} navigate={navigate} />,
     street: <StreetScreen state={state} dispatch={act} page={streetPage} setPage={setStreetPage} onTrade={setTrade} />,
     hustle: <HustleScreen state={state} dispatch={act} page={hustlePage} setPage={setHustlePage} onTrade={setTrade} />,
-    phone: <PhoneScreen state={state} dispatch={act} openList={() => navigate("more", "907list")} />,
+    phone: <PhoneScreen state={state} dispatch={act} openList={() => navigate("more", "907list")} navigateMore={navigateMore} />,
     more: <More state={state} dispatch={act} features={features} page={nav.more} setPage={setMorePage} sub={nav.sub} subToken={nav.token} />,
   };
   return <div className="app">

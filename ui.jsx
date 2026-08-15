@@ -138,18 +138,23 @@ function Header({ state, onMenu }) {
   // The wordmark belongs to the title screen. On a play screen it was a full
   // 50px row of branding above every page, so it is now a screen-reader
   // heading and the Menu button rides the HUD line instead.
+  // Heat runs 0-15 and Respect tops out at the Day 7 stage threshold. Both read
+  // faster as "how close to the ceiling" than as an integer, so the chips draw
+  // them as five segments; the exact number stays the accessible name.
+  const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil((value / ceiling) * 5))), total: 5 });
   return <header className="top">
-    <h1 className="sr-only">907Hustle: One Good Run · v1.11</h1>
+    <h1 className="sr-only">907Hustle: One Good Run · v1.12a</h1>
     <div className="hud primary-hud">
-      <Hud label="Day / Time" value={<>{`${state.run.day}${state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""} · ${C.SLOTS[state.run.slot]} · ${area.name}`}<SlotPips slot={state.run.slot} /></>} good />
-      <Hud label="Cash" value={money(state.player.cash)} good flash={cashFlash} />
+      <Hud label="Day / Time" bare value={<><b className="hud-day">Day {state.run.day}{state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""}</b><span className="hud-slot">{C.SLOTS[state.run.slot]}</span><SlotPips slot={state.run.slot} /></>} />
+      <Hud label="District" bare accent="muted" value={<><span className="hud-diamond" aria-hidden="true">◆</span>{area.name}</>} />
+      <Hud label="Cash" bare accent="green" value={money(state.player.cash)} good flash={cashFlash} />
       <button className="status-toggle" aria-expanded={open} aria-label="Show more status" onClick={() => setOpen(!open)}>Status <span>{open ? "Hide" : "View"}</span></button>
       <button className="menu-btn" onClick={onMenu}>Menu</button>
     </div>
     {shown.chipRow && <div className="hud chip-row">
-      {showHeat && <Chip label="Heat" value={`${state.player.heat}/15 · ${heatLabel}`} tone={state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : ""} flash={heatFlash} />}
-      {showDebt && <Chip label="Debt" value={dreValue} tone={dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : ""} />}
-      {showRespect && <Chip label="Respect" value={state.npc.curtis.respect} tone="" />}
+      {showHeat && <Chip label="Heat" value={`${state.player.heat}/15 · ${heatLabel}`} tone={state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : ""} flash={heatFlash} icon="fire" segments={segmentsFor(state.player.heat, 15)} />}
+      {showDebt && <Chip label="Debt" value={dreValue} tone={dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : ""} icon="cash" />}
+      {showRespect && <Chip label="Respect" value={state.npc.curtis.respect} tone="" icon="star" segments={segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7)} />}
     </div>}
     {open && <div className="hud status-drawer">
       <Hud label="Health" value={`${state.player.health}/100`} danger={state.player.health < 40} flash={healthFlash} />
@@ -174,16 +179,29 @@ const NAV_ICONS = {
   people: "M9 12a4.1 4.1 0 1 0 0-8.2A4.1 4.1 0 0 0 9 12m0 1.9c-4.1 0-7.4 2.1-7.4 4.7v2.6h14.8v-2.6c0-2.6-3.3-4.7-7.4-4.7m8.8-2.1a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4m.4 2.1c-.8 0-1.5.1-2.2.3 1.9 1.1 3.1 2.7 3.1 4.4v2.6h5.3v-2.9c0-2.4-2.8-4.4-6.2-4.4",
   more: "M6 12a2.2 2.2 0 1 1-4.4 0A2.2 2.2 0 0 1 6 12m8.2 0a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 0 1 4.4 0m8.2 0a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 0 1 4.4 0",
   street: "M12 1.8a7.2 7.2 0 0 0-7.2 7.2c0 5.4 7.2 13.2 7.2 13.2s7.2-7.8 7.2-13.2A7.2 7.2 0 0 0 12 1.8m0 9.9A2.7 2.7 0 1 1 12 6.3a2.7 2.7 0 0 1 0 5.4",
-  hustle: "M6.2 6h14l-1.7 8.7a2.2 2.2 0 0 1-2.2 1.8H9.4a2.2 2.2 0 0 1-2.2-1.8L5 3.5H1.6v-2H6.6zM9.5 21.5a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2m7 0a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2",
+  // A dollar in a ring, not a shopping cart: Hustle is where money is made, and
+  // the cart glyph reads as the Market sub-page it merely contains.
+  hustle: "M12 2.2A9.8 9.8 0 1 0 12 21.8 9.8 9.8 0 0 0 12 2.2m0 1.9a7.9 7.9 0 1 1 0 15.8 7.9 7.9 0 0 1 0-15.8m.9 1.6h-1.6v1.2c-1.7.2-2.9 1.3-2.9 2.8 0 1.7 1.3 2.4 3.2 2.9 1.5.4 2 .7 2 1.4 0 .8-.7 1.3-1.8 1.3-1 0-1.9-.4-2.4-1.1l-1.3 1c.6.9 1.6 1.5 2.9 1.7v1.2h1.6v-1.2c1.8-.2 3-1.3 3-2.9 0-1.7-1.3-2.4-3.3-2.9-1.5-.4-1.9-.7-1.9-1.3 0-.7.6-1.2 1.7-1.2.9 0 1.6.3 2.1.9l1.3-1c-.6-.7-1.4-1.2-2.6-1.4z",
   phone: "M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2m3 17h4",
 };
 function NavIcon({ id }) { return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d={NAV_ICONS[id]} fill="currentColor" /></svg>; }
 
-const NAV = [["home", "Home"], ["street", "Street"], ["hustle", "Hustle"], ["phone", "Phone"], ["more", "More"]];
-function Navigation({ tab, setTab, hustleVisible }) {
+// Home sits in the middle rather than at the left edge: it is the screen the
+// player returns to between every other one, and a thumb finds the centre of a
+// phone without looking. The order either side of it runs outward from what the
+// player does most.
+const NAV = [["street", "Street"], ["hustle", "Hustle"], ["home", "Home"], ["phone", "Phone"], ["more", "More"]];
+function Navigation({ tab, setTab, hustleVisible, phoneBadge }) {
   const items = NAV.filter(([id]) => id !== "hustle" || hustleVisible);
-  return <nav className="nav" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(44px, 1fr))` }} aria-label="Primary game navigation">{items.map(([id, label]) => {
-    return <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}><NavIcon id={id} />{label}</button>;
+  const shown = new Set(items.map(([id]) => id));
+  return <nav className="nav" style={{ gridTemplateColumns: `repeat(${NAV.length}, minmax(44px, 1fr))` }} aria-label="Primary game navigation">{NAV.map(([id, label]) => {
+    // Hustle stays hidden until the run gives the player a reason for it, but
+    // its column is held open. Home is the anchor of this bar; letting it slide
+    // left on Day 1 and jump back when Hustle unlocks would move the one
+    // control the thumb is meant to find without looking.
+    if (!shown.has(id)) return <span key={id} className="nav-gap" aria-hidden="true" />;
+    const badge = id === "phone" && phoneBadge > 0 ? <span className="nav-badge" aria-hidden="true">{phoneBadge > 9 ? "9+" : phoneBadge}</span> : null;
+    return <button key={id} className={`${id === "home" ? "home-tab " : ""}${tab === id ? "active" : ""}`.trim() || undefined} onClick={() => setTab(id)}><span className="nav-glyph"><NavIcon id={id} />{badge}</span>{label}</button>;
   })}</nav>;
 }
 // Back button and the title block are flex siblings. The title and subtitle
@@ -198,6 +216,49 @@ const PRIORITY_TARGETS = {
   block_pressure: ["more", "operations", "territory"], soldiers_idle: ["more", "operations", "soldiers"], wages_due: ["street", "root", null, "people"],
   phone_off: ["phone"], phone_due: ["phone"], rent_due: ["street", "root", null, "people"],
 };
+
+// When each priority actually lands, in two words or fewer. The row already
+// carries the full sentence underneath; this is the stamp the eye reads first,
+// and it has to be a deadline rather than a restatement of the label.
+const PRIORITY_STAMPS = {
+  debt_overdue: "Past due", debt_tonight: "Tonight", debt_tomorrow: "Tomorrow",
+  health_critical: "Critical", health_hurt: "Carrying it", heat_critical: "Critical", heat_high: "High",
+  block_pressure: "Today", soldiers_idle: "Idle", wages_due: "Owed",
+  phone_off: "Now", phone_due: "Grace ends", rent_due: "Due now",
+};
+const PRIORITY_ICONS = {
+  debt: "M12 2.2A9.8 9.8 0 1 0 12 21.8 9.8 9.8 0 0 0 12 2.2m.9 3.5v1.2c1.2.2 2 .7 2.6 1.4l-1.3 1c-.5-.6-1.2-.9-2.1-.9-1.1 0-1.7.5-1.7 1.2 0 .6.4.9 1.9 1.3 2 .5 3.3 1.2 3.3 2.9 0 1.6-1.2 2.7-3 2.9v1.2h-1.6v-1.2c-1.3-.2-2.3-.8-2.9-1.7l1.3-1c.5.7 1.4 1.1 2.4 1.1 1.1 0 1.8-.5 1.8-1.3 0-.7-.5-1-2-1.4-1.9-.5-3.2-1.2-3.2-2.9 0-1.5 1.2-2.6 2.9-2.8V5.7z",
+  health: "M12 20.7 4.2 13a4.9 4.9 0 0 1 7-6.9l.8.8.8-.8a4.9 4.9 0 0 1 7 6.9z",
+  heat: "M12 2c1.2 3.8 5.5 5.2 5.5 10a5.5 5.5 0 0 1-11 0c0-2.2 1-3.9 2.1-5.5.5 1.9 1.6 2.6 2.4 2.6C10 6.6 11 4.4 12 2",
+  phone: "M8 1.8h8a2.4 2.4 0 0 1 2.4 2.4v15.6a2.4 2.4 0 0 1-2.4 2.4H8a2.4 2.4 0 0 1-2.4-2.4V4.2A2.4 2.4 0 0 1 8 1.8m2.4 17.4h3.2",
+  rent: "M3.5 11 12 3.5 20.5 11v9a1 1 0 0 1-1 1h-4.8v-6.4H9.3V21H4.5a1 1 0 0 1-1-1z",
+  block: "M12 2.2 20.4 6v7.2c0 4.7-3.4 8.1-8.4 10.2-5-2.1-8.4-5.5-8.4-10.2V6z",
+  crew: "M9 12a4.1 4.1 0 1 0 0-8.2A4.1 4.1 0 0 0 9 12m0 1.9c-4.1 0-7.4 2.1-7.4 4.7v2.6h14.8v-2.6c0-2.6-3.3-4.7-7.4-4.7m8.8-2.1a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4m.4 2.1c-.8 0-1.5.1-2.2.3 1.9 1.1 3.1 2.7 3.1 4.4v2.6h5.3v-2.9c0-2.4-2.8-4.4-6.2-4.4",
+};
+// Priority ids are prefixed by the system that raised them, so one glyph per
+// system beats a thirteen-entry lookup that drifts every time one is added.
+function priorityGlyph(id) {
+  const key = id.startsWith("debt") ? "debt" : id.startsWith("health") ? "health" : id.startsWith("heat") ? "heat"
+    : id.startsWith("phone") ? "phone" : id.startsWith("rent") ? "rent" : id.startsWith("block") ? "block" : "crew";
+  return PRIORITY_ICONS[key];
+}
+
+// The hero prints the summary's first two sentences large and the remainder as
+// one muted line, because the paragraph is written as independent clauses and
+// the first two are always the ones carrying the pressure.
+function splitSummary(summary) {
+  const parts = String(summary || "").split(/(?<=\.)\s+/).filter(Boolean);
+  return { lead: parts[0] || "", accent: parts[1] || "", rest: parts.slice(2).join(" ") };
+}
+
+// Photographs ship as WebP with a PNG beside them. Every asset on this screen
+// goes through here so the fallback can never be forgotten on one of them.
+function Photo({ name, alt, width, height, className, eager }) {
+  return <picture className={className}>
+    <source srcSet={`./assets/${name}.webp`} type="image/webp" />
+    <img src={`./assets/${name}.png`} alt={alt} width={width} height={height} decoding="async" loading={eager ? "eager" : "lazy"} fetchpriority={eager ? "high" : undefined} />
+  </picture>;
+}
 
 // The calmest screen in the game. Where am I, what time is it, what do I have,
 // what is pressing, and where might I go — nothing else. Everything below the
@@ -221,30 +282,68 @@ function Home({ state, dispatch, navigate }) {
   // only earn one when the header chips are not already showing them.
   const showHeatTile = !shown.heat;
   const showDebtTile = hasDreDebt && !shown.debt;
+  const summary = splitSummary(view.summary);
+  // Wander is Spenard-only. Away from it the button keeps its place in the
+  // layout and states why, rather than vanishing and reflowing the screen the
+  // player just learned.
+  const wander = C.selectors.districtActionAvailability(state, "explore_spenard");
+  const wanderReason = atHome ? wander.reason : "Spenard is where you walk. Get back first.";
   return <div className="scroll home">
-    {view.priorities.length > 0 && <>
-      <div className="section-label">Needs Attention</div>
-      {view.priorities.map((item) => <button key={item.id} className={`priority-row ${item.tone}`} onClick={() => navigate(...(PRIORITY_TARGETS[item.id] || ["home"]))}><span className="menu-row-main"><b>{item.label}</b><small>{item.detail}</small></span><span className="menu-row-arrow" aria-hidden="true">›</span></button>)}
-    </>}
     <div className="home-hero">
-      <p className="home-summary">{view.summary}</p>
-      <div className="home-identity"><span className="k">Street Identity</span><b>{view.identity.label}</b></div>
+      <Photo name="spenard-hero" alt="Spenard Road at night, wet asphalt under neon" width={900} height={507} className="home-hero-photo" eager />
+      <div className="home-hero-shade" aria-hidden="true" />
+      <div className="home-hero-msg">
+        <b>{summary.lead}</b>
+        {summary.accent && <span>{summary.accent}</span>}
+      </div>
+      <div className="home-identity">
+        <span className="identity-badge" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5.6 15.2h12.8l-1.1-6-3 2.5L12 7l-2.3 4.7-3-2.5-1.1 6z" fill="currentColor" /><rect x="6" y="16.4" width="12" height="1.6" rx=".8" fill="currentColor" /></svg></span>
+        <span className="identity-pill"><span className="k">Identity</span><b>{view.identity.label}</b></span>
+      </div>
     </div>
+    {summary.rest && <p className="home-summary">{summary.rest}</p>}
+    {view.priorities.length > 0 && <>
+      <div className="section-label attention">Needs Attention</div>
+      <div className="priority-stack">
+        {view.priorities.slice(0, 3).map((item) => <button key={item.id} className={`priority-row ${item.tone}`} onClick={() => navigate(...(PRIORITY_TARGETS[item.id] || ["home"]))}>
+          <svg className="priority-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d={priorityGlyph(item.id)} fill="currentColor" /></svg>
+          <span className="menu-row-main"><b>{item.label}</b><small>{item.detail}</small></span>
+          <span className="priority-when">{PRIORITY_STAMPS[item.id] || "Soon"}</span>
+          <span className="menu-row-arrow" aria-hidden="true">›</span>
+        </button>)}
+      </div>
+    </>}
+    <button className="wander-btn" disabled={!wander.available} onClick={() => dispatch({ type: "WANDER_SPENARD" })}>
+      <span className="wander-grain" aria-hidden="true" />
+      <b>Wander Spenard</b>
+      <small>{wander.available ? "Free · uses one part of day" : wanderReason}</small>
+    </button>
+    <div className="section-label">Yalonda's Home</div>
+    {atHome ? <div className="card yalonda-card">
+      <div className="yalonda-split">
+        <Photo name="yalonda-building" alt="Yalonda's apartment building at night, one unit lit" width={480} height={447} className="yalonda-photo" />
+        <div className="yalonda-rows">
+          <div className="yalonda-row"><span className="k">{present === "yalonda" ? "Yalonda is home" : present === "juan" ? "Juan is home" : "Nobody is home"}</span></div>
+          <div className="yalonda-row"><span className="k">Cash stashed</span><b className="v-money">{money(state.home.storedCash)}</b></div>
+          <div className="yalonda-row"><span className="k">Product stored</span><b className="v-stored">{storedProducts}/2</b></div>
+        </div>
+      </div>
+      <div className="btn-row yalonda-actions">
+        <button className="btn secondary" disabled={!present || household.evicted || askedToday} onClick={() => dispatch({ type: "TALK_HOUSEHOLD", npcId: present })}>Talk<span className="action-copy">{!present ? "Nobody home" : askedToday ? "Done today" : "Free · daily"}</span></button>
+        <button className="btn secondary" onClick={openRoom}>Stash<span className="action-copy">{household.evicted ? "Room closed" : "Cash & storage"}</span></button>
+        <button className="btn secondary" disabled={household.evicted} onClick={() => dispatch({ type: "SLEEP_HOME" })}>Sleep<span className="action-copy">$0 · one part</span></button>
+      </div>
+      {state.run.day >= state.obligations.rentDueDay && <button className="btn full secondary" disabled={state.player.cash < C.WEEKLY_RENT} onClick={() => dispatch({ type: "PAY_RENT" })}>Pay weekly rent · {money(C.WEEKLY_RENT)}<span className="action-copy">Cash · no time passes</span></button>}
+    </div> : <MenuRow title="The spare room" status="Back in Spenard" description="Storage, Yalonda, Juan, and sleep wait until you return." onClick={openRoom} />}
     <div className="stat-row">
       <StatTile label="Health" value={view.health} note="of 100" tone={view.health < 40 ? "bad" : view.health < 70 ? "warn" : ""} />
       {showHeatTile && <StatTile label="Heat" value={view.heat.label} note={`${view.heat.value} of 15`} tone={view.heat.tone === "good" ? "" : view.heat.tone} text />}
       {showDebtTile && <StatTile label="Debt" value={view.debt.label} note={view.debt.note} tone={view.debt.tone} />}
     </div>
-    <div className="section-label">Yalonda's Home</div>
-    {atHome ? <>
-      <MenuRow title="Stash" status={`${money(state.home.storedCash)} · ${storedProducts}/2 held`} description={household.evicted ? "The room is closed to you." : "Cash is safe here. Contraband is not."} onClick={openRoom} />
-      {present && <button className="btn full secondary" disabled={household.evicted || askedToday} onClick={() => dispatch({ type: "TALK_HOUSEHOLD", npcId: present })}>Talk with {present === "yalonda" ? "Yalonda" : "Juan"}<span className="action-copy">{askedToday ? "Already talked today" : "Free · once daily"}</span></button>}
-      {!present && <div className="card compact muted">The apartment is quiet right now.</div>}
-      {state.run.day >= state.obligations.rentDueDay && <button className="btn full secondary" disabled={state.player.cash < C.WEEKLY_RENT} onClick={() => dispatch({ type: "PAY_RENT" })}>Pay weekly rent · {money(C.WEEKLY_RENT)}<span className="action-copy">Cash · no time passes</span></button>}
-      <button className="btn full primary" disabled={household.evicted} onClick={() => dispatch({ type: "SLEEP_HOME" })}>Sleep at home<span className="action-copy">$0 · uses one part of day</span></button>
+    {atHome && <>
       <MenuRow title={state.phone.active ? "Phone" : "No Service"} status={state.phone.active ? `${state.phone.inbox.length} texts` : "Restoration directions"} description={state.phone.active ? "Texts, today's log, and word around town." : "Open the phone to see how to restore service."} onClick={() => navigate("phone")} />
       {state.inventory.laptop && C.selectors.nineZeroSevenListAccess(state, "home").visible && <MenuRow title="907List Laptop" status={`${C.selectors.marketTierConfig(state).listings} today`} description="Open the day's listings with condition and seller history." onClick={() => navigate("more", "907list", "home")} />}
-    </> : <MenuRow title="The spare room" status="Back in Spenard" description="Storage, Yalonda, Juan, and sleep wait until you return." onClick={openRoom} />}
+    </>}
   </div>;
 }
 
@@ -1448,7 +1547,7 @@ function MenuModal({ state, dispatch, onClose, onTitle }) {
   return <><Modal title="Run menu" onClose={onClose}>
     <ExpandableMoreSection
       collapsedContent={<p className="popup-lead">Autosave is on. This run saves to your browser after every action.</p>}
-      expandedContent={<p className="popup-flavor">907Hustle v1.11 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
+      expandedContent={<p className="popup-flavor">907Hustle v1.12a · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
       moreLabel="Save detail" lessLabel="Hide detail" />
     <button className="btn full primary" onClick={onTitle}>Return to Title</button>
     <button className="btn full secondary choice" onClick={() => setConfirmRestart(true)}>Restart Run<span>Creates a new seed and returns to Street Name entry.</span></button>
@@ -1604,8 +1703,11 @@ function GameShell({ state, dispatch, onTitle }) {
       <Feed entries={state.log} />
       {((tab === "hustle" && hustlePage === "market") || (tab === "street" && streetPage === "market")) && <div className="action-bar one"><button className="btn primary" onClick={() => act({ type: "END_MARKET" })}>Finish Trading<small>Close this market visit · advance to {nextPartLabel(state)}</small></button></div>}
       {state.run.overtimeArmed && <div className="action-bar one"><button className="btn secondary" onClick={() => act({ type: "CONFIRM_END_DAY" })}>End Day Now<small>Cancel the armed extension and process tonight</small></button></div>}
-      <Navigation tab={tab} setTab={setTab} hustleVisible={state.hustle.visible} />
+      <Navigation tab={tab} setTab={setTab} hustleVisible={state.hustle.visible} phoneBadge={state.phone.active ? state.phone.inbox.length : 0} />
     </div>
+    {/* Grain and scanlines, painted once over the whole shell. z-index 5 keeps
+        it under every modal layer (backdrop 50, encounter 58, result 60). */}
+    <div className="fx-overlay" aria-hidden="true" />
     <ExposureDebug state={state} />
     {trade && <TradeModal state={state} productId={trade} dispatch={act} onClose={() => setTrade(null)} />}
     {menu && <MenuModal state={state} dispatch={dispatch} onClose={() => setMenu(false)} onTitle={onTitle} />}

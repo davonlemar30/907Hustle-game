@@ -4,19 +4,26 @@ category: HUD & Status
 
 Primary header readout — one labelled value in the always-visible HUD band.
 
-907Hustle keeps exactly three things on the primary HUD line: day/time, cash, and
-whatever the run is currently about. Everything else belongs one tap away in the
-status drawer or on Home. Adding a fourth `Hud` to the primary row is the most
-common way to make this UI feel cluttered — reach for `Chip` instead, which is the
-secondary pressure row and is designed to appear and disappear.
+907Hustle keeps four things on the primary HUD line: the day stamp, the clock,
+the district, and cash. Everything else belongs one tap away in the status drawer
+or on Home. Adding a fifth `Hud` to the primary row is the most common way to make
+this UI feel cluttered — reach for `Chip` instead, which is the secondary pressure
+row and is designed to appear and disappear.
 
 `value` is a node, not a string, so a readout can carry its own inline detail
-(the day/time HUD embeds a slot-pip strip after the text).
+(the day HUD embeds a slot-pip strip after the text).
+
+The top bar uses the `bare` shape: the label goes screen-reader-only and `accent`
+tints the value, because "DAY 12" and "$3,870" already say what they are. A
+labelled readout is for the status drawer, where a column of bare numbers would
+be unreadable.
 
 ```jsx
 <div className="hud primary-hud">
-  <Hud label="Day / Time" value="3 · Evening · Spenard" good />
-  <Hud label="Cash" value="$1,240" good flash="good" />
+  <Hud label="Day" value="DAY 12" bare accent="head" />
+  <Hud label="Time of day" value="Evening" bare accent="amber" />
+  <Hud label="District" value="Spenard" bare accent="muted" />
+  <Hud label="Cash" value="$1,240" bare accent="green" flash="good" />
 </div>
 ```
 

@@ -19,11 +19,21 @@ Tone is a three-state scale, and the middle state is the absence of a tone:
 
 ```jsx
 <div className="hud chip-row">
-  <Chip label="Heat" value="9/15 · Burning" tone="escalated" flash="warn" />
+  <Chip label="Heat" value="9/15 · Burning" tone="escalated" flash="warn" icon="fire" segments={{ filled: 3, total: 5 }} />
   <Chip label="Debt" value="Due tonight" tone="escalated" />
-  <Chip label="Respect" value={4} />
+  <Chip label="Respect" value={4} icon="star" segments={{ filled: 2, total: 5 }} />
 </div>
 ```
 
 `flash="warn"` is the only flash a chip is styled for, and it is suppressed under
 `prefers-reduced-motion`.
+
+`segments` swaps the value text for a bar of `total` cells with `filled` of them
+lit in the chip's own colour. Reach for it when the scale is bounded and the
+player reads *how close to the top* faster than they read the number — Heat and
+Respect. A quantity with no ceiling (Debt, a cash total) stays text. `value` is
+still the bar's accessible name, so the exact reading survives for a screen
+reader either way.
+
+`icon` takes `"fire"`, `"star"`, or `"cash"` and prints inline before the label.
+It is decoration: the label still has to name the pressure.

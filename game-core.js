@@ -6881,11 +6881,13 @@
     };
   }
 
-  // At most two priorities, ordered by severity. This is deliberately not a
-  // task list — 907Hustle should never read like a checklist app.
+  // At most three priorities, ordered by severity. This is deliberately not a
+  // task list — 907Hustle should never read like a checklist app. Three is the
+  // ceiling the Home screen's Needs Attention block is laid out for; a fourth
+  // row turns the section into a backlog.
   function homePriorities(state) {
     const out = [];
-    const push = (id, label, detail, tone) => { if (out.length < 2 && !out.some((item) => item.id === id)) out.push({ id, label, detail, tone }); };
+    const push = (id, label, detail, tone) => { if (out.length < 3 && !out.some((item) => item.id === id)) out.push({ id, label, detail, tone }); };
     const balance = state.lender.balance;
     const daysLeft = state.lender.dueDay - state.run.day;
     if (balance > 0 && daysLeft < 0) push("debt_overdue", "Debt is past due", "Collection is already moving.", "bad");

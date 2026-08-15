@@ -2,10 +2,49 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-The current playable build is **v1.11: Attribute Growth Triangle + The Nile**.
+The current playable build is **v1.12a: Home Screen Visual Overhaul**, on top of
+**v1.11: Attribute Growth Triangle + The Nile**.
 
 New here? Read [ARCHITECTURE.md](ARCHITECTURE.md) — file map, state shape, event
 card schema, and the rules a change has to hold to.
+
+## What changed in v1.12a
+
+**A presentation build, not a gameplay one.** Home read like a dark-mode webapp:
+bordered boxes and menu rows carrying every value the player needed and none of
+the atmosphere the game is about. v1.12a rebuilds that one screen — the reducer,
+the save schema, and the seeded simulation are untouched, and the 200-run
+simulation output is byte-identical to v1.11's.
+
+- **A HUD bar instead of a HUD grid.** Day in Anton, the part of day in mono
+  amber beside its slot pips, the district muted on the right, cash in glowing
+  green. Status and Menu stay on the band as compact 44px controls.
+- **Segmented pressure chips.** Heat and Respect draw as five glowing segments
+  instead of a number, because how close a bounded scale is to its ceiling reads
+  faster than the integer. The exact reading stays the chip's accessible name,
+  and the progressive rule is unchanged: the row still appears only once
+  something on it is applying pressure.
+- **An atmospheric hero.** A photograph of Spenard Road under the situation
+  summary's first two clauses — white lead, red consequence — with the derived
+  street identity on a gold badge. The message is `homeSituation().summary`; no
+  new state, no new copy.
+- **Needs Attention, now three rows.** `homePriorities()` raises its cap from two
+  to three (the only change in `game-core.js`), and each row carries a glyph, its
+  deadline stamp, and the same routing to the screen that can resolve it.
+- **One dominant action.** `WANDER SPENARD` is the largest element on the screen:
+  red gradient, SVG-turbulence surface, a three-second glow pulse behind
+  `prefers-reduced-motion`. Outside Spenard it holds its place and renders
+  disabled with the reason rather than vanishing.
+- **Yalonda's apartment as a place.** The building photograph beside presence,
+  stashed cash, and stored product, over Talk / Stash / Sleep.
+- **Home is the centre of the bottom bar.** It moves from the left edge to the
+  middle slot, filled and glowing, with a held-open column for Hustle so it never
+  slides sideways as the run unlocks things.
+- **Grain, scanlines, and a red bloom** over the whole shell, at the opacities
+  where they read as texture rather than as an effect.
+
+Photographs ship as WebP with PNG fallbacks through `<picture>` (43 KB of WebP
+for both). The grain is an inline SVG `feTurbulence` tile, not a raster texture.
 
 ## What changed in v1.11
 
@@ -335,7 +374,8 @@ All primary controls target a minimum 44px touch area. The shell is designed for
 
 ## Save compatibility
 
-v1.11 saves use schema version **9** and local-storage key `907ogr_v9`.
+v1.12a changes no state, so saves are unchanged: schema version **9** and
+local-storage key `907ogr_v9`, exactly as v1.11 wrote them.
 
 The loader continues to read `907ogr_v8`, `907ogr_v7`, `907ogr_v6`, `907ogr_v5`, `907ogr_v4`, and `907ogr_v3` once, migrate them to v9, and preserve:
 

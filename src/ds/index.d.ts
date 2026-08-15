@@ -14,6 +14,10 @@ import type * as React from "react";
 export type HudFlash = "good" | "bad";
 /** Escalation tones a status chip is styled for. */
 export type ChipTone = "calm" | "escalated";
+/** Colour roles the top HUD bar tints a bare readout with. */
+export type HudAccent = "head" | "amber" | "green" | "muted";
+/** Glyphs a status chip can prefix its label with. */
+export type ChipIcon = "fire" | "star" | "cash";
 /** Pressure tones a stat tile is styled for. */
 export type StatTileTone = "good" | "warn" | "bad";
 /** Pressure tones a menu row is styled for. */
@@ -33,6 +37,14 @@ export interface HudProps {
   good?: boolean;
   /** Plays a 400ms change animation. Respects prefers-reduced-motion. */
   flash?: HudFlash;
+  /**
+   * Hides the label from sight (it stays for screen readers) and drops the
+   * readout to one line. This is the top HUD bar's shape, where four values
+   * share a single band and each one is self-describing.
+   */
+  bare?: boolean;
+  /** Tints a `bare` readout. Ignored on a labelled one. */
+  accent?: HudAccent;
 }
 export declare function Hud(props: HudProps): React.JSX.Element;
 
@@ -45,6 +57,14 @@ export interface ChipProps {
   tone?: ChipTone | "";
   /** Plays a 400ms change animation. Respects prefers-reduced-motion. */
   flash?: "warn";
+  /** Glyph printed before the label. */
+  icon?: ChipIcon;
+  /**
+   * Renders the reading as a segmented bar instead of text. Use it for a
+   * bounded scale where nearness to the ceiling reads faster than the integer;
+   * `value` still supplies the accessible name, so the number is never lost.
+   */
+  segments?: { filled: number; total: number };
 }
 export declare function Chip(props: ChipProps): React.JSX.Element;
 

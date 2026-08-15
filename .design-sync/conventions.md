@@ -16,12 +16,18 @@ time. Either let the stylesheet's `body` rule apply, or reproduce it:
 
 ```css
 background:
+  radial-gradient(ellipse at 50% 0%, rgba(211,41,32,.08) 0%, transparent 50%),
   repeating-linear-gradient(118deg, rgba(255,255,255,.018) 0 1px, transparent 1px 7px),
   radial-gradient(circle at 20% 0, rgba(211,41,32,.11), transparent 35%),
   var(--black);
 color: var(--white);
 font-family: var(--ui);
 ```
+
+The app also paints one fixed `.fx-overlay` above the shell — SVG-turbulence
+grain at 4.5% plus a 3px scanline wash — which is what stops large flat panels
+from reading as flat. A design that reproduces the ground above but omits the
+overlay will look a shade cleaner than the real game.
 
 ## The styling idiom: this system's own class names, plus tokens
 
@@ -51,6 +57,11 @@ Tokens (all of these are defined; nothing else is):
 - Semantic — `--clean` `--dirty` `--success` `--danger`
 - Type — `--head` (Anton, display) `--ui` (Barlow Condensed, everything) `--mono` (Share Tech Mono, numbers)
 - Metrics — `--control-h`
+- v1.12a surfaces — `--hairline` (the 1px every new panel uses) `--sheen` (its
+  inner top gradient) `--grain` (the SVG turbulence tile) `--money` `--gold`.
+  The last two are display-only brighter readings of `--green` and `--amber`,
+  for values that have to glow against near-black. Everywhere else still uses
+  `--green` and `--amber`.
 
 Numbers are always `--mono`. Titles are always `--head`, uppercase.
 

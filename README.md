@@ -2,11 +2,82 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-The current playable build is **v1.15: Crew System, Curtis Ambient Pressure &
-Deshawn Tier 1**, on top of **v1.14: UI Architecture & Navigation Overhaul**.
+The current playable build is **v1.16: Caught & Consequences**, on top of
+**v1.15: Crew System, Curtis Ambient Pressure & Deshawn Tier 1**.
 
 New here? Read [ARCHITECTURE.md](ARCHITECTURE.md) — file map, state shape, event
 card schema, and the rules a change has to hold to.
+
+## What changed in v1.16
+
+**Getting caught became a system.** Heat was a death timer with nothing in the
+middle: it clamped 0–15, and at 15 the run ended, but between those two numbers
+being caught barely existed. Three stubs left behind by earlier builds — the
+Stick arrest TODO, the never-read `flags.boostArrestRisk`, and a crew member who
+could be set to `status: "arrested"` and never come back — are all wired into one
+funnel now. Save schema **stays at 11** (`907ogr_v11`): every field this build
+adds is additive, so `mergeDefaults` hands it to v3–v11 saves with no migration
+pass. Both simulation hashes moved on purpose — two failure paths were rewritten.
+
+- **Arrest resolves heat and replaces it with a record.** `arrestPlayer` is the
+  single funnel: it charges bail (dirty cash first), advances the clock by a
+  processing cost, drops heat by a severity-scaled relief, writes the charge to
+  `state.record`, and broadcasts `heat_exposure` on the network channel — which
+  through v1.15's `broadcastTracked` is exactly what raises Curtis's awareness.
+  Being arrested is what his people notice.
+- **The release valve costs what it clears.** Heat relief runs −2 for a tier 1
+  boost up to −5 for an organized stick, so cheap offenses cannot farm big heat
+  dumps: a stickup player at heat 12 caught on a tier 1 job still comes out at 9,
+  inside the warning zone. Every prior raises bail (up to 3.5×) and lengthens
+  processing, so a second dump costs more than the first.
+- **A player who cannot pay serves time instead.** Bail is charged up to whatever
+  cash exists and the shortfall converts to parts of day at $150 a slot, capped
+  at one day. There is no bail a broke player can be soft-locked against.
+- **All three Stick tiers route through it.** The v1.13 stub covered tier 3 at
+  heat > 8 and took a flat $200. Tier 1, 2, and 3 each now book at their own
+  severity, gated on a catastrophic outcome or on heat above 10 / 8 / 6 — the
+  bigger the job, the less heat it takes for somebody to already be looking.
+- **Crew go to jail, and you decide whether to show up.** A crew member caught on
+  a ring job gets `status: "arrested"` and a `jailedUntilDay` scaled by severity
+  (1 day for a boost, up to 5 for a tier 3 stick). Bail them out and they return
+  at −1 loyalty. Leave them and they walk out on their own date at loyalty **1** —
+  one missed wage from leaving for good. This also repairs a live v1.15 bug:
+  `recruitedCrew()` filters on `status === "active"`, so an arrested member
+  silently stopped counting toward capacity and power with no way back. A record
+  with no release date is now released the first time the day rolls.
+- **A blown boost is a scene, not a log line.** Tier 1 and 2 failures used to
+  auto-resolve into a ban and a heat bump; tier 3 just zeroed the merchandise.
+  All three now open a three-choice encounter through the consequence engine
+  (`encounters.js`), reusing `EncounterModal` — no new UI shell:
+  - **Fight** — opponent difficulty scales by tier (clerk / security / armed
+    guard). Win and you keep the take, +1 heat, 4–12 health for the scuffle. Lose
+    and it is a ban, 12–28 health, and an arrest. Combat 3 buys the advantage
+    double-roll and Combat 6 removes the catastrophic tier outright, which is what
+    the hours at the Spenard Gym were for.
+  - **Run** — a secondary escape check, Combat-shaped, helped by running shoes and
+    hurt by a full bag. Clear it and the take comes with you. Miss and it is a
+    ban, more heat, and bruises — plus a booking if `boostArrestRisk` was armed.
+  - **Give it up** — no roll, no heat, no damage, no charge. They keep the goods
+    and the store keeps your face. The option that exists for when heat is already
+    the problem.
+  Fight broadcasts a `violence` row win or lose, so fighting your way out of every
+  shoplifting bust builds a reputation the civilian NPCs weight against you.
+- **The first-boost opportunity card goes through the same door.** That event
+  resolves a lift inside an event effect rather than through the `BOOST` reducer;
+  it now opens the caught-state too, so a failed lift can never cost nothing.
+- **UI:** a **Record** card on Character (priors, last booking, the current bail
+  multiplier), and an arrested crew member's page swaps the Pay-arrears button for
+  **Bail out · $N** with their release date in the status line.
+
+**Balance.** Across 2,000 seeded runs the economy moves **−1.11%** overall, with
+the three profiles the arrest paths touch taking it: `stickup` **−4.5%**,
+`aggressive` **−4.1%**, `thief` **−1.8%**. The clean-money profiles are inside
+±1% apart from RNG-stream reshuffle. 70 arrests occur across the 2,000 runs, all
+of them in the criminal profiles. Zero dead ends.
+
+**Out of scope, on purpose:** multi-day sentences for the player (needs a skip-N-
+days UX that does not exist), lawyers as a service, police as a named faction, and
+any arrest-to-job-loss interaction beyond what `applyHeatEmployment` already does.
 
 ## What changed in v1.15
 
@@ -649,16 +720,16 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 ## Verification
 
-- Node tests: **565 passing** (531 through v1.14, 34 new in `tests/v1-15.test.js`)
+- Node tests: **588 passing** (565 through v1.15, 23 new in `tests/v1-16.test.js`)
 - Deterministic simulations: **2,000 runs, zero crashes or dead ends**
-- Simulation SHA-256: `9f471dec665356be332054827ee46df62aaf10b8f5dc0fccd3749f7d9de87f49`
+- Simulation SHA-256: `5fefb813fc0a73e5d83271fbf0c1a50636b7a2842153728f9eb8b4ee36455e6f`
   (`--total 2000`) and
-  `01c618d5df19baefb786e34c876be9d7f64d7e43f068fba3f77169edcc22df88`
-  (`--total 200`). **Both moved at v1.15 on purpose**: Deshawn joins the
-  Exposure roster (his ledger columns appear in every strategy's telemetry),
-  wages settle nightly instead of accruing, and every scripted strategy that
-  reaches his gate now accepts the Night Owl offer. The v1.14 baselines were
-  `bd77a59c…` / `5d6f9b0f…`.
+  `c828c00e7a5b6e0e0af740ca4f4f91a17fd16dcf8cc180265a629d1f07e07d08`
+  (`--total 200`). **Both moved at v1.16 on purpose**: every Stick tier routes
+  through `arrestPlayer`, and a failed boost opens the fight/run/surrender scene
+  instead of auto-resolving. The simulator reports `arrests` and
+  `crewJailedAtEnd` so the new paths are measurable rather than inferred. The
+  v1.15 baselines were `01c618d5…` / `9f471dec…`.
 - Build: `npm run build` completes in ~30ms with no circular imports
 - Title art over the wire: 68KB at 375px, 145KB at 1280px, down from 1,976KB
 - Viewports: 320×568, 360×640, 375×812, 414×896, 640×480, 768×1024, 834×1112,

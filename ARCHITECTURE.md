@@ -27,9 +27,20 @@ ui.built.js           BUILD OUTPUT, committed. Never edit; run `npm run build`.
 
 src/index.jsx         Bundle entry. Import order matters (see Build).
 game-core.js          The barrel: all game logic, state, and the reducer.
-ui.jsx                The entire React UI, one file.
+ui.jsx                Every screen in the game, one file.
 encounters.js         Authored encounter construction.
 v05.css               The entire stylesheet.
+
+src/ds/               The design system: presentational primitives shared by the
+                      game and the synced claude.ai/design bundle. Props in, JSX
+                      out, styled entirely by v05.css class names.
+  primitives.jsx      Hud, Chip, PageHead, Outcome, CategoryCard, MenuRow,
+                      StatTile, PlaceAction, Modal, BadgeHeader,
+                      AccordionSection, ActionCard. May not touch
+                      window.GameCore — a primitive that reads game state is a
+                      screen, and belongs in ui.jsx.
+  index.jsx           The export surface `npm run build:ds` bundles.
+  index.d.ts          Hand-written prop contracts. Change them with the props.
 
 src/data/             Static definitions. No logic, no state.
   products.js         PRODUCTS, PRODUCT_BY_ID
@@ -95,6 +106,7 @@ tests/                node --test, no runner config
 | Ambient street lines | `AMBIENT_FLAVOR` in `src/events/registry.js` |
 | A new action the player can take | a case in `reduceGame` (`game-core.js`) |
 | A new screen | `ui.jsx` |
+| A reusable piece of chrome two screens both want | `src/ds/primitives.jsx` + its props in `src/ds/index.d.ts` |
 
 ---
 

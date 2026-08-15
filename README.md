@@ -2,11 +2,59 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-The current playable build is **v1.13: Criminal Economy Cluster**, on top of
-**v1.9c: UX Polish Pass**.
+The current playable build is **v1.14: UI Architecture & Navigation Overhaul**,
+on top of **v1.13: Criminal Economy Cluster**.
 
 New here? Read [ARCHITECTURE.md](ARCHITECTURE.md) — file map, state shape, event
 card schema, and the rules a change has to hold to.
+
+## What changed in v1.14
+
+**A presentation build.** `game-core.js` is untouched: the reducer, the save
+schema (**10**), and both seeded simulation hashes are byte-identical to
+v1.13's. Four changes — a component library the rest of the UI can now be built
+out of, a Travel menu that fits on one thumb, a Tonk table that behaves like a
+card game, and a Market button that admits what it costs.
+
+- **Three primitives extracted into the design system.** `AccordionSection`,
+  `ActionCard`, and `BadgeHeader` join the eleven components already in
+  `src/ds/primitives.jsx`, with prop contracts in `src/ds/index.d.ts`. The
+  Phone's five sections and Home's active-job card were the private
+  implementations these were pulled out of, and both now render through the
+  shared version — same markup, same 44px headers, same `0fr → 1fr` panel
+  animation, same `prefers-reduced-motion` opt-out, zero visual change.
+  `BadgeHeader` hides itself at a count of zero, because an empty pill is noise.
+- **Travel is three destinations, not six.** **Spenard** (the district you are
+  standing in — jobs, wandering, contacts, and every door you have found),
+  **Home** (storage, Yalonda, Juan, sleep), and **Leave Spenard** (known
+  destinations and People Mover passes, with the $5 fare stated on the row and
+  the reason printed on any ride you cannot afford). Everything the old menu
+  carried is still reachable one level down inside whichever of those three
+  owns it.
+- **Local Intel is content now, not a menu row.** Walks and discoveries collapse
+  into a "What you've learned" accordion on the neighbourhood hub, gated on the
+  same district action the row was. The routes half of that page was already on
+  Leave Spenard and Transit, which is where a route is something you can act on
+  rather than something you read.
+- **The Listings page is gone.** Two of its three cards were deferred
+  placeholders and the live one — the North Star Garage lease — is already
+  offered by 907List. Nothing routed to it after Travel dropped to three
+  destinations, so it went with them rather than staying as unreachable code.
+- **Tonk plays fullscreen.** Sitting down hides the HUD band and the bottom
+  dock and gives the table the viewport; a fixed 44px overlay carries **Quit**
+  (a real drop, so it confirms first) and **Back** (presentation only — the hand
+  stays standing, and a "Back to the table" bar brings you straight back). When
+  an opponent plays, the card they pitched slides in from the right, holds for
+  1.5s with the seat and the read on it, and fades — derived from the discard
+  the reducer already publishes, so nothing about the hand changed.
+- **A hand that ends always gets its receipt.** Losing one moves no money — the
+  buy-in left the wallet when you sat down — so v1.9c's quiet-receipt rule was
+  swallowing the single moment the fullscreen table hands the shell back. The
+  reducer's own closing line is the win / loss / Tonk-out copy.
+- **"Finish Trading" now reads "Leave Market · advance to {slot}".**
+  `END_MARKET` is a `TIME_ACTIONS` member, so the button always spent a part of
+  the day; the old label named a bookkeeping step instead of the price. Same
+  dispatch, same reducer, same hash.
 
 ## What changed in v1.13
 
@@ -451,7 +499,7 @@ The unified Hustle record tracks Market, Boost, Stickup, and Shark visibility, i
 The fixed bottom rail contains five destinations:
 
 1. **Home** — household, immediate obligations, and the current situation.
-2. **Street** — destinations, local places and activities, People, and the pre-unlock Street Market.
+2. **Street** — Travel (three destinations: the district you are in, Home, and Leave Spenard), People, and the pre-unlock Street Market.
 3. **Hustle** — Market, Boost, Stickup, and Shark; hidden until dirty income first succeeds.
 4. **Phone** — always present. Inactive service shows No Service and walk-in restoration directions.
 5. **More** — finances, operations, recovery, character, Street Read, history, and help.
@@ -471,7 +519,11 @@ All primary controls target a minimum 44px touch area. The shell is designed for
 
 ## Save compatibility
 
-v1.13 moves the schema to version **10** under local-storage key `907ogr_v10`.
+v1.14 adds no persisted state: the Tonk fullscreen flag and every accordion's
+fold state are React session state and are never serialized. The schema stays
+at version **10**.
+
+v1.13 moved the schema to version **10** under local-storage key `907ogr_v10`.
 The change is purely additive — the Stick slice, the criminal profile, and
 per-plug suspicion all default in through `mergeDefaults` — so every v3
 through v9 save loads, migrates, and plays with the new systems at zero.
@@ -546,12 +598,14 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 ## Verification
 
-- Node tests: **513 passing** (501 through v1.9c, 12 new in `tests/v1-13.test.js`)
+- Node tests: **531 passing** (513 through v1.13, 18 new in `tests/v1-14.test.js`)
 - Deterministic simulations: **2,000 runs, zero crashes or dead ends**
 - Simulation SHA-256: `5d6f9b0f67b63a176cb0a601c246b4a4a816c701cdc8ee957871dfdbf23da245`
   (`--total 2000`) and
   `bd77a59cb23c35c185f44a3fd0791349aede3ef65ddf06c2946b647c3424f922`
-  (`--total 200`). **Both moved from v1.11's baselines on purpose**: district
+  (`--total 200`). **v1.14 reproduces both byte for byte**, which is the check
+  that a presentation build changed nothing a player can measure. Both moved
+  from v1.11's baselines at v1.13 on purpose: district
   heat multipliers touch every existing robbery and boost, market buys carry
   district price factors and awareness, and dealer robbery now pays cash even
   when the plug is not holding. Economy delta across the thirteen strategies
@@ -570,6 +624,17 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
   badge and row tones track due dates; a full-health sleep advances the clock
   with no popup while a delta-bearing action still shows its receipt and time
   band; the employed and jobless Home cards both render with live reasons
+- v1.14 browser pass (Chromium, 320/375/430/768/1440): zero horizontal overflow
+  and zero console errors on Home, Travel, the Spenard hub, and the Phone;
+  Travel renders exactly three rows; the Phone still opens with one of five
+  sections expanded; the learned accordion toggles `aria-expanded`. A hand of
+  Tonk loaded mid-table renders fullscreen with the HUD and dock hidden and
+  64×44 Quit/Back controls; playing a turn shows the opponent's card for ~1.9s
+  and then clears it; Back restores the shell and "Back to the table" returns
+  to it; a hand ending restores the HUD, the nav, and a "Hand Resolved" card.
+  One pre-existing exception to the 44px rule stands: the HUD's Menu button is
+  42px wide (38px at ≤360px), shipped that way since v1.12a and left alone
+  because widening it is what the 320px overflow rule exists to prevent.
 
 ## Documentation
 

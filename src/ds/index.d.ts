@@ -147,6 +147,54 @@ export interface PlaceActionProps {
 }
 export declare function PlaceAction(props: PlaceActionProps): React.JSX.Element;
 
+/** Pressure tones a badge is styled for. */
+export type BadgeVariant = "neutral" | "warning" | "danger";
+
+export interface BadgeHeaderProps {
+  /** The thing being counted, e.g. "Bills". */
+  label: React.ReactNode;
+  /** The count. 0 or omitted renders no badge — an empty pill is noise. */
+  count?: number;
+  /** Colour role of the badge. Defaults to "neutral". */
+  variant?: BadgeVariant;
+  /** Quiet second value on the label line, for context rather than pressure. */
+  meta?: React.ReactNode;
+}
+export declare function BadgeHeader(props: BadgeHeaderProps): React.JSX.Element;
+
+export interface AccordionSectionProps {
+  /** Section name, printed in the 44px header row. */
+  title: React.ReactNode;
+  /** Quiet tally beside the title, e.g. "3 texts". */
+  meta?: React.ReactNode;
+  /** Badge count. 0 or omitted renders no badge. */
+  badge?: number;
+  /** Colour role of the badge. */
+  badgeVariant?: BadgeVariant;
+  /** Opens the section on first render. State is local and never persisted. */
+  defaultExpanded?: boolean;
+  /** The panel body. */
+  children?: React.ReactNode;
+}
+export declare function AccordionSection(props: AccordionSectionProps): React.JSX.Element;
+
+export interface ActionCardProps {
+  /** What this card is about, e.g. a job name. */
+  title: React.ReactNode;
+  /** Right-aligned detail on the title line, e.g. "Evening / Night · Rank 1". */
+  subtitle?: React.ReactNode;
+  /** The verb on the button, e.g. "Work Shift". */
+  actionLabel: React.ReactNode;
+  /** Small print under the label while the action is available — its price. */
+  hint?: React.ReactNode;
+  onAction?: () => void;
+  /** Greys the button and blocks the click. The card itself stays lit. */
+  disabled?: boolean;
+  /** Replaces `hint` while disabled. Always say why. */
+  disabledReason?: React.ReactNode;
+}
+export declare function ActionCard(props: ActionCardProps): React.JSX.Element;
+
 export interface ModalProps {
   /** Dialog title; also its accessible name. */
   title: string;

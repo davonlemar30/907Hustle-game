@@ -8,6 +8,10 @@ const root = path.join(__dirname, "..");
 // in the ui-contract.test.js style — game-core.js is intentionally untouched
 // by the build, so nothing here loads the reducer.
 const ui = fs.readFileSync(path.join(root, "ui.jsx"), "utf8");
+// v1.14 moved the accordion and the action card into the design system, so the
+// component assertions below read primitives.jsx and the screens that compose
+// them read ui.jsx.
+const ds = fs.readFileSync(path.join(root, "src", "ds", "primitives.jsx"), "utf8");
 const css = fs.readFileSync(path.join(root, "v05.css"), "utf8");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
@@ -22,20 +26,27 @@ test("content-free time receipts are suppressed; real receipts keep the time ban
   assert.ok(ui.includes('type: "CONFIRM_END_DAY"'));
 });
 
+// v1.14 extracted the accordion into src/ds/primitives.jsx as AccordionSection.
+// The guarantees below are v1.9c's and have not moved; only the component that
+// delivers them has, so these assertions follow it rather than being deleted.
 test("Phone is an accordion hub that opens with only Texts expanded", () => {
-  assert.match(ui, /function PhoneSection\(\{ id, title, meta, badge, badgeTone, open, onToggle, children \}\)/);
-  assert.ok(ui.includes('className="phone-section-head" aria-expanded={open} aria-controls={panelId}'));
-  assert.ok(ui.includes("useState({ texts: true })"));
-  for (const section of ['id="texts" title="Texts"', 'id="contacts" title="Contacts"', 'id="bills" title="Bills"', 'id="log" title="Today\'s Log"', 'id="intel" title="Word Around Town"']) assert.ok(ui.includes(section), section);
+  assert.match(ds, /export function AccordionSection\(\{ title, meta, badge, badgeVariant, defaultExpanded, children \}\)/);
+  assert.ok(ds.includes('className="accordion-header" aria-expanded={open} aria-controls={panelId}'));
+  // Texts is the one section that opens on arrival; nothing else carries the flag.
+  assert.ok(ui.includes('<AccordionSection title="Texts"'));
+  assert.equal(ui.match(/<AccordionSection[^>]*defaultExpanded/g).length, 1);
+  for (const section of ['title="Texts"', 'title="Contacts"', 'title="Bills"', 'title="Today\'s Log"', 'title="Word Around Town"']) assert.ok(ui.includes(`<AccordionSection ${section}`), section);
+  // Expanded state stays out of the save.
+  assert.doesNotMatch(ds, /accordion[^\n]*serialize/i);
   // The 907List launcher stays a plain row outside the accordion.
   assert.match(ui, /<MenuRow title="907List"/);
 });
 
 test("phone accordion animates grid rows with a reduced-motion opt-out and 44px headers", () => {
-  assert.ok(css.includes(".phone-section-panel{display:grid;grid-template-rows:0fr"));
-  assert.ok(css.includes(".phone-section.open .phone-section-panel{grid-template-rows:1fr"));
-  assert.match(css, /\.phone-section-head\{[^}]*min-height:44px/);
-  assert.ok(css.includes("@media(prefers-reduced-motion:reduce){.phone-section-panel,.phone-section-chevron{transition:none}}"));
+  assert.ok(css.includes(".accordion-body{display:grid;grid-template-rows:0fr"));
+  assert.ok(css.includes(".accordion-section.open .accordion-body{grid-template-rows:1fr"));
+  assert.match(css, /\.accordion-header\{[^}]*min-height:44px/);
+  assert.ok(css.includes("@media(prefers-reduced-motion:reduce){.accordion-body,.accordion-chevron{transition:none}}"));
 });
 
 test("Phone hosts the same contacts logic as the standalone screens", () => {
@@ -65,7 +76,8 @@ test("Home surfaces the active job with the canonical WORK_JOB dispatch", () => 
   // The two availability gaps the selector does not cover are spelled out.
   assert.ok(ui.includes("No energy left today."));
   assert.ok(ui.includes("The day is done. Settle tonight first."));
-  assert.match(css, /\.work-shift-btn\{[^}]*min-height:52px/);
+  // v1.14: the card is the shared ActionCard, and its CTA keeps the weight.
+  assert.match(css, /\.action-card-cta\{[^}]*min-height:52px/);
 });
 
 test("Street's travel row no longer repeats the screen it opens", () => {

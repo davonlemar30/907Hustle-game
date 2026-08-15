@@ -108,6 +108,71 @@ export function PlaceAction({ title, status, purpose, cost, time, disabled, reas
 }
 
 /**
+ * A label with an optional count beside it. `variant` carries the pressure:
+ * `neutral` for a plain tally, `warning` for something due, `danger` for
+ * something already costing the player. A count of 0 renders no badge at all —
+ * an empty pill is noise, and "0" is the one number a hub never needs to print.
+ *
+ * `meta` is a quiet second value on the label line, for a tally that is context
+ * rather than pressure ("3 texts") and so must not read as a badge.
+ */
+export function BadgeHeader({ label, count, variant = "neutral", meta }) {
+  return <span className="badge-header">
+    <span className="badge-header-label">{label}{meta != null && <small>{meta}</small>}</span>
+    {count != null && count !== 0 && <span className={`badge badge-${variant}`}>{count}</span>}
+  </span>;
+}
+
+// Every accordion on screen needs a stable id to wire aria-controls to its
+// panel, and there is no DOM to read one off during render.
+let accordionSeq = 0;
+
+/**
+ * One collapsible section of a hub. The header is a 44px button carrying the
+ * title, an optional badge, and a chevron that rotates on expand; the panel
+ * animates grid rows 0fr → 1fr, which is the least-bad way to animate to an
+ * unknown height, and visibility trails the collapse so closed controls drop
+ * out of the tab order.
+ *
+ * Expanded state is component-local and deliberately not persisted: which
+ * sections a player left open is not part of a saved run.
+ */
+export function AccordionSection({ title, meta, badge, badgeVariant, defaultExpanded, children }) {
+  const [open, setOpen] = React.useState(!!defaultExpanded);
+  const [panelId] = React.useState(() => `accordion-panel-${++accordionSeq}`);
+  return <div className={`accordion-section${open ? " open" : ""}`}>
+    <button type="button" className="accordion-header" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(!open)}>
+      <BadgeHeader label={title} meta={meta} count={badge} variant={badgeVariant} />
+      <span className="accordion-chevron" aria-hidden="true">›</span>
+    </button>
+    <div className="accordion-body" id={panelId} role="region" aria-label={typeof title === "string" ? title : undefined}>
+      <div className="accordion-body-inner">{children}</div>
+    </div>
+  </div>;
+}
+
+/**
+ * A card whose whole point is one action: what this is, what it costs, and the
+ * button that does it. The CTA carries the red accent, so a screen gets at most
+ * one of these before they start competing.
+ *
+ * A blocked action keeps its button on screen, greyed, with `disabledReason` in
+ * place of `hint` — a control that disappears when it stops working teaches the
+ * player nothing about why.
+ */
+export function ActionCard({ title, subtitle, actionLabel, hint, onAction, disabled, disabledReason }) {
+  // The card itself is never dimmed: the copy on it is how the player learns
+  // why the button is off, so only the button takes the disabled treatment.
+  return <div className="card action-card">
+    <div className="card-title">{title}{subtitle != null && <small>{subtitle}</small>}</div>
+    <button type="button" className="action-card-cta" disabled={disabled} onClick={onAction}>
+      <b>{actionLabel}</b>
+      <small>{disabled ? disabledReason : hint}</small>
+    </button>
+  </div>;
+}
+
+/**
  * Backdrop + dialog shell for every popup in the game. Supplies the role,
  * modal semantics, and accessible name; the caller supplies the body.
  * `className` is appended to the dialog and, suffixed with `-backdrop`, to the

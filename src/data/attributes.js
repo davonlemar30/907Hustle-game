@@ -395,8 +395,9 @@ const OUTCOME_OBSERVATIONS = {
 //
 // Two ladders because there are two kinds of number. Dealer, plug, and employer
 // standing are hard-capped at 5, so the spec's 5/8 thresholds would never fire;
-// they get the same shape rescaled to their real ceiling. Crew loyalty and job
-// coworker relationship are genuinely uncapped and use the thresholds as written.
+// they get the same shape rescaled to their real ceiling. Crew loyalty (0-10,
+// starts at 5 as of v1.15) and job coworker relationship use the thresholds as
+// written - loyalty gains brake above 5 and again above 8 on its way to the cap.
 const STANDING_PACING = {
   capped: [{ floor: 4, multiplier: 0.25 }, { floor: 3, multiplier: 0.5 }],
   open: [{ floor: 8, multiplier: 0.25 }, { floor: 5, multiplier: 0.5 }],

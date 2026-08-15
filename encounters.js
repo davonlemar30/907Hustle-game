@@ -444,7 +444,7 @@
       finish(state, encounter, "relationship", "You repeat the arrangement exactly as Curtis gave it. The red gloves stop moving, and the three of them decide this collection belongs to somebody else.");
     } else if (choiceId === "call_crew") {
       const tone = state.people.crew?.tone;
-      if (tone?.recruited && tone.loyalty > -2) tone.loyalty -= 1;
+      if (tone?.recruited && tone.loyalty > 3) tone.loyalty -= 1; // 0-10 loyalty scale: stop draining once he is already sour
       addHeat(state, encounter.type === "random" ? 2 : 1);
       let loot = null;
       if (encounter.type === "random") loot = awardLoot(state, encounter.npc, rng);

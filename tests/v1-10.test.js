@@ -438,8 +438,8 @@ test("standing gains halve and then quarter as they climb", () => {
   assert.equal(A.adjustedStandingGain(2, 1, "capped"), 1);
   assert.equal(A.adjustedStandingGain(3, 1, "capped"), 0.5);
   assert.equal(A.adjustedStandingGain(4, 1, "capped"), 0.25);
-  // Crew loyalty and job relationship are genuinely uncapped and keep the
-  // thresholds the spec names.
+  // Crew loyalty (clamped 0-10 as of v1.15, braking above 5 and 8) and job
+  // relationship keep the thresholds the spec names.
   assert.equal(A.adjustedStandingGain(4, 1, "open"), 1);
   assert.equal(A.adjustedStandingGain(5, 1, "open"), 0.5);
   assert.equal(A.adjustedStandingGain(8, 1, "open"), 0.25);

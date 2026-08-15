@@ -171,7 +171,7 @@ test("Deshawn Tier 3 intercepts Curtis betrayal without losing cash or product",
   state.player.cash = 1000; state.player.dirtyCash = 1000; state.player.cleanCash = 0;
   state.player.inventory.weed = { qty: 8, avgCost: 10 };
   Object.assign(state.npc.curtis, { attention: 7, pressure: 7, friendship: "accepted", friendshipDay: 1, protectionUntilDay: 3 });
-  Object.assign(state.people.crew.deshawn, { recruited: true, introduced: true, tier: 3, loyalty: 5 });
+  Object.assign(state.people.crew.deshawn, { recruited: true, introduced: true, status: "active", tier: 3, loyalty: 8 });
   state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
   assert.equal(state.player.dirtyCash, 1000);
   assert.equal(state.player.inventory.weed.qty, 8);
@@ -307,9 +307,9 @@ test("Pherris, Tone, and Deshawn tier prerequisites are independently enforced",
   assert.equal(C.selectors.crewTierAvailability(state, "tone").available, false);
   assert.equal(C.selectors.crewTierAvailability(state, "deshawn").available, false);
   state.world.territoryBlocks.spenard_rec_lot.owner = "player";
-  state.people.crew.pherris.loyalty = 3;
-  state.people.crew.tone.loyalty = 2;
-  state.people.crew.deshawn.loyalty = 3;
+  state.people.crew.pherris.loyalty = 7;
+  state.people.crew.tone.loyalty = 7;
+  state.people.crew.deshawn.loyalty = 7;
   assert.equal(C.selectors.crewTierAvailability(state, "pherris").available, true);
   assert.equal(C.selectors.crewTierAvailability(state, "tone").available, true);
   assert.equal(C.selectors.crewTierAvailability(state, "deshawn").available, true);
@@ -318,7 +318,7 @@ test("Pherris, Tone, and Deshawn tier prerequisites are independently enforced",
 test("Pherris Tier 3 seeds $75–$125 network income and opens the Simone conflict", () => {
   let state = fresh(18221);
   state.player.cash = 500; state.player.dirtyCash = 500;
-  Object.assign(state.people.crew.pherris, { introduced: true, recruited: true, loyalty: 4, tier: 2 });
+  Object.assign(state.people.crew.pherris, { introduced: true, recruited: true, status: "active", loyalty: 9, tier: 2 });
   state.world.territoryBlocks.spenard_rec_lot.owner = "player";
   state.world.territoryBlocks.northern_lights_motels.owner = "player";
   state = C.reduceGame(state, { type: "PROMOTE_CREW_TIER", crewId: "pherris" });

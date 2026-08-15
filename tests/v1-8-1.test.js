@@ -52,7 +52,7 @@ test("a v4 save drops every legacy key and carries plug access across the rename
   raw.world.territoryBlocks[Object.keys(raw.world.territoryBlocks)[0]].owner = "rook";
 
   const state = C.hydrateRun(raw);
-  assert.equal(state.version, 10);
+  assert.equal(state.version, 11);
 
   // Data carried over rather than reset.
   assert.equal(state.people.dealers.goodie.standing, 4);
@@ -74,9 +74,9 @@ test("a v4 save drops every legacy key and carries plug access across the rename
   assert.ok(Object.values(state.world.territoryBlocks).every((block) => block.owner !== "rook"), "block owners still say rook");
 });
 
-test("v3 through v9 saves all migrate to v10, and unsupported versions are refused", () => {
+test("v3 through v10 saves all migrate to v11, and unsupported versions are refused", () => {
   // LEGACY_SAVE_KEYS promises every older schema still loads.
-  assert.deepEqual(C.LEGACY_SAVE_KEYS, ["907ogr_v9", "907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"]);
+  assert.deepEqual(C.LEGACY_SAVE_KEYS, ["907ogr_v10", "907ogr_v9", "907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"]);
   for (const version of [3, 4, 5, 6, 7, 8, 9]) {
     const raw = JSON.parse(C.serializeRun(fresh(1900 + version)));
     raw.version = version;
@@ -86,7 +86,7 @@ test("v3 through v9 saves all migrate to v10, and unsupported versions are refus
     delete raw.criminalProfile;
     for (const record of Object.values(raw.plugs?.records || {})) delete record.suspicion;
     const state = C.hydrateRun(raw);
-    assert.equal(state.version, 10, `v${version} save should migrate to v10`);
+    assert.equal(state.version, 11, `v${version} save should migrate to v11`);
     // The v1.13 slices hydrate with defaults on every legacy save.
     assert.equal(state.stick.rep, 0);
     assert.ok(Array.isArray(state.stick.retaliationQueue));

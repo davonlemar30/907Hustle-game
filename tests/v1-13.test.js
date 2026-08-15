@@ -225,11 +225,11 @@ test("the Hustle rail hosts the full Stick track and keeps Curtis off fresh scre
 });
 
 test("v10 sits on top of the ladder: new slices default in, nothing is retired", () => {
-  assert.equal(C.VERSION, 10);
-  assert.equal(C.SAVE_KEY, "907ogr_v10");
+  assert.equal(C.VERSION, 11);
+  assert.equal(C.SAVE_KEY, "907ogr_v11");
   assert.ok(C.LEGACY_SAVE_KEYS.includes("907ogr_v9"));
   const state = fresh(312);
-  assert.equal(state.version, 10, "a fresh run is born at the current schema");
+  assert.equal(state.version, 11, "a fresh run is born at the current schema");
   const revived = C.hydrateRun(JSON.parse(C.serializeRun(state)));
   assert.equal(revived.stick.rep, 0);
   assert.ok(revived.criminalProfile.bleedPending.length === 0);

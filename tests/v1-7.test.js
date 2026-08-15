@@ -352,7 +352,7 @@ test("v3 saves migrate jobs, household trust, listing knowledge, and terminal st
     delete raw.memberships;
     delete raw.obligations;
     const loaded = C.hydrateRun(raw);
-    assert.equal(loaded.version, 10);
+    assert.equal(loaded.version, 11);
     assert.equal(loaded.run.status, status);
     assert.equal(loaded.npc.yalonda.trust, 4);
     assert.equal(loaded.knowledge.knows907List, true);

@@ -20,13 +20,13 @@
   const Gambling = require("./src/data/gambling.js");
   const GamblingEvents = require("./src/events/gambling-events.js");
 
-  const VERSION = 10;
+  const VERSION = 11;
   const RUN_DAYS = 7;
   const PRESSURE_DAYS = 7;
   const MAX_ENERGY = 4;
   const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
-  const SAVE_KEY = "907ogr_v10";
-  const LEGACY_SAVE_KEYS = ["907ogr_v9", "907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"];
+  const SAVE_KEY = "907ogr_v11";
+  const LEGACY_SAVE_KEYS = ["907ogr_v10", "907ogr_v9", "907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"];
   const PHONE_BILL = 75;
   const WEEKLY_RENT = 150;
   const WORKING_CAPITAL_RESERVE = 150;
@@ -1408,9 +1408,29 @@
     return { attempts, successes, failures, totalPayout, lastAttemptedDay, attempted: attempts > 0, success: successes > 0, payout: totalPayout };
   }
 
+  // v11: crew loyalty moves from a delta accumulator centered on 0 to a 0-10
+  // scale that starts at 5. Everything else in v11 (crewMeta, curtisAwareness,
+  // Deshawn's npc record, recruitedDay) is additive and defaults in through
+  // mergeDefaults, so the rescale is the only transform old saves need.
+  function applyV11CrewMigration(migrated) {
+    for (const crew of Object.values(migrated.people?.crew || {})) {
+      crew.loyalty = clamp(5 + Math.round(Number(crew.loyalty) || 0), 0, 10);
+    }
+    return migrated;
+  }
+
   function migrateSave(value) {
     if (!value || typeof value !== "object") return null;
     if (value.version === VERSION) return value;
+    // A v10 save is already modern: the legacy flat pass below would be lossy
+    // for it (it rebuilds jobs.hired/offers, re-clamps curtis.attention, and
+    // deletes attributeProgress). Only the v11 crew transform applies.
+    if (value.version === 10) {
+      if (!value.run || !value.world || !value.player) return null;
+      const modern = applyV11CrewMigration(JSON.parse(JSON.stringify(value)));
+      modern.version = VERSION;
+      return modern;
+    }
     if (![3, 4, 5, 6, 7, 8, 9].includes(value.version) || !value.run || !value.world || !value.player) return null;
     const migrated = JSON.parse(JSON.stringify(value));
     const oldHousehold = migrated.people?.household || {};
@@ -1542,6 +1562,7 @@
       delete player.behavior.pendingIdentityNights;
       delete player.behavior.lastEvaluatedDay;
     }
+    applyV11CrewMigration(migrated);
     migrated.version = VERSION;
     return migrated;
   }

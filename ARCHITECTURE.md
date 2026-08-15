@@ -143,7 +143,7 @@ module-scoped and `window.playSound` is `undefined`.
 
 ## State and saves
 
-`SAVE_KEY = "907ogr_v9"`, `VERSION = 9`, `LEGACY_SAVE_KEYS = ["907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"]`.
+`SAVE_KEY = "907ogr_v11"`, `VERSION = 11`, `LEGACY_SAVE_KEYS = ["907ogr_v10", "907ogr_v9", "907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"]`.
 
 Top-level state sections:
 
@@ -178,9 +178,12 @@ Notable ones:
 ### Migration rules
 
 - **Additive only.** Never remove or repurpose a field; add a new one.
-- `migrateSave(value)` accepts versions **3 through 7** and returns `null` for
-  anything older or malformed. It is one flat pass, not a v3→v4→v5→v6 chain: every
-  accepted version takes the same code path. `hydrateRun` fills defaults via
+- `migrateSave(value)` accepts versions **3 through 10** and returns `null` for
+  anything older or malformed. Versions 3-9 take one flat legacy pass, not a
+  v3→v4→v5→v6 chain: every legacy version takes the same code path. A v10 save
+  skips the flat pass entirely (it would be lossy — the pass rebuilds jobs and
+  deletes `attributeProgress`) and only takes the v11 crew-loyalty rescale.
+  `hydrateRun` fills defaults via
   `mergeDefaults`.
 - `hydrateRun` captures the version **before** calling `migrateSave`, because
   `migrateSave` stamps the version to current and merges in default state. That

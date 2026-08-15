@@ -360,7 +360,10 @@ test("Mina's aftermath resolves all three authoritative relationship outcomes", 
 
 test("the v1.8 shell is five-destination, Phone is unconditional, and Hustle is conditional", () => {
   const ui = fs.readFileSync(path.join(__dirname, "..", "ui.jsx"), "utf8");
-  assert.match(ui, /const NAV = \[\["home", "Home"\], \["street", "Street"\], \["hustle", "Hustle"\], \["phone", "Phone"\], \["more", "More"\]\]/);
+  // v1.12a moved Home from the left edge to the centre slot. The destination
+  // set and the visibility rules are what this test is about; the order is
+  // pinned alongside them so a reshuffle stays a deliberate edit.
+  assert.match(ui, /const NAV = \[\["street", "Street"\], \["hustle", "Hustle"\], \["home", "Home"\], \["phone", "Phone"\], \["more", "More"\]\]/);
   assert.match(ui, /id !== "hustle" \|\| hustleVisible/);
   assert.doesNotMatch(ui, /id !== "phone"/);
   assert.match(ui, /No Service/);

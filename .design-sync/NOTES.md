@@ -122,7 +122,12 @@ the 9 synced components.
   `.card-list` — were caught and removed this run; that failure mode is real.)
 - **The preview `shell` colour is a literal.** `#070707` is `--black` copied by
   hand, because the shell is an inline style outside the stylesheet. If the
-  palette changes, the previews keep the old ground.
+  palette changes, the previews keep the old ground. **v1.12a added a third
+  background layer** — `radial-gradient(ellipse at 50% 0%, rgba(211,41,32,.08),
+  transparent 50%)` on top of the two the previews copy — and a fixed
+  `.fx-overlay` (grain + scanlines) the previews do not reproduce at all. The
+  previews are therefore now a shade cleaner than the shipped game. Copy the
+  updated block from `conventions.md` when you next touch them.
 - **Playwright/chromium was installed into `.ds-sync/node_modules`** this run
   (chromium-headless-shell 151.0.7922.34). `.ds-sync/` is gitignored, so a fresh
   clone reinstalls it.

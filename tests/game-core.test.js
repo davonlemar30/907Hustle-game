@@ -1361,21 +1361,30 @@ test("homeSituation reveals organization systems only as the run unlocks them", 
   assert.match(view.summary, /1 block producing/);
 });
 
-test("home priorities are severity-ordered, capped at two, and never a checklist", () => {
+test("home priorities are severity-ordered, capped at three, and never a checklist", () => {
   const calm = C.selectors.homePriorities(fresh(60003));
   assert.deepEqual(calm, [], "a calm first Morning raises nothing");
 
   const state = fresh(60004);
   state.run.day = 7; state.lender.status = "active"; state.lender.balance = 500; state.lender.dueDay = 5; state.player.health = 20; state.player.heat = 13;
   const urgent = C.selectors.homePriorities(state);
-  assert.equal(urgent.length, 2, "at most two priorities ever surface");
-  assert.deepEqual(urgent.map((item) => item.id), ["debt_overdue", "health_critical"], "a past-due note outranks everything");
+  assert.equal(urgent.length, 3, "at most three priorities ever surface");
+  assert.deepEqual(urgent.map((item) => item.id), ["debt_overdue", "health_critical", "heat_critical"], "a past-due note outranks everything");
   assert.ok(urgent.every((item) => item.tone === "bad"));
+
+  // A run with more than three claims still stops at three, and the ones it
+  // drops are the ones lower down the severity list.
+  const flooded = fresh(60004);
+  flooded.run.day = 7; flooded.lender.status = "active"; flooded.lender.balance = 500; flooded.lender.dueDay = 5;
+  flooded.player.health = 20; flooded.player.heat = 13; flooded.phone.active = false;
+  const capped = C.selectors.homePriorities(flooded);
+  assert.equal(capped.length, 3, "a run under every kind of pressure still shows three rows");
+  assert.ok(!capped.some((item) => item.id === "phone_off"), "the fourth-most-severe claim is dropped, not the first");
 
   const tonight = fresh(60004);
   tonight.lender.status = "active"; tonight.lender.balance = 500; tonight.lender.dueDay = 7;
   tonight.run.day = tonight.lender.dueDay; tonight.player.health = 20; tonight.player.heat = 13;
-  assert.deepEqual(C.selectors.homePriorities(tonight).map((item) => item.id), ["health_critical", "debt_tonight"], "critical health outranks a note that is still payable tonight");
+  assert.deepEqual(C.selectors.homePriorities(tonight).map((item) => item.id), ["health_critical", "debt_tonight", "heat_critical"], "critical health outranks a note that is still payable tonight");
 
   const dueToday = fresh(60005);
   dueToday.lender.status = "active"; dueToday.lender.balance = 500; dueToday.lender.dueDay = 7;

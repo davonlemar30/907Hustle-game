@@ -465,3 +465,173 @@
 .die-6 .pip:nth-child(5){grid-area:3/1}.die-6 .pip:nth-child(6){grid-area:3/3}
 .card.locked{opacity:.62}
 @media (prefers-reduced-motion:reduce){.play-card.selected{transform:none}}
+
+/* ==========================================================================
+   v1.12a — Home screen visual overhaul.
+   Appended so every rule above keeps the exact shape the contract tests match
+   against. Everything structural here is scoped to `.home`, the HUD band, or
+   the bottom nav; nothing reaches into Market, Boost, Stick, or Phone.
+   ========================================================================== */
+:root{
+  /* Hairline + inner sheen: the only two things giving a panel depth on this
+     screen. No card on Home carries a box-shadow. */
+  --hairline:rgba(255,255,255,.08);
+  --sheen:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,0) 55%);
+  /* Display-only accents. --green and --amber stay what the rest of the game
+     uses; these two are the brighter readings the atmospheric surfaces need to
+     glow against near-black, and are used nowhere else. */
+  --money:#4ade80;
+  --gold:#d4a853;
+  /* One SVG turbulence tile, reused for the page grain and the button surface.
+     A raster grunge texture would cost more than every photo on this screen. */
+  --grain:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22160%22 height=%22160%22%3E%3Cfilter id=%22n%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.8%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22160%22 height=%22160%22 filter=%22url(%23n)%22/%3E%3C/svg%3E');
+}
+
+/* --- Global atmosphere ---------------------------------------------------- */
+/* Red bloom from the top centre, over the existing diagonal wash. */
+body{background:
+  radial-gradient(ellipse at 50% 0%,rgba(211,41,32,.08) 0%,transparent 50%),
+  repeating-linear-gradient(118deg,rgba(255,255,255,.018) 0 1px,transparent 1px 7px),
+  radial-gradient(circle at 20% 0,rgba(211,41,32,.11),transparent 35%),
+  var(--black)}
+/* Grain and scanlines ride above the app and below every modal layer
+   (backdrop 50, encounter 58, result 60). */
+.fx-overlay{position:fixed;inset:0;z-index:5;pointer-events:none;background:repeating-linear-gradient(0deg,transparent 0 2px,rgba(0,0,0,.015) 2px 3px)}
+.fx-overlay::after{content:"";position:absolute;inset:0;opacity:.045;background:var(--grain)}
+
+/* --- HUD bar -------------------------------------------------------------- */
+.top{position:relative;z-index:6;padding:calc(9px + env(safe-area-inset-top)) 11px 8px;border-top:0;border-bottom:1px solid rgba(211,41,32,.22);background:rgba(9,9,9,.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.primary-hud{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto;align-items:center;gap:9px;margin-top:0}
+.primary-hud .hud-item{min-width:0;padding:0;border:0;background:none}
+.primary-hud .hud-item .v{display:flex;align-items:baseline;gap:7px;margin:0;overflow:visible;font-family:var(--ui);font-size:.8rem}
+.hud-day{font-family:var(--head);font-weight:400;font-size:1.02rem;letter-spacing:.05em;line-height:1;text-transform:uppercase;color:var(--white)}
+.hud-slot{font-family:var(--mono);font-size:.76rem;color:var(--gold);text-shadow:0 0 8px rgba(212,168,83,.45)}
+.primary-hud .accent-muted{justify-self:end;overflow:hidden}
+.primary-hud .accent-muted .v{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.72rem;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.55)}
+.hud-diamond{margin-right:5px;color:#c7cdd4}
+.primary-hud .accent-green .v{font-family:var(--mono);font-size:.92rem;color:var(--money);text-shadow:0 0 8px rgba(74,222,128,.5)}
+/* Status and Menu are the only way to the stat drawer and the save menu, so
+   they keep a 44px target — but they are chrome, not readouts, and are toned
+   down to sit behind the four values they share the band with. */
+.primary-hud .status-toggle,.primary-hud .menu-btn{min-width:42px;margin:0;padding:0 6px;border:1px solid rgba(255,255,255,.06);border-radius:5px;background:rgba(255,255,255,.028);color:#8b9097;font-size:.52rem;letter-spacing:.1em}
+.primary-hud .status-toggle span{color:#63686e;font-size:.44rem}
+
+/* --- Stat chips ----------------------------------------------------------- */
+.chip-row{gap:8px;margin-top:8px}
+.status-chip{display:flex;align-items:center;justify-content:space-between;gap:5px;min-height:34px;padding:0 8px;border:1px solid var(--hairline);border-radius:5px;background:var(--sheen),linear-gradient(180deg,#141414,#0e0e0e)}
+.status-chip .k{display:flex;align-items:center;gap:4px;margin:0;font-size:.56rem;letter-spacing:.1em;color:#b9bdc2}
+.status-chip .v{margin:0;font-size:.72rem}
+.chip-icon{width:12px;height:12px;flex:none}
+.chip-bar{display:flex;gap:2px;flex:none}
+.chip-bar i{width:7px;height:9px;border-radius:1px;background:rgba(255,255,255,.1)}
+.status-chip.icon-fire .chip-icon{color:var(--red)}
+.status-chip.icon-fire .chip-bar i.on{background:var(--red);box-shadow:0 0 7px rgba(211,41,32,.8)}
+.status-chip.icon-star .chip-icon{color:var(--gold)}
+.status-chip.icon-star .chip-bar i.on{background:var(--gold);box-shadow:0 0 7px rgba(212,168,83,.7)}
+.status-chip.icon-cash .chip-icon{color:var(--red2)}
+.status-chip.icon-cash .v{color:var(--red2);text-shadow:0 0 6px rgba(232,53,43,.4)}
+.status-chip.escalated{border-color:rgba(232,53,43,.45);background:var(--sheen),linear-gradient(180deg,#1d1211,#0e0e0e)}
+.status-chip.calm .v{color:var(--money)}
+
+/* --- Home: hero ----------------------------------------------------------- */
+.home{padding:0 10px 18px}
+.home-hero{position:relative;height:35dvh;min-height:196px;max-height:320px;margin:0 -10px 12px;padding:0;border:0;border-bottom:1px solid var(--hairline);overflow:hidden;background:#0d0d0d}
+.home-hero-photo,.home-hero-photo img{position:absolute;inset:0;display:block;width:100%;height:100%}
+.home-hero-photo img{object-fit:cover;object-position:72% 42%}
+/* Three passes: dark into the bottom-left for the identity badge, dark along
+   the bottom edge where the hero meets the page, and a softer wash into the
+   top-left so the message has its own ground whatever the photo is doing
+   behind it. The top-right stays clear — that is where the photo reads. */
+.home-hero-shade{position:absolute;inset:0;background:linear-gradient(215deg,rgba(7,7,7,0) 0%,rgba(7,7,7,.14) 42%,rgba(7,7,7,.88) 100%),linear-gradient(0deg,rgba(7,7,7,.62) 0%,rgba(7,7,7,0) 38%),linear-gradient(145deg,rgba(7,7,7,.82) 0%,rgba(7,7,7,.35) 38%,rgba(7,7,7,0) 62%)}
+.home-hero-msg{position:absolute;top:16px;left:14px;max-width:min(80%,300px);border-left:3px solid var(--red);padding:1px 0 3px 12px}
+/* The summary is generated prose, so a clause can be one word or a full line.
+   The type scales down rather than the block growing past the photo. */
+.home-hero-msg b,.home-hero-msg span{display:block;font-family:var(--ui);font-weight:700;font-size:clamp(1.05rem,5.1vw,1.45rem);line-height:1.16;text-shadow:0 2px 14px rgba(0,0,0,.85)}
+.home-hero-msg b{color:var(--white)}
+.home-hero-msg span{color:var(--red2)}
+.home-hero .home-identity{position:absolute;left:12px;bottom:12px;right:12px;display:flex;align-items:center;gap:10px;margin:0;padding:0;border:0;background:none}
+.identity-badge{flex:none;width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:1.5px solid var(--gold);border-radius:50%;color:var(--gold);background:radial-gradient(circle at 50% 35%,rgba(212,168,83,.18),rgba(7,7,7,.65) 70%);box-shadow:0 0 14px rgba(0,0,0,.65),0 0 10px rgba(212,168,83,.25),inset 0 0 8px rgba(0,0,0,.5)}
+.identity-badge svg{width:26px;height:26px}
+.identity-pill{min-width:0;display:flex;align-items:baseline;gap:7px;padding:7px 12px;border:1px solid rgba(255,255,255,.12);border-radius:5px;background:rgba(7,7,7,.6);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+.home-hero .home-identity .k{flex:none;font-size:.58rem;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:#c8ccd1}
+.home-hero .home-identity b{min-width:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--ui);font-weight:700;font-size:.76rem;letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
+.home-summary{margin:0 2px 12px;color:#9b9b9b;font-size:.76rem;line-height:1.45}
+
+/* --- Home: needs attention ------------------------------------------------ */
+.section-label.attention{margin-top:2px;color:var(--red2);font-size:.68rem;letter-spacing:.24em;text-shadow:0 0 10px rgba(232,53,43,.35)}
+.priority-stack{display:flex;flex-direction:column;gap:7px;padding:8px;margin-bottom:12px;border:1px solid var(--hairline);border-radius:7px;background:var(--sheen),linear-gradient(180deg,#101010,#0c0c0c)}
+.priority-row{gap:11px;min-height:52px;margin:0;padding:6px 11px;border:1px solid var(--hairline);border-left:3px solid var(--amber);border-radius:5px;background:#121212;transition:background .15s ease,transform .1s ease}
+.priority-row.bad{border-color:var(--hairline);border-left-color:var(--red2);background:#151010}
+.priority-row:active{transform:scale(.985);background:#191919}
+.priority-icon{flex:none;width:17px;height:17px;color:var(--amber)}
+.priority-row.bad .priority-icon{color:var(--red)}
+.priority-row .menu-row-main{flex:1;min-width:0}
+.priority-row b{font-size:.8rem}
+.priority-row small{margin-top:2px;font-size:.66rem}
+.priority-when{flex:none;font-family:var(--mono);font-size:.7rem;color:var(--gold);text-shadow:0 0 6px rgba(212,168,83,.35)}
+.priority-row.bad .priority-when{color:var(--red2);text-shadow:0 0 6px rgba(232,53,43,.35)}
+.priority-row .menu-row-arrow{flex:none;color:#5a5f66}
+
+/* --- Home: the one dominant action ---------------------------------------- */
+.wander-btn{position:relative;display:block;width:100%;min-height:78px;margin:0 0 14px;padding:13px 12px;overflow:hidden;border:1px solid rgba(255,90,70,.55);border-radius:7px;background:linear-gradient(180deg,#d32920 0%,#8c1710 62%,#5f0f0a 100%);color:var(--white);text-align:center;cursor:pointer;box-shadow:0 0 20px rgba(211,41,32,.4),inset 0 0 34px rgba(0,0,0,.38),inset 0 0 0 1px rgba(255,255,255,.05);transition:transform .08s ease,box-shadow .15s ease}
+.wander-grain{position:absolute;inset:0;pointer-events:none;opacity:.2;mix-blend-mode:overlay;background:var(--grain)}
+.wander-btn b{position:relative;display:block;font-family:var(--head);font-weight:400;font-size:clamp(1.3rem,7vw,1.85rem);line-height:1.05;letter-spacing:.14em;text-transform:uppercase;text-shadow:-1px -1px 0 rgba(0,0,0,.5),0 2px 10px rgba(0,0,0,.6),0 0 22px rgba(255,120,100,.35)}
+.wander-btn small{position:relative;display:block;margin-top:5px;font-size:.64rem;font-weight:600;letter-spacing:.08em;text-transform:none;color:rgba(255,255,255,.72)}
+.wander-btn:active:not(:disabled){transform:scale(.98);box-shadow:0 0 32px rgba(211,41,32,.8),inset 0 0 40px rgba(0,0,0,.5),inset 0 0 0 1px rgba(255,255,255,.05)}
+.wander-btn:disabled{cursor:not-allowed;border-color:rgba(255,255,255,.1);filter:saturate(.3) brightness(.55);box-shadow:inset 0 0 34px rgba(0,0,0,.5),inset 0 0 0 1px rgba(255,255,255,.05)}
+@keyframes wander-pulse{
+  0%,100%{box-shadow:0 0 14px rgba(211,41,32,.3),inset 0 0 34px rgba(0,0,0,.38),inset 0 0 0 1px rgba(255,255,255,.05)}
+  50%{box-shadow:0 0 26px rgba(211,41,32,.5),inset 0 0 34px rgba(0,0,0,.38),inset 0 0 0 1px rgba(255,255,255,.05)}}
+@media(prefers-reduced-motion:no-preference){.wander-btn:not(:disabled){animation:wander-pulse 3s ease-in-out infinite}}
+
+/* --- Home: Yalonda's apartment -------------------------------------------- */
+/* The amber wash at the top of the card is the light from her unit; it is the
+   only warm surface on an otherwise cold screen, which is the point. */
+.home .card.yalonda-card{padding:12px;margin-bottom:12px;border:1px solid var(--hairline);border-radius:7px;background:radial-gradient(ellipse 75% 52px at 50% 0%,rgba(212,168,83,.1),rgba(212,168,83,0) 75%),linear-gradient(180deg,#101010,#0c0c0c);box-shadow:none}
+.yalonda-split{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.yalonda-photo{position:relative;display:block;overflow:hidden;border:1px solid var(--hairline);border-radius:5px;background:linear-gradient(160deg,#16181d,#0e1013 45%,#1a140e 78%,#0b0b0c)}
+.yalonda-photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:38% 45%}
+.yalonda-photo::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(12,12,12,0) 52%,rgba(12,12,12,.9) 100%)}
+.yalonda-rows{display:flex;flex-direction:column;gap:7px}
+.yalonda-row{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 10px;border:1px solid var(--hairline);border-radius:5px;background:#121212}
+.yalonda-row .k{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.76rem;font-weight:600;color:#d6d8db}
+.yalonda-row b{flex:none;font-family:var(--mono);font-size:.78rem}
+.yalonda-row .v-money{color:var(--money);text-shadow:0 0 6px rgba(74,222,128,.45)}
+.yalonda-row .v-stored{color:var(--gold);text-shadow:0 0 6px rgba(212,168,83,.35)}
+.yalonda-actions{margin-top:8px}
+.yalonda-actions .btn{flex:1;min-width:0;min-height:48px;padding:5px 3px;border:1px solid rgba(255,255,255,.1);border-radius:5px;background:linear-gradient(180deg,#161616,#101010);font-size:.72rem;letter-spacing:.12em}
+.yalonda-actions .action-copy{margin-top:2px;font-size:.54rem;letter-spacing:0}
+.home .stat-row{margin-bottom:10px}
+
+/* --- Bottom navigation ---------------------------------------------------- */
+/* Home moves to the centre and gets the only filled, glowing treatment on the
+   bar; every other tab stays a grey outline until it is the active one. */
+.nav{align-items:end;padding-top:20px;background:linear-gradient(180deg,rgba(12,12,12,.8),rgba(7,7,7,.96));backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.nav button{gap:4px;border:0;background:none;color:#6b7077;font-size:.55rem;letter-spacing:.15em}
+.nav button.active{color:var(--red2);border-color:transparent;background:none}
+.nav-glyph{position:relative;display:flex;align-items:center;justify-content:center}
+.nav-badge{position:absolute;top:-5px;right:-9px;min-width:15px;height:15px;padding:0 3px;display:flex;align-items:center;justify-content:center;border-radius:8px;background:var(--red);box-shadow:0 0 8px rgba(211,41,32,.7);color:#fff;font-family:var(--mono);font-size:.5rem}
+.nav button.home-tab{gap:2px}
+.nav button.home-tab .nav-glyph{width:46px;height:46px;margin-top:-15px;border-radius:50%;border:1px solid rgba(211,41,32,.3);background:radial-gradient(circle at 50% 38%,rgba(211,41,32,.32),rgba(120,20,14,.14) 55%,rgba(20,8,8,0) 74%),linear-gradient(180deg,#181313,#0d0b0b);box-shadow:0 4px 12px rgba(211,41,32,.5),inset 0 1px 0 rgba(255,255,255,.06)}
+.nav button.home-tab .nav-icon{width:25px;height:25px;color:var(--red)}
+.nav button.home-tab.active .nav-icon{color:var(--red2);filter:drop-shadow(0 0 7px rgba(211,41,32,.85))}
+.nav button.home-tab::after{content:"";display:block;width:34px;height:3px;margin-top:2px;border-radius:2px;background:var(--red);box-shadow:0 0 10px rgba(211,41,32,.95),0 0 22px rgba(211,41,32,.55);opacity:0;transition:opacity .2s ease}
+.nav button.home-tab.active::after{opacity:1}
+.nav button:active{transform:scale(.94)}
+
+@media(max-width:360px){
+  .primary-hud{gap:7px}
+  .hud-day{font-size:.92rem}
+  .hud-slot{font-size:.68rem}
+  .primary-hud .accent-green .v{font-size:.82rem}
+  .primary-hud .accent-muted .v{font-size:.62rem;letter-spacing:.08em}
+  .primary-hud .status-toggle,.primary-hud .menu-btn{min-width:38px;padding:0 4px;font-size:.48rem}
+  .yalonda-actions .btn{font-size:.62rem;letter-spacing:.06em}
+}
+/* Above phone width the screen stops being a column of full-bleed blocks: the
+   hero keeps its edges and the apartment card sits beside the action stack. */
+@media(min-width:720px){
+  .home-hero{margin:10px 0 14px;border:1px solid var(--hairline);border-radius:8px;max-height:340px}
+  .home-hero-msg{top:24px;left:20px}
+  .yalonda-split{grid-template-columns:1fr 1.25fr}
+}

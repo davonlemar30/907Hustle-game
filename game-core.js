@@ -4335,8 +4335,8 @@
     const releaseBank = shortfall > 0 ? Arrest.RELEASE_LINES.served : Arrest.RELEASE_LINES.paid;
     pushConsequence(state, Arrest.pickLine(releaseBank, hash), "bad");
     pushConsequence(state, shortfall > 0
-      ? `Bail set at $${bail}. You covered $${paid} and served the rest. Prior arrests: ${state.record.arrests}.`
-      : `Bail $${bail} paid. Prior arrests: ${state.record.arrests}.`, "warn");
+      ? `Bail was $${bail}. You had $${paid}. The rest came out of your hours. That makes ${state.record.arrests} on the sheet.`
+      : `$${bail} to walk. The sheet says ${state.record.arrests} now, and sheets do not forget.`, "warn");
     if (relief > 0) pushConsequence(state, `${Arrest.pickLine(Arrest.HEAT_RELIEF_LINES, hash)} (-${relief} Heat)`, "");
     return { severity, source, bail, paid, shortfall, processingSlots, heatRelief: relief, priors: state.record.arrests };
   }
@@ -4360,7 +4360,7 @@
     const name = CREW_BY_ID[crewId].name.split(" ")[0];
     const hash = stringHash(`${state.run.seed}:crew-arrest:${crewId}:${state.run.day}`);
     logEntry(state, Arrest.pickLine(Arrest.CREW_BOOKED_LINES, hash).replace("%s", name), "bad");
-    pushConsequence(state, `${name} is in custody. Bail is $${Arrest.crewBailFor(key)} until Day ${crew.jailedUntilDay}.`, "bad");
+    pushConsequence(state, `${name} got picked up. $${Arrest.crewBailFor(key)} makes it go away before Day ${crew.jailedUntilDay}.`, "bad");
     return crew;
   }
 
@@ -4381,7 +4381,7 @@
       const name = person.name.split(" ")[0];
       const hash = stringHash(`${state.run.seed}:crew-release:${person.id}:${state.run.day}`);
       logEntry(state, Arrest.pickLine(Arrest.CREW_SERVED_LINES, hash).replace("%s", name), "bad");
-      pushConsequence(state, `${name} served the whole stretch. Loyalty is down to ${crew.loyalty}.`, "bad");
+      pushConsequence(state, `${name} served the whole stretch. Nobody was at the door. They clocked that.`, "bad");
     }
   }
 
@@ -4431,7 +4431,7 @@
         state.flags.crewUnderpaid = true;
         if (state.run.day - crew.wageMissedSince >= Crew.CREW_WAGE_GRACE_DAYS) {
           crew.loyalty = Crew.clampLoyalty(crew.loyalty - 1);
-          logEntry(state, `${person.name.split(" ")[0]}'s pay is short again. The patience is visibly thinner.`, "bad");
+          logEntry(state, `${person.name.split(" ")[0]} didn't say anything about the money again. That's worse.`, "bad");
         } else {
           logEntry(state, `No cash for ${person.name.split(" ")[0]}'s wage tonight. It goes on the ledger.`, "bad");
         }
@@ -4445,8 +4445,8 @@
       for (const block of Object.values(state.world.territoryBlocks || {})) {
         if (block.managerId === person.id) block.managerId = null;
       }
-      logEntry(state, `${person.name.split(" ")[0]} is gone. No note, no argument. The unpaid ledger stays behind.`, "bad");
-      pushConsequence(state, `${person.name.split(" ")[0]} left the crew. Loyalty ran out.`, "bad");
+      logEntry(state, `${person.name.split(" ")[0]}'s number doesn't ring anymore. The people they introduced you to stop texting back.`, "bad");
+      pushConsequence(state, `${person.name.split(" ")[0]} is gone. No note, no argument. The unpaid ledger stays behind.`, "bad");
     }
   }
   function applyPressure(state, context, crossedDay) {
@@ -6080,7 +6080,7 @@
   const BOOST_FIRST_FRAMINGS = [
     { id: "blind_spot", title: "Blind Spot", line: (name) => `You're browsing ${name}. The camera has a blind spot by the back aisle. Pocket something or keep walking.` },
     { id: "back_turned", title: "Back Turned", line: (name) => `The clerk at ${name} is deep in a phone argument, back to the floor. Pocket something or keep walking.` },
-    { id: "propped_door", title: "Propped Door", line: (name) => `A vendor drop has ${name} in chaos — boxes stacked, door propped, nobody watching. Pocket something or keep walking.` },
+    { id: "propped_door", title: "Propped Door", line: (name) => `A vendor drop has ${name} in chaos. Boxes stacked, door propped, nobody watching. Pocket something or keep walking.` },
   ];
   function firstBoostOpportunityEvent(state) {
     const areaId = state?.world?.currentNeighborhoodId || HOME_DISTRICT_ID;
@@ -6400,7 +6400,7 @@
       state.run.currentVisit.grossBuy += cost;
       addStreetReadEntry(state, "trading", `${state.world.currentNeighborhoodId}:${product.id}`);
       if (state.player.heat >= 8) addStreetReadEntry(state, "risk", `high_heat_trade:${state.world.currentNeighborhoodId}`);
-      logEntry(state, `You move ${qty} ${product.name} into the bag for $${cost}.`, "good");
+      logEntry(state, `${qty} ${product.name} in the bag. $${cost} out the other pocket. Nobody looked twice.`, "good");
       const record = plugRecord(state, plug.id);
       if (record && record.lastPurchaseDay !== state.run.day) {
         record.lastPurchaseDay = state.run.day;
@@ -6450,7 +6450,7 @@
         influenceChange(state, state.world.currentNeighborhoodId, 1);
         state.world.tradeInfluenceGranted[state.world.currentNeighborhoodId] = true;
       }
-      logEntry(state, `The buyer takes ${qty} ${product.name}. You count $${total} before leaving the block.`, profit >= 0 ? "good" : "bad");
+      logEntry(state, `${qty} ${product.name} gone. $${total} cash. Quick count, quick exit.`, profit >= 0 ? "good" : "bad");
       reconcileCash(state);
       return state;
     }
@@ -6595,7 +6595,7 @@
       const name = CREW_BY_ID[action.crewId].name.split(" ")[0];
       const hash = stringHash(`${state.run.seed}:crew-bail:${action.crewId}:${state.run.day}`);
       logEntry(state, Arrest.pickLine(Arrest.CREW_BAIL_LINES, hash).replace("%s", name), "good");
-      pushConsequence(state, `${name} is out. $${availability.cost} gone, loyalty ${crew.loyalty}.`, "warn");
+      pushConsequence(state, `${name} is out. $${availability.cost} lighter. They don't say thank you. You don't ask for one.`, "warn");
       recordBehavior(state, "connector", 1, `crew_bail:${action.crewId}:${state.run.day}`, "crew_bail");
       reconcileCash(state);
       return state;
@@ -7319,8 +7319,8 @@
           arrestDetail = arrestPlayer(base, { severity: `stick${target.tier}`, source: "stick" });
           effects.push(
             arrestDetail.shortfall > 0
-              ? `Booked — $${arrestDetail.paid} of $${arrestDetail.bail} bail, the rest served`
-              : `Booked and released — $${arrestDetail.bail} bail`,
+              ? `Booked. $${arrestDetail.paid} of $${arrestDetail.bail} bail, the rest served`
+              : `Booked and released. $${arrestDetail.bail} bail`,
             `-${arrestDetail.heatRelief} Heat on the record`,
             `Prior arrests: ${arrestDetail.priors}`,
           );

@@ -527,7 +527,7 @@ function TonkTable({ state, dispatch }) {
       <button className={`btn ${draw === "discard" ? "primary" : "secondary"}`} disabled={!view.discardTop} onClick={() => setDraw("discard")}>Take the discard<span className="action-copy">{view.discardTop ? `${view.discardTop.rank}${SUIT_GLYPH[view.discardTop.suit]} showing` : "Nothing showing"}</span></button>
     </div>
     <div className="detail-list">{view.opponents.map((opponent) => <span key={opponent.seat}>
-      <b>Seat {opponent.seat}</b> — {opponent.label}
+      <b>Seat {opponent.seat}</b> · {opponent.label}
       {opponent.hesitates ? <em className="warn"> hesitates before drawing.</em> : ""}
       {opponent.estimate ? <em className="muted"> {opponent.estimate}.</em> : ""}
     </span>)}</div>
@@ -1141,7 +1141,7 @@ function Rob({ state, dispatch, onBack }) {
         <button className="btn full primary" disabled={!availability.available} onClick={() => dispatch({ type: "STICKUP", targetId: target.id })}>Run it<span className="action-copy">{availability.available ? "Uses one part of day" : availability.reason}</span></button>
       </div>;
     })}
-    {tier >= 2 && <p className="compact muted">Goodie is a walking Tier 2 target. His corner works the same ladder — find him through Street → People.</p>}
+    {tier >= 2 && <p className="compact muted">Goodie is a walking Tier 2 target. His corner works the same ladder. Find him through Street → People.</p>}
     <div className="card debt-card"><div className="card-title">Service-road envelope<small>Once each day · one part of day</small></div><p>Take a direct cash risk. Weapons, Combat, Intelligence, crew, and Heat affect the approach. Repeated attempts raise exposure and injury risk; legal work remains the safer long-term plan.</p><button className="btn full primary" disabled={!score.available} onClick={() => dispatch({ type: "ROB" })}>Attempt today's Rob<span className="action-copy">{score.available ? `${score.chanceLabel} estimated success · uses one part of day` : score.reason}</span></button></div>
   </div></>;
 }
@@ -1471,7 +1471,7 @@ function phoneBills(state) {
   }
   if (state.lender.balance > 0) {
     const daysLeft = state.lender.dueDay - day;
-    rows.push({ id: "debt", name: "Dre — debt", amount: state.lender.balance, where: "Pay in Finances", due: `Day ${state.lender.dueDay}`,
+    rows.push({ id: "debt", name: "Debt to Dre", amount: state.lender.balance, where: "Pay in Finances", due: `Day ${state.lender.dueDay}`,
       ...(daysLeft < 0 ? { status: "Overdue", severity: 2 }
         : daysLeft === 0 ? { status: "Due tonight", severity: 2 }
         : upcoming(state.lender.dueDay)) });

@@ -310,7 +310,7 @@
     return [
       choice("fight", "Fight", `${opponent.difficulty} opponent. Win and you leave with the take. Lose and you are hurt and booked.`),
       choice("run", "Run for it", "Keep the take if you get clear. Get caught and it is a ban, more Heat, and bruises."),
-      choice("surrender", "Give it up", "They keep the goods. No Heat, no damage, no arrest — only the take."),
+      choice("surrender", "Give it up", "They keep the goods. No Heat, no damage, no arrest. It only costs the take."),
     ];
   }
   function resolveBoostFight(state, encounter, rng) {

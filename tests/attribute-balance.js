@@ -66,6 +66,31 @@ function curveIsMonotonic(byLevel) {
 // Modelled rather than played: the reducer gates on cash, slots, and energy, and
 // what this question is really asking is what the growth curve pays for a given
 // number of sessions. Sessions per day is the lever.
+// The Nile climb, the same instrument pointed at the other two corners of the
+// triangle. The design target from the build prompt is Charisma or Intelligence
+// 3 by roughly Day 7 for a player spending every available slot at the building.
+//
+// Each Nile source taper on its OWN lifetime count, so a player alternating
+// floors climbs faster than one grinding a single table - which is the intent.
+function nileClimb(sessionsPerDay, activities) {
+  let value = 1;
+  let progress = 0;
+  const sessions = {};
+  const days = [];
+  for (let day = 1; day <= 14; day += 1) {
+    for (let i = 0; i < sessionsPerDay; i += 1) {
+      const activity = activities[(day * sessionsPerDay + i) % activities.length];
+      progress += A.attributeGrowth(value, sessions[activity] || 0, activity);
+      sessions[activity] = (sessions[activity] || 0) + 1;
+      if (progress >= 1) { progress -= 1; value += 1; }
+    }
+    days.push({ day, value });
+  }
+  const reached3 = days.find((entry) => entry.value >= 3);
+  const reached6 = days.find((entry) => entry.value >= 6);
+  return { finalValue: value, dayReached3: reached3 ? reached3.day : null, dayReached6: reached6 ? reached6.day : null };
+}
+
 function gymClimb(sessionsPerDay, activity) {
   let value = 1;
   let progress = 0;
@@ -132,6 +157,24 @@ function main() {
       console.log(`${perDay} session/day ${activity.padEnd(10)} -> Combat ${climb.finalValue} by Day 14 · reached 3 on Day ${climb.dayReached3 ?? "never"} · reached 6 on Day ${climb.dayReached6 ?? "never"}`);
     }
   }
+
+  console.log("\n## Nile climb (14 days)\n");
+  const NILE_TRACKS = {
+    "charisma (both)": ["nile_social", "tonk_game"],
+    "charisma (spa only)": ["nile_social"],
+    "charisma (tonk only)": ["tonk_game"],
+    "intelligence (both)": ["celo_game", "coffee_ceremony"],
+    "intelligence (celo only)": ["celo_game"],
+  };
+  for (const perDay of [1, 2, 3]) {
+    for (const [label, activities] of Object.entries(NILE_TRACKS)) {
+      const climb = nileClimb(perDay, activities);
+      console.log(`${perDay} session/day ${label.padEnd(24)} -> ${climb.finalValue} by Day 14 · reached 3 on Day ${climb.dayReached3 ?? "never"} · reached 6 on Day ${climb.dayReached6 ?? "never"}`);
+    }
+  }
+  // The promise the build makes: The Nile alone never reaches Dangerous.
+  const grinds = Object.values(NILE_TRACKS).map((activities) => nileClimb(3, activities));
+  console.log(`\nThe Nile alone never reaches Dangerous: ${grinds.every((climb) => climb.dayReached6 === null)}`);
 
   console.log("\n## Footprint by training level (200 seeded robberies each)\n");
   const compared = trainedVersusGreen();

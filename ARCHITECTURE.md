@@ -40,6 +40,11 @@ src/data/             Static definitions. No logic, no state.
   npcs.js             CREW, DEALERS, PLUGS, HOUSEHOLD_NPCS, NIGHT_OWL_REGULARS + lookups
   observations.js     OBSERVATION_CATEGORIES, createObservation(), addObservation(), effectiveCount()
   npc-lenses.js       ARCHETYPES, SHARED_EVENT_WEIGHTS, NPC_LENSES, resolveLens()
+  nile.js             The Nile: floor hours, discovery paths, ambient text,
+                      Selam and Biniam dialogue by band, table access gates
+  gambling.js         Tonk and Cee-lo rules: deck, spreads, runs, hand value,
+                      dice combinations, odds, settlement, observation
+                      thresholds. stringHash only, never game-core.
   propagation.js      CHANNELS, NPC_CHANNELS, Curtis's filter, heat thresholds, presence tables
   disposition-bands.js  BANDS, bandFor()
 
@@ -50,6 +55,10 @@ src/events/
   market-events.js    907List rolls: robbery risk, snipes, flakes, sale price,
                       buyer requests, bulk deals. stringHash only, never
                       run.rngState, and never game-core.
+  gambling-events.js  A hand of Tonk and a round of Cee-lo played against the
+                      attribute system: what the player is allowed to see, what
+                      the session was worth in growth. Same rules — stringHash
+                      only, never run.rngState, never game-core.
 
 src/exposure/
   engine.js           The Exposure System: ledgers in, dispositions out, gossip
@@ -72,6 +81,9 @@ tests/                node --test, no runner config
 |---|---|
 | A story beat / character arc card | `src/events/cards.js` + a descriptor in `STORY_REGISTRY` |
 | A new NPC | `src/data/npcs.js`, state in `createNpcState()`, a lens in `NPC_LENSES`, channels in `NPC_CHANNELS` |
+| A new growth source for an attribute | a rate in `GROWTH_RATES` **and** an attribute in `GROWTH_ATTRIBUTES`, both in `src/data/attributes.js` — a source with only half a definition trains nothing silently |
+| A card or dice rule | `src/data/gambling.js`; how it plays against an attribute goes in `src/events/gambling-events.js` |
+| Nile copy, hours, or a discovery path | `src/data/nile.js` |
 | A new observation category | `OBSERVATION_CATEGORIES` in `src/data/observations.js` + a weight in all four archetypes |
 | A named letdown (something that costs standing) | `SHARED_EVENT_WEIGHTS` in `src/data/npc-lenses.js` |
 | A thing an action makes visible | `OBSERVED_ACTIONS` in `game-core.js` |
@@ -119,7 +131,7 @@ module-scoped and `window.playSound` is `undefined`.
 
 ## State and saves
 
-`SAVE_KEY = "907ogr_v8"`, `VERSION = 8`, `LEGACY_SAVE_KEYS = ["907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"]`.
+`SAVE_KEY = "907ogr_v9"`, `VERSION = 9`, `LEGACY_SAVE_KEYS = ["907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"]`.
 
 Top-level state sections:
 
@@ -387,13 +399,54 @@ still feeds the Character screen's recent-reputation list.
 
 ### Growth
 
-The gym is the only growth source that ships in v1.10 (Charisma and Intelligence
-sources are a later build). `attributeGrowth` uses the same `log2` shape as the
-Exposure System's observation capping, for the same reason: sessions one through
-three move the needle, four through seven taper, and past that the gym alone
-cannot carry you. Getting past Solid takes confrontations, not another hour on
-the bag. Three consecutive gym **days** bank `player.gymStreak`, worth +1
-effective Combat on the next check that reads it, spent on use.
+All three attributes have a path up as of v1.11. `attributeGrowth` uses the same
+`log2` shape as the Exposure System's observation capping, for the same reason:
+sessions one through three move the needle, four through seven taper, and past
+that no single venue can carry you. Getting past Solid takes confrontations, real
+negotiations, and real money — not another hour on the bag or another hand of
+cards.
+
+| Attribute | Sources (base rate before taper) |
+|---|---|
+| Combat | Spenard Gym: bag work 0.3, cardio 0.2, sparring 0.5 |
+| Charisma | The Nile spa 0.25, Tonk 0.4, a night at the Night Owl 0.15 |
+| Intelligence | Cee-lo 0.4, a 907List flip clearing 1.3x 0.2, coffee ceremony 0.15 |
+
+A source is **two** entries, both in `src/data/attributes.js`: a rate in
+`GROWTH_RATES` and the attribute it feeds in `GROWTH_ATTRIBUTES`. They are split
+so a reducer never hard-codes "this one is Charisma" at the call site, and so a
+source defined in only one table fails loudly rather than training nothing.
+Sessions taper on the lifetime count of that **specific** activity, so a player
+alternating floors at The Nile climbs faster than one grinding a single table.
+
+Two streaks, and they never stack because they never address the same attribute:
+three consecutive gym **days** bank `player.gymStreak` (+1 effective Combat), and
+three consecutive Nile days bank `player.nileStreak`, which pays out to
+`player.nileStreakAttribute` — whichever of Charisma or Intelligence was trained
+most recently there. Both are spent on use, not carried, and both break on a day
+that ends without a visit.
+
+### The Nile is off Curtis's network, and that is load-bearing
+
+Every observation originating at The Nile carries `location: "the_nile"` and
+propagates on `direct`, `neighborhood`, or `household` only — **never** `network`
+or `reputation`. Selam and Biniam are likewise wired to `direct` and
+`neighborhood` and nothing else.
+
+This is not decoration. It is the location's entire strategic argument: a player
+carrying rival pressure can build social capital at The Nile without feeding the
+attention system. A change that puts a Nile broadcast on the network channel, or
+subscribes either Tesfaye to it, silently deletes the reason the building exists.
+`tests/v1-11.test.js` asserts it end to end rather than trusting the channel
+table to stay as it is.
+
+Two per-NPC lens hooks exist for this floor and are worth knowing about:
+`locationWeights` scales a category by **where** it happened (Selam reads
+violence at her own address at double weight), and `sourceMultipliers` set to
+zero drops a whole channel (Biniam gives `network` gossip exactly 0 — he watches
+what happens in his house and does not listen to talk about his guests). Note
+that `rowWeight` reads `sourceMultipliers` with `?? 1` rather than `|| 1`
+precisely so that zero survives.
 
 ---
 

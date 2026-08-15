@@ -108,7 +108,7 @@ test("active and resolved encounter state hydrates additively under the v3 save 
   assert.equal(hydrated.valid, true);
   assert.equal(hydrated.state.run.pendingEncounter.id, "mini_mart_parking_lot");
   assert.deepEqual(hydrated.state.encounterLog, { resolved: [], activeFlags: {}, randomKills: 0, randomFights: 0 });
-  assert.equal(C.SAVE_KEY, "907ogr_v8");
+  assert.equal(C.SAVE_KEY, "907ogr_v9");
 });
 
 test("authored serious violence closes the intact Mina escape ending", () => {

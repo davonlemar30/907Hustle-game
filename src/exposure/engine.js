@@ -33,14 +33,25 @@ function ledgerOf(state, npcId) {
 }
 
 // The weight one row contributes: the lens's category weight, replaced by an
-// event-specific weight where the NPC has one, scaled by how the news arrived,
-// then multiplied by the diminishing-returns count.
+// event-specific weight where the NPC has one, scaled by how the news arrived
+// and by where it happened, then multiplied by the diminishing-returns count.
+//
+// The location scale defaults to 1 for everyone, so it costs nothing until an
+// NPC declares that somewhere matters to them more than everywhere else. Selam
+// is the first: violence at The Nile is not the same fact to her as violence in
+// general, because The Nile is her livelihood.
+//
+// `sourceMultipliers` uses `?? 1` rather than `|| 1` on purpose: Biniam's whole
+// characterization is `network: 0`, and `||` would read that zero as "unset" and
+// hand him back the street gossip he explicitly does not listen to.
 function rowWeight(lens, row) {
   const base = row.event && row.event in lens.eventWeights
     ? lens.eventWeights[row.event]
     : lens.weights[row.type];
-  const multiplier = lens.sourceMultipliers[row.source] || 1;
-  return base * multiplier * effectiveCount(row);
+  const multiplier = lens.sourceMultipliers[row.source] ?? 1;
+  const byLocation = (lens.locationWeights || {})[row.location];
+  const locationScale = byLocation && row.type in byLocation ? byLocation[row.type] : 1;
+  return base * multiplier * locationScale * effectiveCount(row);
 }
 
 function getDisposition(npcId, state) {
@@ -185,7 +196,8 @@ function describeDisposition(state, npcId) {
     count: row.count,
     day: row.day,
     baseWeight: row.event && row.event in lens.eventWeights ? lens.eventWeights[row.event] : lens.weights[row.type],
-    sourceMultiplier: lens.sourceMultipliers[row.source] || 1,
+    sourceMultiplier: lens.sourceMultipliers[row.source] ?? 1,
+    locationScale: ((lens.locationWeights || {})[row.location] || {})[row.type] ?? 1,
     effectiveCount: Math.round(effectiveCount(row) * 100) / 100,
     contribution: Math.round(rowWeight(lens, row) * 100) / 100,
   })).sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));

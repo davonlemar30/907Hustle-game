@@ -16,14 +16,17 @@
   const MarketEvents = require("./src/events/market-events.js");
   const AttributeData = require("./src/data/attributes.js");
   const Attributes = require("./src/systems/attributes.js");
+  const Nile = require("./src/data/nile.js");
+  const Gambling = require("./src/data/gambling.js");
+  const GamblingEvents = require("./src/events/gambling-events.js");
 
-  const VERSION = 8;
+  const VERSION = 9;
   const RUN_DAYS = 7;
   const PRESSURE_DAYS = 7;
   const MAX_ENERGY = 4;
   const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
-  const SAVE_KEY = "907ogr_v8";
-  const LEGACY_SAVE_KEYS = ["907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"];
+  const SAVE_KEY = "907ogr_v9";
+  const LEGACY_SAVE_KEYS = ["907ogr_v8", "907ogr_v7", "907ogr_v6", "907ogr_v5", "907ogr_v4", "907ogr_v3"];
   const PHONE_BILL = 75;
   const WEEKLY_RENT = 150;
   const WORKING_CAPITAL_RESERVE = 150;
@@ -192,12 +195,17 @@
     { id: "opportunity", title: "Cash work", body: "A number is torn off every tab except one." },
     { id: "laptop", title: "Used laptop · $250", body: "Battery is tired. Browser works. Charger included." },
     { id: "gym", title: "Community gym", body: "First membership is $30. Training costs extra." },
+    Nile.BOARD_FLYER,
   ];
   const DOWNTOWN_CONTENT_STUBS = ["circle_k", "fourth_avenue_bars", "rei"];
   const DOWNTOWN_AMBIENT = [
     "Construction on 4th Ave. A few bars gear up for the evening. Nothing pulls at you yet.",
     "Downtown foot traffic. People in work clothes head somewhere with purpose. You are just passing through.",
   ];
+
+  // What counts as a flip worth learning from. Below this the sale is a wash and
+  // the player learned nothing about appraisal they did not already know.
+  const PROFITABLE_FLIP_MARGIN = 1.3;
 
   const ALL_DAY_SLOTS = [0, 1, 2, 3];
   const DISTRICT_ACTIONS = {
@@ -224,12 +232,50 @@
       cashCost: PHONE_BILL, timeCost: 1, healthCost: 0,
       action: { type: "PAY_PHONE_BILL", surface: "store" }, around: false, order: 45,
     },
-    spenard_gambling: {
-      id: "spenard_gambling", areaId: HOME_DISTRICT_ID, slots: [2, 3],
-      cashCost: (_state, params) => Math.max(0, Math.floor(params.stake || 0)), timeCost: 1, healthCost: 0,
-      action: { type: "GAMBLE" }, around: true, order: 50,
-      visibleWhen: (state) => !!state.world.locations.gamblingKnown,
-      closedReason: "The game runs in the Evening and at Night.",
+    // The Nile. Two entries because they are two floors with different hours and
+    // different gates, the same way night_owl and its sub-actions are separate
+    // rows rather than one entry with a mode flag.
+    //
+    // v1.11 retired `spenard_gambling` (the abstract GAMBLE stat-check) in favour
+    // of these. The discovery path that used to open it - Cal at the Night Owl -
+    // now opens the Den, so the narrative beat survived and only the fake dice
+    // roll went away.
+    the_nile: {
+      id: "the_nile", areaId: HOME_DISTRICT_ID, slots: Nile.WELLNESS_SLOTS, cashCost: 0, timeCost: 0, healthCost: 0,
+      action: null, around: false, order: 35, closedReason: "Blue Nile closes at eight.",
+      visibleWhen: (state) => !!state.world.locations.theNile?.discovered,
+    },
+    the_nile_wellness: {
+      id: "the_nile_wellness", areaId: HOME_DISTRICT_ID, slots: Nile.WELLNESS_SLOTS,
+      cashCost: Nile.WELLNESS_COST, timeCost: 1, healthCost: 0,
+      action: { type: "NILE_WELLNESS" }, around: false,
+      closedReason: "Blue Nile closes at eight.",
+      visibleWhen: (state) => !!state.world.locations.theNile?.discovered,
+    },
+    the_nile_den: {
+      id: "the_nile_den", areaId: HOME_DISTRICT_ID, slots: Nile.DEN_SLOTS, cashCost: 0, timeCost: 0, healthCost: 0,
+      action: null, around: false, order: 36, closedReason: "The stairwell door stays shut until evening.",
+      visibleWhen: (state) => !!state.world.locations.theNile?.secondFloorAccess,
+    },
+    the_nile_coffee: {
+      id: "the_nile_coffee", areaId: HOME_DISTRICT_ID, slots: Nile.DEN_SLOTS, cashCost: 0, timeCost: 1, healthCost: 0,
+      action: { type: "NILE_COFFEE" }, around: false,
+      closedReason: "The stairwell door stays shut until evening.",
+      visibleWhen: (state) => !!state.world.locations.theNile?.secondFloorAccess,
+    },
+    the_nile_tonk: {
+      id: "the_nile_tonk", areaId: HOME_DISTRICT_ID, slots: Nile.DEN_SLOTS,
+      cashCost: (_state, params) => Math.max(0, Math.floor(params.buyIn || 0)), timeCost: 1, healthCost: 0,
+      action: { type: "NILE_TONK_SIT" }, around: false,
+      closedReason: "The stairwell door stays shut until evening.",
+      visibleWhen: (state) => !!state.world.locations.theNile?.secondFloorAccess,
+    },
+    the_nile_celo: {
+      id: "the_nile_celo", areaId: HOME_DISTRICT_ID, slots: Nile.DEN_SLOTS,
+      cashCost: (_state, params) => Math.max(0, Math.floor(params.buyIn || 0)), timeCost: 1, healthCost: 0,
+      action: { type: "NILE_CELO_SIT" }, around: false,
+      closedReason: "The stairwell door stays shut until evening.",
+      visibleWhen: (state) => !!state.world.locations.theNile?.secondFloorAccess,
     },
     northern_value_shoplift: {
       id: "northern_value_shoplift", areaId: HOME_DISTRICT_ID, slots: ALL_DAY_SLOTS, cashCost: 0, timeCost: 1, healthCost: 0,
@@ -283,7 +329,9 @@
 
   const DISTRICT_ACTION_BY_TYPE = {
     WANDER_SPENARD: "explore_spenard", EXPLORE_SPENARD: "explore_spenard", TRAIN_ATTRIBUTE: "spenard_gym", PAY_PHONE_BILL: "spenard_phone_store",
-    GAMBLE: "spenard_gambling", SHOPLIFT: "northern_value_shoplift", VIEW_NIGHT_OWL_BOARD: "night_owl_board",
+    SHOPLIFT: "northern_value_shoplift", VIEW_NIGHT_OWL_BOARD: "night_owl_board",
+    NILE_WELLNESS: "the_nile_wellness", NILE_COFFEE: "the_nile_coffee",
+    NILE_TONK_SIT: "the_nile_tonk", NILE_CELO_SIT: "the_nile_celo",
     BUY_COFFEE: "night_owl_coffee", TALK_NIGHT_OWL_REGULAR: "night_owl_regular", VISIT_NIGHT_OWL: "night_owl_visit",
     NIGHT_OWL_STASH_CASH: "night_owl_stash", NIGHT_OWL_STASH_PRODUCT: "night_owl_stash", WALK_HOME: "walk_spenard",
   };
@@ -584,11 +632,18 @@
     }
     return specs.length;
   }
-  // A check that reads an attribute spends the gym streak if one is banked.
+  // A check that reads an attribute spends whichever streak is banked against
+  // it. Both are spent on use rather than carried, so three days of discipline
+  // buys exactly one better roll and then it is gone.
   function resolveOutcome(state, actionType, chance, key) {
     const outcome = Attributes.resolveAction(state, actionType, chance, key);
     const attribute = AttributeData.ACTION_ATTRIBUTE_MAP[actionType];
     if (Attributes.gymStreakBonus(state, attribute)) { state.player.gymStreak = 0; state.player.gymStreakDay = null; }
+    if (Attributes.nileStreakBonus(state, attribute)) {
+      state.player.nileStreak = 0;
+      state.player.nileStreakDay = null;
+      state.player.nileStreakAttribute = null;
+    }
     return outcome;
   }
   // Standing gains slow down as they climb, so nobody is maxed out with most of
@@ -731,7 +786,7 @@
     HEAL: "heal", HEAL_AT_BASE: "heal", LAY_LOW: "rest", SLEEP_HOME: "rest",
     WORK_SHIFT: "work", WORK_JOB: "work", SHOPLIFT: "work", BOOST: "work", ASK_BOOST_WINDOW: "social",
     EXPLORE_SPENARD: "explore", WANDER_SPENARD: "explore", VISIT_BASE: "explore", LEASE_GARAGE: "explore", TRAIN_ATTRIBUTE: "explore", BUY_GEAR: "explore", UPGRADE_BASE: "explore",
-    GAMBLE: "gamble",
+    NILE_TONK_SIT: "gamble", NILE_CELO_SIT: "gamble", NILE_WELLNESS: "heal", NILE_COFFEE: "social",
     TRAVEL: "travel", BUS_TRAVEL: "travel", WALK_HOME: "travel",
     ROB: "risk", ROB_DEALER: "risk", TAKEOVER: "risk", ELI_TEST_ROUTE: "risk", CLAIM_BLOCK: "risk",
   };
@@ -759,12 +814,19 @@
     CLAIM_BLOCK: { type: "defiance", event: "territory_claim", channel: "network" },
     SHOPLIFT: { type: "financial", event: "petty_theft", channel: "neighborhood" },
     BOOST: { type: "financial", event: "boosting", channel: "network" },
-    GAMBLE: { type: "financial", event: "gambling", channel: "neighborhood" },
     // ROB and ROB_DEALER used to live here as one flat row apiece. They are
     // tiered now (see OUTCOME_OBSERVATIONS in src/data/attributes.js), which says
     // the same thing with more fidelity - keeping both would record every
-    // robbery twice and inflate every disposition that heard about it. GAMBLE
-    // stays because its tiers only describe the night that went badly.
+    // robbery twice and inflate every disposition that heard about it.
+    //
+    // GAMBLE was the last flat row of that kind and it is gone with the action
+    // in v1.11. The Nile broadcasts from its own reducer cases instead, keyed on
+    // the money that actually changed hands, because a $12 night at the Tonk
+    // table and a $300 night at the dice are not the same fact about a person.
+    // Those broadcasts never use the network channel; see gamblingObservations
+    // in src/data/gambling.js and the isolation test in tests/v1-11.test.js.
+    NILE_WELLNESS: { type: "presence", event: "the_nile", channel: "direct", location: Nile.NILE_LOCATION_ID },
+    NILE_COFFEE: { type: "presence", event: "the_nile", channel: "direct", location: Nile.NILE_LOCATION_ID },
   };
 
   // Tier 2 pays out as a contact volunteering something once a day. The line is
@@ -1054,6 +1116,11 @@
         known: false, trust: 0, threat: 0, pherrisConflict: false,
         leverage: 0, truce: false, outcomes: [],
       },
+      // The Tesfayes. Neither carries a trust integer - they were authored after
+      // the Exposure System, so their standing is only ever their ledger. `met`
+      // and the intel counter are the whole of their bespoke state.
+      selam: { met: false, visits: 0, mentionedBiniam: false, intelSent: [], lastIntelDay: null },
+      biniam: { met: false, tonkGames: 0, celoRounds: 0, coffeeRounds: 0 },
     };
     for (const id of EXPOSURE_NPC_IDS) {
       if (!base[id]) continue;
@@ -1111,6 +1178,9 @@
         // when the accumulator crosses 1.
         attributeProgress: { combat: 0, charisma: 0, intelligence: 0 },
         gymStreak: 0, gymStreakDay: null,
+        // The Nile's streak carries the attribute it earned, because the
+        // building trains two of them and the bonus has to know which.
+        nileStreak: 0, nileStreakDay: null, nileStreakAttribute: null,
         behavior: { scores: { mover: 0, earner: 0, stickup: 0, connector: 0 }, meaningfulActions: 0, history: [], caps: {} },
         cash: 0, dirtyCash: 0, cleanCash: 0, financialHeat: 0, health: 100, heat: 0, cargoCapacity: 10,
         energy: MAX_ENERGY,
@@ -1122,6 +1192,14 @@
       knowledge: { knows907List: false },
       discovered: { spenardGym: false },
       memberships: { gym: false },
+      // Table state. `table` and `round` hold a game in progress between
+      // dispatches - a hand of Tonk spans several actions, and the player is
+      // allowed to close the app in the middle of one.
+      gambling: {
+        tonkGamesPlayed: 0, celoRoundsPlayed: 0, sessionProfit: 0,
+        dailyGamesPlayed: 0, dailyGamesDay: null,
+        table: null, round: null,
+      },
       world: {
         currentNeighborhoodId: "north_star_lot", markets,
         influence: { north_star_lot: 0, downtown: 0, airport_industrial: 0 },
@@ -1131,7 +1209,15 @@
         locations: {
           explorationCount: 0, discoveries: [], gamblingKnown: false, downtownAmbientSeen: [],
           gym: { sessionDay: null, sessionsToday: 0, activitySessions: { bag_work: 0, cardio: 0, sparring: 0 } },
+          // Kept from the retired backroom game. The counters still mean what
+          // they meant - plays, wins, losses, net - they are just fed by real
+          // Tonk and Cee-lo now instead of by a single roll.
           gambling: { plays: 0, wins: 0, losses: 0, net: 0 },
+          theNile: {
+            discovered: false, secondFloorAccess: false, discoveryMethod: null, accessMethod: null,
+            wanderMisses: 0, lastVisitDay: null,
+            activitySessions: { nile_social: 0, tonk_game: 0, celo_game: 0, coffee_ceremony: 0 },
+          },
           discountStore: { name: "Northern Value", suspicion: 0, lastAttemptDay: null },
           employer: { name: "Ship Creek Freight", standing: 0, lastShiftDay: null, keptCommitments: 0, missedCommitments: 0 },
         },
@@ -1179,7 +1265,7 @@
       contacts: createContactsState(),
       onboarding: { shiftsWorked: 0, visitedLocations: ["home"], metNpcs: [], dreEligible: false },
       nightOwl: {
-        boardViewedDays: [], ambientSeen: [],
+        boardViewedDays: [], ambientSeen: [], socialSessions: 0,
         regulars: Object.fromEntries(NIGHT_OWL_REGULARS.map((person) => [person.id, { met: false, relationship: 0, lastTalkDay: null }])),
       },
       // v1.9b: the broker track. `tier` is derived on every read by marketTier()
@@ -1244,7 +1330,7 @@
   function migrateSave(value) {
     if (!value || typeof value !== "object") return null;
     if (value.version === VERSION) return value;
-    if (![3, 4, 5, 6, 7].includes(value.version) || !value.run || !value.world || !value.player) return null;
+    if (![3, 4, 5, 6, 7, 8].includes(value.version) || !value.run || !value.world || !value.player) return null;
     const migrated = JSON.parse(JSON.stringify(value));
     const oldHousehold = migrated.people?.household || {};
     const legacyNpc = migrated.npc || {};
@@ -1828,7 +1914,7 @@
   }
   const TIME_ACTIONS = new Set([
     "ROB", "ROB_DEALER", "ELI_TEST_ROUTE", "TAKEOVER", "WORK_JOB", "WORK_SHIFT",
-    "LEASE_GARAGE", "TRAIN_ATTRIBUTE", "GAMBLE", "SHOPLIFT", "BOOST", "WANDER_SPENARD", "EXPLORE_SPENARD", "BUS_TRAVEL", "WALK_HOME",
+    "LEASE_GARAGE", "TRAIN_ATTRIBUTE", "NILE_WELLNESS", "NILE_COFFEE", "NILE_TONK_SIT", "NILE_CELO_SIT", "SHOPLIFT", "BOOST", "WANDER_SPENARD", "EXPLORE_SPENARD", "BUS_TRAVEL", "WALK_HOME",
     "TRAVEL", "END_MARKET", "SLEEP_HOME", "LAY_LOW", "VISIT_BASE", "HEAL",
     "CLAIM_BLOCK", "MINA_DATE", "DRE_MISSION", "COLLECT_SHARK", "ENFORCE_SHARK", "INVEST_NEIGHBORHOOD",
     "PREPARE_FINAL_PLAN", "APPLY_JOB",
@@ -1915,6 +2001,231 @@
     }
     logEntry(state, "Three days straight. Juan noticed the bag gloves by the door.", "good");
   }
+  // The Night Owl's contribution to Charisma. Deliberately the smallest of the
+  // three sources: a night at the counter is incidental practice, not training,
+  // and it should never compete with actually going somewhere to get better.
+  function growAtNightOwl(state) {
+    const read = Attributes.growthFor(state, "night_owl_social", state.nightOwl.socialSessions - 1);
+    if (!read) return false;
+    return improveAttribute(state, read.attribute, read.growth);
+  }
+
+  // ---- The Nile ----------------------------------------------------------
+
+  // One growth call for every Nile source. Sessions taper on lifetime count of
+  // that specific activity, matching the gym: your fortieth hand of Tonk teaches
+  // you less than your second, and neither one is worth what a real negotiation
+  // is worth.
+  function growAtNile(state, activity, priorSessions) {
+    const read = Attributes.growthFor(state, activity, priorSessions);
+    if (!read) return false;
+    const improved = improveAttribute(state, read.attribute, read.growth);
+    if (improved) addStreetReadEntry(state, "exploration", `${state.world.currentNeighborhoodId}:the_nile`);
+    return improved;
+  }
+
+  // Consecutive days at the building, either floor. Mirrors registerGymDay, with
+  // the one difference that it records which attribute it earned - The Nile
+  // teaches two things and the bonus has to know which one it is paying out.
+  function registerNileDay(state, attribute) {
+    const day = state.run.day;
+    state.player.nileStreakAttribute = attribute;
+    state.world.locations.theNile.lastVisitDay = day;
+    if (state.player.nileStreakDay === day) return;
+    state.player.nileStreak = state.player.nileStreakDay === day - 1 ? (state.player.nileStreak || 0) + 1 : 1;
+    state.player.nileStreakDay = day;
+    if (state.player.nileStreak !== AttributeData.NILE_STREAK_REQUIREMENT) return;
+    // Household and neighborhood only. Never network - the whole strategic
+    // value of this building is that Curtis does not hear about it.
+    for (const channel of ["household", "neighborhood"]) {
+      Exposure.broadcastObservation(state, {
+        type: "growth", event: "nile_consistent", location: Nile.NILE_LOCATION_ID, channel,
+      });
+    }
+    logEntry(state, "Three days running at The Nile. The front desk stops asking your name.", "good");
+  }
+
+  // The wandering path. Ramped rather than flat for the same reason job
+  // discovery is: a flat 5% leaves a patient player walking the same blocks for
+  // a week, and a ramp guarantees they get there eventually without making the
+  // first walk a certainty. What they notice is the foot traffic - too many men
+  // going into a wellness spa after dark.
+  //
+  // Hashed off the seed and the walk count, never drawn from run.rngState, so a
+  // replayed day discovers the building on the same walk.
+  function rollNileDiscovery(state) {
+    const nile = state.world.locations.theNile;
+    if (nile.discovered) return false;
+    const chance = Nile.wanderChance(nile.wanderMisses);
+    const roll = (stringHash(`${state.run.seed}:nile:wander:${nile.wanderMisses}`) % 1000) / 1000;
+    if (roll >= chance) { nile.wanderMisses += 1; return false; }
+    discoverNile(state, Nile.DISCOVERY_METHODS.wander);
+    logEntry(state, "Four men go into the wellness place on Spenard Road inside ten minutes. None of them look like they came for a massage.", "");
+    return true;
+  }
+
+  // Juan knows Biniam through day labor. At Warm he mentions the building; at
+  // Trusted he vouches, which is a different thing and opens the stairwell.
+  function maybeJuanNileMention(state) {
+    const band = bandOf(state, "juan");
+    if (band >= Nile.JUAN_VOUCH_BAND && !state.world.locations.theNile.secondFloorAccess) {
+      logEntry(state, "Juan says he called ahead. The Ethiopian spot on Spenard, upstairs. Ask for Biniam and say the name Hernandez.", "good");
+      return grantDenAccess(state, Nile.DEN_ACCESS_METHODS.juan);
+    }
+    if (band >= Nile.JUAN_MENTION_BAND && !state.world.locations.theNile.discovered) {
+      logEntry(state, "Juan mentions a wellness place on Spenard Road run by a family he did some work for. Says the steam is worth the thirty dollars.", "good");
+      return discoverNile(state, Nile.DISCOVERY_METHODS.juan);
+    }
+    return false;
+  }
+
+  // Ground floor discovery. Any of three routes, recorded so the changelog and
+  // the tests can tell which one a run actually took.
+  function discoverNile(state, method) {
+    const nile = state.world.locations.theNile;
+    if (nile.discovered) return false;
+    nile.discovered = true;
+    nile.discoveryMethod = method;
+    queueUnlock(state, "gambling");
+    logEntry(state, "Blue Nile Wellness, on Spenard Road. Beige siding, blue neon, and frankincense before you are through the door.", "good");
+    return true;
+  }
+
+  // Second floor. Somebody has to vouch for you; it is never found by walking.
+  function grantDenAccess(state, method) {
+    const nile = state.world.locations.theNile;
+    if (nile.secondFloorAccess) return false;
+    // You cannot be handed the upstairs code without knowing the building.
+    if (!nile.discovered) discoverNile(state, method);
+    nile.secondFloorAccess = true;
+    nile.accessMethod = method;
+    state.world.locations.gamblingKnown = true;
+    logEntry(state, "The code for the stairwell door changes weekly. You have this week's.", "good");
+    return true;
+  }
+
+  // Selam names her brother once she is Warm. This is the discovery bridge the
+  // location doc describes: the player finds the ground floor first, becomes a
+  // regular, and the room upstairs arrives through her.
+  function maybeSelamBridge(state) {
+    if (state.npc.selam.mentionedBiniam) return false;
+    if (bandOf(state, "selam") < Nile.SELAM_BRIDGE_BAND) return false;
+    state.npc.selam.mentionedBiniam = true;
+    logEntry(state, `Selam Tesfaye, on her way past: "${Nile.SELAM_LINES[BANDS.WARM]}"`, "good");
+    return grantDenAccess(state, Nile.DEN_ACCESS_METHODS.selam);
+  }
+
+  // At Trusted she starts telling you what she sees. She watches every man who
+  // walks through that door and she remembers which ones watch the lot first.
+  function maybeSelamIntel(state) {
+    if (bandOf(state, "selam") < BANDS.TRUSTED) return false;
+    if (state.npc.selam.lastIntelDay === state.run.day) return false;
+    const unsent = Nile.SELAM_INTEL.filter((text) => !state.npc.selam.intelSent.includes(text));
+    if (!unsent.length) return false;
+    const text = unsent[stringHash(`${state.run.seed}:selam:intel:${state.run.day}`) % unsent.length];
+    state.npc.selam.intelSent.push(text);
+    state.npc.selam.lastIntelDay = state.run.day;
+    pushPhoneMessage(state, "Selam", text);
+    return true;
+  }
+
+  // Three games a day, same slot competition as everything else. The counter
+  // resets on the day rather than in confirmDayEnd so a save loaded mid-run
+  // cannot arrive with yesterday's count.
+  function registerGameStart(state) {
+    const gambling = state.gambling;
+    if (gambling.dailyGamesDay !== state.run.day) {
+      gambling.dailyGamesDay = state.run.day;
+      gambling.dailyGamesPlayed = 0;
+    }
+    gambling.dailyGamesPlayed += 1;
+  }
+
+  function gamesPlayedToday(state) {
+    return state.gambling.dailyGamesDay === state.run.day ? state.gambling.dailyGamesPlayed : 0;
+  }
+
+  function lowestTonkSeat(table) {
+    let best = 0;
+    for (let seat = 1; seat < table.hands.length; seat += 1) {
+      if (Gambling.handValue(table.hands[seat]) < Gambling.handValue(table.hands[best])) best = seat;
+    }
+    return best;
+  }
+
+  // Money changes hands, the room notices or does not, and the night is over.
+  function settleNileSession(state, net) {
+    const game = state.world.locations.gambling;
+    game.plays += 1;
+    game[net > 0 ? "wins" : "losses"] += 1;
+    game.net += net;
+    state.gambling.sessionProfit += net;
+    if (game.plays === 1) recordBehavior(state, "connector", 1, "gambling:first_contact", "gambling_contact");
+    addStreetReadEntry(state, "exploration", `${state.world.currentNeighborhoodId}:gambling`);
+    // Biniam watches how you handle it. He is reading composure, not the cards.
+    Exposure.recordObservation(state, "biniam", {
+      type: net >= 0 ? "presence" : "discretion",
+      event: net >= 0 ? "played_clean" : "lost_well",
+      location: Nile.NILE_LOCATION_ID, source: "witnessed",
+    });
+    for (const row of GamblingEvents.sessionObservations(net, Nile.NILE_LOCATION_ID)) {
+      Exposure.broadcastObservation(state, { ...row, day: state.run.day, slot: state.run.slot });
+    }
+  }
+
+  function finishTonk(state, dropper) {
+    const table = state.gambling.table;
+    const result = GamblingEvents.resolveTonk({ table, dropper, buyIn: table.buyIn });
+    const net = result.playerWon ? result.payout : -table.buyIn;
+    if (result.playerWon && result.payout > 0) state.player.cash += table.buyIn + result.payout;
+    else if (result.caught && dropper === 0) spendCash(state, Math.min(state.player.cash, table.buyIn));
+    state.gambling.tonkGamesPlayed += 1;
+    state.npc.biniam.tonkGames += 1;
+    const nile = state.world.locations.theNile;
+    nile.activitySessions.tonk_game = (nile.activitySessions.tonk_game || 0) + 1;
+    // The social reading is the growth, win or lose. That is the whole point of
+    // the table: you learn the room either way.
+    const read = GamblingEvents.tonkGrowth(state, nile.activitySessions.tonk_game - 1, result.playerWon);
+    if (read) improveAttribute(state, read.attribute, read.growth);
+    settleNileSession(state, net);
+    logEntry(state, result.tonk && result.playerWon
+      ? `Tonk. Hand of nothing, and the table pays double. Up $${result.payout}.`
+      : result.playerWon
+        ? `You drop with ${result.handValues[0]} and it holds. Up $${result.payout}.`
+        : result.caught && dropper === 0
+          ? `You drop with ${result.handValues[0]} and somebody had less. That one costs double.`
+          : `Seat ${dropper} drops before you do. Your $${table.buyIn} stays on the table.`,
+    result.playerWon ? "good" : "bad");
+    state.gambling.table = null;
+    registerNileDay(state, "charisma");
+    return advanceRun(state, { reason: "NILE_TONK_SIT" });
+  }
+
+  function finishCelo(state, { round, result, bet, adjustment }) {
+    if (result.payout > 0) state.player.cash += bet + result.payout;
+    else if (result.result === "push") state.player.cash += bet;
+    state.gambling.celoRoundsPlayed += 1;
+    state.npc.biniam.celoRounds += 1;
+    const nile = state.world.locations.theNile;
+    nile.activitySessions.celo_game = (nile.activitySessions.celo_game || 0) + 1;
+    const read = GamblingEvents.celoGrowth(state, nile.activitySessions.celo_game - 1, {
+      won: result.result === "win",
+      pressed: adjustment === "press",
+      probability: round.odds ? round.odds.probability : null,
+    });
+    if (read) improveAttribute(state, read.attribute, read.growth);
+    settleNileSession(state, result.payout);
+    logEntry(state, result.result === "win"
+      ? `${result.player.dice.join("-")} against the bank's ${round.banker.dice.join("-")}. Up $${result.payout}.`
+      : result.result === "push"
+        ? `${result.player.dice.join("-")}. Nobody moves. The bet comes back.`
+        : `${result.player.dice.join("-")} against ${round.banker.dice.join("-")}. The bank takes it.`,
+    result.result === "win" ? "good" : result.result === "push" ? "" : "bad");
+    state.gambling.round = null;
+    registerNileDay(state, "intelligence");
+    return advanceRun(state, { reason: "NILE_CELO_SIT" });
+  }
+
   function gymActivityOptions(state) {
     return AttributeData.GYM_ACTIVITIES.map((activity) => {
       const details = gymSessionDetails(state, activity.id);
@@ -1979,13 +2290,16 @@
       result.reason = gym.sessionsToday ? "Coming back the same day costs more and does less." : "The first session of the day is the one that counts.";
       return result;
     }
-    if (actionId === "spenard_gambling") {
-      if (params.stake != null && ![20, 50, 100].includes(Math.floor(params.stake))) {
-        result.reason = "Choose a listed stake.";
+    if (actionId === "the_nile_tonk" || actionId === "the_nile_celo") {
+      const tonk = actionId === "the_nile_tonk";
+      const floor = tonk ? Gambling.TONK_MIN_BUY_IN : Gambling.CELO_MIN_BUY_IN;
+      const ceiling = tonk ? Gambling.TONK_MAX_BUY_IN : Gambling.CELO_MAX_BUY_IN;
+      if (params.buyIn != null && (params.buyIn < floor || params.buyIn > ceiling)) {
+        result.reason = `Buy-in runs $${floor} to $${ceiling}.`;
         return result;
       }
       result.available = true;
-      result.reason = "Seeded risk. Reading the room helps without guaranteeing profit.";
+      result.reason = tonk ? "Cards. Five each, and the low hand takes it." : "Dice. Three throws to set a point.";
       return result;
     }
     result.available = true;
@@ -2012,7 +2326,7 @@
   function districtActionPreflight(state, action) {
     const actionId = districtActionIdFor(action);
     if (!actionId) return true;
-    const params = action.type === "GAMBLE" ? { stake: action.stake }
+    const params = action.type === "NILE_TONK_SIT" || action.type === "NILE_CELO_SIT" ? { buyIn: action.buyIn }
       : action.type === "WORK_JOB" && action.jobId === "night_owl" && state.jobs?.records?.night_owl?.rank >= 1 ? { slots: [2, 3] }
         : {};
     return districtActionAvailability(state, actionId, params).available;
@@ -2239,6 +2553,13 @@
     list.categoryFlips[item.category] = (list.categoryFlips[item.category] || 0) + 1;
     if (payout < cost) list.disputes += 1;
     addCleanCash(state, payout);
+    // A flip that clears 30% was a good read, not a lucky one, and reading value
+    // is exactly what Intelligence is for. Breaking even teaches nothing, which
+    // is why the gate is a margin rather than a sale.
+    if (cost > 0 && payout > cost * PROFITABLE_FLIP_MARGIN) {
+      const read = Attributes.growthFor(state, "list_flip", list.flipCount - 1);
+      if (read) improveAttribute(state, read.attribute, read.growth);
+    }
     // value carries the payout because Curtis's network filter gates financial
     // observations at $200: a big 907List day is exactly how this is meant to
     // reach him, and a $40 space heater is exactly how it is meant not to.
@@ -2349,7 +2670,7 @@
       BUY_907LIST: "Bought from 907List", SELL_907LIST: "Sold through 907List", BUS_TRAVEL: "Rode the People Mover",
       DELIVER_907LIST: "Delivered a 907List sale", QUICK_SELL_907LIST: "Took a 907List quick sell",
       FILL_BUYER_REQUEST: "Filled a buyer's request", BUY_BULK_907LIST: "Bought a 907List lot",
-      WALK_HOME: "Walked home", TRAVEL: "Traveled", TRAIN_ATTRIBUTE: "Trained", GAMBLE: "Played the backroom game",
+      WALK_HOME: "Walked home", TRAVEL: "Traveled", TRAIN_ATTRIBUTE: "Trained", NILE_WELLNESS: "Steam room at The Nile", NILE_COFFEE: "Coffee upstairs at The Nile", NILE_TONK_SIT: "Played Tonk at The Nile", NILE_CELO_SIT: "Played Cee-lo at The Nile",
       SLEEP_HOME: "Rested at home", LAY_LOW: "Laid low", PAY_DEBT: "Paid Dre", END_MARKET: "Finished trading",
       ROB: "Tried a Rob", CONTACT_VISIT: "Visited a contact", BUY_LAPTOP: "Bought a used laptop",
     };
@@ -2374,13 +2695,103 @@
       recovery: { available: state.player.health < 100 || state.player.heat > 1 || state.flags.recoveryIntroduced || returning, hint: "Take an injury or pick up Heat to unlock Recovery." },
     };
   }
+  // Everything the two floors will and will not let you do right now, in one
+  // read. The UI renders from this and the reducer preflights against it, so
+  // there is one answer to "can I sit down" rather than two that can drift.
+  function nileAvailability(state) {
+    const nile = state.world.locations.theNile;
+    const home = state.world.currentNeighborhoodId === HOME_DISTRICT_ID;
+    const wellness = districtActionAvailability(state, "the_nile_wellness");
+    const den = districtActionAvailability(state, "the_nile_den");
+    // Two siblings, two dispositions. They are tracked separately because they
+    // are separate people: being welcome at Biniam's table says nothing about
+    // whether Selam has decided you are good for her building.
+    const band = bandOf(state, "biniam");
+    const selamBand = bandOf(state, "selam");
+    const access = Nile.tableAccess(band);
+    const played = gamesPlayedToday(state);
+    const capped = played >= Gambling.MAX_GAMES_PER_DAY;
+    const midGame = !!(state.gambling.table || state.gambling.round);
+    const deny = (reason) => ({ available: false, reason });
+    const table = (allowed, gate, floor, ceiling) => {
+      if (!home) return deny("Return to Spenard.");
+      if (!nile.secondFloorAccess) return deny("You do not have the code for the stairwell door.");
+      if (!den.available) return deny(den.reason);
+      if (!allowed) return deny(gate);
+      if (midGame) return deny("Finish the hand you are in.");
+      if (capped) return deny("Three games is enough for one day.");
+      if (state.player.cash < floor) return deny(`Buy-in starts at $${floor}.`);
+      return { available: true, reason: `Buy-in $${floor}-$${ceiling}.` };
+    };
+    return {
+      discovered: !!nile.discovered,
+      secondFloorAccess: !!nile.secondFloorAccess,
+      band, selamBand, cups: access.cups, gamesToday: played, maxGames: Gambling.MAX_GAMES_PER_DAY,
+      wellness: !home ? deny("Return to Spenard.")
+        : !nile.discovered ? deny("You have not found the place yet.")
+        : !wellness.available ? deny(wellness.reason)
+        : state.player.cash < Nile.WELLNESS_COST ? deny(`The steam room is $${Nile.WELLNESS_COST}.`)
+          : { available: true, reason: `$${Nile.WELLNESS_COST} · restores ${Nile.WELLNESS_HEALTH} health` },
+      coffee: !home ? deny("Return to Spenard.")
+        : !nile.secondFloorAccess ? deny("You do not have the code for the stairwell door.")
+        : !den.available ? deny(den.reason)
+        : midGame ? deny("Finish the hand you are in.")
+          : { available: true, reason: "Free · one part of day" },
+      tonk: table(access.tonk, "Biniam has not offered you a seat yet.", Gambling.TONK_MIN_BUY_IN, Gambling.TONK_MAX_BUY_IN),
+      celo: table(access.celo, "The dice are for people he knows better.", Gambling.CELO_MIN_BUY_IN, Gambling.CELO_MAX_BUY_IN),
+      privateGames: access.privateGames,
+    };
+  }
+
+  function nileAmbient(state, floor) {
+    return Nile.ambientFor(floor, state.run.slot, state.run.day);
+  }
+
+  // Everything the Tonk table needs to render, including exactly as much about
+  // the other seats as the player's Charisma has earned. The opponents' actual
+  // cards never leave the reducer.
+  function tonkView(state) {
+    const table = state.gambling.table;
+    if (!table) return null;
+    const charisma = Attributes.effectiveAttribute(state, "charisma");
+    const hand = table.hands[0];
+    return {
+      buyIn: table.buyIn,
+      pot: table.buyIn * table.seats,
+      hand: hand.map((card) => ({ id: card.id, rank: card.rank, suit: card.suit, value: card.value })),
+      ...Gambling.describeHand(hand),
+      discardTop: table.discard.length ? table.discard[table.discard.length - 1] : null,
+      stockLeft: table.stock.length,
+      opponents: GamblingEvents.readOpponents(table, charisma, state.run.seed),
+      vision: GamblingEvents.tonkVision(charisma),
+    };
+  }
+
+  // The Cee-lo briefing. The dice are already set; what varies by Intelligence
+  // is whether the player is told the odds, told the exact number, or told
+  // nothing and left to decide on nerve.
+  function celoView(state) {
+    const round = state.gambling.round;
+    if (!round) return null;
+    const intelligence = Attributes.effectiveAttribute(state, "intelligence");
+    const briefing = GamblingEvents.celoBriefing(round, intelligence, state.run.seed);
+    return {
+      buyIn: round.buyIn,
+      banker: round.banker,
+      bankerNoResult: round.banker.kind === "no_result",
+      ...briefing,
+      pressTo: Gambling.adjustedBet(round.buyIn, "press"),
+      backOffTo: Gambling.adjustedBet(round.buyIn, "back_off"),
+      canPress: briefing.vision.canAdjust && state.player.cash >= Gambling.adjustedBet(round.buyIn, "press") - round.buyIn,
+    };
+  }
+
   function activityAvailability(state) {
     const employer = state.world.locations.employer;
     const gym = gymSessionDetails(state);
     const store = state.world.locations.discountStore;
     const explore = districtActionAvailability(state, "explore_spenard");
     const gymAccess = districtActionAvailability(state, "spenard_gym");
-    const gamblingAccess = districtActionAvailability(state, "spenard_gambling");
     const downtown = travelAvailability(state, "downtown");
     const industrial = travelAvailability(state, "airport_industrial");
     return {
@@ -2392,9 +2803,14 @@
       busDowntown: { available: downtown.available, reason: downtown.reason, cost: downtown.cashCost },
       industrial: { available: industrial.available, reason: industrial.reason, cost: industrial.cashCost },
       gym: { available: gymAccess.available, reason: gymAccess.visible ? gymAccess.reason : "Return to Spenard to use the gym.", cost: gym.cost, sessionsToday: gym.sessionsToday, activities: gymActivityOptions(state), streak: state.player.gymStreak || 0 },
-      gambling: state.world.currentNeighborhoodId !== HOME_DISTRICT_ID ? { available: false, reason: "Return to Spenard for the game." }
-        : !state.world.locations.gamblingKnown ? { available: false, reason: "Nobody has trusted you with the game's address yet." }
-          : { available: gamblingAccess.available, reason: gamblingAccess.reason },
+      // `gambling` now means "is there a table you can sit at tonight", and the
+      // tables are at The Nile. Kept under the old key because the Street page,
+      // the unlock celebration, and the simulator all read it by that name.
+      gambling: (() => {
+        const nile = nileAvailability(state);
+        if (nile.tonk.available || nile.celo.available) return { available: true, reason: nile.celo.available ? "Cards and dice are both running." : "The Tonk table has room." };
+        return { available: false, reason: nile.tonk.reason };
+      })(),
       shoplifting: state.world.currentNeighborhoodId !== HOME_DISTRICT_ID ? { available: false, reason: "Return to Spenard first." }
         : state.boost?.visible ? { available: false, reason: "Use the Boost tab for known targets." }
         : store.lastAttemptDay === state.run.day ? { available: false, reason: "Northern Value is watching for you today." }
@@ -4003,10 +4419,10 @@
       state.npc.dre.known = true;
     }
     if (effect.discoverGambling) {
-      const firstDiscovery = !state.world.locations.gamblingKnown;
-      state.world.locations.gamblingKnown = true;
       if (!state.world.locations.discoveries.includes("informal_game")) state.world.locations.discoveries.push("informal_game");
-      if (firstDiscovery) queueUnlock(state, "gambling");
+      // A vouch opens both floors at once: whoever handed over the address knew
+      // the building, and the ground floor is how you get to the stairwell.
+      grantDenAccess(state, Nile.DEN_ACCESS_METHODS.regular);
     }
     if (effect.discover907List) { state.knowledge.knows907List = true; state.nineZeroSevenList.known = true; }
     if (effect.discoverGym) state.discovered.spenardGym = true;
@@ -4210,7 +4626,11 @@
     if (observed) {
       Exposure.broadcastObservation(state, {
         ...observed,
-        location: state.world.currentNeighborhoodId,
+        // The district is the right default - most actions are just "somewhere
+        // in Spenard". A row that names its own location keeps it, which is how
+        // a Nile visit reaches Selam's location lens as `the_nile` rather than
+        // being flattened into the neighborhood it sits in.
+        location: observed.location || state.world.currentNeighborhoodId,
         value: Math.abs(Number(context.cashDelta) || 0),
         day: oldDay,
         slot: oldSlot,
@@ -4247,7 +4667,7 @@
     if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
     else {
       const encounterContext = encounterActivityContext(state, context, oldSlot, completedVisit);
-      const chosenRisk = ["ROB", "ROB_DEALER", "TAKEOVER", "GAMBLE", "SHOPLIFT", "BOOST"].includes(context.reason);
+      const chosenRisk = ["ROB", "ROB_DEALER", "TAKEOVER", "NILE_TONK_SIT", "NILE_CELO_SIT", "SHOPLIFT", "BOOST"].includes(context.reason);
       const triggered = (state.run.phase === "pressure" || chosenRisk) ? EncounterSystem?.checkEncounterTrigger(state, oldDay, oldSlot, { ...encounterContext, rng: random }) : null;
       if (triggered) {
         triggered.choices = EncounterSystem.getEligibleChoices(triggered, state).map((item) => item.id);
@@ -4350,8 +4770,17 @@
     state.run.overtimeArmed = false;
     state.run.slot = 3;
     // A day that ends without a gym visit ends the streak. Checked here rather
-    // than on the next visit so the bonus cannot survive a rest day.
+    // than on the next visit so the bonus cannot survive a rest day. The Nile
+    // works the same way, and drops the attribute it was pointed at with it.
     if (state.player.gymStreakDay !== oldDay) { state.player.gymStreak = 0; state.player.gymStreakDay = null; }
+    if (state.player.nileStreakDay !== oldDay) {
+      state.player.nileStreak = 0;
+      state.player.nileStreakDay = null;
+      state.player.nileStreakAttribute = null;
+    }
+    // Three games a day, and tomorrow is a new day.
+    state.gambling.dailyGamesPlayed = 0;
+    state.gambling.dailyGamesDay = null;
     recalculateStreetRead(state);
     checkHomeContraband(state, random);
     resolveSoldierOperations(state, random, true);
@@ -4879,16 +5308,20 @@
     };
   }
 
+  // The card that used to open the abstract backroom game. It now opens the room
+  // upstairs at The Nile, which is where the games actually are - the narrative
+  // beat was always good and only the destination was a placeholder.
   function gamblingDiscoveryEvent(source) {
     const person = SOCIAL_CONTACTS[source];
     const fromCoworker = person && source !== "cal";
+    const teller = fromCoworker ? person.name.split(" ")[0] : "Cal";
     return event("gambling_discovery", "A Door After Closing", fromCoworker
-      ? `${person.name.split(" ")[0]} gives you a side-door address. The game starts after the storefront closes.`
-      : "Cal lowers his voice and gives you a side-door address. The table opens after the storefront closes.", [
-      { label: "Keep the address", effect: { discoverGambling: true }, preview: "Unlock the backroom game in Spenard.", result: "You fold the address into your pocket. The door will open when the tables are running." },
+      ? `${teller} gives you an address on Spenard Road. Two floors, blue neon, and a stairwell behind the front desk.`
+      : "Cal lowers his voice. There is a wellness place on Spenard Road, he says, and a room above it that runs after six.", [
+      { label: "Keep the address", effect: { discoverGambling: true }, preview: "Opens the room above Blue Nile Wellness.", result: "You fold the address into your pocket. He says the door code changes weekly and that Biniam will text you this one." },
     ], fromCoworker
-      ? `${person.name.split(" ")[0]} checks the room before speaking. The address stays covered under one hand.`
-      : "Cal scratches the address onto a coffee sleeve. His chair stays angled toward the front door while he writes.");
+      ? `${teller} checks the room before speaking. The address stays covered under one hand.`
+      : "Cal scratches it onto a coffee sleeve. His chair stays angled toward the front door while he writes.");
   }
 
   function coworkerForShift(state, job) {
@@ -5297,6 +5730,9 @@
         if (!state.npc.juan.infoShared.includes("work:ship_creek")) state.npc.juan.infoShared.push("work:ship_creek");
         state.effects.rumors.push({ id: `juan_${state.run.day}`, areaId: "north_star_lot", productId: "weed", reliable: true, text: "Juan says Ship Creek hires early and his warehouse dock keeps a short callback list.", expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
         pushConsequence(state, "Juan writes a loading-dock name on your receipt.", "good");
+        // He knows the Tesfayes through day labor. What he passes on depends on
+        // how far he trusts you: an address at Warm, an introduction at Trusted.
+        maybeJuanNileMention(state);
       } else {
         Exposure.recordObservation(state, "yalonda", { type: "loyalty", event: "sat_and_talked", source: "household" });
         state.effects.rumors.push({ id: `yalonda_${state.run.day}`, areaId: "north_star_lot", productId: "weed", reliable: true, text: "Yalonda says somebody asked questions outside, then describes the coat.", expiresAt: slotNumber(state.run.day, state.run.slot) + 4 });
@@ -5555,6 +5991,9 @@
       if (!base.nightOwl.boardViewedDays.includes(base.run.day)) base.nightOwl.boardViewedDays.push(base.run.day);
       const board = nightOwlBoardItems(base);
       if (board.some((entry) => entry.id === "gym")) applyEventEffect(base, { discoverGym: true }, random);
+      // The flyer opens the ground floor only. Nothing on a community board is
+      // ever going to mention the room upstairs.
+      if (board.some((entry) => entry.id === Nile.BOARD_FLYER.id)) discoverNile(base, Nile.DISCOVERY_METHODS.board);
       if (base.run.phase === "week_zero" && !base.nightOwl.ambientSeen.includes("board_opportunity")) {
         base.nightOwl.ambientSeen.push("board_opportunity");
         logEntry(base, "One board tab promises opportunity without naming the work. Someone has taken every phone number but one.", "");
@@ -5584,6 +6023,11 @@
       const present = nightOwlRegularFor(state);
       const relationship = regular && base.nightOwl.regulars[regular.id];
       if (!regular || present.id !== regular.id || relationship.lastTalkDay === base.run.day) return inputState;
+      // These nights were already happening and already counted for nothing.
+      // Reading a room full of night-shift regulars is Charisma practice at a
+      // slow rate - the lowest of the three sources, because it is incidental.
+      base.nightOwl.socialSessions += 1;
+      growAtNightOwl(base);
       // How a night at the counter lands is a Charisma read. The conversation
       // always happens - only whether it moves the relationship is in question,
       // and a bad read is a flat night rather than a locked door.
@@ -5764,6 +6208,8 @@
       recordVisitedLocation(base, "night_owl");
       addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:night_owl`);
       if (base.npc.mina.met) addStreetReadEntry(base, "social", "mina:visit");
+      base.nightOwl.socialSessions += 1;
+      growAtNightOwl(base);
       logEntry(base, state.npc.mina.met ? "Mina sets a clean cup beside the register and waits for you to choose the conversation." : "Mina looks up from the register and gives you enough time to introduce yourself.", "");
       if (base.run.status === "playing" && !base.npc.mina.met && !base.run.pendingEvent) fireStory(base, STORY_BY_ID.mina_intro);
       return base;
@@ -5810,37 +6256,122 @@
       registerGymDay(base);
       return advanceRun(base, { reason: "TRAIN_ATTRIBUTE" });
     }
-    if (action.type === "GAMBLE") {
-      const available = activityAvailability(state).gambling;
-      const stake = Math.floor(action.stake || 0);
-      if (!available.available || ![20, 50, 100].includes(stake) || state.player.cash < stake) return inputState;
-      const random = makeRandom(base.run.rngState);
-      const approach = ["read", "steady", "press"].includes(action.approach) ? action.approach : "read";
-      // The approach still moves the odds; how well you read the table is
-      // Charisma, and it acts through the resolver rather than as a bonus.
-      const approachEdge = approach === "read" ? 0.05 : approach === "steady" ? 0.03 : 0;
-      const chance = clamp(0.35 + approachEdge - stake / 2000, 0.32, 0.54);
-      const outcome = resolveOutcome(base, "gambling", chance, `${base.run.seed}:gambling:${base.run.day}:${base.run.slot}:${stake}`);
-      const won = Attributes.isSuccessTier(outcome.tier);
-      base.player.cash -= stake;
-      // A clean read walks with the whole pot. A messy one wins back the stake
-      // and not much more, which is what "you got lucky" looks like as a number.
-      const payout = !won ? 0 : outcome.tier === "clean" ? stake * 2 : Math.round(stake * 1.5);
-      base.player.cash += payout;
-      const game = base.world.locations.gambling;
-      game.plays += 1; game[won ? "wins" : "losses"] += 1; game.net += payout - stake;
-      if (game.plays === 1) recordBehavior(base, "connector", 1, "gambling:first_contact", "gambling_contact");
-      addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:gambling`);
-      broadcastOutcome(base, "gambling", outcome.tier, payout - stake);
-      // A catastrophic night is the one people remember: you kept playing.
-      if (outcome.tier === "catastrophic") base.player.financialHeat = clamp(base.player.financialHeat + 1, 0, 10);
-      base.run.rngState = random.state;
-      logEntry(base, won
-        ? `The ${approach} approach holds. You leave the game $${payout - stake} ahead.`
-        : outcome.tier === "catastrophic"
-          ? `The room takes your $${stake} and watches you decide whether to stay. Everybody sees which way you lean.`
-          : `The room takes your $${stake}. Nobody offers credit, and the next choice is yours.`, won ? "good" : "bad");
-      return advanceRun(base, { reason: "GAMBLE" });
+    // ---- The Nile ---------------------------------------------------------
+    //
+    // Ground floor. Thirty dollars and a part of the day buys back fifteen
+    // health, which makes Selam the cheapest recovery in the run and the reason
+    // a player finds the building before they find the room upstairs.
+    if (action.type === "NILE_WELLNESS") {
+      const access = nileAvailability(state).wellness;
+      if (!access.available || state.player.cash < Nile.WELLNESS_COST) return inputState;
+      const nile = base.world.locations.theNile;
+      recordVisitedLocation(base, "the_nile");
+      spendCash(base, Nile.WELLNESS_COST);
+      base.player.health = clamp(base.player.health + Nile.WELLNESS_HEALTH, 0, 100);
+      base.npc.selam.met = true;
+      base.npc.selam.visits += 1;
+      nile.activitySessions.nile_social = (nile.activitySessions.nile_social || 0) + 1;
+      growAtNile(base, "nile_social", nile.activitySessions.nile_social - 1);
+      // Showing up is the observation. Selam reads presence at +2 and she is the
+      // one standing there, so this is how a regular becomes a regular.
+      Exposure.recordObservation(base, "selam", {
+        type: "presence", event: "wellness_regular", location: Nile.NILE_LOCATION_ID, source: "witnessed",
+      });
+      logEntry(base, "Steam, hot stones, and forty minutes of nobody wanting anything from you.", "good");
+      maybeSelamBridge(base);
+      maybeSelamIntel(base);
+      registerNileDay(base, "charisma");
+      return advanceRun(base, { reason: "NILE_WELLNESS" });
+    }
+    // Watching Biniam work the jebena. Free, costs a part of the day, and grows
+    // Intelligence because what you are actually studying is a man who reads
+    // people for a living and does not know he is teaching.
+    if (action.type === "NILE_COFFEE") {
+      const access = nileAvailability(state).coffee;
+      if (!access.available) return inputState;
+      const nile = base.world.locations.theNile;
+      base.npc.biniam.met = true;
+      base.npc.biniam.coffeeRounds += 1;
+      nile.activitySessions.coffee_ceremony = (nile.activitySessions.coffee_ceremony || 0) + 1;
+      growAtNile(base, "coffee_ceremony", nile.activitySessions.coffee_ceremony - 1);
+      Exposure.recordObservation(base, "biniam", {
+        type: "presence", event: "sat_and_watched", location: Nile.NILE_LOCATION_ID, source: "witnessed",
+      });
+      logEntry(base, "Three rounds, small cups, no sugar. You watch his hands more than the cards.", "good");
+      registerNileDay(base, "intelligence");
+      return advanceRun(base, { reason: "NILE_COFFEE" });
+    }
+    // Sitting down at a table. Both games deal here and resolve through their
+    // own actions, because a hand is several decisions and the player is allowed
+    // to put the phone down in the middle of one.
+    if (action.type === "NILE_TONK_SIT" || action.type === "NILE_CELO_SIT") {
+      const tonk = action.type === "NILE_TONK_SIT";
+      const access = nileAvailability(state)[tonk ? "tonk" : "celo"];
+      const buyIn = Math.floor(action.buyIn || 0);
+      const floor = tonk ? Gambling.TONK_MIN_BUY_IN : Gambling.CELO_MIN_BUY_IN;
+      const ceiling = tonk ? Gambling.TONK_MAX_BUY_IN : Gambling.CELO_MAX_BUY_IN;
+      if (!access.available || buyIn < floor || buyIn > ceiling || state.player.cash < buyIn) return inputState;
+      if (base.gambling.table || base.gambling.round) return inputState;
+      recordVisitedLocation(base, "the_nile");
+      base.npc.biniam.met = true;
+      spendCash(base, buyIn);
+      registerGameStart(base);
+      if (tonk) {
+        const table = GamblingEvents.dealTonk(base.run.seed, base.run.day, base.gambling.tonkGamesPlayed, 2);
+        base.gambling.table = { ...table, buyIn, gameIndex: base.gambling.tonkGamesPlayed };
+        logEntry(base, `You buy in for $${buyIn}. Five cards, two other players, and a discard face up.`, "good");
+        return base;
+      }
+      const round = GamblingEvents.openCeloRound(base.run.seed, base.run.day, base.gambling.celoRoundsPlayed);
+      base.gambling.round = { ...round, buyIn, bet: buyIn, adjusted: null, roundIndex: base.gambling.celoRoundsPlayed };
+      logEntry(base, round.banker.kind === "no_result"
+        ? "Three throws and the bank never landed on anything. The dice come to you."
+        : `The bank sets on ${round.banker.dice.join("-")}.`, "good");
+      return base;
+    }
+    // A Tonk turn: take the discard or the stock, then pitch one card. The
+    // opponents answer in seat order, and either side can end the hand.
+    if (action.type === "NILE_TONK_TURN") {
+      const table = base.gambling.table;
+      if (!table) return inputState;
+      const hand = table.hands[0];
+      if (action.draw === "discard" && table.discard.length) hand.push(table.discard.pop());
+      else if (table.stock.length) hand.push(table.stock.shift());
+      else return finishTonk(base, 0);
+      const pitched = hand.find((card) => card.id === action.discardId) || hand[hand.length - 1];
+      hand.splice(hand.indexOf(pitched), 1);
+      table.discard.push(pitched);
+      const { dropper } = GamblingEvents.runOpponentTurns(table);
+      if (dropper != null) return finishTonk(base, dropper);
+      // Stock exhausted ends it on the lowest hand, same as the table rule.
+      if (!table.stock.length) return finishTonk(base, lowestTonkSeat(table));
+      return base;
+    }
+    // Calling it. Drop with the lowest hand and the pot is yours; drop without
+    // it and you pay double to whoever actually had it.
+    if (action.type === "NILE_TONK_DROP") {
+      if (!base.gambling.table) return inputState;
+      return finishTonk(base, 0);
+    }
+    // Cee-lo: press, back off, or take the bet as it stands, then roll.
+    if (action.type === "NILE_CELO_ROLL") {
+      const round = base.gambling.round;
+      if (!round) return inputState;
+      const vision = GamblingEvents.celoVision(Attributes.effectiveAttribute(base, "intelligence"));
+      const adjustment = vision.canAdjust && ["press", "back_off"].includes(action.adjust) ? action.adjust : null;
+      const bet = Gambling.adjustedBet(round.buyIn, adjustment);
+      // Pressing costs the difference up front. A player cannot press into money
+      // they do not have.
+      const extra = Math.max(0, bet - round.buyIn);
+      if (extra > base.player.cash) return inputState;
+      if (extra) spendCash(base, extra);
+      // Backing off returns the half they are no longer risking.
+      if (bet < round.buyIn) base.player.cash += round.buyIn - bet;
+      const result = GamblingEvents.resolveCelo({
+        seed: base.run.seed, day: base.run.day, round: round.roundIndex,
+        bankerReading: round.banker, bet,
+      });
+      return finishCelo(base, { round, result, bet, adjustment });
     }
     if (action.type === "ASSIGN_BOOST_CREW") {
       const crew = base.people.crew[action.crewId];
@@ -5889,9 +6420,10 @@
       recordVisitedLocation(base, "spenard_streets");
       addStreetReadEntry(base, "exploration", `${base.world.currentNeighborhoodId}:explore`);
       const jobDiscovered = rollJobDiscovery(base, random, count);
+      const nileFound = rollNileDiscovery(base);
       const meetsGoodie = base.run.day >= 2 && !base.flags.goodieEncounterSeen;
       const meetsBoost = !meetsGoodie && !base.flags.boostOpportunitySeen && !base.boost.visible && (count === 0 || base.world.locations.gamblingKnown);
-      if (!meetsBoost && !meetsGoodie && !jobDiscovered) {
+      if (!meetsBoost && !meetsGoodie && !jobDiscovered && !nileFound) {
         const discoveries = [
           "Juan's bus advice matches the posted Downtown timetable.",
           "A freight worker confirms Ship Creek hires before breakfast.",
@@ -6442,7 +6974,7 @@
   // type; travel overrides this with the district it arrived in.
   const ACTION_RESULT_TITLES = {
     WORK_SHIFT: "Shift Complete", WORK_JOB: "Shift Complete", TRAIN_ATTRIBUTE: "Training Complete", EXPLORE_SPENARD: "Walk Complete", WANDER_SPENARD: "Walk Complete",
-    SHOPLIFT: "Attempt Resolved", BOOST: "Boost Resolved", ASK_BOOST_WINDOW: "Window Learned", GAMBLE: "Game Resolved", END_MARKET: "Market Visit Closed",
+    SHOPLIFT: "Attempt Resolved", BOOST: "Boost Resolved", ASK_BOOST_WINDOW: "Window Learned", NILE_TONK_SIT: "Hand Resolved", NILE_CELO_SIT: "Round Resolved", NILE_WELLNESS: "Session Done", NILE_COFFEE: "Coffee Done", END_MARKET: "Market Visit Closed",
     SLEEP_HOME: "Night Passed", LAY_LOW: "Laid Low", HEAL: "Treatment Complete",
     PAY_DEBT: "Payment Made", CLAIM_BLOCK: "Block Claimed",
     RECRUIT_SOLDIER: "Soldier Recruited", RECRUIT_CREW: "Crew Recruited", PROMOTE_LIEUTENANT: "Lieutenant Promoted",
@@ -6527,6 +7059,7 @@
     VERSION, RUN_DAYS, PRESSURE_DAYS, MAX_ENERGY, SLOTS, SAVE_KEY, LEGACY_SAVE_KEYS, PHONE_BILL, WEEKLY_RENT, HOME_DISTRICT_ID, DISTRICT_ACTIONS, WORKING_CAPITAL_RESERVE, GARAGE_DEPOSIT, PRODUCTS, NEIGHBORHOODS, BACKGROUNDS, STARTING_EDGES, GEAR, BASE_UPGRADES, CREW, TERRITORIES,
     STREET_NAME_MAX, DEFAULT_STREET_NAMES, ATTRIBUTE_DEFAULTS, ATTRIBUTES: AttributeData, attributeSystem: Attributes, sanitizeStreetName,
     CLASSIFICATIONS, EVENT_CHAINS, STORY_REGISTRY, DEALERS, ENTITY_REGISTRY, ENTITY_MATCH_ORDER, PLUGS, BOOST_TARGETS, SPENARD_JOBS, STARTER_JOB_IDS, JOB_APPROACHES, JOB_RANK_THRESHOLDS,
+    NILE: Nile, GAMBLING: Gambling, gamblingEvents: GamblingEvents,
     LISTING_ITEMS, LISTING_CAPACITY, MARKET: Market, marketEvents: MarketEvents, NIGHT_OWL_REGULARS, NIGHT_OWL_BOARD, HOUSEHOLD_NPCS, SOCIAL_CONTACTS, STORY_CONTACTS, PHONE_INTEL, DOWNTOWN_CONTENT_STUBS, DOWNTOWN_AMBIENT,
     SPENARD_BLOCKS, SOLDIER_RECRUIT_COST, SOLDIER_BASE_CAPACITY, SOLDIER_CAPACITY_PER_BLOCK, SOLDIERS_PER_BLOCK_CAP,
     SHARK_BORROWERS, SHARK_TERMS, DRE_MISSIONS, DRE_COLLECTOR_TIERS, ELI_LIEUTENANT_UNLOCK, RESPECT_STAGE_THRESHOLDS,
@@ -6575,6 +7108,9 @@
       homeSituation, homeUnlocks, homePriorities, homeSummary, actionResult,
       juanWorkIntelKnown, jobRankForXp, jobPayRange, discoveredJobs, jobAvailability, quickShift, ambientFlavor, phoneIntel, knownWorkplaceContacts, knownSocialContacts, personalContacts, contactAvailability,
       districtActionAvailability, aroundActions, travelAvailability, householdPresence, nineZeroSevenListAccess,
+      // The Nile. `nileAvailability` is the one read the two floors need; the
+      // table reads exist so the UI can render a hand without the reducer.
+      nileAvailability, nileAmbient, tonkView, celoView,
       nightOwlStashUsed, nightOwlStashAvailability, relationshipLabel,
       checkpointDay, weekZeroProgress, listingSlate, nightOwlBoardItems, nightOwlRegularFor, nightOwlAvailability, listingInventoryValue,
       // v1.9b broker track. marketOverview is the one read the 907List page

@@ -2,6 +2,76 @@
 
 Last updated: 2026-08-14 (America/Anchorage)
 
+## v1.11 Attribute Growth Triangle + The Nile — branch in progress
+
+- Branch: `codex/v1-11-attribute-growth`, based on `main` commit `b5bd304`
+  containing merged PR #69 (v1.10).
+- **The triangle closes.** Charisma and Intelligence gain three growth sources
+  each, wired through the existing `attributeGrowth()` log2 curve. v1.10 shipped
+  with only Combat having a path up and named that as its first-priority gap.
+- **The Nile**, a two-floor location in Spenard. Ground floor: Selam Tesfaye's
+  wellness practice, $30 and one slot for 15 health plus Charisma growth. Second
+  floor: Biniam Tesfaye's room, Evening and Night only, behind a code-locked door
+  that only a vouch opens.
+- **Tonk and Cee-lo** as real playable games — a genuine 52-card deck with
+  spreads, runs, drop and Tonk-out scoring; three dice with 4-5-6, trips,
+  pair-and-point, and true odds computed off the full 216-outcome space.
+- **Attributes buy information, not outcomes.** The read is itself a roll, so the
+  middle band can be wrong and a catastrophic read inverts the tell. Reaching 6
+  removes the catastrophic tier, which means the high band buys certainty rather
+  than a bigger edge.
+- **Curtis isolation.** No Nile observation ever touches the `network` or
+  `reputation` channel, and neither Tesfaye subscribes to either. Asserted end to
+  end in `tests/v1-11.test.js`.
+- **The abstract `GAMBLE` action retired.** Cal's Night Owl discovery scene
+  survives and now opens The Nile's second floor. The simulator's `gambler`
+  strategy was rewired to the real tables rather than a twelfth profile being
+  added, keeping the strategy count and `averageGamblingNet` comparable.
+- **Save schema v9** under `907ogr_v9`. v3 through v8 all load.
+
+### Verification
+
+- **493/493 tests passing**, up from 437. 56 new in `tests/v1-11.test.js`.
+- **2,000-run seeded simulation: `86e726cc241a071a5edc8170cd50e571fb5944bc49988759f809d71ad4932eb9`**,
+  replacing v1.10's `8f68db014f0fe466f38edad05454f632fb90ca2eef0c9c8af4707bb30714990b`.
+  200-run baseline: `febd42d1d7d9349106f03f68a06e109e1c79f538fcc10d7696d71bff0c02ccab`.
+  Zero dead ends. The hash moved on purpose: a new location, two new NPCs, a
+  retired action, and a rewired simulation strategy.
+- **Economy delta.** The eleven non-gambling strategies move **+0.19%** overall,
+  worst single swing 4.6% (`aggressive`). The `gambler` profile is **+34%** and
+  reaches Charisma 3 / Intelligence 2, which is the point: real decisions at a
+  real table beat the EV-negative single roll they replaced. Story beats unmoved
+  at 9.79/run.
+- **Growth balance** (`tests/attribute-balance.js`): two sessions a day reaches
+  attribute 3 on Day 6 (Charisma) and Day 7 (Intelligence), against a design
+  target of ~Day 7. No track reaches 6 from The Nile alone at any rate.
+- **Browser QA.** 320 / 375 / 430 / 768 / 1440: zero horizontal overflow, zero
+  sub-44px controls on any Nile surface, zero console errors. A full hand of Tonk
+  and three Cee-lo rounds driven live; cash split invariant held; Curtis's ledger
+  verified empty in a real session.
+
+### Two bugs the playtest caught that the test suite could not
+
+- **Selam spoke her brother's disposition.** One shared `band` in
+  `nileAvailability` served both siblings, so Selam delivered her Warm line
+  whenever Biniam liked the player. Split into `band` and `selamBand`.
+- **The dice were biased.** Deriving three throws from keys differing only in
+  their final character reads correlated bits out of FNV-1a. Measured: 1-2-3 at
+  14% against a true 2.8%, a real point at 0.8% against a true 41.7%. Every rules
+  test passed throughout, because they all used hand-built dice. Fixed by hashing
+  the key once and seeding the existing xorshift generator; now pinned by a
+  60,000-throw distribution test.
+
+### Known limitations
+
+- No simulation strategy exercises the wellness floor or the Night Owl social
+  source heavily, so their contribution is measured in
+  `tests/attribute-balance.js` and unit tests rather than in the 2,000-run
+  report. New Nile-specific strategies were out of scope by agreement.
+- Biniam's Trusted tier (private high-stakes games) is a hook with no content.
+- The `.entity-chip` inline name link remains at 23px. It is byte-identical to
+  `main` and predates this build.
+
 ## v1.10 Unified Stat Architecture — branch in progress
 
 - Branch: `codex/v1-10-stat-architecture`, based on `origin/main` commit `b7cf392`

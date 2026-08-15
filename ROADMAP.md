@@ -4,6 +4,44 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
+## Shipped — v1.11 Attribute Growth Triangle + The Nile
+
+Branch: `codex/v1-11-attribute-growth`.
+
+- The attribute triangle closes. Charisma and Intelligence gain three growth
+  sources each, on the same `log2` curve the gym uses. v1.10's own stated gap —
+  two thirds of the attribute system had no way up — is closed.
+- **The Nile** opens in Spenard: Blue Nile Wellness downstairs (cheapest health
+  recovery in the run, and a Charisma source), Biniam's room upstairs behind a
+  vouch-only door (Tonk for Charisma, Cee-lo for Intelligence).
+- **Tonk and Cee-lo are real games.** A true 52-card deck with spreads, runs, and
+  drop scoring; three dice with the real combination table and odds computed off
+  all 216 outcomes. The attribute buys information — tells, then hand estimates;
+  a phrase for the odds, then the exact number and the press — and never touches
+  a card, a die, or a payout.
+- **The Nile is off Curtis's network by construction**, which makes it the one
+  place a player under rival pressure can build social capital for free. Asserted
+  end to end rather than trusted to the channel table.
+- Selam and Biniam Tesfaye join the Exposure System with two new lens hooks:
+  location-scaled weights (Selam reads violence at her own address double) and a
+  zeroed source multiplier (Biniam ignores street gossip entirely).
+- The abstract `spenard_gambling` stat check retired; Cal's discovery scene now
+  points at the real tables.
+- Save schema v9; v3 through v8 migrate.
+
+### Next
+
+- Charisma and Intelligence now grow but no simulation strategy works the
+  wellness floor or the Night Owl social source hard enough to measure them in
+  the 2,000-run report. Worth a Nile-specific profile once balance settles.
+- Biniam at Trusted is a hook with no content: private high-stakes games, and
+  past that the East African import network that is his actual ambition.
+- Selam at Bonded (the Tudor Road expansion) is written and unbuilt.
+- Rotating regulars at The Den — the trucker, the quiet one, the loud one — are
+  play styles today and could carry relationship tracks.
+
+---
+
 ## Shipped — v1.10 Unified Stat Architecture
 
 Branch: `codex/v1-10-stat-architecture`.

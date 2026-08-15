@@ -17,7 +17,7 @@ test("new games are classless and expose one Start confirmation", () => {
   assert.match(ui, /<b>Start<\/b>/); assert.match(ui, /type: "START_RUN"/); assert.doesNotMatch(ui, /Choose your edge|C\.STARTING_EDGES\.map|C\.BACKGROUNDS\.map/);
 });
 test("Travel exposes the fresh-arrival activity and access model", () => {
-  for (const token of ["Yalonda's Home", "Explore Spenard", "Spenard Jobs", "Spenard Community Gym", "Phone Store", "Informal Game", "People Mover", "North Star Garage Listing", "Auto Lot", "Gun Counter"]) assert.ok(ui.includes(token), token);
+  for (const token of ["Yalonda's Home", "Explore Spenard", "Spenard Jobs", "Spenard Community Gym", "Phone Store", "Blue Nile Wellness", "Tonk", "Cee-lo", "People Mover", "North Star Garage Listing", "Auto Lot", "Gun Counter"]) assert.ok(ui.includes(token), token);
 });
 
 test("Spenard exploration separates Places from Activities", () => {

@@ -20,6 +20,7 @@
   const Gambling = require("./src/data/gambling.js");
   const GamblingEvents = require("./src/events/gambling-events.js");
   const Crew = require("./src/data/crew.js");
+  const CurtisAwareness = require("./src/data/curtis-awareness.js");
 
   const VERSION = 11;
   const RUN_DAYS = 7;
@@ -185,6 +186,22 @@
   // reaches each adjacent district a day later. Every 3 points = one
   // difficulty step for that track in that district.
   function recordCriminalActivity(state, areaId, track) {
+    // v1.15: any criminal activity resets Curtis's quiet-day clock, and
+    // high-volume Spenard dealing (3+ market transactions in a day) reads as
+    // exactly the kind of new operation his people get paid to notice.
+    const awareness = curtisAwarenessOf(state);
+    awareness.lastCriminalDay = state.run.day;
+    if (track === "market" && areaId === "north_star_lot") {
+      if (awareness.spenardMarketTxDay !== state.run.day) {
+        awareness.spenardMarketTxDay = state.run.day;
+        awareness.spenardMarketTxCount = 0;
+      }
+      awareness.spenardMarketTxCount += 1;
+      if (awareness.spenardMarketTxCount >= 3 && awareness.marketBumpDay !== state.run.day) {
+        awareness.marketBumpDay = state.run.day;
+        raiseCurtisAwareness(state, 1);
+      }
+    }
     const profile = state.criminalProfile;
     if (!profile) return;
     if (!profile.districtAwareness[areaId]) profile.districtAwareness[areaId] = { market: 0, boost: 0, stick: 0 };
@@ -685,10 +702,82 @@
   //
   // Adding a new action is two entries and no new code: a tier shape in
   // OUTCOME_SHAPES and an observation map in OUTCOME_OBSERVATIONS.
+  // --- Curtis ambient awareness (v1.15) ------------------------------------
+  // How hard Curtis's people are looking for the player. Fed by criminal
+  // observations that actually reach Curtis through the network channel, plus
+  // volume signals (heavy Spenard dealing, successful robberies). Distinct
+  // from his disposition ledger and from police district awareness.
+  function curtisAwarenessOf(state) {
+    if (!state.curtisAwareness) {
+      state.curtisAwareness = {
+        level: 0, phase: "invisible", floor: 0, lastIncrementDay: null,
+        watchersSeen: 0, lastWatcherDay: null, recentWatcherLines: [],
+        quietStreak: 0, lastCriminalDay: null,
+        spenardMarketTxDay: null, spenardMarketTxCount: 0, marketBumpDay: null,
+        phaseMessagesSent: [],
+      };
+    }
+    return state.curtisAwareness;
+  }
+  function refreshAwarenessPhase(state) {
+    const awareness = curtisAwarenessOf(state);
+    const phase = CurtisAwareness.phaseForLevel(awareness.level);
+    if (phase === awareness.phase) return;
+    awareness.phase = phase;
+    const floor = CurtisAwareness.phaseFloor(phase);
+    if (floor > awareness.floor) awareness.floor = floor;
+    // One Word Around Town text per phase reached, ever - not daily spam.
+    const message = CurtisAwareness.PHASE_MESSAGES[phase];
+    if (message && !awareness.phaseMessagesSent.includes(phase)) {
+      awareness.phaseMessagesSent.push(phase);
+      pushPhoneMessage(state, "Word Around Town", message);
+    }
+  }
+  function raiseCurtisAwareness(state, amount) {
+    const awareness = curtisAwarenessOf(state);
+    awareness.level = clamp(awareness.level + amount, 0, CurtisAwareness.AWARENESS_MAX);
+    awareness.lastIncrementDay = state.run.day;
+    refreshAwarenessPhase(state);
+  }
+  // Broadcast an observation and, when it genuinely lands on Curtis through
+  // the network channel, count it against the player's ambient visibility.
+  // The Nile stays dark: nothing that happens inside raises awareness, which
+  // matches the propagation rule that its broadcasts never ride network.
+  function broadcastTracked(state, spec) {
+    const reached = Exposure.broadcastObservation(state, spec);
+    const location = spec.location || state.world.currentNeighborhoodId;
+    if (spec.channel === "network" && Array.isArray(reached) && reached.includes("curtis") && location !== Nile.NILE_LOCATION_ID) {
+      raiseCurtisAwareness(state, 1);
+    }
+    return reached;
+  }
+  // Watcher encounters: ambient, non-blocking flavor while moving through
+  // Spenard once Curtis's people are looking. At most one per day. Rolled off
+  // stringHash, never the rng stream, so runs that never qualify keep their
+  // exact event sequence. These are UI texture, not observations - no ledger
+  // row, no card, nothing to resolve.
+  function maybeWatcherEncounter(state, context, oldDay, oldSlot) {
+    const awareness = curtisAwarenessOf(state);
+    if (awareness.phase === "invisible") return;
+    if (state.world.currentNeighborhoodId !== "north_star_lot") return;
+    if (!CurtisAwareness.WATCHER_ELIGIBLE_REASONS.includes(context.reason)) return;
+    if (awareness.lastWatcherDay === oldDay) return;
+    const roll = (stringHash(`${state.run.seed}:curtis:watcher:${oldDay}:${oldSlot}`) % 10000) / 10000;
+    if (roll >= CurtisAwareness.watcherChance(awareness.level)) return;
+    const pool = CurtisAwareness.WATCHER_LINES[awareness.phase] || CurtisAwareness.WATCHER_LINES.ambient;
+    const fresh = pool.filter((line) => !awareness.recentWatcherLines.includes(line));
+    const candidates = fresh.length ? fresh : pool;
+    const line = candidates[stringHash(`${state.run.seed}:curtis:watcher:line:${awareness.watchersSeen}`) % candidates.length];
+    awareness.watchersSeen += 1;
+    awareness.lastWatcherDay = oldDay;
+    awareness.recentWatcherLines = [...awareness.recentWatcherLines, line].slice(-3);
+    logEntry(state, line, "warn");
+    pushConsequence(state, line, "warn");
+  }
   function broadcastOutcome(state, actionType, tier, value) {
     const specs = AttributeData.OUTCOME_OBSERVATIONS[actionType]?.[tier] || [];
     for (const spec of specs) {
-      Exposure.broadcastObservation(state, {
+      broadcastTracked(state, {
         ...spec,
         location: spec.location || state.world.currentNeighborhoodId,
         value: value == null ? spec.value ?? null : value,
@@ -1321,6 +1410,13 @@
       npc: createNpcState(),
       obligations: { rentDueDay: 7 },
       crewMeta: { totalWagesPaid: 0 },
+      curtisAwareness: {
+        level: 0, phase: "invisible", floor: 0, lastIncrementDay: null,
+        watchersSeen: 0, lastWatcherDay: null, recentWatcherLines: [],
+        quietStreak: 0, lastCriminalDay: null,
+        spenardMarketTxDay: null, spenardMarketTxCount: 0, marketBumpDay: null,
+        phaseMessagesSent: [],
+      },
       plugs: createPlugState(),
       market: { visible: false },
       hustle: {
@@ -4128,6 +4224,23 @@
         if (record && record.supplyChoked > 0) record.supplyChoked -= 1;
       }
       settleCrewWages(state);
+      // v1.15: Curtis's people lose interest slowly. A day with no criminal
+      // activity extends the quiet streak; from the second consecutive quiet
+      // day on, awareness bleeds one point per day - but never below the floor
+      // of a phase already reached. Once Curtis notices you, he doesn't fully
+      // forget.
+      {
+        const awareness = curtisAwarenessOf(state);
+        if (awareness.lastCriminalDay === state.run.day) {
+          awareness.quietStreak = 0;
+        } else {
+          awareness.quietStreak += 1;
+          if (awareness.quietStreak >= 2 && awareness.level > awareness.floor) {
+            awareness.level = Math.max(awareness.floor, awareness.level - 1);
+            refreshAwarenessPhase(state);
+          }
+        }
+      }
       if (state.run.day >= state.phone.billDueDay) {
         state.phone.daysPastDue += 1;
         if (state.phone.daysPastDue > 2 && state.phone.active) {
@@ -4894,7 +5007,7 @@
     // it actually happened in, which is what the presence checks read.
     const observed = OBSERVED_ACTIONS[context.reason];
     if (observed) {
-      Exposure.broadcastObservation(state, {
+      broadcastTracked(state, {
         ...observed,
         // The district is the right default - most actions are just "somewhere
         // in Spenard". A row that names its own location keeps it, which is how
@@ -4921,6 +5034,7 @@
     resolveCrewAssignments(state, random);
     resolveSoldierOperations(state, random, false);
     applyPressure(state, context, false);
+    maybeWatcherEncounter(state, context, oldDay, oldSlot);
     if (state.run.phase === "week_zero" && weekZeroProgress(state).ready) startPressurePhase(state);
     if (state.run.phase === "pressure" && dreIntroductionEligible(state) && !state.run.pendingEvent && !state.run.pendingEncounter) {
       state.npc.dre.known = true;
@@ -5323,6 +5437,7 @@
       state.player.heat = clamp(state.player.heat + addedHeat, 0, 15);
       state.stick.rep += 1;
       updateStickTier(state);
+      raiseCurtisAwareness(state, 2); // a successful robbery is loud in Curtis's world
       if (!clean) Exposure.recordObservation(state, "curtis", { type: "violence", event: "stickup", count: Math.min(3, attemptNumber), source: "network" });
       state.stats.robbery.successes += 1;
       addStreetReadEntry(state, "risk", `rob:${state.world.currentNeighborhoodId}`);
@@ -5399,6 +5514,7 @@
       state.player.cash += payout;
       state.stick.rep += 1;
       updateStickTier(state);
+      raiseCurtisAwareness(state, 2); // a successful robbery is loud in Curtis's world
       addStreetReadEntry(state, "risk", `robbery:${state.world.currentNeighborhoodId}`);
       if (productId) applyEventEffect(state, { addProduct: { id: productId, qty: units, unitCost: 0 } }, random);
       const takenHeat = dealerHeatScale(outcome.tier === "clean" ? 1 : 2);
@@ -6191,7 +6307,7 @@
       const pay = outcome === "failed" ? 0 : mission.pay[0] + (stringHash(`${state.run.seed}:${mission.id}:${state.run.day}`) % (mission.pay[1] - mission.pay[0] + 1));
       if (pay) addDirtyCash(state, pay);
       if (outcome === "clean") { state.npc.dre.cleanCompletions += 1; Exposure.recordObservation(state, "dre", { type: "loyalty", event: "clean_mission", source: "witnessed" }); }
-      else if (outcome === "violent") { state.player.heat = clamp(state.player.heat + 2, 0, 15); Exposure.broadcastObservation(state, { type: "violence", event: "mission_went_loud", channel: "network" }); }
+      else if (outcome === "violent") { state.player.heat = clamp(state.player.heat + 2, 0, 15); broadcastTracked(state, { type: "violence", event: "mission_went_loud", channel: "network" }); }
       else if (outcome === "soft") { if (mission.id === "intelligence") Exposure.recordObservation(state, "dre", { type: "loyalty", event: "useful_intel", source: "witnessed" }); }
       else Exposure.recordObservation(state, "dre", { type: "defiance", event: "botched_mission", source: "witnessed" });
       state.npc.dre.missionHistory.push({ ...active, outcome, pay, day: state.run.day });
@@ -6756,6 +6872,7 @@
         else addDirtyCash(base, take);
         base.player.heat = clamp(base.player.heat + addedHeat, 0, 15);
         base.stick.rep += 1;
+        raiseCurtisAwareness(base, 2); // a successful robbery is loud in Curtis's world
         base.stats.robbery.successes += 1;
         base.stats.robbery.totalPayout += take;
         base.stats.robbery.success = true;
@@ -7534,7 +7651,7 @@
       streetIdentity, streetIdentityView, identityProfile: (state) => Attributes.identityProfile(state),
       operationScore, baseValue, gearValue, heatBand, priceSignal, influenceLabel, encounterChoices, endingLabel,
       crewCapacityFor, gearShopStock, gearPrice, treatmentCost, debtGuidanceAvailable,
-      recruitedCrew, getActiveCrew: Crew.getActiveCrew, workingCapital, safeDebtPayment, debtPaymentPreview, featureAvailability, activityAvailability, layLowPreview, controlled, recruitmentCost, operationGearPower, crewPower,
+      recruitedCrew, getActiveCrew: Crew.getActiveCrew, curtisAwareness: (state) => curtisAwarenessOf(state), workingCapital, safeDebtPayment, debtPaymentPreview, featureAvailability, activityAvailability, layLowPreview, controlled, recruitmentCost, operationGearPower, crewPower,
       territoryPowerEstimate, territoryBenefits, tradeUnitPrices, tradeProjection, takeoverReadiness, robAvailability, eliTestRouteAvailability, minaThreatEligible,
       dealerRecord, dealerActions, dealerStandingLabel, dealerSupplyFactor,
       visibleMarketProducts, plugMaxUnits, unlockedPlugForProduct,

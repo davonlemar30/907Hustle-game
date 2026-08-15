@@ -1,6 +1,6 @@
 // Presentational primitives live in src/ds/ so one definition serves both the
 // game and the synced design system (see src/ds/primitives.jsx).
-import { CategoryCard, Chip, Hud, MenuRow, Modal, Outcome, PageHead, PlaceAction, StatTile } from "./src/ds/primitives.jsx";
+import { AccordionSection, ActionCard, CategoryCard, Chip, Hud, MenuRow, Modal, Outcome, PageHead, PlaceAction, StatTile } from "./src/ds/primitives.jsx";
 
 const { useEffect, useMemo, useReducer, useRef, useState } = React;
 const C = window.GameCore;
@@ -143,7 +143,7 @@ function Header({ state, onMenu }) {
   // them as five segments; the exact number stays the accessible name.
   const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil((value / ceiling) * 5))), total: 5 });
   return <header className="top">
-    <h1 className="sr-only">907Hustle: One Good Run · v1.13</h1>
+    <h1 className="sr-only">907Hustle: One Good Run · v1.14</h1>
     <div className="hud primary-hud">
       <Hud label="Day / Time" bare value={<><b className="hud-day">Day {state.run.day}{state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""}</b><span className="hud-slot">{C.SLOTS[state.run.slot]}</span><SlotPips slot={state.run.slot} /></>} />
       <Hud label="District" bare accent="muted" value={<><span className="hud-diamond" aria-hidden="true">◆</span>{area.name}</>} />
@@ -266,7 +266,7 @@ function Photo({ name, alt, width, height, className, eager }) {
 // which the reducer enforces silently, so those two get spelled out here.
 function HomeJobCard({ state, dispatch }) {
   const job = C.SPENARD_JOBS.find((item) => item.id === state.jobs.activeJobId);
-  if (!job) return <><div className="section-label">Active Job</div><div className="card locked job-card"><div className="card-title">No job yet</div><p className="compact muted">Explore Street to find work.</p></div></>;
+  if (!job) return <><div className="section-label">Active Job</div><div className="card locked action-card"><div className="card-title">No job yet</div><p className="compact muted">Explore Street to find work.</p></div></>;
   const record = state.jobs.records[job.id];
   const slots = job.id === "night_owl" && record.rank >= 1 ? [2, 3] : job.slots;
   const pay = C.selectors.jobPayRange(state, job.id);
@@ -275,15 +275,15 @@ function HomeJobCard({ state, dispatch }) {
   const blocked = !availability.available || state.run.dayEndPending || noEnergy;
   const reason = !availability.available ? availability.reason
     : state.run.dayEndPending ? "The day is done. Settle tonight first."
-    : noEnergy ? "No energy left today."
-    : `${money(pay.min)}–${money(pay.max)} · one part of day`;
-  return <><div className="section-label">Active Job</div><div className="card job-card">
-    <div className="card-title">{job.name}<small>{slots.map((slot) => C.SLOTS[slot]).join(" / ")} · Rank {record.rank}</small></div>
-    <button className="work-shift-btn" disabled={blocked} onClick={() => dispatch({ type: "WORK_JOB", jobId: job.id, approach: "work_hard" })}>
-      <b>Work Shift</b>
-      <small>{reason}</small>
-    </button>
-  </div></>;
+    : "No energy left today.";
+  return <><div className="section-label">Active Job</div><ActionCard
+    title={job.name}
+    subtitle={`${slots.map((slot) => C.SLOTS[slot]).join(" / ")} · Rank ${record.rank}`}
+    actionLabel="Work Shift"
+    hint={`${money(pay.min)}–${money(pay.max)} · one part of day`}
+    disabled={blocked}
+    disabledReason={reason}
+    onAction={() => dispatch({ type: "WORK_JOB", jobId: job.id, approach: "work_hard" })} /></>;
 }
 
 // The calmest screen in the game. Where am I, what time is it, what do I have,
@@ -539,6 +539,71 @@ function TonkTable({ state, dispatch }) {
   </div>;
 }
 
+// v1.14 — how long an opponent's play stays on screen: 200ms in, 1.5s held,
+// 200ms out. The keyframes in v05.css divide the same total, so the two move
+// together or the card vanishes mid-fade.
+const CARD_DROP_MS = 1900;
+
+// The reducer resolves every opponent turn inside one dispatch and keeps none
+// of the seat-by-seat events, so the only trace of what the table just did is
+// the card now face up on the discard — which, whenever a hand survives a turn,
+// is whatever the last seat pitched. Watching that card change is enough to
+// show the play, and it reveals nothing the player could not already see by
+// looking at the pile. Purely presentational: nothing here dispatches.
+function useOpponentDrop(view) {
+  const topId = view && view.discardTop ? view.discardTop.id : null;
+  const [drop, setDrop] = useState(null);
+  const seen = useRef(topId);
+  const seeded = useRef(false);
+  useEffect(() => {
+    // The deal itself puts a card face up. Seeding on the first render keeps
+    // sitting down from playing as somebody else's move.
+    if (!seeded.current) { seeded.current = true; seen.current = topId; return; }
+    if (topId === seen.current) return;
+    seen.current = topId;
+    if (!topId || !view) return;
+    const last = view.opponents[view.opponents.length - 1];
+    setDrop({ key: topId, card: view.discardTop, seat: last ? last.seat : null, label: last ? last.label : "" });
+    const timer = setTimeout(() => setDrop(null), CARD_DROP_MS);
+    return () => clearTimeout(timer);
+  }, [topId]);
+  return drop;
+}
+
+function OpponentDrop({ drop }) {
+  return <div className="card-drop" role="status" aria-live="polite">
+    <div className="card-drop-inner">
+      <PlayingCard card={drop.card} disabled />
+      <span className="card-drop-label"><b>{drop.seat ? `Seat ${drop.seat} plays` : "The table plays"}</b><small>{drop.label}</small></span>
+    </div>
+  </div>;
+}
+
+// A hand of cards is a context, not a card on a page. While one is live the
+// shell hides the HUD and the bottom dock (see `.tonk-fullscreen` in v05.css)
+// and the table gets the viewport. The two controls that replace the chrome are
+// a fixed overlay so they stay reachable however far the table has scrolled.
+//
+// Back leaves the hand standing — the reducer keeps `gambling.table` precisely
+// so a player can put the phone down mid-hand — while Quit is a real drop, and
+// costs what a drop costs, so it asks first.
+function TonkStage({ state, dispatch, onBack, onQuit }) {
+  const view = C.selectors.tonkView(state);
+  const drop = useOpponentDrop(view);
+  if (!view) return null;
+  return <div className="tonk-stage">
+    <div className="tonk-exit">
+      <button type="button" className="tonk-quit" onClick={onQuit}>Quit</button>
+      <button type="button" onClick={onBack}>Back</button>
+    </div>
+    <div className="scroll">
+      <TonkTable state={state} dispatch={dispatch} />
+      <p className="muted compact">Back leaves the hand where it is. The table is still yours when you come back upstairs.</p>
+    </div>
+    {drop && <OpponentDrop key={drop.key} drop={drop} />}
+  </div>;
+}
+
 function CeloTable({ state, dispatch }) {
   const view = C.selectors.celoView(state);
   const [adjust, setAdjust] = useState(null);
@@ -750,13 +815,12 @@ function AroundHere({ state, dispatch, onBack, initialPage = "root" }) {
   const staleLocalPage = area.id !== C.HOME_DISTRICT_ID && page !== "root";
   const effectivePage = staleLocalPage ? "root" : page;
   useEffect(() => { if (effectivePage !== page) setPage("root"); }, [effectivePage, page]);
-  if (effectivePage === "intel") return <LocalIntel state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   if (effectivePage !== "root") return <ExploreSpenard state={state} dispatch={dispatch} page={effectivePage} setPage={setPage} onBack={() => setPage("root")} />;
   const localActions = actions.filter((entry) => !["return_spenard", "walk_spenard"].includes(entry.id));
-  return <><PageHead title={`Around ${area.name}`} sub="What you can do without leaving the neighborhood" onBack={onBack} /><div className="scroll">
+  return <><PageHead title={area.name} sub="Places, activities, and people without leaving the neighborhood" onBack={onBack} /><div className="scroll">
     <ReturnToSpenardActions state={state} dispatch={dispatch} />
     {actionOf("explore_spenard") && <MenuRow title="Explore Spenard" status={state.world.locations.explorationCount ? `${state.world.locations.explorationCount} walks` : "New arrival"} description="Jobs, wandering, and people you meet through work." onClick={() => setPage("explore")} />}
-    {actionOf("local_intel") && <MenuRow title="Local Intel" status={`${state.world.locations.explorationCount} walks`} description="Routes, discoveries, and word collected around Spenard." onClick={() => setPage("intel")} />}
+    {actionOf("local_intel") && <LearnedInSpenard state={state} />}
     {area.id === "downtown" && <div className="card"><div className="card-title">Downtown<small>EARLY SCAFFOLD</small></div><p className="compact muted">No local jobs, people, or activities are available here yet.</p></div>}
     {!localActions.length && area.id !== "downtown" && <div className="card locked"><div className="card-title">No local actions</div><p className="compact muted">Only the route back to Spenard is available here.</p></div>}
   </div></>;
@@ -787,29 +851,26 @@ function Household({ state, dispatch, onBack }) {
 
 // Exploration stores discovery ids; the player never sees an id.
 const DISCOVERY_LABELS = { goodie_supplier: "A supplier holding weight on a Spenard corner.", informal_game: "An informal card game that runs evenings and nights." };
-// What the run has actually taught the player about the city.
-function LocalIntel({ state, dispatch, onBack }) {
+// What walking Spenard has actually taught the player. This was a menu row of
+// its own, which made a page out of two facts and put a navigation node in a
+// hub that is meant to list places. It is content, so it collapses in place
+// instead — and the routes half lives on Leave Spenard, which is where a route
+// is something the player can act on rather than something they read.
+function LearnedInSpenard({ state }) {
   const discoveries = state.world.locations.discoveries || [];
-  return <><PageHead title="Local Intel" sub="Routes, discoveries, and what the street is saying" onBack={onBack} /><div className="scroll">
-    <div className="card"><div className="card-title">Known routes<small>{[state.world.transport.downtownKnown, state.world.transport.industrialRouteKnown].filter(Boolean).length + 1}/3</small></div>
-      <div className="detail-list">
-        <span><b>Spenard:</b> home ground.</span>
-        <span><b>Downtown:</b> {state.world.transport.downtownKnown ? "ridden and mapped." : "one bus ride away, still unseen."}</span>
-        <span><b>Industrial Service Roads:</b> {state.world.transport.industrialRouteKnown ? "a trusted route is open." : "no way in yet."}</span>
-      </div>
-    </div>
-    <div className="card"><div className="card-title">Walks taken<small>{state.world.locations.explorationCount}</small></div>{discoveries.length ? <div className="detail-list">{discoveries.map((entry, index) => <span key={index}>{DISCOVERY_LABELS[entry] || "A local detail worth remembering."}</span>)}</div> : <p className="muted compact">Nothing found yet. Walking Spenard is how the neighborhood opens up.</p>}</div>
-  </div></>;
+  const walks = state.world.locations.explorationCount;
+  return <AccordionSection title="What you've learned" meta={`${walks} walk${walks === 1 ? "" : "s"}`}>
+    {discoveries.length
+      ? <div className="learned-list">{discoveries.map((entry, index) => <span key={index}>{DISCOVERY_LABELS[entry] || "A local detail worth remembering."}</span>)}</div>
+      : <p className="muted compact">Nothing found yet. Walking Spenard is how the neighborhood opens up.</p>}
+  </AccordionSection>;
 }
 
-// Property. Only reachable while there is still something to acquire.
-function Listings({ state, dispatch, onBack }) {
-  return <><PageHead title="Listings" sub="Property and counters you can look at before you commit" onBack={onBack} /><div className="scroll">
-    <PlaceAction title="North Star Garage Listing" status={state.base.controlled ? "CONTROLLED" : `$${C.GARAGE_DEPOSIT} DEPOSIT`} purpose="Lease-to-control property; storage, upgrades, crew operations, and recovery unlock after acquisition." cost={state.base.controlled ? "Paid" : money(C.GARAGE_DEPOSIT)} time={state.base.controlled ? "Browsing is free" : "Leasing uses one part of day"} disabled={state.base.controlled || state.player.cash < C.GARAGE_DEPOSIT} reason={state.base.controlled ? "Already controlled." : state.player.cash < C.GARAGE_DEPOSIT ? `You need ${money(C.GARAGE_DEPOSIT - state.player.cash)} more.` : "Deposit and first week included; future rent is documented, not charged in this build."} onClick={() => dispatch({ type: "LEASE_GARAGE" })} />
-    <PlaceAction title="Auto Lot" status="BROWSE ONLY" purpose="See what future vehicle ownership could change." cost="$0" time="Free information" disabled={true} reason="Vehicle ownership is deferred." />
-    <PlaceAction title="Gun Counter" status="BROWSE ONLY" purpose="Review legal firearm options without buying." cost="$0" time="Free information" disabled={true} reason="Purchasing is deferred pending combat balance." />
-  </div></>;
-}
+// v1.14: the Listings page is gone. It was a Travel row that opened a page of
+// three cards, two of which were deferred placeholders, and the one live card —
+// the North Star Garage lease — is already offered by 907List, which is where a
+// player goes to buy things. Nothing routed here after Travel dropped to three
+// destinations, so the page went with it rather than staying as unreachable code.
 
 function NineOhSevenList({ state, dispatch, onBack, surface = "phone" }) {
   const atHome = (surface === "home" || !state.phone.active) && state.inventory.laptop && state.world.currentNeighborhoodId === "north_star_lot";
@@ -905,14 +966,19 @@ function Travel({ state, dispatch, page, setPage }) {
   const covered = state.world.transport.weekPass || state.world.transport.dayPassDay === state.run.day;
   const area = areaOf(state);
   const shift = C.selectors.quickShift(state);
+  // Three destinations, and every one of them is a place rather than a system:
+  // the neighbourhood you are standing in, the room you sleep in, and the way
+  // out of both. Everything the old six-row menu carried now lives one level
+  // down inside whichever of those three actually owns it.
+  const atHome = state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID;
   return <><PageHead title="Travel" sub="Where to go, how to get there, and what is around you" /><div className="scroll">
     {shift && <button className={`quick-shift${shift.available ? "" : " locked"}`} disabled={!shift.available} onClick={() => setPage(`around:job:${shift.jobId}`)}>
       <span className="quick-shift-main"><b>{shift.name} shift</b><small>{shift.available ? `${money(shift.pay.min)}–${money(shift.pay.max)} · one part of day` : shift.reason}</small></span>
       <span className="quick-shift-go" aria-hidden="true">›</span>
     </button>}
-    <MenuRow title={`Around ${area.name}`} status={state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? "You are here" : "Return route ready"} description={state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? "Explore Places and Activities, or check Local Intel." : "Local actions and the route back to Spenard."} onClick={() => setPage("around")} />
-    <MenuRow title="Home" status={state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID ? `${state.people.household.warnings}/3 warnings` : covered ? "Pass covers return" : "$5 return"} description="Storage, Yalonda, Juan, and sleep." disabled={state.people.household.evicted} onClick={() => setPage("household")} />
-    <MenuRow title="Leave Spenard" status={state.world.transport.weekPass ? "7-day pass" : covered ? "Day pass" : "$5 a ride"} description="Known non-Spenard destinations and pass controls." onClick={() => setPage("destinations")} />
+    <MenuRow title={area.name} status={atHome ? "You are here" : "Return route ready"} description={atHome ? "Jobs, wandering, contacts, and every door you have found." : "Local actions and the route back to Spenard."} onClick={() => setPage("around")} />
+    <MenuRow title="Home" status={atHome ? `${state.people.household.warnings}/3 warnings` : covered ? "Pass covers return" : "$5 return"} description="Storage, Yalonda, Juan, and sleep." disabled={state.people.household.evicted} onClick={() => setPage("household")} />
+    <MenuRow title="Leave Spenard" status={state.world.transport.weekPass ? "7-day pass" : covered ? "Day pass" : "$5 a ride"} description={covered ? "Known destinations. Your pass covers the fare." : "Known destinations. The People Mover is $5 a ride unless a pass covers it."} onClick={() => setPage("destinations")} />
   </div></>;
 }
 
@@ -1126,7 +1192,7 @@ function Safehouse({ state, dispatch, onBack }) {
   if (page === "storage") return <SafehouseStorage state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   if (page === "upgrades") return <BaseUpgrades state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   if (page === "assignments") return <CrewAssignments state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
-  if (!state.base.controlled) return <><PageHead title="Safehouse" sub="North Star Garage" onBack={onBack} /><div className="scroll"><div className="card locked"><div className="card-title">North Star Garage<small>NOT OWNED</small></div><p className="compact">Lease the property through Travel → Listings before using storage, upgrades, recovery, gear, or crew operations.</p></div></div></>;
+  if (!state.base.controlled) return <><PageHead title="Safehouse" sub="North Star Garage" onBack={onBack} /><div className="scroll"><div className="card locked"><div className="card-title">North Star Garage<small>NOT OWNED</small></div><p className="compact">Lease the property through 907List before using storage, upgrades, recovery, gear, or crew operations.</p></div></div></>;
   if (!state.base.visiting) return <><PageHead title="Safehouse" sub="North Star Garage" onBack={onBack} /><div className="scroll"><div className="card"><div className="card-title">Visit North Star Garage<small>Uses one part of day</small></div><p className="compact">Close the current market and roll down the garage door. Management remains available until another time-consuming action moves you on.</p><button className="btn full primary" onClick={() => dispatch({ type: "VISIT_BASE" })}>Go to the garage<span className="action-copy">Uses one part of day</span></button></div></div></>;
   const crewCount = C.selectors.recruitedCrew(state).length;
   const nextUpgrade = ["security", "storage", "operations", "recovery"].filter((track) => state.base.tracks[track] < 2).length;
@@ -1334,10 +1400,9 @@ function Character({ state, onBack }) {
 }
 
 function PhoneScreen({ state, dispatch, onBack, openList, navigateMore }) {
-  // v1.9c — accordion hub. Expanded/collapsed is React-only session state;
-  // the phone always opens with Texts alone expanded.
-  const [openSections, setOpenSections] = useState({ texts: true });
-  const toggle = (id) => setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }));
+  // v1.9c — accordion hub. v1.14 — powered by the shared AccordionSection, so
+  // expanded/collapsed is that component's own React-only state and the phone
+  // still opens with Texts alone expanded.
   const offline = !state.phone.active;
   const today = `Day ${state.run.day} ·`;
   const dayLog = state.log.filter((entry) => entry.stamp.startsWith(today));
@@ -1347,45 +1412,28 @@ function PhoneScreen({ state, dispatch, onBack, openList, navigateMore }) {
   const billsDueSoon = bills.filter((row) => row.severity > 0).length;
   return <><PageHead title={offline ? "No Service" : "Phone"} sub={offline ? "The phone stays available even when the network does not" : "Texts, contacts, bills, and word around town"} onBack={onBack} /><div className="scroll">
     {offline && <div className="card locked"><div className="card-title">Signal unavailable<small>{state.phone.daysPastDue} days past due</small></div><p>Pay {money(C.PHONE_BILL)} at Night Owl to start restoration. Online payment requires active service and a laptop.</p><button className="btn full primary" disabled={state.player.cash < C.PHONE_BILL} onClick={() => dispatch({ type: "PAY_PHONE_BILL", surface: "store" })}>Pay at Night Owl · {money(C.PHONE_BILL)}<span className="action-copy">Free · service restores after the next action</span></button></div>}
-    <PhoneSection id="texts" title="Texts" meta={offline ? `${state.phone.heldInbox.length} held` : `${state.phone.inbox.length} text${state.phone.inbox.length === 1 ? "" : "s"}`} open={!!openSections.texts} onToggle={() => toggle("texts")}>
+    <AccordionSection title="Texts" meta={offline ? `${state.phone.heldInbox.length} held` : `${state.phone.inbox.length} text${state.phone.inbox.length === 1 ? "" : "s"}`} defaultExpanded>
       {offline ? <div className="card compact muted">{state.phone.heldInbox.length} message{state.phone.heldInbox.length === 1 ? " is" : "s are"} waiting for service.</div>
         : state.phone.inbox.length ? state.phone.inbox.map((message) => <div className="card compact" key={message.id}><div className="card-title">{message.from}<small>DAY {message.day} · {C.SLOTS[message.slot]}</small></div><p className="compact">{message.text}</p></div>) : <div className="card compact muted">No messages yet.</div>}
-    </PhoneSection>
-    <PhoneSection id="contacts" title="Contacts" meta={`${knownContacts} known`} open={!!openSections.contacts} onToggle={() => toggle("contacts")}>
+    </AccordionSection>
+    <AccordionSection title="Contacts" meta={`${knownContacts} known`}>
       <SocialContacts state={state} dispatch={dispatch} navigateMore={navigateMore} />
-    </PhoneSection>
-    <PhoneSection id="bills" title="Bills" badge={billsDueSoon} badgeTone={bills.some((row) => row.severity === 2) ? "bad" : "warn"} open={!!openSections.bills} onToggle={() => toggle("bills")}>
+    </AccordionSection>
+    <AccordionSection title="Bills" badge={billsDueSoon} badgeVariant={bills.some((row) => row.severity === 2) ? "danger" : "warning"}>
       {bills.length ? bills.map((row) => <div className={`bill-row${row.severity === 2 ? " bad" : row.severity === 1 ? " warn" : row.paid ? " paid" : ""}`} key={row.id}>
         <span className="bill-name"><b>{row.name}</b><small>{row.where}</small></span>
         <span className="bill-meta"><b>{money(row.amount)}</b><small className="bill-status">{row.due} · {row.status}</small></span>
       </div>) : <div className="card compact muted">No bills yet.</div>}
-    </PhoneSection>
-    <PhoneSection id="log" title="Today's Log" meta={`${dayLog.length} today`} open={!!openSections.log} onToggle={() => toggle("log")}>
+    </AccordionSection>
+    <AccordionSection title="Today's Log" meta={`${dayLog.length} today`}>
       {dayLog.length ? dayLog.map((entry, index) => <div className={`card compact ${entry.tone || ""}`} key={index}>{entry.text}</div>) : <div className="card compact muted">Nothing logged today.</div>}
-    </PhoneSection>
-    <PhoneSection id="intel" title="Word Around Town" open={!!openSections.intel} onToggle={() => toggle("intel")}>
+    </AccordionSection>
+    <AccordionSection title="Word Around Town">
       {offline ? <div className="card compact muted">Word comes back when service does.</div>
         : intel.length ? intel.map((line, index) => <div className="card compact" key={index}>{line}</div>) : <div className="card compact muted">Nothing on the wire yet.</div>}
-    </PhoneSection>
+    </AccordionSection>
     {state.knowledge.knows907List && <MenuRow title="907List" status={state.phone.active ? `${C.selectors.marketTierConfig(state).listings} listings` : "No service"} description="Local resale listings." disabled={!state.phone.active} onClick={openList} />}
   </div></>;
-}
-
-// v1.9c — one collapsible section of the Phone hub. The header is a 44px
-// button; the panel animates grid rows 0fr -> 1fr with no height cap, and
-// visibility trails the collapse so closed controls drop out of the tab order.
-function PhoneSection({ id, title, meta, badge, badgeTone, open, onToggle, children }) {
-  const panelId = useDomId(`phone-panel-${id}`);
-  return <div className={`phone-section${open ? " open" : ""}`}>
-    <button type="button" className="phone-section-head" aria-expanded={open} aria-controls={panelId} onClick={onToggle}>
-      <span className="phone-section-title">{title}{meta != null && <small>{meta}</small>}</span>
-      {badge != null && badge !== 0 && <span className={`phone-badge ${badgeTone || ""}`}>{badge}</span>}
-      <span className="phone-section-chevron" aria-hidden="true">›</span>
-    </button>
-    <div className="phone-section-panel" id={panelId} role="region" aria-label={title}>
-      <div className="phone-section-inner">{children}</div>
-    </div>
-  </div>;
 }
 
 // v1.9c — assembles the Bills rows from existing state only. Severity 2 needs
@@ -1682,7 +1730,7 @@ function MenuModal({ state, dispatch, onClose, onTitle }) {
   return <><Modal title="Run menu" onClose={onClose}>
     <ExpandableMoreSection
       collapsedContent={<p className="popup-lead">Autosave is on. This run saves to your browser after every action.</p>}
-      expandedContent={<p className="popup-flavor">907Hustle v1.13 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
+      expandedContent={<p className="popup-flavor">907Hustle v1.14 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
       moreLabel="Save detail" lessLabel="Hide detail" />
     <button className="btn full primary" onClick={onTitle}>Return to Title</button>
     <button className="btn full secondary choice" onClick={() => setConfirmRestart(true)}>Restart Run<span>Creates a new seed and returns to Street Name entry.</span></button>
@@ -1789,6 +1837,15 @@ function GameShell({ state, dispatch, onTitle }) {
   const pending = React.useRef(null);
   const features = C.selectors.featureAvailability(state);
   const tab = nav.tab;
+  // v1.14 — Tonk takes the whole screen while a hand is live. React-only and
+  // never serialized: a save records the table, not whether the player happened
+  // to be looking at it. Sitting down turns it on, the hand resolving turns it
+  // off, and Back turns it off without touching the hand.
+  const tonkLive = !!state.gambling.table;
+  const [tonkFullscreen, setTonkFullscreen] = useState(tonkLive);
+  const [confirmQuitTonk, setConfirmQuitTonk] = useState(false);
+  useEffect(() => { setTonkFullscreen(tonkLive); if (!tonkLive) setConfirmQuitTonk(false); }, [tonkLive]);
+  const tonkStage = tonkLive && tonkFullscreen;
 
   // Every tab change funnels through here, so wrapping this one function gives
   // the whole shell a cross-fade. startViewTransition needs the DOM mutated
@@ -1820,6 +1877,14 @@ function GameShell({ state, dispatch, onTitle }) {
     // A receipt with no delta lines is pure time passage — the header clock
     // and the feed already carry it, so it earns no popup (v1.9c).
     const receipt = C.selectors.actionResult(record.before, state, record.type);
+    // v1.14 — except when a hand of Tonk just ended. Losing one moves no money
+    // (the buy-in was spent sitting down), so the gate below would swallow the
+    // one moment the player most needs told about, and it is also the moment
+    // the fullscreen table hands the shell back. The reducer's own closing log
+    // line is already the win / loss / Tonk-out copy, and actionResult carries
+    // it as `detail`.
+    const handEnded = !!record.before.gambling.table && !state.gambling.table;
+    if (receipt && handEnded) { setResult({ ...receipt, title: "Hand Resolved" }); return; }
     setResult(receipt && receipt.lines.length ? receipt : null);
   }, [state]);
 
@@ -1833,13 +1898,16 @@ function GameShell({ state, dispatch, onTitle }) {
     phone: <PhoneScreen state={state} dispatch={act} openList={() => navigate("more", "907list")} navigateMore={navigateMore} />,
     more: <More state={state} dispatch={act} features={features} page={nav.more} setPage={setMorePage} sub={nav.sub} subToken={nav.token} />,
   };
-  return <div className="app">
+  return <div className={`app${tonkStage ? " tonk-fullscreen" : ""}`}>
     <Header state={state} onMenu={() => setMenu(true)} />
-    <main className="main">{screens[tab]}</main>
-    <div>
+    <main className="main">{tonkStage
+      ? <TonkStage state={state} dispatch={act} onBack={() => setTonkFullscreen(false)} onQuit={() => setConfirmQuitTonk(true)} />
+      : screens[tab]}</main>
+    <div className="dock">
       <AmbientTicker state={state} />
       <Feed entries={state.log} />
-      {((tab === "hustle" && hustlePage === "market") || (tab === "street" && streetPage === "market")) && <div className="action-bar one"><button className="btn primary" onClick={() => act({ type: "END_MARKET" })}>Finish Trading<small>Close this market visit · advance to {nextPartLabel(state)}</small></button></div>}
+      {tonkLive && !tonkFullscreen && <div className="action-bar one"><button className="btn secondary" onClick={() => setTonkFullscreen(true)}>Back to the table<small>Your hand is still live upstairs at The Nile</small></button></div>}
+      {((tab === "hustle" && hustlePage === "market") || (tab === "street" && streetPage === "market")) && <div className="action-bar one"><button className="btn primary" onClick={() => act({ type: "END_MARKET" })}>Leave Market · advance to {nextPartLabel(state)}<small>Ends your market visit</small></button></div>}
       {state.run.overtimeArmed && <div className="action-bar one"><button className="btn secondary" onClick={() => act({ type: "CONFIRM_END_DAY" })}>End Day Now<small>Cancel the armed extension and process tonight</small></button></div>}
       <Navigation tab={tab} setTab={setTab} hustleVisible={state.hustle.visible} phoneBadge={state.phone.active ? state.phone.inbox.length : 0} />
     </div>
@@ -1847,6 +1915,7 @@ function GameShell({ state, dispatch, onTitle }) {
         it under every modal layer (backdrop 50, encounter 58, result 60). */}
     <div className="fx-overlay" aria-hidden="true" />
     <ExposureDebug state={state} />
+    {confirmQuitTonk && <ConfirmPrompt title="Quit the hand?" text="Quitting drops with the hand you are holding. Lowest at the table takes the pot; anything less and you pay double." confirmLabel="Drop and quit" onConfirm={() => { setConfirmQuitTonk(false); act({ type: "NILE_TONK_DROP" }); }} onCancel={() => setConfirmQuitTonk(false)} />}
     {trade && <TradeModal state={state} productId={trade} dispatch={act} onClose={() => setTrade(null)} />}
     {menu && <MenuModal state={state} dispatch={dispatch} onClose={() => setMenu(false)} onTitle={onTitle} />}
     {state.run.openingPending && <OpeningModal dispatch={act} />}

@@ -24,8 +24,13 @@ test("title screen exposes safe load, new-game confirmation, preview, and help",
 test("new games are classless and expose one Start confirmation", () => {
   assert.match(ui, /<b>Start<\/b>/); assert.match(ui, /type: "START_RUN"/); assert.doesNotMatch(ui, /Choose your edge|C\.STARTING_EDGES\.map|C\.BACKGROUNDS\.map/);
 });
+// v1.14 dropped the Listings page: two of its three cards were deferred
+// placeholders and the live one — the North Star Garage lease — is offered by
+// 907List, so the garage tokens moved there rather than disappearing.
 test("Travel exposes the fresh-arrival activity and access model", () => {
-  for (const token of ["Yalonda's Home", "Explore Spenard", "Spenard Jobs", "Spenard Community Gym", "Phone Store", "Blue Nile Wellness", "Tonk", "Cee-lo", "People Mover", "North Star Garage Listing", "Auto Lot", "Gun Counter"]) assert.ok(ui.includes(token), token);
+  for (const token of ["Yalonda's Home", "Explore Spenard", "Spenard Jobs", "Spenard Community Gym", "Phone Store", "Blue Nile Wellness", "Tonk", "Cee-lo", "People Mover", "North Star Garage"]) assert.ok(ui.includes(token), token);
+  assert.doesNotMatch(ui, /function Listings\(/);
+  assert.doesNotMatch(ui, /Travel → Listings/);
 });
 
 test("Spenard exploration separates Places from Activities", () => {
@@ -64,11 +69,16 @@ test("title artwork declares all three aspect tiers and a letterbox backdrop", (
   // Tier A must stay exactly as shipped in v0.6 so mobile does not move.
   assert.match(css, /\.title-art\{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top\}/);
 });
+// v1.14: "Finish Trading" named a bookkeeping step, not the thing it does —
+// END_MARKET is a TIME_ACTIONS member, so the button spends a part of the day.
+// The label now leads with the move and its price; the dispatch is unchanged.
 test("the market close action names the player action and its destination", () => {
-  assert.match(ui, /Finish Trading/);
+  assert.match(ui, /Leave Market · advance to \{nextPartLabel\(state\)\}/);
   assert.doesNotMatch(ui, />End Market</);
+  assert.doesNotMatch(ui, /Finish Trading/);
   assert.match(ui, /nextPartLabel/);
-  assert.match(ui, /Close this market visit/);
+  assert.ok(ui.includes("<small>Ends your market visit</small>"));
+  assert.ok(ui.includes('act({ type: "END_MARKET" })'));
 });
 test("the required Street Name is offered before classless confirmation and shown on the save", () => {
   assert.match(ui, /Street Name/); assert.match(ui, /maxLength=\{C\.STREET_NAME_MAX\}/);

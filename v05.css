@@ -636,24 +636,30 @@ body{background:
   .yalonda-split{grid-template-columns:1fr 1.25fr}
 }
 
-/* --- v1.9c: Phone accordion hub ------------------------------------------- */
-/* Each section header is a 44px row; the panel animates grid rows 0fr -> 1fr
+/* --- AccordionSection + BadgeHeader ---------------------------------------
+   Introduced in v1.9c as the Phone's private accordion; extracted in v1.14 into
+   src/ds/primitives.jsx, so the class names name the component rather than the
+   one screen that used to own it. Visually unchanged: these are the v1.9c rules
+   with `.phone-section*` renamed.
+
+   Each section header is a 44px row; the panel animates grid rows 0fr -> 1fr
    (the least-bad height animation) and visibility trails the collapse so the
    closed sections' buttons drop out of the tab order. */
-.phone-section{margin-bottom:8px;border:1px solid var(--line);background:var(--panel)}
-.phone-section-head{display:flex;align-items:center;gap:8px;width:100%;min-height:44px;padding:10px 12px;border:0;background:none;color:var(--white);text-align:left;cursor:pointer}
-.phone-section-title{flex:1;display:flex;align-items:baseline;gap:8px;font-family:var(--head);font-size:.92rem;letter-spacing:.06em;text-transform:uppercase}
-.phone-section-title small{font-family:var(--mono);font-size:.64rem;letter-spacing:0;text-transform:none;color:var(--muted)}
-.phone-badge{flex:none;min-width:20px;padding:2px 7px;border-radius:9px;background:var(--panel3);font-family:var(--mono);font-size:.66rem;font-weight:700;text-align:center}
-.phone-badge.warn{background:var(--amber);color:#000}
-.phone-badge.bad{background:var(--red);color:var(--white);box-shadow:0 0 8px rgba(211,41,32,.6)}
-.phone-section-chevron{flex:none;color:var(--muted);font-size:.9rem;transition:transform 200ms ease-out}
-.phone-section.open .phone-section-chevron{transform:rotate(90deg)}
-.phone-section-panel{display:grid;grid-template-rows:0fr;visibility:hidden;transition:grid-template-rows 200ms ease-out,visibility 0s 200ms}
-.phone-section.open .phone-section-panel{grid-template-rows:1fr;visibility:visible;transition:grid-template-rows 200ms ease-out}
-.phone-section-inner{overflow:hidden;min-height:0;padding:0 10px}
-.phone-section.open .phone-section-inner{padding-bottom:10px}
-@media(prefers-reduced-motion:reduce){.phone-section-panel,.phone-section-chevron{transition:none}}
+.accordion-section{margin-bottom:8px;border:1px solid var(--line);background:var(--panel)}
+.accordion-header{display:flex;align-items:center;gap:8px;width:100%;min-height:44px;padding:10px 12px;border:0;background:none;color:var(--white);text-align:left;cursor:pointer}
+.badge-header{flex:1;min-width:0;display:flex;align-items:center;gap:8px}
+.badge-header-label{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;font-family:var(--head);font-size:.92rem;letter-spacing:.06em;text-transform:uppercase}
+.badge-header-label small{font-family:var(--mono);font-size:.64rem;letter-spacing:0;text-transform:none;color:var(--muted)}
+.badge{flex:none;min-width:20px;padding:2px 7px;border-radius:9px;background:var(--panel3);font-family:var(--mono);font-size:.66rem;font-weight:700;text-align:center}
+.badge-warning{background:var(--amber);color:#000}
+.badge-danger{background:var(--red);color:var(--white);box-shadow:0 0 8px rgba(211,41,32,.6)}
+.accordion-chevron{flex:none;color:var(--muted);font-size:.9rem;transition:transform 200ms ease-out}
+.accordion-section.open .accordion-chevron{transform:rotate(90deg)}
+.accordion-body{display:grid;grid-template-rows:0fr;visibility:hidden;transition:grid-template-rows 200ms ease-out,visibility 0s 200ms}
+.accordion-section.open .accordion-body{grid-template-rows:1fr;visibility:visible;transition:grid-template-rows 200ms ease-out}
+.accordion-body-inner{overflow:hidden;min-height:0;padding:0 10px}
+.accordion-section.open .accordion-body-inner{padding-bottom:10px}
+@media(prefers-reduced-motion:reduce){.accordion-body,.accordion-chevron{transition:none}}
 
 /* v1.9c: Bills rows are display-only readouts, not buttons. */
 .bill-row{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid #262626}
@@ -668,10 +674,57 @@ body{background:
 .bill-row.bad .bill-status{color:var(--red2)}
 .bill-row.paid .bill-status{color:var(--green)}
 
-/* v1.9c: Home active-job card — the shift shortcut mirrors Wander's weight. */
-.job-card{padding:10px 12px;margin-bottom:12px}
-.work-shift-btn{position:relative;display:block;width:100%;min-height:52px;margin-top:8px;padding:9px 12px;border:1px solid rgba(255,90,70,.55);border-radius:7px;background:linear-gradient(180deg,#d32920 0%,#8c1710 62%,#5f0f0a 100%);color:var(--white);text-align:center;cursor:pointer;box-shadow:0 0 14px rgba(211,41,32,.3),inset 0 0 24px rgba(0,0,0,.38)}
-.work-shift-btn b{display:block;font-family:var(--head);font-weight:400;font-size:1.15rem;letter-spacing:.12em;text-transform:uppercase;text-shadow:-1px -1px 0 rgba(0,0,0,.5),0 2px 10px rgba(0,0,0,.6)}
-.work-shift-btn small{display:block;margin-top:3px;font-size:.64rem;font-weight:600;color:rgba(255,255,255,.72)}
-.work-shift-btn:active:not(:disabled){transform:scale(.98)}
-.work-shift-btn:disabled{cursor:not-allowed;border-color:rgba(255,255,255,.1);filter:saturate(.3) brightness(.55);box-shadow:inset 0 0 24px rgba(0,0,0,.5)}
+/* --- ActionCard -----------------------------------------------------------
+   Introduced in v1.9c as Home's active-job card, extracted in v1.14. One card,
+   one dominant action, mirroring Wander's weight. Visually unchanged: these are
+   the v1.9c rules with `.job-card` / `.work-shift-btn` renamed. */
+.action-card{padding:10px 12px;margin-bottom:12px}
+.action-card-cta{position:relative;display:block;width:100%;min-height:52px;margin-top:8px;padding:9px 12px;border:1px solid rgba(255,90,70,.55);border-radius:7px;background:linear-gradient(180deg,#d32920 0%,#8c1710 62%,#5f0f0a 100%);color:var(--white);text-align:center;cursor:pointer;box-shadow:0 0 14px rgba(211,41,32,.3),inset 0 0 24px rgba(0,0,0,.38)}
+.action-card-cta b{display:block;font-family:var(--head);font-weight:400;font-size:1.15rem;letter-spacing:.12em;text-transform:uppercase;text-shadow:-1px -1px 0 rgba(0,0,0,.5),0 2px 10px rgba(0,0,0,.6)}
+.action-card-cta small{display:block;margin-top:3px;font-size:.64rem;font-weight:600;color:rgba(255,255,255,.72)}
+.action-card-cta:active:not(:disabled){transform:scale(.98)}
+.action-card-cta:disabled{cursor:not-allowed;border-color:rgba(255,255,255,.1);filter:saturate(.3) brightness(.55);box-shadow:inset 0 0 24px rgba(0,0,0,.5)}
+
+/* ==========================================================================
+   v1.14 — UI architecture and navigation overhaul.
+   Appended last so these rules win over everything above. Nothing structural
+   earlier in the file is edited beyond the two component renames marked above,
+   so the existing contract checks still hold.
+   ========================================================================== */
+
+/* --- Tonk fullscreen ------------------------------------------------------
+   A hand of cards is its own context, not a card on a page. While one is live
+   the shell drops to a single row and the HUD band and bottom dock come off
+   screen entirely; the two controls that replace them are a fixed overlay, so
+   they stay reachable no matter how far the table has scrolled. */
+.app.tonk-fullscreen{grid-template-rows:minmax(0,1fr)}
+.app.tonk-fullscreen>.top,.app.tonk-fullscreen>.dock{display:none}
+.tonk-stage{flex:1;display:flex;flex-direction:column;min-height:0}
+.tonk-stage>.scroll{flex:1;min-height:0;padding-top:calc(52px + env(safe-area-inset-top));padding-bottom:calc(24px + env(safe-area-inset-bottom))}
+.tonk-exit{position:fixed;top:calc(6px + env(safe-area-inset-top));left:8px;right:8px;z-index:6;display:flex;justify-content:space-between;gap:8px;pointer-events:none}
+.tonk-exit button{pointer-events:auto;min-width:64px;min-height:44px;padding:0 12px;border:1px solid var(--hairline);border-radius:6px;background:rgba(10,10,10,.82);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);color:#c7cbd0;font-weight:700;font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;cursor:pointer}
+.tonk-exit .tonk-quit{border-color:rgba(232,53,43,.4);color:var(--red2)}
+.tonk-stage .nile-table{margin-top:4px}
+
+/* The opponent's play, held long enough to read. The reducer never keeps the
+   seat-by-seat events, so this is derived from the one thing state does carry:
+   the card now face up on the discard, which is whatever the last seat pitched.
+   Presentation only — nothing here can move a hand. */
+.card-drop{position:fixed;left:0;right:0;top:38%;z-index:7;display:flex;justify-content:center;pointer-events:none}
+.card-drop-inner{display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--hairline);border-left:3px solid var(--amber);border-radius:7px;background:rgba(10,10,10,.92);box-shadow:0 14px 40px rgba(0,0,0,.7)}
+.card-drop .play-card,.card-drop .play-card:disabled{cursor:default;opacity:1}
+.card-drop-label{display:flex;flex-direction:column;gap:2px}
+.card-drop-label b{font-size:.78rem;letter-spacing:.06em;text-transform:uppercase}
+.card-drop-label small{color:var(--muted);font-size:.66rem}
+@media(prefers-reduced-motion:no-preference){.card-drop-inner{animation:card-reveal 1900ms ease-out both}}
+@keyframes card-reveal{
+  0%{opacity:0;transform:translateX(46px)}
+  10.5%{opacity:1;transform:translateX(0)}
+  89.5%{opacity:1;transform:translateX(0)}
+  100%{opacity:0;transform:translateX(0)}}
+@media(prefers-reduced-motion:reduce){.card-drop-inner{animation:none}}
+
+/* --- Learned-in-Spenard accordion ----------------------------------------
+   Walks and discoveries are content, not a destination, so they collapse into
+   the neighbourhood hub rather than spending a navigation row of their own. */
+.learned-list{display:grid;gap:7px;padding:8px 0;color:#c7c7c7;font-size:.74rem}

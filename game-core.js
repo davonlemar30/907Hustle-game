@@ -4164,6 +4164,48 @@
     }
   }
 
+  // v1.15: Deshawn's weekly introduction. Every seven days on the crew he
+  // connects the player to something they have not found yet - the Nile's
+  // ground floor, the gym, a Night Owl regular - and when the map is used up,
+  // a reliable market tip instead. Two texts: his, then the contact's.
+  function resolveDeshawnIntro(state) {
+    const crew = state.people.crew.deshawn;
+    if (!crew?.recruited || crew.status !== "active") return;
+    const record = state.npc.deshawn;
+    const day = state.run.day;
+    const since = record.lastIntroDay == null ? (crew.recruitedDay == null ? 7 : day - crew.recruitedDay) : day - record.lastIntroDay;
+    if (since < 7) return;
+    record.lastIntroDay = day;
+    if (!state.world.locations.theNile.discovered) {
+      discoverNile(state, Nile.DISCOVERY_METHODS.deshawn);
+      record.introducedContacts.push("selam");
+      pushPhoneMessage(state, "Deshawn", "Got somebody you should meet. She works mornings at the blue building on Spenard. Tell her D sent you.");
+      pushPhoneMessage(state, "Selam", "Deshawn says you carry yourself right. Wellness desk is open from morning. Ask for Selam.");
+      return;
+    }
+    if (!state.discovered.spenardGym) {
+      state.discovered.spenardGym = true;
+      record.introducedContacts.push("spenard_gym");
+      pushPhoneMessage(state, "Deshawn", "Gym past the laundromat, same block. Ask about the week pass. Tell them I sent you.");
+      pushPhoneMessage(state, "Spenard Gym", "D's people get the first week on the house. Doors open early. Come through.");
+      return;
+    }
+    const unmetRegular = NIGHT_OWL_REGULARS.find((person) => !state.nightOwl.regulars[person.id]?.met);
+    if (unmetRegular) {
+      state.nightOwl.regulars[unmetRegular.id].met = true;
+      if (state.contacts[unmetRegular.id]) state.contacts[unmetRegular.id].known = true;
+      record.introducedContacts.push(unmetRegular.id);
+      pushPhoneMessage(state, "Deshawn", `You know ${unmetRegular.name.split(" ")[0]} from the Night Owl? You should. Good people. I told them about you.`);
+      pushPhoneMessage(state, unmetRegular.name.split(" ")[0], `Deshawn gave me your number. I'm at the Night Owl most nights. Come say hey.`);
+      return;
+    }
+    // Everything findable is found: a market tip instead. Reliable by
+    // definition - his name is on it.
+    const product = PRODUCTS[stringHash(`${state.run.seed}:deshawn:tip:${day}`) % PRODUCTS.length];
+    const area = AREA_BY_ID.north_star_lot;
+    state.effects.rumors.push({ id: `deshawn_tip_${day}`, areaId: area.id, productId: product.id, reliable: true, text: `Deshawn heard ${product.name} is moving in ${area.name}. His information is never loose.`, expiresAt: slotNumber(day, 3) + 4 });
+    pushPhoneMessage(state, "Deshawn", `Nobody new to meet this week. One thing instead: ${product.name} is moving in Spenard. Quietly. Do what you want with that.`);
+  }
   // v1.15: wages come out of cash automatically at day end, dirty money first
   // (criminal income paying criminal workers). Highest loyalty gets paid first,
   // so when the roll runs short the arrears land on whoever trusts the player
@@ -4259,6 +4301,7 @@
           }
         }
       }
+      resolveDeshawnIntro(state);
       if (state.run.day >= state.phone.billDueDay) {
         state.phone.daysPastDue += 1;
         if (state.phone.daysPastDue > 2 && state.phone.active) {
@@ -4268,12 +4311,23 @@
       }
       const rentDue = state.obligations.rentDueDay;
       const currentRentDue = state.run.day >= rentDue ? rentDue + Math.floor((state.run.day - rentDue) / 7) * 7 : rentDue;
+      // v1.15: while Deshawn is on the crew the grace re-arms once per rent
+      // period - he will talk to Yalonda every week, but only once a week. If
+      // he departs, whatever grace is banked is the last one.
+      {
+        const deshawnCrew = state.people.crew.deshawn;
+        if (deshawnCrew?.recruited && deshawnCrew.status === "active" && !state.flags.extraRentGraceAvailable
+          && state.flags.extraRentGraceUsedDueDay != null && state.flags.extraRentGraceUsedDueDay !== currentRentDue) {
+          state.flags.extraRentGraceAvailable = true;
+        }
+      }
       const missedThisDue = state.obligations.lastMissedDueDay === currentRentDue;
       if (state.run.day >= rentDue && !missedThisDue) {
         state.obligations.lastMissedDueDay = currentRentDue;
         if (state.flags.extraRentGraceAvailable) {
           state.flags.extraRentGraceAvailable = false;
-          logEntry(state, "Deshawn de-escalates the rent conversation and buys one extra grace intervention this week.", "good");
+          state.flags.extraRentGraceUsedDueDay = currentRentDue;
+          logEntry(state, "Deshawn talks to Yalonda before the envelope comes out. The rent conversation waits one more day.", "good");
         } else {
           state.npc.yalonda.rentMissed += 1;
           Exposure.recordObservation(state, "yalonda", { type: "financial", event: "missed_obligation", source: "household" });

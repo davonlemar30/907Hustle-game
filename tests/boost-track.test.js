@@ -75,9 +75,14 @@ test("Tier 2 unlocks at technique 5 and Tier 3 needs technique 13 plus crew", ()
 test("failed boosts persist store bans and technique increments only on success", () => {
   let state = openTier(1);
   state = C.reduceGame(state, { type: "BOOST", targetId: "night_owl", roll: 1 });
+  // v1.16: the ban is no longer automatic - a failure opens the caught-state
+  // choice, and giving the goods back is what puts the store on the list.
+  assert.equal(state.run.pendingEncounter?.type, "boost_caught");
+  state = C.reduceGame(state, { type: "RESOLVE_ENCOUNTER", choiceId: "surrender" });
   assert.ok(state.boost.storeBans.includes("night_owl"));
   assert.equal(state.boost.technique, 1);
   state.run.pendingEvent = null;
+  state.run.pendingEncounter = null;
   state.boost.dailyHits = {};
   state = C.reduceGame(state, { type: "BOOST", targetId: "spenard_fuel", roll: 0 });
   assert.equal(state.boost.technique, 2);

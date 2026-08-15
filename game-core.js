@@ -20,6 +20,7 @@
   const Gambling = require("./src/data/gambling.js");
   const GamblingEvents = require("./src/events/gambling-events.js");
   const Crew = require("./src/data/crew.js");
+  const Arrest = require("./src/data/arrest.js");
   const CurtisAwareness = require("./src/data/curtis-awareness.js");
 
   const VERSION = 11;
@@ -1213,6 +1214,9 @@
       contactStage: "unknown", crisisResolved: false, status: "outside", outcomes: [],
       tier: 0, lieutenantStage: "none", lieutenantEffectiveness: 0, operationPolicy: "manual",
       networkActive: false, trucesBrokered: 0, recruitedDay: null, wageMissedSince: null,
+      // v1.16: set when status flips to "arrested". Null for everyone else, so
+      // mergeDefaults hands it to every pre-v1.16 save without a migration.
+      jailedUntilDay: null, jailedSeverity: null,
     }]));
   }
 
@@ -1328,6 +1332,9 @@
         status: "creating_character", day: 1, slot: 0, seed, rngState: random.state,
         premise: "fresh_arrival", openingPending: false, phase: "week_zero", pressureStartedDay: null, checkpointDay: null,
         ending: null, pendingEvent: null, pendingEncounter: null, pendingOperationResult: null, pendingUnlocks: [], consequenceQueue: [], pendingObservations: [], daySummary: null,
+        // v1.16: parts of day a booking still owes, spent once the caught-state
+        // encounter is dismissed and advanceRun is allowed to move again.
+        pendingArrestSlots: null,
         dayEndPending: false, overtimeArmed: false, overtimeUsedDay: null, dailyActions: [],
         currentVisit: { trades: 0, grossBuy: 0, grossSell: 0, startedAt: 0 },
         recentEvents: [], encounterCount: 0, finalPlan: null, finalPlanPrepared: false,
@@ -1416,6 +1423,9 @@
       npc: createNpcState(),
       obligations: { rentDueDay: 7 },
       crewMeta: { totalWagesPaid: 0 },
+      // v1.16: the permanent record. Purely additive, which is why the save
+      // schema stays at v11 — mergeDefaults supplies this to every old save.
+      record: { arrests: 0, lastArrestDay: null, charges: [] },
       curtisAwareness: {
         level: 0, phase: "invisible", floor: 0, lastIncrementDay: null,
         watchersSeen: 0, lastWatcherDay: null, recentWatcherLines: [],
@@ -1454,6 +1464,9 @@
       boost: {
         visible: false, tier: 0, technique: 0, storeBans: [], fenceStanding: 0,
         dailyHits: {}, crewAssigned: null, merchandise: 0, discoveredWindows: [],
+        // v1.16: the caught-state handoff. Holds the target and the take while
+        // the fight/flee/surrender encounter is on screen; cleared on settle.
+        pendingCaught: null,
       },
       // v1.13: the Stick track. Visibility stays on state.rob.visible (the
       // existing unlock flag); this slice carries the ladder. `tier` is derived
@@ -2068,32 +2081,101 @@
       recordBehavior(state, "stickup", 1, `boost:${state.run.day}:${target.id}`, "shoplift_pattern");
       updateBoostTier(state);
       if (firstSuccess) queueUnlock(state, "boost");
-    } else if (target.tier === 1) {
-      state.player.heat = clamp(state.player.heat + districtHeat(state, target.areaId, "boost", 1), 0, 15);
-      if (!state.boost.storeBans.includes(target.id)) state.boost.storeBans.push(target.id);
-      logEntry(state, "Security grabbed your arm. You dropped it and walked out.", "bad");
-    } else if (target.tier === 2) {
-      const chaseRoll = Number.isFinite(options?.chaseRoll) ? options.chaseRoll : random.next();
-      const escaped = chaseRoll < clamp(0.45 + combatCompat(state) * 0.08, 0.25, 0.85);
-      state.player.heat = clamp(state.player.heat + districtHeat(state, target.areaId, "boost", escaped ? 1 : 2), 0, 15);
-      if (!escaped) {
-        if (!state.boost.storeBans.includes(target.id)) state.boost.storeBans.push(target.id);
-        if (state.player.heat > 6) state.flags.boostArrestRisk = true;
-      }
-      logEntry(state, escaped ? "Security gives chase, but you lose them outside." : "Security runs you down. The store has your face now.", escaped ? "warn" : "bad");
     } else {
-      state.player.heat = clamp(state.player.heat + districtHeat(state, target.areaId, "boost", 3), 0, 15);
-      const crewId = state.boost.crewAssigned;
-      const caughtRoll = Number.isFinite(options?.crewCaughtRoll) ? options.crewCaughtRoll : random.next();
-      if (crewId && caughtRoll < 0.30) {
-        state.people.crew[crewId].status = "arrested";
-        state.flags.crewBailPending = crewId;
-        state.boost.crewAssigned = null;
+      // v1.16: getting caught is a scene now, not a line of log text. Every
+      // tier hands off to the consequence encounter engine with the take still
+      // in play — fight for it, run with it, or hand it back. Nothing here
+      // costs heat, goods, or a ban yet; settleBoostCaught does all of that
+      // once the player has answered.
+      const take = random.int(target.take[0], target.take[1]);
+      // The dead flag from v1.13 finally has a reader. It is the escalation
+      // trigger: with real heat already on you (or on a ring job), a botched
+      // escape is what turns a store incident into a booking.
+      state.flags.boostArrestRisk = state.player.heat > 6 || target.tier === 3;
+      if (target.tier === 3) {
+        const crewId = state.boost.crewAssigned;
+        const caughtRoll = Number.isFinite(options?.crewCaughtRoll) ? options.crewCaughtRoll : random.next();
+        if (crewId && caughtRoll < 0.30) jailCrewMember(state, crewId, "boost2");
+        else logEntry(state, "The ring breaks and scatters. You are the one still inside.", "bad");
       }
-      state.boost.merchandise = 0;
-      logEntry(state, crewId && state.flags.crewBailPending === crewId ? `${CREW_BY_ID[crewId].name} gets caught. Bail is now your problem.` : "The ring breaks empty-handed and leaves Heat behind.", "bad");
+      state.boost.pendingCaught = {
+        targetId: target.id, targetName: target.name, tier: target.tier, areaId: target.areaId, take,
+      };
     }
-    return { success, chance };
+    return { success, chance, caught: !success };
+  }
+  // Open the caught-state scene if there is room for it, and settle it the old
+  // automatic way if there is not. Both boost call sites - the BOOST/SHOPLIFT
+  // reducer and the first-opportunity event effect - go through here, so a
+  // failed lift can never end up costing nothing at all.
+  function openOrSettleBoostCaught(state) {
+    const pending = state.boost?.pendingCaught;
+    if (!pending) return state;
+    if (state.run.status === "playing" && !state.run.pendingEncounter) {
+      state.run.pendingEncounter = EncounterSystem.buildBoostCaughtEncounter(state, pending);
+      return state;
+    }
+    state.flags.boostArrestRisk = false;
+    settleBoostCaught(state, {
+      boost: { ...pending, severity: EncounterSystem.BOOST_SEVERITY[pending.tier] },
+      result: { outcome: "boost_flee_loss" },
+    });
+    return state;
+  }
+  // The other half of the boost caught-state: the encounter engine decided what
+  // happened, this settles what it cost. Heat rides districtHeat so the
+  // district awareness curve still applies, and every branch broadcasts, so a
+  // player who fights their way out of every bust builds a violence record the
+  // civilian NPCs weight against them.
+  function settleBoostCaught(state, encounter) {
+    const info = encounter.boost;
+    const outcome = encounter.result?.outcome;
+    const target = BOOST_TARGET_BY_ID[info.targetId];
+    const areaId = info.areaId || state.world.currentNeighborhoodId;
+    const tier = info.tier;
+    const ban = () => { if (!state.boost.storeBans.includes(info.targetId)) state.boost.storeBans.push(info.targetId); };
+    const heat = (amount) => { state.player.heat = clamp(state.player.heat + districtHeat(state, areaId, "boost", amount), 0, 15); };
+    const keepTake = () => {
+      if (!info.take) return;
+      if (tier === 3) state.boost.merchandise += info.take;
+      else addDirtyCash(state, info.take);
+      logEntry(state, tier === 3 ? `$${info.take} in merchandise comes out with you.` : `You clear the lot still holding $${info.take} in goods.`, "good");
+    };
+    const loseRing = () => { if (tier === 3) state.boost.merchandise = 0; };
+    let arrestDetail = null;
+    if (outcome === "boost_fight_win") {
+      heat(1);
+      keepTake();
+      broadcastTracked(state, { type: "violence", event: "store_scuffle", channel: "neighborhood", location: areaId, day: state.run.day });
+    } else if (outcome === "boost_fight_loss") {
+      ban();
+      loseRing();
+      heat(tier === 1 ? 2 : tier === 2 ? 3 : 4);
+      broadcastTracked(state, { type: "violence", event: "store_scuffle", channel: "neighborhood", location: areaId, day: state.run.day });
+      arrestDetail = arrestPlayer(state, { severity: info.severity, source: "boost" });
+    } else if (outcome === "boost_flee_win") {
+      heat(tier === 1 ? 1 : 2);
+      keepTake();
+      broadcastTracked(state, { type: "heat_exposure", event: "heat_seen_low", channel: "neighborhood", location: areaId, day: state.run.day });
+    } else if (outcome === "boost_flee_loss") {
+      ban();
+      loseRing();
+      heat(tier + 1);
+      broadcastTracked(state, { type: "defiance", event: "attempted_boost", channel: "neighborhood", location: areaId, day: state.run.day });
+      // boostArrestRisk is the gate: running and losing is a ban and bruises on
+      // a quiet week, and a booking once somebody was already looking.
+      if (state.flags.boostArrestRisk) arrestDetail = arrestPlayer(state, { severity: info.severity, source: "boost" });
+    } else {
+      ban();
+      loseRing();
+      broadcastTracked(state, { type: "submission", event: "backed_down", channel: "neighborhood", location: areaId, day: state.run.day });
+      logEntry(state, `${target?.name || info.targetName} keeps the goods and your name. No Heat, no charge.`, "warn");
+    }
+    state.flags.boostArrestRisk = false;
+    state.boost.pendingCaught = null;
+    updateBoostTier(state);
+    if (outcome !== "boost_surrender") recordBehavior(state, "stickup", 1, `boost_caught:${state.run.day}:${info.targetId}`, "shoplift_pattern");
+    return arrestDetail;
   }
 
   // --- v1.13 Stick track ----------------------------------------------------
@@ -4206,6 +4288,126 @@
     state.effects.rumors.push({ id: `deshawn_tip_${day}`, areaId: area.id, productId: product.id, reliable: true, text: `Deshawn heard ${product.name} is moving in ${area.name}. His information is never loose.`, expiresAt: slotNumber(day, 3) + 4 });
     pushPhoneMessage(state, "Deshawn", `Nobody new to meet this week. One thing instead: ${product.name} is moving in Spenard. Quietly. Do what you want with that.`);
   }
+  // --- v1.16 Arrest & jail --------------------------------------------------
+  // The single funnel every arrest goes through. Every number it reads lives in
+  // src/data/arrest.js; what happens here is the state write.
+  //
+  // The trade the system makes: bail and clock in exchange for heat relief and
+  // a permanent record. Priors make the next one dearer and longer, so farming
+  // arrests to dump heat gets expensive fast, and a broke player pays in time
+  // instead of money rather than soft-locking against a bail they cannot meet.
+  //
+  // Does NOT move the clock itself. It returns `processingSlots`, and the call
+  // site feeds that to the one advanceRun it was already going to make — the
+  // one-advance-per-action contract stays intact.
+  function arrestPlayer(state, options) {
+    const severity = Arrest.severityKey(options?.severity);
+    const source = options?.source || "encounter";
+    if (!state.record) state.record = { arrests: 0, lastArrestDay: null, charges: [] };
+    const priors = Number(state.record.arrests) || 0;
+    const bail = Arrest.bailFor(severity, priors);
+    const paid = Math.min(state.player.cash, bail);
+    if (paid > 0) spendCash(state, paid);
+    const shortfall = bail - paid;
+    const processingSlots = Math.min(
+      Arrest.MAX_PROCESSING_SLOTS,
+      Arrest.processingSlotsFor(severity, priors) + Arrest.shortfallSlots(shortfall),
+    );
+    const relief = Math.min(state.player.heat, Arrest.heatReliefFor(severity));
+    state.player.heat = clamp(state.player.heat - relief, 0, 15);
+    state.record.arrests = priors + 1;
+    state.record.lastArrestDay = state.run.day;
+    state.record.charges.push({ day: state.run.day, severity, source });
+    state.stats.moneySpent.events += paid;
+    state.stats.majorDecisions.push(`Arrest: ${severity} via ${source}`);
+    // Being arrested is exactly what Curtis's people notice, and the network
+    // channel is what raises his awareness through broadcastTracked.
+    broadcastTracked(state, {
+      type: "heat_exposure",
+      event: severity.startsWith("stick") ? "heat_seen_high" : "heat_seen_low",
+      channel: "network",
+      location: state.world.currentNeighborhoodId,
+      day: state.run.day,
+    });
+    const hash = stringHash(`${state.run.seed}:arrest:${state.run.day}:${state.run.slot}:${severity}:${state.record.arrests}`);
+    const bookingBank = Arrest.BOOKING_LINES[source] || Arrest.BOOKING_LINES.encounter;
+    logEntry(state, Arrest.pickLine(bookingBank, hash), "bad");
+    const releaseBank = shortfall > 0 ? Arrest.RELEASE_LINES.served : Arrest.RELEASE_LINES.paid;
+    pushConsequence(state, Arrest.pickLine(releaseBank, hash), "bad");
+    pushConsequence(state, shortfall > 0
+      ? `Bail set at $${bail}. You covered $${paid} and served the rest. Prior arrests: ${state.record.arrests}.`
+      : `Bail $${bail} paid. Prior arrests: ${state.record.arrests}.`, "warn");
+    if (relief > 0) pushConsequence(state, `${Arrest.pickLine(Arrest.HEAT_RELIEF_LINES, hash)} (-${relief} Heat)`, "");
+    return { severity, source, bail, paid, shortfall, processingSlots, heatRelief: relief, priors: state.record.arrests };
+  }
+
+  // A crew member caught on a job. They keep their record and their arrears —
+  // what changes is that they stop being active, which is what pulls them out
+  // of capacity, power, wages, and field assignment until they are back.
+  function jailCrewMember(state, crewId, severity) {
+    const crew = state.people.crew?.[crewId];
+    if (!crew?.recruited || crew.status !== "active") return null;
+    const key = Arrest.severityKey(severity);
+    crew.status = "arrested";
+    crew.assignment = null;
+    crew.jailedSeverity = key;
+    crew.jailedUntilDay = state.run.day + Arrest.crewJailDaysFor(key);
+    state.flags.crewBailPending = crewId;
+    if (state.boost.crewAssigned === crewId) state.boost.crewAssigned = null;
+    for (const block of Object.values(state.world.territoryBlocks || {})) {
+      if (block.managerId === crewId) block.managerId = null;
+    }
+    const name = CREW_BY_ID[crewId].name.split(" ")[0];
+    const hash = stringHash(`${state.run.seed}:crew-arrest:${crewId}:${state.run.day}`);
+    logEntry(state, Arrest.pickLine(Arrest.CREW_BOOKED_LINES, hash).replace("%s", name), "bad");
+    pushConsequence(state, `${name} is in custody. Bail is $${Arrest.crewBailFor(key)} until Day ${crew.jailedUntilDay}.`, "bad");
+    return crew;
+  }
+
+  // Nobody came. They walk out on their own date with loyalty at 1 — back on
+  // the payroll, and one missed wage from leaving for good. Also the repair for
+  // the v1.15 bug where an "arrested" member had no way back at all: a record
+  // with no release date is released the first time this runs.
+  function releaseServedCrew(state) {
+    for (const person of CREW) {
+      const crew = state.people.crew?.[person.id];
+      if (!crew || crew.status !== "arrested") continue;
+      if (crew.jailedUntilDay != null && state.run.day < crew.jailedUntilDay) continue;
+      crew.status = "active";
+      crew.jailedUntilDay = null;
+      crew.jailedSeverity = null;
+      crew.loyalty = Crew.clampLoyalty(Arrest.CREW_LOYALTY_AFTER_SERVED);
+      if (state.flags.crewBailPending === person.id) state.flags.crewBailPending = null;
+      const name = person.name.split(" ")[0];
+      const hash = stringHash(`${state.run.seed}:crew-release:${person.id}:${state.run.day}`);
+      logEntry(state, Arrest.pickLine(Arrest.CREW_SERVED_LINES, hash).replace("%s", name), "bad");
+      pushConsequence(state, `${name} served the whole stretch. Loyalty is down to ${crew.loyalty}.`, "bad");
+    }
+  }
+
+  // The Character screen read: priors, the last one, and what the next one
+  // would cost at the severity the player is most likely to meet it at.
+  function arrestRecord(state) {
+    const record = state.record || { arrests: 0, lastArrestDay: null, charges: [] };
+    const charges = Array.isArray(record.charges) ? record.charges : [];
+    return {
+      arrests: record.arrests || 0,
+      lastArrestDay: record.lastArrestDay,
+      charges,
+      lastCharge: charges.length ? charges[charges.length - 1] : null,
+      multiplier: Arrest.priorMultiplier(record.arrests || 0),
+    };
+  }
+  function crewBailAvailability(state, crewId) {
+    const person = CREW_BY_ID[crewId];
+    const crew = state.people.crew?.[crewId];
+    if (!person || !crew) return { available: false, reason: "No such crew member.", cost: 0 };
+    if (crew.status !== "arrested") return { available: false, reason: "Nobody to bail out.", cost: 0 };
+    const cost = Arrest.crewBailFor(crew.jailedSeverity);
+    if (state.player.cash < cost) return { available: false, reason: `Bail is $${cost}. You are short.`, cost };
+    return { available: true, reason: `Free · no time passes`, cost };
+  }
+
   // v1.15: wages come out of cash automatically at day end, dirty money first
   // (criminal income paying criminal workers). Highest loyalty gets paid first,
   // so when the roll runs short the arrears land on whoever trusts the player
@@ -5302,6 +5504,9 @@
     state.run.slot = 0;
     state.player.energy = MAX_ENERGY;
     restorePhoneIfReady(state, slotNumber(oldDay, 3));
+    // v1.16: anyone whose date came up walks out. Run after the clock rolls so
+    // a member released this morning is not paid for the night they were in.
+    releaseServedCrew(state);
     resolveJobApplications(state);
     // Drained again after the clock rolls: the network and neighborhood channels
     // deliver at Morning of a later day, and a player who takes no action that
@@ -5430,7 +5635,13 @@
         const state = copyState(inputState);
         const finishAfter = !!state.run.pendingEncounter.finishAfter;
         state.run.pendingEncounter = null;
-        if (finishAfter) endRun(state);
+        if (finishAfter) { endRun(state); return state; }
+        // v1.16: booking eats the clock. The arrest itself was settled while the
+        // scene was still on screen; the time it cost is spent here, once the
+        // encounter is off the board and advanceRun will actually run.
+        const arrestSlots = state.run.pendingArrestSlots;
+        state.run.pendingArrestSlots = null;
+        if (arrestSlots) return advanceRun(state, { reason: "ARRESTED", suppressStory: true, timeCost: arrestSlots });
         return state;
       }
       const random = makeRandom(inputState.run.rngState);
@@ -5442,6 +5653,10 @@
       // the engine finishes the scene, game-core settles what it cost.
       if (action.choiceId === "deshawn_deescalate") applyDeshawnDeescalation(state);
       if (["fight", "draw"].includes(action.choiceId)) noteViolentChoice(state, deescalateWasAvailable);
+      if (state.run.pendingEncounter?.type === "boost_caught" && state.run.pendingEncounter.resolved) {
+        const detail = settleBoostCaught(state, state.run.pendingEncounter);
+        state.run.pendingArrestSlots = detail ? detail.processingSlots : null;
+      }
       if (state.run.pendingEncounter?.resolved) {
         const choice = action.choiceId === "draw" ? "fight" : ["fight", "run", "talk", "pay"].includes(action.choiceId) ? action.choiceId : "other";
         state.stats.encounterChoices[choice] += 1;
@@ -6152,6 +6367,9 @@
       if (current.id === "base_watch") state.flags.baseWatchResolved = true;
       if (current.id === "crew_crisis") state.flags.crewCrisisResolved = true;
       state.run.rngState = random.state;
+      // The first-boost opportunity resolves a lift inside an event effect
+      // rather than through the BOOST reducer. It gets the same caught-state.
+      openOrSettleBoostCaught(state);
       announceFeatureUnlocks(state, beforeFeatures);
       if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
       reconcileCash(state);
@@ -6357,6 +6575,28 @@
       state.player.cash -= amount; crew.wageDue = 0; crew.wageMissedSince = null; crew.loyalty = Crew.clampLoyalty(crew.loyalty + standingGain(crew, crew.loyalty, 1, "open")); state.stats.moneySpent.crew += amount;
       recordBehavior(state, "earner", 2, `crew_pay:${action.crewId}:${state.run.day}`, "crew_pay");
       logEntry(state, `${CREW_BY_ID[action.crewId].name.split(" ")[0]} folds the full $${amount} into a pocket and stays for the next plan.`, "good");
+      reconcileCash(state);
+      return state;
+    }
+    // v1.16: the other half of the crew arrest. Showing up costs money and one
+    // point of loyalty; not showing up costs the rest of their sentence and
+    // leaves them at 1. Free of the clock, same as PAY_CREW.
+    if (action.type === "BAIL_CREW") {
+      const availability = crewBailAvailability(state, action.crewId);
+      if (!availability.available) return inputState;
+      const crew = state.people.crew[action.crewId];
+      spendCash(state, availability.cost);
+      state.stats.moneySpent.crew += availability.cost;
+      crew.status = "active";
+      crew.jailedUntilDay = null;
+      crew.jailedSeverity = null;
+      crew.loyalty = Crew.clampLoyalty(Math.max(1, crew.loyalty - Arrest.CREW_BAIL_LOYALTY_COST));
+      if (state.flags.crewBailPending === action.crewId) state.flags.crewBailPending = null;
+      const name = CREW_BY_ID[action.crewId].name.split(" ")[0];
+      const hash = stringHash(`${state.run.seed}:crew-bail:${action.crewId}:${state.run.day}`);
+      logEntry(state, Arrest.pickLine(Arrest.CREW_BAIL_LINES, hash).replace("%s", name), "good");
+      pushConsequence(state, `${name} is out. $${availability.cost} gone, loyalty ${crew.loyalty}.`, "warn");
+      recordBehavior(state, "connector", 1, `crew_bail:${action.crewId}:${state.run.day}`, "crew_bail");
       reconcileCash(state);
       return state;
     }
@@ -7067,15 +7307,23 @@
         base.stats.robbery.failures += 1;
         base.stats.robbery.success = base.stats.robbery.successes > 0;
         effects.unshift(`-${damage} Health`, `+${Math.round(addedHeat * 10) / 10} Heat`, "$0 taken");
-        // v1.13 arrest stub — the full arrest system is a future build. On a
-        // botched big job with real Heat, you lose the bail money and the rest
-        // of the day. TODO: replace with the full arrest system.
-        let arrested = false;
-        if (target.tier === 3 && base.player.heat > 8) {
-          arrested = true;
-          const bail = Math.min(200, base.player.cash);
-          base.player.cash -= bail;
-          effects.push(`Booked and released — $${bail} bail`, "The rest of the day is gone");
+        // v1.16: the v1.13 stub is gone. All three Stick tiers route into
+        // arrestPlayer with their own severity. A blown job either goes badly
+        // enough on its own (catastrophic) or is loud enough for the heat you
+        // are already carrying — and the bigger the tier, the less heat it
+        // takes for somebody to already be looking your way.
+        const arrestHeatGate = target.tier === 1 ? 10 : target.tier === 2 ? 8 : 6;
+        const arrested = severe || base.player.heat > arrestHeatGate;
+        let arrestDetail = null;
+        if (arrested) {
+          arrestDetail = arrestPlayer(base, { severity: `stick${target.tier}`, source: "stick" });
+          effects.push(
+            arrestDetail.shortfall > 0
+              ? `Booked — $${arrestDetail.paid} of $${arrestDetail.bail} bail, the rest served`
+              : `Booked and released — $${arrestDetail.bail} bail`,
+            `-${arrestDetail.heatRelief} Heat on the record`,
+            `Prior arrests: ${arrestDetail.priors}`,
+          );
         }
         result = {
           kind: "robbery", tone: "bad", title: severe ? "It Goes Wrong" : "It Falls Apart",
@@ -7088,11 +7336,12 @@
         };
         broadcastOutcome(base, "robbery", outcome.tier);
         if (arrested) {
+          updateStickTier(base);
           base.stats.majorDecisions.push(`Stickup ${target.id}: arrested`);
           recordBehavior(base, "stickup", 2, `stickup:${base.run.day}:${target.id}`, "rob");
           base.run.rngState = random.state;
           logEntry(base, result.summary, result.tone);
-          const held = advanceRun(base, { reason: "STICKUP", suppressStory: true, timeCost: SLOTS.length });
+          const held = advanceRun(base, { reason: "STICKUP", suppressStory: true, timeCost: arrestDetail.processingSlots });
           if (held.run.status === "playing") held.run.pendingOperationResult = result;
           return held;
         }
@@ -7117,7 +7366,10 @@
       const random = makeRandom(base.run.rngState);
       resolveBoostAttempt(base, target, random, action);
       base.run.rngState = random.state;
-      return advanceRun(base, { reason: action.type });
+      // The clock moves first, then the scene opens - same shape as the boost
+      // opportunity event. An encounter the slot roll already produced wins,
+      // and the bust settles automatically rather than stacking.
+      return openOrSettleBoostCaught(advanceRun(base, { reason: action.type }));
     }
     if (action.type === "WANDER_SPENARD" || action.type === "EXPLORE_SPENARD") {
       if (state.world.currentNeighborhoodId !== HOME_DISTRICT_ID) return inputState;
@@ -7685,7 +7937,7 @@
   const ACTION_RESULT_TITLES = {
     WORK_SHIFT: "Shift Complete", WORK_JOB: "Shift Complete", TRAIN_ATTRIBUTE: "Training Complete", EXPLORE_SPENARD: "Walk Complete", WANDER_SPENARD: "Walk Complete",
     SHOPLIFT: "Attempt Resolved", BOOST: "Boost Resolved", ASK_BOOST_WINDOW: "Window Learned", STICKUP: "Stickup Resolved", CASE_TARGET: "Target Cased", NILE_TONK_SIT: "Hand Resolved", NILE_CELO_SIT: "Round Resolved", NILE_WELLNESS: "Session Done", NILE_COFFEE: "Coffee Done", END_MARKET: "Market Visit Closed",
-    SLEEP_HOME: "Night Passed", LAY_LOW: "Laid Low", HEAL: "Treatment Complete",
+    SLEEP_HOME: "Night Passed", LAY_LOW: "Laid Low", HEAL: "Treatment Complete", ARRESTED: "Booked and Released",
     PAY_DEBT: "Payment Made", CLAIM_BLOCK: "Block Claimed",
     RECRUIT_SOLDIER: "Soldier Recruited", RECRUIT_CREW: "Crew Recruited", PROMOTE_LIEUTENANT: "Lieutenant Promoted",
     VISIT_BASE: "Garage Open", UPGRADE_BASE: "Upgrade Installed", BUY_GEAR: "Gear Acquired",
@@ -7773,7 +8025,7 @@
     LISTING_ITEMS, LISTING_CAPACITY, MARKET: Market, marketEvents: MarketEvents, NIGHT_OWL_REGULARS, NIGHT_OWL_BOARD, HOUSEHOLD_NPCS, SOCIAL_CONTACTS, STORY_CONTACTS, PHONE_INTEL, DOWNTOWN_CONTENT_STUBS, DOWNTOWN_AMBIENT,
     SPENARD_BLOCKS, SOLDIER_RECRUIT_COST, SOLDIER_BASE_CAPACITY, SOLDIER_CAPACITY_PER_BLOCK, SOLDIERS_PER_BLOCK_CAP,
     SHARK_BORROWERS, SHARK_TERMS, DRE_MISSIONS, DRE_COLLECTOR_TIERS, ELI_LIEUTENANT_UNLOCK, RESPECT_STAGE_THRESHOLDS,
-    Crew, CREW_LOYALTY_MAX: Crew.CREW_LOYALTY_MAX, CREW_LOYALTY_START: Crew.CREW_LOYALTY_START, TIER_REQUIREMENTS: Crew.TIER_REQUIREMENTS,
+    Crew, Arrest, CREW_LOYALTY_MAX: Crew.CREW_LOYALTY_MAX, CREW_LOYALTY_START: Crew.CREW_LOYALTY_START, TIER_REQUIREMENTS: Crew.TIER_REQUIREMENTS,
     DISTRICT_CONTROL_TIERS, DISTRICT_CONTROL_CAPSTONE_BLOCKS, DISTRICT_CONTROL_LABEL, ELI_OPERATION_POLICIES,
     buildEventForTest: activeEvent, storyCandidatesForTest: storyCandidates,
     recordBehaviorForTest: recordBehavior,
@@ -7815,7 +8067,7 @@
       soldierRecruitAvailability, soldierAssignAvailability, blockClaimAvailability, eliPromotionAvailability,
       weeklyIncomeEstimate,
       dreTrustTier, dreIntroductionEligible, dreMissionAvailability, sharkUnlocked, sharkRiskLabel, sharkLoanAvailability,
-      deshawnRecruitmentAvailability, crewTierAvailability,
+      deshawnRecruitmentAvailability, crewTierAvailability, crewBailAvailability, arrestRecord,
       districtControlTier, districtHasBlockLayer, unassignedSoldiers,
       homeSituation, homeUnlocks, homePriorities, homeSummary, actionResult,
       juanWorkIntelKnown, jobRankForXp, jobPayRange, discoveredJobs, jobAvailability, quickShift, ambientFlavor, phoneIntel, knownWorkplaceContacts, knownSocialContacts, personalContacts, contactAvailability,

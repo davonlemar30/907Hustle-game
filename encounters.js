@@ -267,9 +267,89 @@
     return encounter;
   }
 
+  // --- v1.16 Boost caught-state ---------------------------------------------
+  // A blown boost used to auto-resolve into a store ban and a heat bump. It is
+  // a scene now: fight, flee, or surrender, delivered through this engine so it
+  // reuses EncounterModal and the id-dispatched choice re-validation.
+  //
+  // The split with game-core is the same one Deshawn's de-escalation uses: this
+  // file rolls the outcome and applies health, game-core settles what it cost —
+  // heat through districtHeat, store bans, the goods, the arrest, and the
+  // observation rows. Nothing here reaches back into game-core.
+  const BOOST_OPPONENTS = {
+    1: { label: "clerk", difficulty: "Weak", fight: 0.50, flee: 0.62, damage: [4, 9], lossDamage: [12, 20] },
+    2: { label: "store security", difficulty: "Moderate", fight: 0.30, flee: 0.50, damage: [5, 10], lossDamage: [15, 24] },
+    3: { label: "armed guard", difficulty: "Strong", fight: 0.15, flee: 0.38, damage: [6, 12], lossDamage: [18, 28] },
+  };
+  // Tier 3 is a ring job, but the charge on the player is still shoplifting.
+  const BOOST_SEVERITY = { 1: "boost1", 2: "boost2", 3: "boost2" };
+
+  function boostOpponent(tier) { return BOOST_OPPONENTS[tier] || BOOST_OPPONENTS[1]; }
+
+  function buildBoostCaughtEncounter(state, spec) {
+    const tier = Math.max(1, Math.min(3, Number(spec.tier) || 1));
+    const opponent = boostOpponent(tier);
+    return {
+      active: true, id: "boost_caught", type: "boost_caught", engine: "consequence",
+      phase: 0, choices: [], resolved: false, choicesMade: [], result: null, loot: null, finishAfter: false,
+      title: `Caught at ${spec.targetName}`,
+      description: `A hand closes on your arm before you reach the door. ${opponent.label === "clerk" ? "The clerk is not letting go and is already saying a number out loud." : opponent.label === "store security" ? "Store security has the exit and is talking into a shoulder mic." : "The guard has a hand resting somewhere you do not want it to move from."} The bag is still on you.`,
+      feedback: "",
+      areaId: spec.areaId, activity: "boost",
+      threat: tier * 2,
+      boost: {
+        targetId: spec.targetId, targetName: spec.targetName, tier,
+        take: Math.max(0, Math.floor(Number(spec.take) || 0)),
+        severity: BOOST_SEVERITY[tier], opponent: opponent.label, difficulty: opponent.difficulty,
+      },
+    };
+  }
+  function boostCaughtChoices(encounter, state) {
+    const tier = encounter.boost.tier;
+    const opponent = boostOpponent(tier);
+    return [
+      choice("fight", "Fight", `${opponent.difficulty} opponent. Win and you leave with the take. Lose and you are hurt and booked.`),
+      choice("run", "Run for it", "Keep the take if you get clear. Get caught and it is a ban, more Heat, and bruises."),
+      choice("surrender", "Give it up", "They keep the goods. No Heat, no damage, no arrest — only the take."),
+    ];
+  }
+  function resolveBoostFight(state, encounter, rng) {
+    const info = encounter.boost;
+    const opponent = boostOpponent(info.tier);
+    const outcome = resolve(state, encounter, "confrontation", opponent.fight, "boost_fight");
+    if (Attributes.isSuccessTier(outcome.tier)) {
+      // Winning is not free: the scuffle costs health even when it works. That
+      // is what stops a Combat build from chain-fighting every bust for nothing.
+      const damage = applyDamage(state, int(rng, opponent.damage[0], opponent.damage[1]), true);
+      finish(state, encounter, "boost_fight_win", `You get an arm free and the ${info.opponent} decides the doorway is not worth it. You leave ${damage} health lighter and still holding the bag.`);
+    } else {
+      const damage = applyDamage(state, int(rng, opponent.lossDamage[0], opponent.lossDamage[1]), true);
+      finish(state, encounter, "boost_fight_loss", `The ${info.opponent} puts you on the tile and keeps you there. You lose ${damage} health, the bag, and then your afternoon.`);
+    }
+  }
+  function resolveBoostFlee(state, encounter, rng) {
+    const info = encounter.boost;
+    const opponent = boostOpponent(info.tier);
+    const shoes = state.player.gear?.equipped?.utility === "running_shoes" ? 0.10 : 0;
+    const chance = clamp(opponent.flee + shoes - cargoRatio(state) * 0.15, 0.15, 0.90);
+    const outcome = resolve(state, encounter, "escape", chance, "boost_flee");
+    if (Attributes.isSuccessTier(outcome.tier)) {
+      finish(state, encounter, "boost_flee_win", `You twist loose and take the fire door. Nobody follows past the loading bay, and the take goes with you.`);
+    } else {
+      const damage = applyDamage(state, int(rng, 4, 10), true);
+      finish(state, encounter, "boost_flee_loss", `You get four steps. The ${info.opponent} takes you down beside the carts, costs you ${damage} health, and makes sure somebody photographs your face.`);
+    }
+  }
+  function resolveBoostCaught(state, encounter, choiceId, rng) {
+    if (choiceId === "fight") return resolveBoostFight(state, encounter, rng);
+    if (choiceId === "run") return resolveBoostFlee(state, encounter, rng);
+    return finish(state, encounter, "boost_surrender", "You open your hand before anybody else has to. They take the merchandise back, write nothing down, and walk you to the door you came in through.");
+  }
+
   function choice(id, label, hint) { return { id, label, description: hint }; }
   function getEligibleChoices(encounter, state) {
     if (!encounter || encounter.resolved) return [];
+    if (encounter.type === "boost_caught") return boostCaughtChoices(encounter, state);
     const areaId = encounter.areaId || state.world.currentNeighborhoodId;
     const weapon = equippedWeapon(state);
     const held = heldProducts(state);
@@ -422,6 +502,11 @@
     encounter.choicesMade = encounter.choicesMade || [];
     encounter.choicesMade.push(choiceId);
     state.run.pendingEncounter = encounter;
+    if (encounter.type === "boost_caught") {
+      resolveBoostCaught(state, encounter, choiceId, rng);
+      encounter.choices = getEligibleChoices(encounter, state).map((item) => item.id);
+      return state;
+    }
     if (choiceId === "draw") {
       encounter.phase += 1;
       encounter.feedback = "The weapon changes every posture in the lot. Nobody has committed yet, but the next answer will end it.";
@@ -469,8 +554,8 @@
   }
 
   return {
-    AUTHORED_ENCOUNTERS, RANDOM_NPC_TEMPLATES,
+    AUTHORED_ENCOUNTERS, RANDOM_NPC_TEMPLATES, BOOST_OPPONENTS, BOOST_SEVERITY,
     checkEncounterTrigger, getEligibleChoices, resolveEncounterChoice, rollRandomEncounter,
-    buildAuthoredEncounter,
+    buildAuthoredEncounter, buildBoostCaughtEncounter,
   };
 });

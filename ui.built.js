@@ -1918,12 +1918,94 @@
           }
           return encounter;
         }
+        const BOOST_OPPONENTS = {
+          1: { label: "clerk", difficulty: "Weak", fight: 0.5, flee: 0.62, damage: [4, 9], lossDamage: [12, 20] },
+          2: { label: "store security", difficulty: "Moderate", fight: 0.3, flee: 0.5, damage: [5, 10], lossDamage: [15, 24] },
+          3: { label: "armed guard", difficulty: "Strong", fight: 0.15, flee: 0.38, damage: [6, 12], lossDamage: [18, 28] }
+        };
+        const BOOST_SEVERITY = { 1: "boost1", 2: "boost2", 3: "boost2" };
+        function boostOpponent(tier) {
+          return BOOST_OPPONENTS[tier] || BOOST_OPPONENTS[1];
+        }
+        function buildBoostCaughtEncounter(state, spec) {
+          const tier = Math.max(1, Math.min(3, Number(spec.tier) || 1));
+          const opponent = boostOpponent(tier);
+          return {
+            active: true,
+            id: "boost_caught",
+            type: "boost_caught",
+            engine: "consequence",
+            phase: 0,
+            choices: [],
+            resolved: false,
+            choicesMade: [],
+            result: null,
+            loot: null,
+            finishAfter: false,
+            title: `Caught at ${spec.targetName}`,
+            description: `A hand closes on your arm before you reach the door. ${opponent.label === "clerk" ? "The clerk is not letting go and is already saying a number out loud." : opponent.label === "store security" ? "Store security has the exit and is talking into a shoulder mic." : "The guard has a hand resting somewhere you do not want it to move from."} The bag is still on you.`,
+            feedback: "",
+            areaId: spec.areaId,
+            activity: "boost",
+            threat: tier * 2,
+            boost: {
+              targetId: spec.targetId,
+              targetName: spec.targetName,
+              tier,
+              take: Math.max(0, Math.floor(Number(spec.take) || 0)),
+              severity: BOOST_SEVERITY[tier],
+              opponent: opponent.label,
+              difficulty: opponent.difficulty
+            }
+          };
+        }
+        function boostCaughtChoices(encounter, state) {
+          const tier = encounter.boost.tier;
+          const opponent = boostOpponent(tier);
+          return [
+            choice("fight", "Fight", `${opponent.difficulty} opponent. Win and you leave with the take. Lose and you are hurt and booked.`),
+            choice("run", "Run for it", "Keep the take if you get clear. Get caught and it is a ban, more Heat, and bruises."),
+            choice("surrender", "Give it up", "They keep the goods. No Heat, no damage, no arrest \u2014 only the take.")
+          ];
+        }
+        function resolveBoostFight(state, encounter, rng) {
+          const info = encounter.boost;
+          const opponent = boostOpponent(info.tier);
+          const outcome = resolve(state, encounter, "confrontation", opponent.fight, "boost_fight");
+          if (Attributes.isSuccessTier(outcome.tier)) {
+            const damage = applyDamage(state, int(rng, opponent.damage[0], opponent.damage[1]), true);
+            finish(state, encounter, "boost_fight_win", `You get an arm free and the ${info.opponent} decides the doorway is not worth it. You leave ${damage} health lighter and still holding the bag.`);
+          } else {
+            const damage = applyDamage(state, int(rng, opponent.lossDamage[0], opponent.lossDamage[1]), true);
+            finish(state, encounter, "boost_fight_loss", `The ${info.opponent} puts you on the tile and keeps you there. You lose ${damage} health, the bag, and then your afternoon.`);
+          }
+        }
+        function resolveBoostFlee(state, encounter, rng) {
+          var _a, _b;
+          const info = encounter.boost;
+          const opponent = boostOpponent(info.tier);
+          const shoes = ((_b = (_a = state.player.gear) == null ? void 0 : _a.equipped) == null ? void 0 : _b.utility) === "running_shoes" ? 0.1 : 0;
+          const chance = clamp(opponent.flee + shoes - cargoRatio(state) * 0.15, 0.15, 0.9);
+          const outcome = resolve(state, encounter, "escape", chance, "boost_flee");
+          if (Attributes.isSuccessTier(outcome.tier)) {
+            finish(state, encounter, "boost_flee_win", `You twist loose and take the fire door. Nobody follows past the loading bay, and the take goes with you.`);
+          } else {
+            const damage = applyDamage(state, int(rng, 4, 10), true);
+            finish(state, encounter, "boost_flee_loss", `You get four steps. The ${info.opponent} takes you down beside the carts, costs you ${damage} health, and makes sure somebody photographs your face.`);
+          }
+        }
+        function resolveBoostCaught(state, encounter, choiceId, rng) {
+          if (choiceId === "fight") return resolveBoostFight(state, encounter, rng);
+          if (choiceId === "run") return resolveBoostFlee(state, encounter, rng);
+          return finish(state, encounter, "boost_surrender", "You open your hand before anybody else has to. They take the merchandise back, write nothing down, and walk you to the door you came in through.");
+        }
         function choice(id, label, hint) {
           return { id, label, description: hint };
         }
         function getEligibleChoices(encounter, state) {
           var _a, _b, _c, _d, _e, _f, _g, _h;
           if (!encounter || encounter.resolved) return [];
+          if (encounter.type === "boost_caught") return boostCaughtChoices(encounter, state);
           const areaId = encounter.areaId || state.world.currentNeighborhoodId;
           const weapon = equippedWeapon(state);
           const held = heldProducts(state);
@@ -2080,6 +2162,11 @@
           encounter.choicesMade = encounter.choicesMade || [];
           encounter.choicesMade.push(choiceId);
           state.run.pendingEncounter = encounter;
+          if (encounter.type === "boost_caught") {
+            resolveBoostCaught(state, encounter, choiceId, rng);
+            encounter.choices = getEligibleChoices(encounter, state).map((item) => item.id);
+            return state;
+          }
           if (choiceId === "draw") {
             encounter.phase += 1;
             encounter.feedback = "The weapon changes every posture in the lot. Nobody has committed yet, but the next answer will end it.";
@@ -2128,11 +2215,14 @@
         return {
           AUTHORED_ENCOUNTERS,
           RANDOM_NPC_TEMPLATES,
+          BOOST_OPPONENTS,
+          BOOST_SEVERITY,
           checkEncounterTrigger,
           getEligibleChoices,
           resolveEncounterChoice,
           rollRandomEncounter,
-          buildAuthoredEncounter
+          buildAuthoredEncounter,
+          buildBoostCaughtEncounter
         };
       });
     }
@@ -3760,6 +3850,173 @@
     }
   });
 
+  // src/data/arrest.js
+  var require_arrest = __commonJS({
+    "src/data/arrest.js"(exports, module) {
+      var SEVERITIES = ["boost1", "boost2", "stick1", "stick2", "stick3", "encounter"];
+      var BAIL_BY_SEVERITY = {
+        boost1: 150,
+        boost2: 250,
+        stick1: 350,
+        stick2: 600,
+        stick3: 1e3,
+        encounter: 300
+      };
+      var PRIOR_MULTIPLIER = [1, 1.5, 2, 2.75, 3.5];
+      var PROCESSING_SLOTS = {
+        boost1: 1,
+        boost2: 1,
+        stick1: 2,
+        stick2: 2,
+        stick3: 3,
+        encounter: 2
+      };
+      var PRIORS_PER_EXTRA_SLOT = 2;
+      var MAX_PROCESSING_SLOTS = 4;
+      var HEAT_RELIEF = {
+        boost1: 2,
+        boost2: 2,
+        stick1: 3,
+        stick2: 4,
+        stick3: 5,
+        encounter: 3
+      };
+      var SHORTFALL_PER_SLOT = 150;
+      var CREW_BAIL_COST = {
+        boost1: 200,
+        boost2: 300,
+        stick1: 400,
+        stick2: 650,
+        stick3: 900,
+        encounter: 350
+      };
+      var CREW_JAIL_DAYS = {
+        boost1: 1,
+        boost2: 1,
+        stick1: 2,
+        stick2: 3,
+        stick3: 5,
+        encounter: 2
+      };
+      var CREW_BAIL_LOYALTY_COST = 1;
+      var CREW_LOYALTY_AFTER_SERVED = 1;
+      function severityKey(severity) {
+        return SEVERITIES.includes(severity) ? severity : "encounter";
+      }
+      function priorMultiplier(priors) {
+        const count = Math.max(0, Math.floor(Number(priors) || 0));
+        return PRIOR_MULTIPLIER[Math.min(count, PRIOR_MULTIPLIER.length - 1)];
+      }
+      function bailFor(severity, priors) {
+        const base = BAIL_BY_SEVERITY[severityKey(severity)];
+        return Math.round(base * priorMultiplier(priors) / 5) * 5;
+      }
+      function processingSlotsFor(severity, priors) {
+        const base = PROCESSING_SLOTS[severityKey(severity)];
+        const count = Math.max(0, Math.floor(Number(priors) || 0));
+        const extra = Math.floor(count / PRIORS_PER_EXTRA_SLOT);
+        return Math.min(MAX_PROCESSING_SLOTS, base + extra);
+      }
+      function shortfallSlots(shortfall) {
+        const owed = Math.max(0, Math.round(Number(shortfall) || 0));
+        if (!owed) return 0;
+        return Math.ceil(owed / SHORTFALL_PER_SLOT);
+      }
+      function heatReliefFor(severity) {
+        return HEAT_RELIEF[severityKey(severity)];
+      }
+      function crewBailFor(severity) {
+        return CREW_BAIL_COST[severityKey(severity)];
+      }
+      function crewJailDaysFor(severity) {
+        return CREW_JAIL_DAYS[severityKey(severity)];
+      }
+      var BOOKING_LINES = {
+        boost: [
+          "The cuffs go on in the stockroom, past the swinging doors where the cameras stop.",
+          "Loss prevention holds you until the cruiser gets there. Nobody raises their voice.",
+          "They walk you out the front, past the register line, which is the part they wanted."
+        ],
+        stick: [
+          "The second set of hands on you has a badge. The wall is cold and the questions are patient.",
+          "You get maybe a block before the headlights swing wide across the lot.",
+          "Somebody called it in fast. Processing takes the rest of what was left of the day."
+        ],
+        encounter: [
+          "The lot fills with light and everybody's hands go where they are told.",
+          "One radio call turns the whole block into a scene with your name in the middle of it.",
+          "You are the one still standing there when they arrive, which is the whole problem."
+        ]
+      };
+      var RELEASE_LINES = {
+        paid: [
+          "Bail clears and the desk gives your pockets back a bag at a time.",
+          "You sign your own name three times and walk out into the wrong part of the day.",
+          "The money leaves, the file stays, and the street outside is suddenly quiet about you."
+        ],
+        served: [
+          "There is no bail money, so there is time instead. The clock is the payment.",
+          "You sit it out on a bench under a light that never changes, and the day goes with it.",
+          "Nobody comes, nothing gets paid, and the hours take what the cash could not."
+        ]
+      };
+      var HEAT_RELIEF_LINES = [
+        "Whatever the block thought it knew about you got filed and closed. The watching thins out.",
+        "The street heat goes cold the moment it becomes paperwork. That trade is not free.",
+        "You are less interesting outside now, and permanently more interesting on paper."
+      ];
+      var CREW_BOOKED_LINES = [
+        "%s gets caught. Bail is now your problem.",
+        "They take %s out the back. Nobody says your name, which is the only good news.",
+        "%s goes in the car. The rest of the ring scatters and the take stays behind."
+      ];
+      var CREW_BAIL_LINES = [
+        "%s comes out squinting and does not say thank you, but shows up the next morning.",
+        "You put the money down for %s. The debt between you moved, and both of you know it.",
+        "%s walks out to find you already waiting. That gets remembered longer than the cell."
+      ];
+      var CREW_SERVED_LINES = [
+        "%s walks out on their own date. Nobody was waiting. They remember that part.",
+        "%s does the whole stretch and comes back thinner and quieter. The loyalty is gone.",
+        "%s gets released with nobody there. They come back to work, but only barely."
+      ];
+      function pickLine(bank, hash) {
+        const pool = Array.isArray(bank) ? bank : [];
+        if (!pool.length) return "";
+        return pool[Math.abs(Math.floor(Number(hash) || 0)) % pool.length];
+      }
+      module.exports = {
+        SEVERITIES,
+        BAIL_BY_SEVERITY,
+        PRIOR_MULTIPLIER,
+        PROCESSING_SLOTS,
+        PRIORS_PER_EXTRA_SLOT,
+        MAX_PROCESSING_SLOTS,
+        HEAT_RELIEF,
+        SHORTFALL_PER_SLOT,
+        CREW_BAIL_COST,
+        CREW_JAIL_DAYS,
+        CREW_BAIL_LOYALTY_COST,
+        CREW_LOYALTY_AFTER_SERVED,
+        BOOKING_LINES,
+        RELEASE_LINES,
+        HEAT_RELIEF_LINES,
+        CREW_BOOKED_LINES,
+        CREW_BAIL_LINES,
+        CREW_SERVED_LINES,
+        severityKey,
+        priorMultiplier,
+        bailFor,
+        processingSlotsFor,
+        shortfallSlots,
+        heatReliefFor,
+        crewBailFor,
+        crewJailDaysFor,
+        pickLine
+      };
+    }
+  });
+
   // src/data/curtis-awareness.js
   var require_curtis_awareness = __commonJS({
     "src/data/curtis-awareness.js"(exports, module) {
@@ -4158,6 +4415,7 @@
         const Gambling = require_gambling();
         const GamblingEvents = require_gambling_events();
         const Crew = require_crew();
+        const Arrest = require_arrest();
         const CurtisAwareness = require_curtis_awareness();
         const VERSION = 11;
         const RUN_DAYS = 7;
@@ -5434,7 +5692,11 @@
             networkActive: false,
             trucesBrokered: 0,
             recruitedDay: null,
-            wageMissedSince: null
+            wageMissedSince: null,
+            // v1.16: set when status flips to "arrested". Null for everyone else, so
+            // mergeDefaults hands it to every pre-v1.16 save without a migration.
+            jailedUntilDay: null,
+            jailedSeverity: null
           }]));
         }
         function createPlugState() {
@@ -5601,6 +5863,9 @@
               consequenceQueue: [],
               pendingObservations: [],
               daySummary: null,
+              // v1.16: parts of day a booking still owes, spent once the caught-state
+              // encounter is dismissed and advanceRun is allowed to move again.
+              pendingArrestSlots: null,
               dayEndPending: false,
               overtimeArmed: false,
               overtimeUsedDay: null,
@@ -5757,6 +6022,9 @@
             npc: createNpcState(),
             obligations: { rentDueDay: 7 },
             crewMeta: { totalWagesPaid: 0 },
+            // v1.16: the permanent record. Purely additive, which is why the save
+            // schema stays at v11 — mergeDefaults supplies this to every old save.
+            record: { arrests: 0, lastArrestDay: null, charges: [] },
             curtisAwareness: {
               level: 0,
               phase: "invisible",
@@ -5826,7 +6094,10 @@
               dailyHits: {},
               crewAssigned: null,
               merchandise: 0,
-              discoveredWindows: []
+              discoveredWindows: [],
+              // v1.16: the caught-state handoff. Holds the target and the take while
+              // the fight/flee/surrender encounter is on screen; cleared on settle.
+              pendingCaught: null
             },
             // v1.13: the Stick track. Visibility stays on state.rob.visible (the
             // existing unlock flag); this slice carries the ladder. `tier` is derived
@@ -6412,32 +6683,94 @@
             recordBehavior(state, "stickup", 1, `boost:${state.run.day}:${target.id}`, "shoplift_pattern");
             updateBoostTier(state);
             if (firstSuccess) queueUnlock(state, "boost");
-          } else if (target.tier === 1) {
-            state.player.heat = clamp(state.player.heat + districtHeat(state, target.areaId, "boost", 1), 0, 15);
-            if (!state.boost.storeBans.includes(target.id)) state.boost.storeBans.push(target.id);
-            logEntry(state, "Security grabbed your arm. You dropped it and walked out.", "bad");
-          } else if (target.tier === 2) {
-            const chaseRoll = Number.isFinite(options == null ? void 0 : options.chaseRoll) ? options.chaseRoll : random.next();
-            const escaped = chaseRoll < clamp(0.45 + combatCompat(state) * 0.08, 0.25, 0.85);
-            state.player.heat = clamp(state.player.heat + districtHeat(state, target.areaId, "boost", escaped ? 1 : 2), 0, 15);
-            if (!escaped) {
-              if (!state.boost.storeBans.includes(target.id)) state.boost.storeBans.push(target.id);
-              if (state.player.heat > 6) state.flags.boostArrestRisk = true;
-            }
-            logEntry(state, escaped ? "Security gives chase, but you lose them outside." : "Security runs you down. The store has your face now.", escaped ? "warn" : "bad");
           } else {
-            state.player.heat = clamp(state.player.heat + districtHeat(state, target.areaId, "boost", 3), 0, 15);
-            const crewId = state.boost.crewAssigned;
-            const caughtRoll = Number.isFinite(options == null ? void 0 : options.crewCaughtRoll) ? options.crewCaughtRoll : random.next();
-            if (crewId && caughtRoll < 0.3) {
-              state.people.crew[crewId].status = "arrested";
-              state.flags.crewBailPending = crewId;
-              state.boost.crewAssigned = null;
+            const take = random.int(target.take[0], target.take[1]);
+            state.flags.boostArrestRisk = state.player.heat > 6 || target.tier === 3;
+            if (target.tier === 3) {
+              const crewId = state.boost.crewAssigned;
+              const caughtRoll = Number.isFinite(options == null ? void 0 : options.crewCaughtRoll) ? options.crewCaughtRoll : random.next();
+              if (crewId && caughtRoll < 0.3) jailCrewMember(state, crewId, "boost2");
+              else logEntry(state, "The ring breaks and scatters. You are the one still inside.", "bad");
             }
-            state.boost.merchandise = 0;
-            logEntry(state, crewId && state.flags.crewBailPending === crewId ? `${CREW_BY_ID[crewId].name} gets caught. Bail is now your problem.` : "The ring breaks empty-handed and leaves Heat behind.", "bad");
+            state.boost.pendingCaught = {
+              targetId: target.id,
+              targetName: target.name,
+              tier: target.tier,
+              areaId: target.areaId,
+              take
+            };
           }
-          return { success, chance };
+          return { success, chance, caught: !success };
+        }
+        function openOrSettleBoostCaught(state) {
+          var _a;
+          const pending = (_a = state.boost) == null ? void 0 : _a.pendingCaught;
+          if (!pending) return state;
+          if (state.run.status === "playing" && !state.run.pendingEncounter) {
+            state.run.pendingEncounter = EncounterSystem.buildBoostCaughtEncounter(state, pending);
+            return state;
+          }
+          state.flags.boostArrestRisk = false;
+          settleBoostCaught(state, {
+            boost: { ...pending, severity: EncounterSystem.BOOST_SEVERITY[pending.tier] },
+            result: { outcome: "boost_flee_loss" }
+          });
+          return state;
+        }
+        function settleBoostCaught(state, encounter) {
+          var _a;
+          const info = encounter.boost;
+          const outcome = (_a = encounter.result) == null ? void 0 : _a.outcome;
+          const target = BOOST_TARGET_BY_ID[info.targetId];
+          const areaId = info.areaId || state.world.currentNeighborhoodId;
+          const tier = info.tier;
+          const ban = () => {
+            if (!state.boost.storeBans.includes(info.targetId)) state.boost.storeBans.push(info.targetId);
+          };
+          const heat = (amount) => {
+            state.player.heat = clamp(state.player.heat + districtHeat(state, areaId, "boost", amount), 0, 15);
+          };
+          const keepTake = () => {
+            if (!info.take) return;
+            if (tier === 3) state.boost.merchandise += info.take;
+            else addDirtyCash(state, info.take);
+            logEntry(state, tier === 3 ? `$${info.take} in merchandise comes out with you.` : `You clear the lot still holding $${info.take} in goods.`, "good");
+          };
+          const loseRing = () => {
+            if (tier === 3) state.boost.merchandise = 0;
+          };
+          let arrestDetail = null;
+          if (outcome === "boost_fight_win") {
+            heat(1);
+            keepTake();
+            broadcastTracked(state, { type: "violence", event: "store_scuffle", channel: "neighborhood", location: areaId, day: state.run.day });
+          } else if (outcome === "boost_fight_loss") {
+            ban();
+            loseRing();
+            heat(tier === 1 ? 2 : tier === 2 ? 3 : 4);
+            broadcastTracked(state, { type: "violence", event: "store_scuffle", channel: "neighborhood", location: areaId, day: state.run.day });
+            arrestDetail = arrestPlayer(state, { severity: info.severity, source: "boost" });
+          } else if (outcome === "boost_flee_win") {
+            heat(tier === 1 ? 1 : 2);
+            keepTake();
+            broadcastTracked(state, { type: "heat_exposure", event: "heat_seen_low", channel: "neighborhood", location: areaId, day: state.run.day });
+          } else if (outcome === "boost_flee_loss") {
+            ban();
+            loseRing();
+            heat(tier + 1);
+            broadcastTracked(state, { type: "defiance", event: "attempted_boost", channel: "neighborhood", location: areaId, day: state.run.day });
+            if (state.flags.boostArrestRisk) arrestDetail = arrestPlayer(state, { severity: info.severity, source: "boost" });
+          } else {
+            ban();
+            loseRing();
+            broadcastTracked(state, { type: "submission", event: "backed_down", channel: "neighborhood", location: areaId, day: state.run.day });
+            logEntry(state, `${(target == null ? void 0 : target.name) || info.targetName} keeps the goods and your name. No Heat, no charge.`, "warn");
+          }
+          state.flags.boostArrestRisk = false;
+          state.boost.pendingCaught = null;
+          updateBoostTier(state);
+          if (outcome !== "boost_surrender") recordBehavior(state, "stickup", 1, `boost_caught:${state.run.day}:${info.targetId}`, "shoplift_pattern");
+          return arrestDetail;
         }
         function stickTier(state) {
           var _a, _b;
@@ -8401,6 +8734,100 @@
           state.effects.rumors.push({ id: `deshawn_tip_${day}`, areaId: area.id, productId: product.id, reliable: true, text: `Deshawn heard ${product.name} is moving in ${area.name}. His information is never loose.`, expiresAt: slotNumber(day, 3) + 4 });
           pushPhoneMessage(state, "Deshawn", `Nobody new to meet this week. One thing instead: ${product.name} is moving in Spenard. Quietly. Do what you want with that.`);
         }
+        function arrestPlayer(state, options) {
+          const severity = Arrest.severityKey(options == null ? void 0 : options.severity);
+          const source = (options == null ? void 0 : options.source) || "encounter";
+          if (!state.record) state.record = { arrests: 0, lastArrestDay: null, charges: [] };
+          const priors = Number(state.record.arrests) || 0;
+          const bail = Arrest.bailFor(severity, priors);
+          const paid = Math.min(state.player.cash, bail);
+          if (paid > 0) spendCash(state, paid);
+          const shortfall = bail - paid;
+          const processingSlots = Math.min(
+            Arrest.MAX_PROCESSING_SLOTS,
+            Arrest.processingSlotsFor(severity, priors) + Arrest.shortfallSlots(shortfall)
+          );
+          const relief = Math.min(state.player.heat, Arrest.heatReliefFor(severity));
+          state.player.heat = clamp(state.player.heat - relief, 0, 15);
+          state.record.arrests = priors + 1;
+          state.record.lastArrestDay = state.run.day;
+          state.record.charges.push({ day: state.run.day, severity, source });
+          state.stats.moneySpent.events += paid;
+          state.stats.majorDecisions.push(`Arrest: ${severity} via ${source}`);
+          broadcastTracked(state, {
+            type: "heat_exposure",
+            event: severity.startsWith("stick") ? "heat_seen_high" : "heat_seen_low",
+            channel: "network",
+            location: state.world.currentNeighborhoodId,
+            day: state.run.day
+          });
+          const hash = stringHash(`${state.run.seed}:arrest:${state.run.day}:${state.run.slot}:${severity}:${state.record.arrests}`);
+          const bookingBank = Arrest.BOOKING_LINES[source] || Arrest.BOOKING_LINES.encounter;
+          logEntry(state, Arrest.pickLine(bookingBank, hash), "bad");
+          const releaseBank = shortfall > 0 ? Arrest.RELEASE_LINES.served : Arrest.RELEASE_LINES.paid;
+          pushConsequence(state, Arrest.pickLine(releaseBank, hash), "bad");
+          pushConsequence(state, shortfall > 0 ? `Bail set at $${bail}. You covered $${paid} and served the rest. Prior arrests: ${state.record.arrests}.` : `Bail $${bail} paid. Prior arrests: ${state.record.arrests}.`, "warn");
+          if (relief > 0) pushConsequence(state, `${Arrest.pickLine(Arrest.HEAT_RELIEF_LINES, hash)} (-${relief} Heat)`, "");
+          return { severity, source, bail, paid, shortfall, processingSlots, heatRelief: relief, priors: state.record.arrests };
+        }
+        function jailCrewMember(state, crewId, severity) {
+          var _a;
+          const crew = (_a = state.people.crew) == null ? void 0 : _a[crewId];
+          if (!(crew == null ? void 0 : crew.recruited) || crew.status !== "active") return null;
+          const key = Arrest.severityKey(severity);
+          crew.status = "arrested";
+          crew.assignment = null;
+          crew.jailedSeverity = key;
+          crew.jailedUntilDay = state.run.day + Arrest.crewJailDaysFor(key);
+          state.flags.crewBailPending = crewId;
+          if (state.boost.crewAssigned === crewId) state.boost.crewAssigned = null;
+          for (const block of Object.values(state.world.territoryBlocks || {})) {
+            if (block.managerId === crewId) block.managerId = null;
+          }
+          const name = CREW_BY_ID[crewId].name.split(" ")[0];
+          const hash = stringHash(`${state.run.seed}:crew-arrest:${crewId}:${state.run.day}`);
+          logEntry(state, Arrest.pickLine(Arrest.CREW_BOOKED_LINES, hash).replace("%s", name), "bad");
+          pushConsequence(state, `${name} is in custody. Bail is $${Arrest.crewBailFor(key)} until Day ${crew.jailedUntilDay}.`, "bad");
+          return crew;
+        }
+        function releaseServedCrew(state) {
+          var _a;
+          for (const person of CREW) {
+            const crew = (_a = state.people.crew) == null ? void 0 : _a[person.id];
+            if (!crew || crew.status !== "arrested") continue;
+            if (crew.jailedUntilDay != null && state.run.day < crew.jailedUntilDay) continue;
+            crew.status = "active";
+            crew.jailedUntilDay = null;
+            crew.jailedSeverity = null;
+            crew.loyalty = Crew.clampLoyalty(Arrest.CREW_LOYALTY_AFTER_SERVED);
+            if (state.flags.crewBailPending === person.id) state.flags.crewBailPending = null;
+            const name = person.name.split(" ")[0];
+            const hash = stringHash(`${state.run.seed}:crew-release:${person.id}:${state.run.day}`);
+            logEntry(state, Arrest.pickLine(Arrest.CREW_SERVED_LINES, hash).replace("%s", name), "bad");
+            pushConsequence(state, `${name} served the whole stretch. Loyalty is down to ${crew.loyalty}.`, "bad");
+          }
+        }
+        function arrestRecord(state) {
+          const record = state.record || { arrests: 0, lastArrestDay: null, charges: [] };
+          const charges = Array.isArray(record.charges) ? record.charges : [];
+          return {
+            arrests: record.arrests || 0,
+            lastArrestDay: record.lastArrestDay,
+            charges,
+            lastCharge: charges.length ? charges[charges.length - 1] : null,
+            multiplier: Arrest.priorMultiplier(record.arrests || 0)
+          };
+        }
+        function crewBailAvailability(state, crewId) {
+          var _a;
+          const person = CREW_BY_ID[crewId];
+          const crew = (_a = state.people.crew) == null ? void 0 : _a[crewId];
+          if (!person || !crew) return { available: false, reason: "No such crew member.", cost: 0 };
+          if (crew.status !== "arrested") return { available: false, reason: "Nobody to bail out.", cost: 0 };
+          const cost = Arrest.crewBailFor(crew.jailedSeverity);
+          if (state.player.cash < cost) return { available: false, reason: `Bail is $${cost}. You are short.`, cost };
+          return { available: true, reason: `Free \xB7 no time passes`, cost };
+        }
         function settleCrewWages(state) {
           if (!state.crewMeta) state.crewMeta = { totalWagesPaid: 0 };
           const roster = recruitedCrew(state).map((person) => ({ person, crew: state.people.crew[person.id] })).sort((a, b) => b.crew.loyalty - a.crew.loyalty);
@@ -10120,6 +10547,7 @@
           state.run.slot = 0;
           state.player.energy = MAX_ENERGY;
           restorePhoneIfReady(state, slotNumber(oldDay, 3));
+          releaseServedCrew(state);
           resolveJobApplications(state);
           Exposure.resolveObservationQueue(state);
           resolveBleedArrivals(state);
@@ -10141,6 +10569,7 @@
           crew.loyalty = Crew.clampLoyalty(crew.loyalty + Crew.DESHAWN_LOYALTY_TRIGGERS.deescalateUsed);
           state.npc.deshawn.lastDeescalationDay = state.run.day;
           state.player.heat = clamp(state.player.heat - 1, 0, 15);
+          Exposure.recordObservation(state, "deshawn", { type: "discretion", event: "deshawn_deescalation", source: "witnessed" });
           broadcastTracked(state, { type: "discretion", event: "deshawn_deescalation", channel: "neighborhood", day: state.run.day });
         }
         function noteViolentChoice(state, deescalateWasAvailable) {
@@ -10231,13 +10660,19 @@
           }
         }
         function reduceEncounter(inputState, action) {
-          var _a, _b, _c, _d, _e;
+          var _a, _b, _c, _d, _e, _f;
           if (((_a = inputState.run.pendingEncounter) == null ? void 0 : _a.engine) === "consequence") {
             if (inputState.run.pendingEncounter.resolved && action.choiceId === "continue") {
               const state3 = copyState(inputState);
               const finishAfter = !!state3.run.pendingEncounter.finishAfter;
               state3.run.pendingEncounter = null;
-              if (finishAfter) endRun(state3);
+              if (finishAfter) {
+                endRun(state3);
+                return state3;
+              }
+              const arrestSlots = state3.run.pendingArrestSlots;
+              state3.run.pendingArrestSlots = null;
+              if (arrestSlots) return advanceRun(state3, { reason: "ARRESTED", suppressStory: true, timeCost: arrestSlots });
               return state3;
             }
             const random2 = makeRandom(inputState.run.rngState);
@@ -10247,12 +10682,16 @@
             state2.run.rngState = random2.state;
             if (action.choiceId === "deshawn_deescalate") applyDeshawnDeescalation(state2);
             if (["fight", "draw"].includes(action.choiceId)) noteViolentChoice(state2, deescalateWasAvailable);
-            if ((_b = state2.run.pendingEncounter) == null ? void 0 : _b.resolved) {
+            if (((_b = state2.run.pendingEncounter) == null ? void 0 : _b.type) === "boost_caught" && state2.run.pendingEncounter.resolved) {
+              const detail = settleBoostCaught(state2, state2.run.pendingEncounter);
+              state2.run.pendingArrestSlots = detail ? detail.processingSlots : null;
+            }
+            if ((_c = state2.run.pendingEncounter) == null ? void 0 : _c.resolved) {
               const choice2 = action.choiceId === "draw" ? "fight" : ["fight", "run", "talk", "pay"].includes(action.choiceId) ? action.choiceId : "other";
               state2.stats.encounterChoices[choice2] += 1;
               if (["fight", "draw"].includes(action.choiceId)) recordBehavior(state2, "stickup", action.choiceId === "draw" ? 2 : 1, `encounter:${state2.run.pendingEncounter.id}`, "confrontation");
               else if (["talk", "call_crew", "use_relationship", "deshawn_deescalate"].includes(action.choiceId)) recordBehavior(state2, "connector", 1, `encounter:${state2.run.pendingEncounter.id}`, "relationship");
-              logEntry(state2, ((_c = state2.run.pendingEncounter.result) == null ? void 0 : _c.prose) || "The confrontation ends and the run keeps moving.", ["won", "escaped", "talked", "crew_win", "relationship", "deescalated"].includes((_d = state2.run.pendingEncounter.result) == null ? void 0 : _d.outcome) ? "good" : "warn");
+              logEntry(state2, ((_d = state2.run.pendingEncounter.result) == null ? void 0 : _d.prose) || "The confrontation ends and the run keeps moving.", ["won", "escaped", "talked", "crew_win", "relationship", "deescalated"].includes((_e = state2.run.pendingEncounter.result) == null ? void 0 : _e.outcome) ? "good" : "warn");
             }
             state2.stats.highestHeat = Math.max(state2.stats.highestHeat, state2.player.heat);
             if (state2.player.health <= 0 || state2.player.heat >= 15) endRun(state2);
@@ -10317,7 +10756,7 @@
               finishEncounter(state, "talk", "You name the people and consequences they forgot to count. The lane opens without anybody reaching for a weapon.");
             } else failEncounterStep(state, random, "The explanation");
           } else if (choice === "run") {
-            const gearBonus = ((_e = GEAR_BY_ID[state.player.gear.equipped.utility]) == null ? void 0 : _e.escape) || 0;
+            const gearBonus = ((_f = GEAR_BY_ID[state.player.gear.equipped.utility]) == null ? void 0 : _f.escape) || 0;
             const chance = clamp(0.42 + gearBonus + 0.18 * freeCargoRatio(state) + healthModifier(state.player.health) - encounter.pursuit, 0.1, 0.9);
             const outcome = resolveOutcome(state, "escape", chance, `${state.run.seed}:escape:${state.run.day}:${state.run.slot}:${encounter.id}`);
             broadcastOutcome(state, "escape", outcome.tier);
@@ -10938,6 +11377,7 @@
             if (current.id === "base_watch") state.flags.baseWatchResolved = true;
             if (current.id === "crew_crisis") state.flags.crewCrisisResolved = true;
             state.run.rngState = random.state;
+            openOrSettleBoostCaught(state);
             announceFeatureUnlocks(state, beforeFeatures);
             if (state.player.health <= 0 || state.player.heat >= 15) endRun(state);
             reconcileCash(state);
@@ -11153,6 +11593,25 @@
             state.stats.moneySpent.crew += amount;
             recordBehavior(state, "earner", 2, `crew_pay:${action.crewId}:${state.run.day}`, "crew_pay");
             logEntry(state, `${CREW_BY_ID[action.crewId].name.split(" ")[0]} folds the full $${amount} into a pocket and stays for the next plan.`, "good");
+            reconcileCash(state);
+            return state;
+          }
+          if (action.type === "BAIL_CREW") {
+            const availability = crewBailAvailability(state, action.crewId);
+            if (!availability.available) return inputState;
+            const crew = state.people.crew[action.crewId];
+            spendCash(state, availability.cost);
+            state.stats.moneySpent.crew += availability.cost;
+            crew.status = "active";
+            crew.jailedUntilDay = null;
+            crew.jailedSeverity = null;
+            crew.loyalty = Crew.clampLoyalty(Math.max(1, crew.loyalty - Arrest.CREW_BAIL_LOYALTY_COST));
+            if (state.flags.crewBailPending === action.crewId) state.flags.crewBailPending = null;
+            const name = CREW_BY_ID[action.crewId].name.split(" ")[0];
+            const hash = stringHash(`${state.run.seed}:crew-bail:${action.crewId}:${state.run.day}`);
+            logEntry(state, Arrest.pickLine(Arrest.CREW_BAIL_LINES, hash).replace("%s", name), "good");
+            pushConsequence(state, `${name} is out. $${availability.cost} gone, loyalty ${crew.loyalty}.`, "warn");
+            recordBehavior(state, "connector", 1, `crew_bail:${action.crewId}:${state.run.day}`, "crew_bail");
             reconcileCash(state);
             return state;
           }
@@ -11834,12 +12293,16 @@
               base.stats.robbery.failures += 1;
               base.stats.robbery.success = base.stats.robbery.successes > 0;
               effects.unshift(`-${damage} Health`, `+${Math.round(addedHeat * 10) / 10} Heat`, "$0 taken");
-              let arrested = false;
-              if (target.tier === 3 && base.player.heat > 8) {
-                arrested = true;
-                const bail = Math.min(200, base.player.cash);
-                base.player.cash -= bail;
-                effects.push(`Booked and released \u2014 $${bail} bail`, "The rest of the day is gone");
+              const arrestHeatGate = target.tier === 1 ? 10 : target.tier === 2 ? 8 : 6;
+              const arrested = severe || base.player.heat > arrestHeatGate;
+              let arrestDetail = null;
+              if (arrested) {
+                arrestDetail = arrestPlayer(base, { severity: `stick${target.tier}`, source: "stick" });
+                effects.push(
+                  arrestDetail.shortfall > 0 ? `Booked \u2014 $${arrestDetail.paid} of $${arrestDetail.bail} bail, the rest served` : `Booked and released \u2014 $${arrestDetail.bail} bail`,
+                  `-${arrestDetail.heatRelief} Heat on the record`,
+                  `Prior arrests: ${arrestDetail.priors}`
+                );
               }
               result = {
                 kind: "robbery",
@@ -11850,11 +12313,12 @@
               };
               broadcastOutcome(base, "robbery", outcome.tier);
               if (arrested) {
+                updateStickTier(base);
                 base.stats.majorDecisions.push(`Stickup ${target.id}: arrested`);
                 recordBehavior(base, "stickup", 2, `stickup:${base.run.day}:${target.id}`, "rob");
                 base.run.rngState = random2.state;
                 logEntry(base, result.summary, result.tone);
-                const held = advanceRun(base, { reason: "STICKUP", suppressStory: true, timeCost: SLOTS.length });
+                const held = advanceRun(base, { reason: "STICKUP", suppressStory: true, timeCost: arrestDetail.processingSlots });
                 if (held.run.status === "playing") held.run.pendingOperationResult = result;
                 return held;
               }
@@ -11879,7 +12343,7 @@
             const random2 = makeRandom(base.run.rngState);
             resolveBoostAttempt(base, target, random2, action);
             base.run.rngState = random2.state;
-            return advanceRun(base, { reason: action.type });
+            return openOrSettleBoostCaught(advanceRun(base, { reason: action.type }));
           }
           if (action.type === "WANDER_SPENARD" || action.type === "EXPLORE_SPENARD") {
             if (state.world.currentNeighborhoodId !== HOME_DISTRICT_ID) return inputState;
@@ -12500,6 +12964,7 @@
           SLEEP_HOME: "Night Passed",
           LAY_LOW: "Laid Low",
           HEAL: "Treatment Complete",
+          ARRESTED: "Booked and Released",
           PAY_DEBT: "Payment Made",
           CLAIM_BLOCK: "Block Claimed",
           RECRUIT_SOLDIER: "Soldier Recruited",
@@ -12663,6 +13128,7 @@
           ELI_LIEUTENANT_UNLOCK,
           RESPECT_STAGE_THRESHOLDS,
           Crew,
+          Arrest,
           CREW_LOYALTY_MAX: Crew.CREW_LOYALTY_MAX,
           CREW_LOYALTY_START: Crew.CREW_LOYALTY_START,
           TIER_REQUIREMENTS: Crew.TIER_REQUIREMENTS,
@@ -12803,6 +13269,8 @@
             sharkLoanAvailability,
             deshawnRecruitmentAvailability,
             crewTierAvailability,
+            crewBailAvailability,
+            arrestRecord,
             districtControlTier,
             districtHasBlockLayer,
             unassignedSoldiers,
@@ -13011,7 +13479,7 @@
         const showCrew = C.selectors.recruitedCrew(state).length > 0;
         const showCurtis = state.npc.curtis.relationship !== "unaware";
         const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil(value / ceiling * 5))), total: 5 });
-        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.15"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day, state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
+        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.16"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day, state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
       }
       var NAV_ICONS = {
         home: "M12 3 3 10.4V21h6v-6h6v6h6V10.4z",
@@ -13480,8 +13948,9 @@
         const cost = C.selectors.recruitmentCost(state, person.id);
         const eliTest = person.id === "eli" ? C.selectors.eliTestRouteAvailability(state) : null;
         const tier = C.selectors.crewTierAvailability(state, person.id);
+        const bail = C.selectors.crewBailAvailability(state, person.id);
         const liability = person.id === "eli" ? "A compromised route can add Heat; unpaid wages cut his Power." : person.id === "pherris" ? "She expects ownership and may withhold information when treated like a list." : "His methods can raise Heat and provoke Curtis.";
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: person.name, sub: `${person.role} \xB7 Crew Power ${person.power}`, onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Current status", /* @__PURE__ */ React.createElement("small", null, crew.contactStage.replaceAll("_", " "))), /* @__PURE__ */ React.createElement("p", null, person.description), /* @__PURE__ */ React.createElement("div", { className: "detail-list" }, /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Recruitment:"), " ", money(cost)), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Daily wage:"), " ", money(C.Crew.wageFor(person, Math.max(1, crew.tier || 1))), " \xB7 auto-paid at day end"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Capacity:"), " 1 field crew slot"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Primary benefit:"), " Power ", person.power, " and role-specific operation choices"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Main liability:"), " ", liability), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Hiring time:"), " Free at North Star Garage"))), person.id === "eli" && !crew.recruited && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Give Eli a Test Route", /* @__PURE__ */ React.createElement("small", null, "$35 \xB7 one part of day")), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "Fund a small service-road delivery. A clean run can earn modest cash; trouble can cost Health and add Heat. Completing it unlocks recruitment."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !eliTest.available, onClick: () => dispatch({ type: "ELI_TEST_ROUTE" }) }, "Start the test route", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, eliTest.reason))), (crew.introduced && person.id !== "eli" || person.id === "deshawn") && !crew.recruited && /* @__PURE__ */ React.createElement("button", { className: "btn full good-btn", disabled: !state.base.visiting || state.player.cash < cost || person.id === "deshawn" && !C.selectors.deshawnRecruitmentAvailability(state).available, onClick: () => dispatch({ type: "RECRUIT_CREW", crewId: person.id }) }, "Recruit ", person.name.split(" ")[0], " \xB7 ", money(cost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, person.id === "deshawn" ? C.selectors.deshawnRecruitmentAvailability(state).reason : "Free at North Star Garage")), crew.introduced && !crew.recruited && person.id === "eli" && crew.contactStage === "recruitable" && /* @__PURE__ */ React.createElement("button", { className: "btn full good-btn", disabled: !state.base.visiting || state.player.cash < cost || C.selectors.recruitedCrew(state).length >= C.selectors.crewCapacityFor(state), onClick: () => dispatch({ type: "RECRUIT_CREW", crewId: person.id }) }, "Recruit Eli \xB7 ", money(cost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free at North Star Garage")), crew.recruited && /* @__PURE__ */ React.createElement("div", { className: "card" }, crew.status === "departed" ? /* @__PURE__ */ React.createElement("p", { className: "warn" }, "Departed. Loyalty ran out. The record of what was owed stays on the ledger.") : /* @__PURE__ */ React.createElement("p", null, "Active \xB7 Loyalty ", crew.loyalty, "/10 \xB7 arrears ", money(crew.wageDue), " \xB7 assignment ", crew.assignment || "none"), crew.status !== "departed" && crew.wageDue > 0 && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !state.base.visiting || state.player.cash < crew.wageDue, onClick: () => dispatch({ type: "PAY_CREW", crewId: person.id }) }, "Pay arrears \xB7 ", money(crew.wageDue), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Clears the unpaid Power penalty without advancing time"))), crew.recruited && ["pherris", "tone", "deshawn"].includes(person.id) && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Relationship track", /* @__PURE__ */ React.createElement("small", null, "TIER ", crew.tier)), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !tier.available, onClick: () => dispatch({ type: "PROMOTE_CREW_TIER", crewId: person.id }) }, "Advance relationship tier", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, tier.available ? `${tier.cost ? money(tier.cost) : "Free"} \xB7 no time passes` : tier.reason))), person.id === "eli" && crew.recruited && (crew.lieutenantStage === "operations_lieutenant" ? /* @__PURE__ */ React.createElement("div", { className: "card cleared-card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Operations Lieutenant", /* @__PURE__ */ React.createElement("small", null, "Effectiveness ", crew.lieutenantEffectiveness, "/3")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Eli places soldiers, rotates corners, and defends territory without a check-in each time."), findEliReport(state) && /* @__PURE__ */ React.createElement(EliReportCard, { state }), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Standing order"), /* @__PURE__ */ React.createElement("div", { className: "policy-grid", role: "radiogroup", "aria-label": "Eli's standing order" }, Object.entries(C.ELI_OPERATION_POLICIES).map(([id, policy]) => /* @__PURE__ */ React.createElement("button", { key: id, role: "radio", "aria-checked": crew.operationPolicy === id, className: `policy-btn${crew.operationPolicy === id ? " active" : ""}`, onClick: () => dispatch({ type: "SET_ELI_POLICY", policy: id }) }, /* @__PURE__ */ React.createElement("b", null, policy.label), /* @__PURE__ */ React.createElement("span", null, policy.description)))), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "Changing the order costs no time. ", crew.operationPolicy === "manual" ? "Assign soldiers yourself in Soldiers." : "Eli places and redistributes soldiers automatically each night.")) : (() => {
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: person.name, sub: `${person.role} \xB7 Crew Power ${person.power}`, onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Current status", /* @__PURE__ */ React.createElement("small", null, crew.contactStage.replaceAll("_", " "))), /* @__PURE__ */ React.createElement("p", null, person.description), /* @__PURE__ */ React.createElement("div", { className: "detail-list" }, /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Recruitment:"), " ", money(cost)), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Daily wage:"), " ", money(C.Crew.wageFor(person, Math.max(1, crew.tier || 1))), " \xB7 auto-paid at day end"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Capacity:"), " 1 field crew slot"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Primary benefit:"), " Power ", person.power, " and role-specific operation choices"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Main liability:"), " ", liability), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Hiring time:"), " Free at North Star Garage"))), person.id === "eli" && !crew.recruited && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Give Eli a Test Route", /* @__PURE__ */ React.createElement("small", null, "$35 \xB7 one part of day")), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "Fund a small service-road delivery. A clean run can earn modest cash; trouble can cost Health and add Heat. Completing it unlocks recruitment."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !eliTest.available, onClick: () => dispatch({ type: "ELI_TEST_ROUTE" }) }, "Start the test route", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, eliTest.reason))), (crew.introduced && person.id !== "eli" || person.id === "deshawn") && !crew.recruited && /* @__PURE__ */ React.createElement("button", { className: "btn full good-btn", disabled: !state.base.visiting || state.player.cash < cost || person.id === "deshawn" && !C.selectors.deshawnRecruitmentAvailability(state).available, onClick: () => dispatch({ type: "RECRUIT_CREW", crewId: person.id }) }, "Recruit ", person.name.split(" ")[0], " \xB7 ", money(cost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, person.id === "deshawn" ? C.selectors.deshawnRecruitmentAvailability(state).reason : "Free at North Star Garage")), crew.introduced && !crew.recruited && person.id === "eli" && crew.contactStage === "recruitable" && /* @__PURE__ */ React.createElement("button", { className: "btn full good-btn", disabled: !state.base.visiting || state.player.cash < cost || C.selectors.recruitedCrew(state).length >= C.selectors.crewCapacityFor(state), onClick: () => dispatch({ type: "RECRUIT_CREW", crewId: person.id }) }, "Recruit Eli \xB7 ", money(cost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free at North Star Garage")), crew.recruited && /* @__PURE__ */ React.createElement("div", { className: "card" }, crew.status === "departed" ? /* @__PURE__ */ React.createElement("p", { className: "warn" }, "Departed. Loyalty ran out. The record of what was owed stays on the ledger.") : crew.status === "arrested" ? /* @__PURE__ */ React.createElement("p", { className: "warn" }, "In custody \xB7 Loyalty ", crew.loyalty, "/10 \xB7 out on Day ", crew.jailedUntilDay, ". Nobody who serves the whole stretch comes back loyal.") : /* @__PURE__ */ React.createElement("p", null, "Active \xB7 Loyalty ", crew.loyalty, "/10 \xB7 arrears ", money(crew.wageDue), " \xB7 assignment ", crew.assignment || "none"), crew.status === "arrested" && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !bail.available, onClick: () => dispatch({ type: "BAIL_CREW", crewId: person.id }) }, "Bail out \xB7 ", money(bail.cost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, bail.available ? "Costs one point of loyalty instead of all of it \xB7 no time passes" : bail.reason)), crew.status !== "departed" && crew.status !== "arrested" && crew.wageDue > 0 && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !state.base.visiting || state.player.cash < crew.wageDue, onClick: () => dispatch({ type: "PAY_CREW", crewId: person.id }) }, "Pay arrears \xB7 ", money(crew.wageDue), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Clears the unpaid Power penalty without advancing time"))), crew.recruited && ["pherris", "tone", "deshawn"].includes(person.id) && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Relationship track", /* @__PURE__ */ React.createElement("small", null, "TIER ", crew.tier)), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !tier.available, onClick: () => dispatch({ type: "PROMOTE_CREW_TIER", crewId: person.id }) }, "Advance relationship tier", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, tier.available ? `${tier.cost ? money(tier.cost) : "Free"} \xB7 no time passes` : tier.reason))), person.id === "eli" && crew.recruited && (crew.lieutenantStage === "operations_lieutenant" ? /* @__PURE__ */ React.createElement("div", { className: "card cleared-card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Operations Lieutenant", /* @__PURE__ */ React.createElement("small", null, "Effectiveness ", crew.lieutenantEffectiveness, "/3")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Eli places soldiers, rotates corners, and defends territory without a check-in each time."), findEliReport(state) && /* @__PURE__ */ React.createElement(EliReportCard, { state }), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Standing order"), /* @__PURE__ */ React.createElement("div", { className: "policy-grid", role: "radiogroup", "aria-label": "Eli's standing order" }, Object.entries(C.ELI_OPERATION_POLICIES).map(([id, policy]) => /* @__PURE__ */ React.createElement("button", { key: id, role: "radio", "aria-checked": crew.operationPolicy === id, className: `policy-btn${crew.operationPolicy === id ? " active" : ""}`, onClick: () => dispatch({ type: "SET_ELI_POLICY", policy: id }) }, /* @__PURE__ */ React.createElement("b", null, policy.label), /* @__PURE__ */ React.createElement("span", null, policy.description)))), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "Changing the order costs no time. ", crew.operationPolicy === "manual" ? "Assign soldiers yourself in Soldiers." : "Eli places and redistributes soldiers automatically each night.")) : (() => {
           const promo = C.selectors.eliPromotionAvailability(state);
           return /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Promote to Operations Lieutenant", /* @__PURE__ */ React.createElement("small", null, "Runs soldiers and corners on their own")), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "Needs Eli's loyalty to reach ", C.ELI_LIEUTENANT_UNLOCK.minLoyalty, "."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !promo.available, onClick: () => dispatch({ type: "PROMOTE_LIEUTENANT", crewId: "eli" }) }, "Give Eli Operations", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, promo.available ? "Free \xB7 no time passes" : promo.reason)));
         })())));
@@ -13690,7 +14159,8 @@
         const labels = C.selectors.attributeLabels(state);
         const legacy = C.BACKGROUNDS.find((item) => item.id === state.player.legacyBackground);
         const recent = (((_a = state.player.behavior) == null ? void 0 : _a.history) || []).slice(-5).reverse();
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Character", sub: "What you brought in, and what the neighborhood currently sees", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, state.player.streetName, /* @__PURE__ */ React.createElement("small", null, identity.label)), /* @__PURE__ */ React.createElement("p", null, identity.description)), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Attributes"), C.ATTRIBUTES.ATTRIBUTES.map((attribute) => /* @__PURE__ */ React.createElement("div", { className: "card compact", key: attribute.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, attribute.label, /* @__PURE__ */ React.createElement("small", null, labels[attribute.id])), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, attribute.purpose))), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "Nobody in Spenard reads you as a number. Training, work, and the nights you survive move these on their own."), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Recent reputation"), recent.length ? recent.map((entry, index) => /* @__PURE__ */ React.createElement("div", { className: "card compact", key: `${entry.sourceId}:${index}` }, entry.summary)) : /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "No choice has traveled far enough to become a story yet."), state.player.historicalIdentity && /* @__PURE__ */ React.createElement("div", { className: "card compact" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Formerly", /* @__PURE__ */ React.createElement("small", null, "Save history")), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "The block used to call you ", state.player.historicalIdentity, ".")), legacy && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Save history", /* @__PURE__ */ React.createElement("small", null, "Compatibility")), /* @__PURE__ */ React.createElement("p", null, "This run began with the ", legacy.name, " edge before the neighborhood identity system was introduced."))));
+        const record = C.selectors.arrestRecord(state);
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Character", sub: "What you brought in, and what the neighborhood currently sees", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, state.player.streetName, /* @__PURE__ */ React.createElement("small", null, identity.label)), /* @__PURE__ */ React.createElement("p", null, identity.description)), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Attributes"), C.ATTRIBUTES.ATTRIBUTES.map((attribute) => /* @__PURE__ */ React.createElement("div", { className: "card compact", key: attribute.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, attribute.label, /* @__PURE__ */ React.createElement("small", null, labels[attribute.id])), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, attribute.purpose))), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "Nobody in Spenard reads you as a number. Training, work, and the nights you survive move these on their own."), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Record"), /* @__PURE__ */ React.createElement("div", { className: "card compact" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Prior arrests", /* @__PURE__ */ React.createElement("small", null, record.arrests)), record.arrests ? /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "Last booked Day ", record.lastArrestDay, ". Bail runs ", record.multiplier, "\xD7 the base rate now, and processing takes longer every time.") : /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "Nothing on paper. Getting booked clears street Heat and replaces it with a file that never closes.")), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Recent reputation"), recent.length ? recent.map((entry, index) => /* @__PURE__ */ React.createElement("div", { className: "card compact", key: `${entry.sourceId}:${index}` }, entry.summary)) : /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "No choice has traveled far enough to become a story yet."), state.player.historicalIdentity && /* @__PURE__ */ React.createElement("div", { className: "card compact" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Formerly", /* @__PURE__ */ React.createElement("small", null, "Save history")), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "The block used to call you ", state.player.historicalIdentity, ".")), legacy && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Save history", /* @__PURE__ */ React.createElement("small", null, "Compatibility")), /* @__PURE__ */ React.createElement("p", null, "This run began with the ", legacy.name, " edge before the neighborhood identity system was introduced."))));
       }
       function PhoneScreen({ state, dispatch, onBack, openList, navigateMore }) {
         const offline = !state.phone.active;
@@ -13954,7 +14424,7 @@
           ExpandableMoreSection,
           {
             collapsedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-lead" }, "Autosave is on. This run saves to your browser after every action."),
-            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.15 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
+            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.16 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
             moreLabel: "Save detail",
             lessLabel: "Hide detail"
           }

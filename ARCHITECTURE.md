@@ -111,6 +111,7 @@ tests/                node --test, no runner config
 | Ambient street lines | `AMBIENT_FLAVOR` in `src/events/registry.js` |
 | A new action the player can take | a case in `reduceGame` (`game-core.js`) |
 | A crew tier gate, wage number, or presence effect | `src/data/crew.js` |
+| A bail price, jail length, processing cost, or heat relief | `src/data/arrest.js` |
 | Watcher copy or an awareness threshold | `src/data/curtis-awareness.js` |
 | A new screen | `ui.jsx` |
 | A reusable piece of chrome two screens both want | `src/ds/primitives.jsx` + its props in `src/ds/index.d.ts` |
@@ -578,15 +579,17 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 Compare after. A matching hash proves you changed nothing the player can see.
 
-**v1.15 baselines.** The crew build adds a new Exposure NPC, nightly wage
-settlement, and the Deshawn offer card, all of which move both hashes on
-purpose. Check the per-strategy metric blocks when a hash moves. These replace
-the v1.13-era hashes of `bd77a59c…` / `5d6f9b0f…`:
+**v1.16 baselines.** The arrest build rewrites two failure paths — every Stick
+tier now routes through `arrestPlayer`, and a blown boost opens a
+fight/run/surrender scene instead of auto-resolving — so both hashes move on
+purpose. Check the per-strategy metric blocks when a hash moves; the simulator
+reports `arrests` and `crewJailedAtEnd` for exactly that. These replace the
+v1.15 hashes of `01c618d5…` / `9f471dec…`:
 
 | Run | SHA-256 |
 |---|---|
-| `--total 200` | `01c618d5df19baefb786e34c876be9d7f64d7e43f068fba3f77169edcc22df88` |
-| `--total 2000` | `9f471dec665356be332054827ee46df62aaf10b8f5dc0fccd3749f7d9de87f49` |
+| `--total 200` | `c828c00e7a5b6e0e0af740ca4f4f91a17fd16dcf8cc180265a629d1f07e07d08` |
+| `--total 2000` | `5fefb813fc0a73e5d83271fbf0c1a50636b7a2842153728f9eb8b4ee36455e6f` |
 
 Note the two forms differ: `--total 200` splits 200 runs across the thirteen
 strategies, while a bare `200` runs 200 *per strategy*.

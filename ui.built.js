@@ -1551,6 +1551,12 @@
         }
         return effects;
       }
+      function deEscalateCrewIds(state, eventType, contextId) {
+        return presenceEffectsFor(state, eventType, contextId).filter((effect) => effect.modification === "de_escalate").map((effect) => effect.crewId);
+      }
+      function deEscalateAvailable(state, eventType, contextId) {
+        return deEscalateCrewIds(state, eventType, contextId).length > 0;
+      }
       var COMBAT_ADVANTAGE_CAP = 1;
       function combatAdvantageFor(state, eventType, contextId) {
         return Math.min(COMBAT_ADVANTAGE_CAP, combatAdvantageCrewIds(state, eventType, contextId).length);
@@ -1598,6 +1604,8 @@
         recruitmentEligible,
         combatAdvantageFor,
         combatAdvantageCrewIds,
+        deEscalateCrewIds,
+        deEscalateAvailable,
         PRESENCE_EFFECTS,
         DESHAWN_LOYALTY_TRIGGERS,
         DESHAWN_VIOLENCE_WINDOW_DAYS,
@@ -2067,7 +2075,7 @@
           return { id, label, description: hint };
         }
         function getEligibleChoices(encounter, state) {
-          var _a, _b, _c, _d, _e, _f, _g, _h;
+          var _a, _b, _c, _d, _e, _f;
           if (!encounter || encounter.resolved) return [];
           if (encounter.type === "boost_caught") return boostCaughtChoices(encounter, state);
           const areaId = encounter.areaId || state.world.currentNeighborhoodId;
@@ -2087,8 +2095,7 @@
             if (encounter.type === "authored" && (((_a = state.flags) == null ? void 0 : _a.curtisArrangement) || ((_b = state.npc.curtis) == null ? void 0 : _b.respect) >= 3)) choices.push(choice("use_relationship", "Invoke Curtis's Arrangement", "Spend relationship leverage instead of blood or money."));
             if (((_d = (_c = state.player.gear) == null ? void 0 : _c.consumables) == null ? void 0 : _d.medical_kit) > 0 && state.player.health < 100) choices.push(choice("medical_kit", "Use Medical Kit", "Recover now, but the confrontation keeps moving."));
             if (((_f = (_e = state.player.gear) == null ? void 0 : _e.equipped) == null ? void 0 : _f.tool) === "burner_phone") choices.push(choice("burner_phone", "Burn the Phone", "Create a fast distraction; the phone will be gone afterward."));
-            const deshawn = (_h = (_g = state.people) == null ? void 0 : _g.crew) == null ? void 0 : _h.deshawn;
-            if (encounter.type === "random" && (deshawn == null ? void 0 : deshawn.recruited) && deshawn.status !== "departed" && deshawn.loyalty > 0 && !Crew.CURTIS_CREW_ENCOUNTER_IDS.includes(encounter.id)) {
+            if (encounter.type === "random" && Crew.deEscalateAvailable(state, "encounter", encounter.id)) {
               choices.push(choice("deshawn_deescalate", "Let Deshawn Handle It", "No blood, one point of heat worked off. He notices what you choose next."));
             }
           } else {
@@ -7049,8 +7056,7 @@
         }
         function stickRetaliationEvent(state, entry) {
           var _a;
-          const deshawnRecord = state.people.crew.deshawn;
-          const deshawnActive = !!((deshawnRecord == null ? void 0 : deshawnRecord.recruited) && deshawnRecord.status !== "departed" && deshawnRecord.loyalty > 0);
+          const deshawnActive = Crew.deEscalateAvailable(state, "stick_retaliation");
           const target = STICK_TARGET_BY_ID[entry.targetId];
           const name = target ? target.name : "the last mark";
           const won = stringHash(`${state.run.seed}:retaliation:${state.run.day}:${entry.targetId}`) % 100 < clamp(35 + combatCompat(state) * 10, 20, 85);
@@ -10871,8 +10877,7 @@
           const tone = state.people.crew.tone;
           if (tone.recruited && tone.status !== "departed" && tone.loyalty >= 5) choices.push({ id: "call_tone", label: "Call Tone", description: "Spend crew loyalty to end this on his terms." });
           if (encounter.id === "mina_sedan_night" && state.npc.mina.met) choices.push({ id: "call_mina", label: "Signal Mina", description: "Trust Mina to trigger the Night Owl alarm. This spends some of the trust between you." });
-          const deshawnCrew = state.people.crew.deshawn;
-          if (deshawnCrew.recruited && deshawnCrew.status !== "departed" && deshawnCrew.loyalty > 0 && !Crew.CURTIS_CREW_ENCOUNTER_IDS.includes(encounter.id)) choices.push({ id: "deshawn_deescalate", label: "Let Deshawn handle it", description: "No blood, one point of heat worked off. He notices what you choose next." });
+          if (Crew.deEscalateAvailable(state, "encounter", encounter.id)) choices.push({ id: "deshawn_deescalate", label: "Let Deshawn handle it", description: "No blood, one point of heat worked off. He notices what you choose next." });
           if (encounter.id === "late" && state.base.tracks.security >= 1) choices.push({ id: "use_base", label: "Fall back to the garage", description: "Security and crew assignments determine the result." });
           if (state.player.gear.consumables.medical_kit > 0 && state.player.health < 100) choices.push({ id: "medical_kit", label: "Use medical kit", description: "Recover before making the next move." });
           return choices;

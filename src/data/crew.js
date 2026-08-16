@@ -113,6 +113,26 @@ function presenceEffectsFor(state, eventType, contextId) {
   return effects;
 }
 
+// v1.19: the de-escalate consumer. The two `de_escalate` records above were
+// declared in v1.15 and read by nobody - the three sites that offer Deshawn's
+// choice each rebuilt the predicate inline instead. These are what they call
+// now, so "who can talk this down" is answered in one place.
+//
+// Note this is stricter than the inline checks were, and deliberately: they
+// tested `status !== "departed"`, which let an ARRESTED Deshawn talk down an
+// encounter he was in a cell for. getActiveCrew tests `status === "active"`,
+// so a jailed member now stays out of it. That is the intended reading of the
+// framework, and it is why this refactor moves the simulation hash.
+function deEscalateCrewIds(state, eventType, contextId) {
+  return presenceEffectsFor(state, eventType, contextId)
+    .filter((effect) => effect.modification === "de_escalate")
+    .map((effect) => effect.crewId);
+}
+
+function deEscalateAvailable(state, eventType, contextId) {
+  return deEscalateCrewIds(state, eventType, contextId).length > 0;
+}
+
 // One effective attribute level, no matter how many people are standing there.
 // A second enforcer is a second person, not a second bonus - the roster already
 // prices headcount through wages and capacity.
@@ -246,6 +266,8 @@ module.exports = {
   recruitmentEligible,
   combatAdvantageFor,
   combatAdvantageCrewIds,
+  deEscalateCrewIds,
+  deEscalateAvailable,
   PRESENCE_EFFECTS,
   DESHAWN_LOYALTY_TRIGGERS,
   DESHAWN_VIOLENCE_WINDOW_DAYS,

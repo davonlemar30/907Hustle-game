@@ -2298,8 +2298,11 @@
   // Retaliation is decided when the card is built so the choices carry plain
   // declarative effects; hash-keyed, so replaying the morning is stable.
   function stickRetaliationEvent(state, entry) {
-    const deshawnRecord = state.people.crew.deshawn;
-    const deshawnActive = !!(deshawnRecord?.recruited && deshawnRecord.status !== "departed" && deshawnRecord.loyalty > 0);
+    // v1.19: one expression, two uses. It decides whether the third choice
+    // exists AND whether standing your ground reads as overriding his judgment,
+    // and those two have to agree - tagging a violent choice against someone who
+    // was never offered would charge the player for a choice they did not have.
+    const deshawnActive = Crew.deEscalateAvailable(state, "stick_retaliation");
     const target = STICK_TARGET_BY_ID[entry.targetId];
     const name = target ? target.name : "the last mark";
     const won = stringHash(`${state.run.seed}:retaliation:${state.run.day}:${entry.targetId}`) % 100 < clamp(35 + combatCompat(state) * 10, 20, 85);
@@ -5707,8 +5710,9 @@
     const tone = state.people.crew.tone;
     if (tone.recruited && tone.status !== "departed" && tone.loyalty >= 5) choices.push({ id: "call_tone", label: "Call Tone", description: "Spend crew loyalty to end this on his terms." });
     if (encounter.id === "mina_sedan_night" && state.npc.mina.met) choices.push({ id: "call_mina", label: "Signal Mina", description: "Trust Mina to trigger the Night Owl alarm. This spends some of the trust between you." });
-    const deshawnCrew = state.people.crew.deshawn;
-    if (deshawnCrew.recruited && deshawnCrew.status !== "departed" && deshawnCrew.loyalty > 0 && !Crew.CURTIS_CREW_ENCOUNTER_IDS.includes(encounter.id)) choices.push({ id: "deshawn_deescalate", label: "Let Deshawn handle it", description: "No blood, one point of heat worked off. He notices what you choose next." });
+    // v1.19: through the presence-effect framework rather than an inline read of
+    // his record. The exclusion list is the effect's own, not this call site's.
+    if (Crew.deEscalateAvailable(state, "encounter", encounter.id)) choices.push({ id: "deshawn_deescalate", label: "Let Deshawn handle it", description: "No blood, one point of heat worked off. He notices what you choose next." });
     if (encounter.id === "late" && state.base.tracks.security >= 1) choices.push({ id: "use_base", label: "Fall back to the garage", description: "Security and crew assignments determine the result." });
     if (state.player.gear.consumables.medical_kit > 0 && state.player.health < 100) choices.push({ id: "medical_kit", label: "Use medical kit", description: "Recover before making the next move." });
     return choices;

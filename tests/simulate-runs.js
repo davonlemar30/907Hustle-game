@@ -17,7 +17,13 @@ function storyMetrics(state,beats){
 // run. This is the calibration instrument for the Exposure System, and the only
 // way to tell "the lens is tuned" from "the content is unreachable".
 function exposureMetrics(state){
-  const out={taxActive:state.npc.curtis.taxActive?1:0,curtisBetrayed:state.npc.curtis.betrayed?1:0};
+  // v1.18: Tone's recruitment is the first gate that reads a ledger AND Curtis's
+  // ambient attention, so both halves are tracked. Without curtisAwareness here
+  // there is no way to tell "nobody earned it" from "nobody could".
+  const out={taxActive:state.npc.curtis.taxActive?1:0,curtisBetrayed:state.npc.curtis.betrayed?1:0,
+    curtisAwareness:state.curtisAwareness?.level||0,
+    toneProven:C.selectors.crewRecruitmentEligible(state,'tone')?1:0,
+    toneRecruited:state.people.crew.tone.recruited?1:0};
   for(const id of C.EXPOSURE_NPC_IDS){
     out[id+'Score']=C.selectors.disposition(state,id);
     out[id+'Band']=C.selectors.dispositionBand(state,id);
@@ -196,6 +202,14 @@ function summarize(name,count){const runs=Array.from({length:count},(_,i)=>play(
   chainStallRuns:runs.reduce((n,r)=>n+r.chainStall,0),
   taxActiveRuns:runs.reduce((n,r)=>n+r.taxActive,0),
   curtisBetrayedRuns:runs.reduce((n,r)=>n+r.curtisBetrayed,0),
+  // v1.18: the three numbers Tone's gate is made of. watchingPhaseRuns is the
+  // awareness half, toneProvenRuns the ledger half, toneRecruitedRuns the hire.
+  averageCurtisAwareness:Number((runs.reduce((n,r)=>n+r.curtisAwareness,0)/count).toFixed(2)),
+  ambientPhaseRuns:runs.filter(r=>r.curtisAwareness>=3).length,
+  watchingPhaseRuns:runs.filter(r=>r.curtisAwareness>=7).length,
+  bothHalvesRuns:runs.filter(r=>r.curtisAwareness>=3&&r.toneProven).length,
+  toneProvenRuns:runs.reduce((n,r)=>n+r.toneProven,0),
+  toneRecruitedRuns:runs.reduce((n,r)=>n+r.toneRecruited,0),
   ...Object.fromEntries(C.EXPOSURE_NPC_IDS.flatMap(id=>[
     ['average'+id[0].toUpperCase()+id.slice(1)+'Score',Number((runs.reduce((n,r)=>n+r[id+'Score'],0)/count).toFixed(2))],
     ['average'+id[0].toUpperCase()+id.slice(1)+'Rows',Number((runs.reduce((n,r)=>n+r[id+'Rows'],0)/count).toFixed(1))],

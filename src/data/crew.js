@@ -10,6 +10,7 @@
 // on 0; migrateSave rescales those with clamp(5 + old, 0, 10).
 
 const { CREW } = require("./npcs.js");
+const { BANDS } = require("./disposition-bands.js");
 
 const CREW_LOYALTY_MIN = 0;
 const CREW_LOYALTY_MAX = 10;
@@ -27,6 +28,10 @@ const CREW_WAGE_GRACE_DAYS = 2;
 // soldier build can extend it without a migration.
 const TIER_WAGES = {
   deshawn: [50, 100, 200],
+  // v1.18: Tone is expensive because muscle is. Tier 2 means he has brought
+  // hands with him, tier 3 means a squad, and the wage says so before the
+  // player has to find out the other way.
+  tone: [85, 150, 250],
 };
 
 function wageFor(person, tier) {
@@ -82,11 +87,23 @@ const PRESENCE_EFFECTS = {
     { eventType: "encounter", modification: "de_escalate", excludes: CURTIS_CREW_ENCOUNTER_IDS },
     { eventType: "stick_retaliation", modification: "de_escalate", excludes: [] },
   ],
+  // v1.18: Tone talks nobody down. What he changes is how it goes once it has
+  // started - one effective level of Combat on the roll. Never against Curtis's
+  // own people: they knew him when he worked their side of it, and a face they
+  // already know is not a reason to walk away.
+  tone: [
+    { eventType: "encounter", modification: "combat_advantage", excludes: CURTIS_CREW_ENCOUNTER_IDS },
+    { eventType: "stick_target", modification: "combat_advantage", excludes: [] },
+  ],
 };
 
 function presenceEffectsFor(state, eventType, contextId) {
   const effects = [];
   for (const person of getActiveCrew(state)) {
+    // Loyalty 0 is the day they stop showing up; the wage settlement is what
+    // makes it official that night by flipping status to "departed". Until then
+    // they are on the roster and doing nothing, which is what the number means.
+    if ((Number(state.people?.crew?.[person.id]?.loyalty) || 0) <= 0) continue;
     for (const effect of PRESENCE_EFFECTS[person.id] || []) {
       if (effect.eventType !== eventType) continue;
       if (contextId && effect.excludes.includes(contextId)) continue;
@@ -95,6 +112,65 @@ function presenceEffectsFor(state, eventType, contextId) {
   }
   return effects;
 }
+
+// One effective attribute level, no matter how many people are standing there.
+// A second enforcer is a second person, not a second bonus - the roster already
+// prices headcount through wages and capacity.
+const COMBAT_ADVANTAGE_CAP = 1;
+
+function combatAdvantageFor(state, eventType, contextId) {
+  return Math.min(COMBAT_ADVANTAGE_CAP, combatAdvantageCrewIds(state, eventType, contextId).length);
+}
+
+// Who supplied the advantage, so the caller can credit the win to the right
+// record. Reads through the same exclusion-aware path as the bonus itself, so a
+// win the bonus did not apply to can never be counted.
+function combatAdvantageCrewIds(state, eventType, contextId) {
+  return presenceEffectsFor(state, eventType, contextId)
+    .filter((effect) => effect.modification === "combat_advantage")
+    .map((effect) => effect.crewId);
+}
+
+// RECRUITMENT PROOF (v1.18): some people want proof of standing before they
+// take a wage, and the proof is whatever their own lens decided to count.
+//
+// Band-gated rather than category-counting on purpose. The lens already does
+// the work of deciding what matters to a given person - Tone's violence: 3 and
+// submission: -3 overrides mean five fights and three refusals score nothing
+// like eight quiet nights. Re-implementing that arithmetic here would be a
+// second copy of it, and the two would drift.
+//
+// `minScore` is the floor above the band, and it exists because a band is a
+// wide bucket: one witnessed violence row scores exactly 3.0 through Tone's
+// lens, which is the Warm floor on the nose. Without it he would sign on after
+// a single fight. With it he wants two or three, and paying a tax without
+// argument genuinely sets the player back.
+//
+// Takes a resolved band and score rather than state: this file may require
+// other src/data modules, never src/exposure and never game-core. The reducer
+// resolves the ledger and passes the numbers in.
+const RECRUITMENT_PROOF = {
+  tone: { minBand: "WARM", minScore: 6 },
+};
+
+function recruitmentProofFor(crewId) {
+  return RECRUITMENT_PROOF[crewId] || null;
+}
+
+// No entry means no gate, which is what makes this additive: giving Pherris a
+// proof requirement later is a data edit, not a code change.
+function recruitmentEligible(crewId, band, score) {
+  const proof = RECRUITMENT_PROOF[crewId];
+  if (!proof) return true;
+  if ((Number(band) || 0) < BANDS[proof.minBand]) return false;
+  if (proof.minScore != null && (Number(score) || 0) < proof.minScore) return false;
+  return true;
+}
+
+// Tone's tier-2 condition on top of the universal loyalty 7 plus five days.
+// Standing next to someone while it goes badly three times is the version of
+// proof a promotion needs, and it is the one thing here that cannot be bought.
+const TONE_TIER2_COMBAT_WINS = 3;
 
 // Deshawn's loyalty triggers (tier 1). The generic missed-wage bleed applies to
 // every crew member and lives in the wage settlement; these are his.
@@ -163,6 +239,13 @@ module.exports = {
   TIER_WAGES,
   TIER_REQUIREMENTS,
   CURTIS_CREW_ENCOUNTER_IDS,
+  COMBAT_ADVANTAGE_CAP,
+  RECRUITMENT_PROOF,
+  TONE_TIER2_COMBAT_WINS,
+  recruitmentProofFor,
+  recruitmentEligible,
+  combatAdvantageFor,
+  combatAdvantageCrewIds,
   PRESENCE_EFFECTS,
   DESHAWN_LOYALTY_TRIGGERS,
   DESHAWN_VIOLENCE_WINDOW_DAYS,

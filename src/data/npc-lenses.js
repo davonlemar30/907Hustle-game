@@ -175,6 +175,16 @@ const NPC_LENSES = {
     archetype: "STREET",
     weights: { violence: -3, discretion: 3, loyalty: 4, betrayal: -5, presence: 2 },
   },
+  // Tone reads one axis: whether you hold a position. He worked doors for years
+  // and lost the last one to Curtis's people, so backing down is what he scores
+  // hardest against - submission costs more with him than violence earns. He is
+  // the only lens in the game that reads violence as a credit and discretion as
+  // a debt, which is the whole character: quiet is not a virtue to him when the
+  // sedan is still parked outside.
+  tone: {
+    archetype: "STREET",
+    weights: { violence: 3, defiance: 2, growth: 1, discretion: -2, submission: -3 },
+  },
 };
 
 const EXPOSURE_NPC_IDS = Object.keys(NPC_LENSES);

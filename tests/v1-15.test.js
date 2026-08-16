@@ -108,14 +108,20 @@ test("wages auto-deduct at day end, dirty cash first, and are tracked for life",
   assert.equal(state.people.crew.deshawn.wageDue, 0);
 });
 
-test("wageFor follows the tier curve for Deshawn and stays flat for others", () => {
+test("wageFor follows the tier curve for Deshawn and Tone and stays flat for others", () => {
   const deshawn = C.CREW.find((person) => person.id === "deshawn");
   const tone = C.CREW.find((person) => person.id === "tone");
+  const eli = C.CREW.find((person) => person.id === "eli");
   assert.equal(Crew.wageFor(deshawn, 1), 50);
   assert.equal(Crew.wageFor(deshawn, 2), 100);
   assert.equal(Crew.wageFor(deshawn, 3), 200);
+  // v1.18: Tone has a curve of his own now. Tier 1 still matches the roster wage.
   assert.equal(Crew.wageFor(tone, 1), tone.wage);
-  assert.equal(Crew.wageFor(tone, 3), tone.wage);
+  assert.equal(Crew.wageFor(tone, 2), 150);
+  assert.equal(Crew.wageFor(tone, 3), 250);
+  // Somebody still has to cover the no-curve fallback.
+  assert.equal(Crew.wageFor(eli, 1), eli.wage);
+  assert.equal(Crew.wageFor(eli, 3), eli.wage);
 });
 
 test("a short night accrues arrears with two days of grace before loyalty bleeds", () => {

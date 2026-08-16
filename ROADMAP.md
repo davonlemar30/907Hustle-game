@@ -4,6 +4,35 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
+## Shipped — v1.18 Observation-Gated Recruitment — Tone
+
+Branch: `codex/v1-18-tone-recruitment`, on top of the v1.17 docs merge (PR #79).
+Save schema stays at v11 (additive); both sim hashes moved on purpose with
+eleven of thirteen strategies byte-identical; zero dead ends.
+
+- **Tone is recruited by proof, not by a flat gate.** A lens that scores nerve
+  and nothing else, channels that decide what reaches him, and a `tone_recruit`
+  card that fires when his ledger reads far enough past Warm. The garage-door
+  `tone_offer` introduction survives as a separate beat.
+- **The eligibility-predicate pattern** (`RECRUITMENT_PROOF` +
+  `recruitmentEligible`) is the reusable piece. Pherris recruitment (v1.2) and
+  Deshawn tier retro-gating (v1.3) are data edits on top of it.
+- **The presence-effect framework is wired for the first time.** It had been
+  declared and never called; Tone's combat advantage runs through it as one
+  effective attribute level, excluded from Curtis-crew encounters.
+- **The awareness gate the build prompt specified was measured and dropped** —
+  it fired the card zero times in 2,000 runs. Numbers in ARCHITECTURE.md.
+
+### Next
+
+- Feed `curtisAwareness` well enough that it can gate content. Today it averages
+  0.32 of 15 across 2,000 runs, so anything behind the `watching` phase is
+  effectively unreachable — that includes the watcher encounters it already owns.
+- Migrate Deshawn's three hardcoded de-escalate sites onto `presenceEffectsFor`
+  now that the framework has a live caller. Deliberately out of scope for v1.18.
+
+---
+
 ## Shipped — v1.17 Voice & Copy Polish + Market Button Fix + CSS Fix
 
 Branch: `claude/clickup-2kyd583p-15874-hxww66` (PR #78, `main` HEAD). Save
@@ -94,8 +123,9 @@ purpose; zero dead ends.
 
 - Deshawn Tier 2/3 abilities (truce with Curtis's people, autonomous
   negotiation) wait on the Curtis confrontation pipeline.
-- Tone and Pherris as scene-recruited crew with their own presence effects
-  (86bbe2b23, 86bbe2b20). Note the soldier layer this entry expected to "wake"
+- Pherris as scene-recruited crew with her own presence effects (86bbe2b20).
+  Tone shipped at v1.18 and is the pattern she reuses.
+  Note the soldier layer this entry expected to "wake"
   already existed under Eli (`world.soldiers`, `world.territoryBlocks`) — the
   reconciliation, not a second schema, is what `src/data/crew.js` now describes.
 - Curtis `approaching` phase currently sets atmosphere only — the

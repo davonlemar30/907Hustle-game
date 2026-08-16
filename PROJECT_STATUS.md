@@ -2,11 +2,58 @@
 
 Last updated: 2026-08-16 (America/Anchorage)
 
-**HEAD of `main` is `cf20d5a`, the v1.17 merge (PR #78).** Verified at that
-commit: `npm test` 601 passing, `--total 200`
-`c828c00e7a5b6e0e0af740ca4f4f91a17fd16dcf8cc180265a629d1f07e07d08`,
-`--total 2000` `5fefb813fc0a73e5d83271fbf0c1a50636b7a2842153728f9eb8b4ee36455e6f`,
-`npm run build` clean.
+**HEAD of `main` is `f4ad786`, the v1.17 docs merge (PR #79).** v1.18 is built on
+branch `codex/v1-18-tone-recruitment` and verified there: `npm test` 637 passing,
+`npm run build` clean, 2,000-run simulation with zero dead ends, `--total 200`
+`b233d725c18d3cd51872b4ed09a5031ccb549f8d7566318e3dd845de597e976c`,
+`--total 2000` `9ae8cd3cf01537977fae1e98218292eb6d866bad6166f0e1a6d2623ebabdd49d`.
+
+## v1.18 Observation-Gated Recruitment — Tone — built (branch `codex/v1-18-tone-recruitment`)
+
+- Branch: `codex/v1-18-tone-recruitment`, on top of the v1.17 docs merge
+  (PR #79, `f4ad786`). Built from the "v1.18 Build Prompt: Observation-Gated
+  Recruitment — Tone" doc.
+- **Save schema stays v11** (`907ogr_v11`), additive only: `npc.tone`,
+  `people.crew.*.combatWins`, and the `toneOfferDeclined` /
+  `toneNextOfferDay` flags. `mergeDefaults` supplies all of them to v3–v11 saves.
+- **Tone is a full Exposure citizen.** Lens (`STREET`, `violence: 3`,
+  `defiance: 2`, `growth: 1`, `discretion: -2`, `submission: -3`), channels
+  `direct`/`neighborhood`/`network`, evening and night hours, Spenard only. He is
+  the only lens in the game that reads violence as a credit and discretion as a
+  debt.
+- **The eligibility-predicate pattern** ships in `src/data/crew.js`:
+  `RECRUITMENT_PROOF` plus `recruitmentEligible(crewId, band, score)`. Takes the
+  resolved band rather than state, so `src/data` still never reaches into
+  `src/exposure`; game-core's `crewRecruitmentEligible()` does the ledger read.
+  No proof entry means no gate, so Pherris (v1.2) and Deshawn tier retro-gating
+  (v1.3) are data edits.
+- **`tone_recruit` is a new card, not a rewrite.** `tone_offer` already existed
+  as the garage-door introduction and survives untouched; the observation-gated
+  scene is a second beat. Recruiting charges his number, starts him at
+  `CREW_LOYALTY_START`, texts, and broadcasts `growth`/`crew_recruited` on the
+  neighborhood — not the network, so hiring a guard hands Curtis nothing.
+  Declining is a three-day rain check, the same shape as Deshawn's.
+- **The awareness clause was measured and dropped.** The build prompt gated the
+  card on `curtisAwareness >= 7`. Across 2,000 seeded runs the average awareness
+  is 0.32 of 15, two runs reach the watching phase, and the card fired zero
+  times — it would have shipped as content nobody sees. Gated on proof alone,
+  Tone recruits in 75 of 2,000 runs across seven strategies. Details and the
+  numbers are in ARCHITECTURE.md.
+- **Presence effects are wired for the first time.** `presenceEffectsFor` was
+  dead code; Tone's combat path now runs through it (plus a loyalty-0 guard).
+  His edge is one effective attribute level via a new `bonus` argument on
+  `resolveAction`, excluded from Curtis-crew encounters. Deshawn's three
+  hardcoded de-escalate sites were deliberately left alone. The existing
+  assignment-gated `toneNearby` +0.10 chance term is unchanged and stacks: one
+  acts on the chance, the other on the outcome tier.
+- **Wage curve $85 / $150 / $250.** Tier 2 needs three encounter wins his backup
+  applied to (`crew.combatWins`); tier 3 still needs two controlled blocks.
+- **Verification**: 637 node tests passing (36 new in `tests/v1-18.test.js`);
+  `npm run build` clean; 2,000-run simulation with **zero dead ends**. Both
+  hashes moved on purpose — new telemetry keys plus real gameplay in the two
+  strategies that reach the gate. **Eleven of thirteen strategies are
+  byte-identical**, which is the proof that the new `bonus` argument defaults to
+  zero everywhere it was not passed.
 
 ## v1.17 Voice & Copy Polish + Market Button Fix + CSS Fix — shipped (PR #78)
 
@@ -82,8 +129,8 @@ commit: `npm test` 601 passing, `--total 200`
 
 - 588 tests passing (565 baseline + 23 in `tests/v1-16.test.js`).
 - **New baselines, both moved on purpose** (two failure paths rewritten):
-  `--total 200` `c828c00e7a5b6e0e0af740ca4f4f91a17fd16dcf8cc180265a629d1f07e07d08`,
-  `--total 2000` `5fefb813fc0a73e5d83271fbf0c1a50636b7a2842153728f9eb8b4ee36455e6f`,
+  `--total 200` `b233d725c18d3cd51872b4ed09a5031ccb549f8d7566318e3dd845de597e976c`,
+  `--total 2000` `9ae8cd3cf01537977fae1e98218292eb6d866bad6166f0e1a6d2623ebabdd49d`,
   replacing v1.15's `01c618d5…` / `9f471dec…`. Zero dead ends.
 - Economy across 2,000 runs **−1.11%** overall, concentrated where expected:
   `stickup` −4.5%, `aggressive` −4.1%, `thief` −1.8%; clean-money profiles

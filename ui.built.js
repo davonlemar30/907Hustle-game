@@ -1521,7 +1521,12 @@
         // v1.18: Tone is expensive because muscle is. Tier 2 means he has brought
         // hands with him, tier 3 means a squad, and the wage says so before the
         // player has to find out the other way.
-        tone: [85, 150, 250]
+        tone: [85, 150, 250],
+        // v1.19: information costs less than muscle, and it still scales - tier 2 is a
+        // couple of people making calls for her, tier 3 is a desk. Tier 1 matches her
+        // flat roster wage, so putting her on the curve changes nothing until she is
+        // actually promoted.
+        pherris: [60, 120, 220]
       };
       function wageFor(person, tier) {
         const curve = TIER_WAGES[person.id];
@@ -1562,6 +1567,15 @@
         tone: [
           { eventType: "encounter", modification: "combat_advantage", excludes: CURTIS_CREW_ENCOUNTER_IDS },
           { eventType: "stick_target", modification: "combat_advantage", excludes: [] }
+        ],
+        // v1.19: Pherris changes nothing about a fight and everything about a price.
+        // One effective level of Intelligence on market reads - she knows which of
+        // these buyers is serious, so the meetup is chosen better and the swing on a
+        // sale is narrower. No exclusions: a contact list does not care whose corner
+        // the deal is on.
+        pherris: [
+          { eventType: "market_transaction", modification: "intel_advantage", excludes: [] },
+          { eventType: "907list_flip", modification: "intel_advantage", excludes: [] }
         ]
       };
       function presenceEffectsFor(state, eventType, contextId) {
@@ -1590,6 +1604,13 @@
       function combatAdvantageCrewIds(state, eventType, contextId) {
         return presenceEffectsFor(state, eventType, contextId).filter((effect) => effect.modification === "combat_advantage").map((effect) => effect.crewId);
       }
+      var INTEL_ADVANTAGE_CAP = 1;
+      function intelAdvantageFor(state, eventType, contextId) {
+        return Math.min(INTEL_ADVANTAGE_CAP, intelAdvantageCrewIds(state, eventType, contextId).length);
+      }
+      function intelAdvantageCrewIds(state, eventType, contextId) {
+        return presenceEffectsFor(state, eventType, contextId).filter((effect) => effect.modification === "intel_advantage").map((effect) => effect.crewId);
+      }
       var RECRUITMENT_PROOF = {
         tone: { minBand: "WARM", minScore: 6 }
       };
@@ -1604,6 +1625,8 @@
         return true;
       }
       var TONE_TIER2_COMBAT_WINS = 3;
+      var PHERRIS_TIER2_FLIPS = 5;
+      var PHERRIS_TIER2_PROFIT = 500;
       var DESHAWN_LOYALTY_TRIGGERS = {
         deescalateUsed: 1,
         // player lets him handle it
@@ -1626,12 +1649,17 @@
         COMBAT_ADVANTAGE_CAP,
         RECRUITMENT_PROOF,
         TONE_TIER2_COMBAT_WINS,
+        PHERRIS_TIER2_FLIPS,
+        PHERRIS_TIER2_PROFIT,
         recruitmentProofFor,
         recruitmentEligible,
         combatAdvantageFor,
         combatAdvantageCrewIds,
         deEscalateCrewIds,
         deEscalateAvailable,
+        INTEL_ADVANTAGE_CAP,
+        intelAdvantageFor,
+        intelAdvantageCrewIds,
         PRESENCE_EFFECTS,
         DESHAWN_LOYALTY_TRIGGERS,
         DESHAWN_VIOLENCE_WINDOW_DAYS,
@@ -3379,6 +3407,7 @@
         REQUEST_FILL_BONUS,
         REQUEST_MAX_CHANCE
       } = require_market();
+      var { intelAdvantageFor } = require_crew();
       var HASH_CEILING = 4294967296;
       function clamp(value, min, max) {
         return Math.min(max, Math.max(min, value));
@@ -3433,7 +3462,7 @@
       }
       function priceVolatility(state) {
         var _a, _b;
-        const intelligence = Number((_b = (_a = state == null ? void 0 : state.player) == null ? void 0 : _a.attributes) == null ? void 0 : _b.intelligence) || 0;
+        const intelligence = (Number((_b = (_a = state == null ? void 0 : state.player) == null ? void 0 : _a.attributes) == null ? void 0 : _b.intelligence) || 0) + intelAdvantageFor(state, "907list_flip");
         const band = INTELLIGENCE_VOLATILITY.find((entry) => intelligence >= entry.floor);
         return band ? band.volatility : PRICE_VOLATILITY;
       }
@@ -7689,7 +7718,8 @@
           const district = marketMeetupDistrict(state) || state.world.currentNeighborhoodId;
           const carriedValue = marketCarriedValue(state);
           if (!MarketEvents.rollRobbery(state, { carriedValue, district, slot: state.run.slot, nonce })) {
-            const outcome = resolveOutcome(state, "market_meetup", 0.75, `${state.run.seed}:meetup:${state.run.day}:${state.run.slot}:${nonce}`);
+            const marketRead = Crew.intelAdvantageFor(state, "market_transaction");
+            const outcome = resolveOutcome(state, "market_meetup", 0.75, `${state.run.seed}:meetup:${state.run.day}:${state.run.slot}:${nonce}`, marketRead);
             broadcastOutcome(state, "market_meetup", outcome.tier);
             return false;
           }
@@ -8314,8 +8344,11 @@
             return { available: false, reason: `Tier ${targetTier} needs loyalty ${req.loyalty} and ${req.daysRecruited} days on the crew.` };
           }
           if (crewId === "pherris") {
-            if (targetTier === 2) return blocks >= 1 ? { available: true, tier: 2, cost: 0 } : { available: false, reason: "Tier 2 needs one controlled block." };
-            return blocks >= 2 && state.player.cash >= 500 ? { available: true, tier: 3, cost: 500 } : { available: false, reason: "Tier 3 needs two blocks and $500." };
+            const list = state.nineZeroSevenList;
+            if (targetTier === 2) {
+              return list.flipCount >= Crew.PHERRIS_TIER2_FLIPS || list.profit >= Crew.PHERRIS_TIER2_PROFIT ? { available: true, tier: 2, cost: 0 } : { available: false, reason: `Tier 2 needs ${Crew.PHERRIS_TIER2_FLIPS} flips or $${Crew.PHERRIS_TIER2_PROFIT} of market profit.` };
+            }
+            return blocks >= 1 && marketTier(state) >= Market.MAX_TIER ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs one controlled block and Broker standing." };
           }
           if (crewId === "tone") {
             if (targetTier === 2) {
@@ -8325,8 +8358,10 @@
             return blocks >= 2 ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs two controlled blocks." };
           }
           if (crewId === "deshawn") {
-            if (targetTier === 2) return { available: true, tier: 2, cost: 0 };
-            return crew.trucesBrokered >= 2 && blocks >= 2 ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs two truces and two blocks." };
+            if (targetTier === 2) {
+              return atLeastBand(state, "deshawn", BANDS.TRUSTED) ? { available: true, tier: 2, cost: 0 } : { available: false, reason: "Tier 2 needs him to trust you, not just employ you." };
+            }
+            return atLeastBand(state, "deshawn", BANDS.BONDED) ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs years of trust in a week. He is not there yet." };
           }
           return { available: false, reason: "This track is fully developed." };
         }

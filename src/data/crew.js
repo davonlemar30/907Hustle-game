@@ -32,6 +32,11 @@ const TIER_WAGES = {
   // hands with him, tier 3 means a squad, and the wage says so before the
   // player has to find out the other way.
   tone: [85, 150, 250],
+  // v1.19: information costs less than muscle, and it still scales - tier 2 is a
+  // couple of people making calls for her, tier 3 is a desk. Tier 1 matches her
+  // flat roster wage, so putting her on the curve changes nothing until she is
+  // actually promoted.
+  pherris: [60, 120, 220],
 };
 
 function wageFor(person, tier) {
@@ -41,8 +46,9 @@ function wageFor(person, tier) {
 }
 
 // Generic tier gates. Each crew member layers NPC-specific conditions on top
-// (deshawn: truces brokered; pherris: cash; tone/pherris: controlled blocks) -
-// those stay in crewTierAvailability in game-core. daysRecruited compares
+// (deshawn: his own disposition; pherris: market activity, then territory and
+// Broker standing; tone: fights he stood in, then controlled blocks) - those
+// stay in crewTierAvailability in game-core. daysRecruited compares
 // against crew.recruitedDay; a migrated member with recruitedDay null counts
 // as recruited long ago and passes the day gate.
 const TIER_REQUIREMENTS = {
@@ -94,6 +100,15 @@ const PRESENCE_EFFECTS = {
   tone: [
     { eventType: "encounter", modification: "combat_advantage", excludes: CURTIS_CREW_ENCOUNTER_IDS },
     { eventType: "stick_target", modification: "combat_advantage", excludes: [] },
+  ],
+  // v1.19: Pherris changes nothing about a fight and everything about a price.
+  // One effective level of Intelligence on market reads - she knows which of
+  // these buyers is serious, so the meetup is chosen better and the swing on a
+  // sale is narrower. No exclusions: a contact list does not care whose corner
+  // the deal is on.
+  pherris: [
+    { eventType: "market_transaction", modification: "intel_advantage", excludes: [] },
+    { eventType: "907list_flip", modification: "intel_advantage", excludes: [] },
   ],
 };
 
@@ -151,6 +166,20 @@ function combatAdvantageCrewIds(state, eventType, contextId) {
     .map((effect) => effect.crewId);
 }
 
+// v1.19: the market half of the same idea, and capped for the same reason. A
+// second connector is a second person, not a second bonus.
+const INTEL_ADVANTAGE_CAP = 1;
+
+function intelAdvantageFor(state, eventType, contextId) {
+  return Math.min(INTEL_ADVANTAGE_CAP, intelAdvantageCrewIds(state, eventType, contextId).length);
+}
+
+function intelAdvantageCrewIds(state, eventType, contextId) {
+  return presenceEffectsFor(state, eventType, contextId)
+    .filter((effect) => effect.modification === "intel_advantage")
+    .map((effect) => effect.crewId);
+}
+
 // RECRUITMENT PROOF (v1.18): some people want proof of standing before they
 // take a wage, and the proof is whatever their own lens decided to count.
 //
@@ -191,6 +220,13 @@ function recruitmentEligible(crewId, band, score) {
 // Standing next to someone while it goes badly three times is the version of
 // proof a promotion needs, and it is the one thing here that cannot be bought.
 const TONE_TIER2_COMBAT_WINS = 3;
+
+// v1.19: Pherris's tier-2 condition. Either shape of proof that the player is
+// actually in the business she manages - a run of completed flips, or enough
+// lifetime margin that the volume speaks for itself. OR rather than AND because
+// a few large flips and many small ones are the same evidence to her.
+const PHERRIS_TIER2_FLIPS = 5;
+const PHERRIS_TIER2_PROFIT = 500;
 
 // Deshawn's loyalty triggers (tier 1). The generic missed-wage bleed applies to
 // every crew member and lives in the wage settlement; these are his.
@@ -262,12 +298,17 @@ module.exports = {
   COMBAT_ADVANTAGE_CAP,
   RECRUITMENT_PROOF,
   TONE_TIER2_COMBAT_WINS,
+  PHERRIS_TIER2_FLIPS,
+  PHERRIS_TIER2_PROFIT,
   recruitmentProofFor,
   recruitmentEligible,
   combatAdvantageFor,
   combatAdvantageCrewIds,
   deEscalateCrewIds,
   deEscalateAvailable,
+  INTEL_ADVANTAGE_CAP,
+  intelAdvantageFor,
+  intelAdvantageCrewIds,
   PRESENCE_EFFECTS,
   DESHAWN_LOYALTY_TRIGGERS,
   DESHAWN_VIOLENCE_WINDOW_DAYS,

@@ -183,10 +183,14 @@ test("PAY_CREW clears arrears and resets the missed-wage clock", () => {
 
 // --- Tier gates -------------------------------------------------------------
 
+// This test owns the UNIVERSAL half of the gate - loyalty and days served. His
+// domain half moved onto his ledger in v1.19 and is covered in v1-19.test.js,
+// so the disposition is put where it needs to be up front and left alone.
 test("tier promotion needs loyalty 7 plus five days, then loyalty 9 plus twelve", () => {
   const state = fresh(4220);
   state.run.day = 7;
   withDeshawn(state, { loyalty: 6, recruitedDay: 1 });
+  putInBand(state, "deshawn", C.BANDS.TRUSTED);
   assert.equal(C.selectors.crewTierAvailability(state, "deshawn").available, false, "loyalty 6 blocks tier 2");
   state.people.crew.deshawn.loyalty = 7;
   state.people.crew.deshawn.recruitedDay = 5;
@@ -196,10 +200,8 @@ test("tier promotion needs loyalty 7 plus five days, then loyalty 9 plus twelve"
   // Tier 3: the generic gate plus his own conditions.
   state.people.crew.deshawn.tier = 2;
   state.people.crew.deshawn.loyalty = 9;
-  state.people.crew.deshawn.trucesBrokered = 2;
   state.run.day = 14;
-  state.world.territoryBlocks.spenard_rec_lot.owner = "player";
-  state.world.territoryBlocks.northern_lights_motels.owner = "player";
+  putInBand(state, "deshawn", C.BANDS.BONDED);
   assert.equal(C.selectors.crewTierAvailability(state, "deshawn").available, true);
   state.people.crew.deshawn.recruitedDay = 10;
   assert.equal(C.selectors.crewTierAvailability(state, "deshawn").available, false, "tier 3 needs twelve days on the crew");

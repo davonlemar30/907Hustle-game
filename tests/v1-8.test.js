@@ -3,6 +3,8 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const C = require("../game-core.js");
+const Crew = require("../src/data/crew.js");
+const { CREW_BY_ID } = require("../src/data/npcs.js");
 const { putInBand } = require("./exposure-helpers.js");
 
 function fresh(seed = 1800) {
@@ -312,12 +314,19 @@ test("Pherris, Tone, and Deshawn tier prerequisites are independently enforced",
   state.people.crew.pherris.loyalty = 7;
   state.people.crew.tone.loyalty = 7;
   state.people.crew.deshawn.loyalty = 7;
+  // v1.19: none of the three promotes on loyalty and time alone any more. Each
+  // wants proof from the domain they actually work in, and a block satisfies
+  // none of them.
+  assert.equal(C.selectors.crewTierAvailability(state, "pherris").available, false, "a block is not market activity");
+  state.nineZeroSevenList.flipCount = 5;
   assert.equal(C.selectors.crewTierAvailability(state, "pherris").available, true);
   // v1.18: loyalty and days are not enough for Tone. He wants three fights he
   // was standing in, which is the gate money cannot reach.
   assert.equal(C.selectors.crewTierAvailability(state, "tone").available, false, "loyalty alone does not promote Tone");
   state.people.crew.tone.combatWins = 3;
   assert.equal(C.selectors.crewTierAvailability(state, "tone").available, true);
+  assert.equal(C.selectors.crewTierAvailability(state, "deshawn").available, false, "employing him is not trusting him");
+  putInBand(state, "deshawn", C.BANDS.TRUSTED);
   assert.equal(C.selectors.crewTierAvailability(state, "deshawn").available, true);
 });
 
@@ -326,13 +335,24 @@ test("Pherris Tier 3 seeds $75–$125 network income and opens the Simone confli
   state.player.cash = 500; state.player.dirtyCash = 500;
   Object.assign(state.people.crew.pherris, { introduced: true, recruited: true, status: "active", loyalty: 9, tier: 2 });
   state.world.territoryBlocks.spenard_rec_lot.owner = "player";
-  state.world.territoryBlocks.northern_lights_motels.owner = "player";
+  // v1.19: one block plus Broker standing, replacing two blocks plus $500.
+  // Broker is derived, so the preconditions are set rather than the mirror.
+  state.inventory.laptop = true;
+  state.nineZeroSevenList.flipCount = C.MARKET.BROKER_FLIP_REQUIREMENT;
+  state.nineZeroSevenList.disputes = 0;
   state = C.reduceGame(state, { type: "PROMOTE_CREW_TIER", crewId: "pherris" });
   assert.equal(state.npc.simone.pherrisConflict, true);
   const before = state.player.dirtyCash;
   state = prepareNight(state, 8);
   state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
-  assert.ok(state.player.dirtyCash - before >= 75 && state.player.dirtyCash - before <= 125);
+  // v1.19: the same night now also settles her tier-3 wage, which the flat $60
+  // roster wage did not make significant. Add it back so this keeps measuring
+  // the income it is named for rather than the margin between the two - and note
+  // for the record that at $220 the wage is larger than the network pays, so
+  // tier 3 has to earn its keep on the Downtown premium and the block instead.
+  const wage = Crew.wageFor(CREW_BY_ID.pherris, 3);
+  const seeded = state.player.dirtyCash - before + wage;
+  assert.ok(seeded >= 75 && seeded <= 125, `seeded network income was ${seeded}`);
 });
 
 test("Tone's Jacksonville Protect, Cut Loose, and Leverage outcomes all resolve", () => {

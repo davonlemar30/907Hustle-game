@@ -34,6 +34,10 @@ const {
   REQUEST_FILL_BONUS,
   REQUEST_MAX_CHANCE,
 } = require("../data/market.js");
+// v1.19: presence effects only. src/data is a legal dependency from here (the
+// rule is that neither reaches game-core), and crew.js requires nothing but
+// other src/data modules, so this adds no cycle.
+const { intelAdvantageFor } = require("../data/crew.js");
 
 const HASH_CEILING = 4294967296;
 
@@ -139,9 +143,12 @@ function reliabilityFor(state, itemId, day) {
 // moves it +/-20% around that point. The estimate the board shows is the band
 // midpoint, so "estimated profit" is honest without being a promise — which is
 // the uncertainty Task 2 asks for.
-// How wide the swing is. Intelligence tightens it; nothing else touches it.
+// How wide the swing is. Intelligence tightens it, and since v1.19 an active
+// Pherris is worth one effective level of it - she knows what these things go
+// for, so the buyer has less room to invent a number. Nothing else touches it.
 function priceVolatility(state) {
-  const intelligence = Number(state?.player?.attributes?.intelligence) || 0;
+  const intelligence = (Number(state?.player?.attributes?.intelligence) || 0)
+    + intelAdvantageFor(state, "907list_flip");
   const band = INTELLIGENCE_VOLATILITY.find((entry) => intelligence >= entry.floor);
   return band ? band.volatility : PRICE_VOLATILITY;
 }

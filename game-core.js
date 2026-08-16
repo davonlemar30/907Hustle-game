@@ -2968,7 +2968,12 @@
       // The meetup went ahead. How visible it was is an Intelligence read -
       // picking the hour and the lot. The robbery roll itself is deliberately
       // left alone so the risk number the page shows stays honest.
-      const outcome = resolveOutcome(state, "market_meetup", 0.75, `${state.run.seed}:meetup:${state.run.day}:${state.run.slot}:${nonce}`);
+      //
+      // v1.19: Pherris's edge applies here, as one effective level, the same
+      // shape as Tone's on a confrontation. Knowing which buyer is serious is
+      // exactly what picking the hour and the lot is made of.
+      const marketRead = Crew.intelAdvantageFor(state, "market_transaction");
+      const outcome = resolveOutcome(state, "market_meetup", 0.75, `${state.run.seed}:meetup:${state.run.day}:${state.run.slot}:${nonce}`, marketRead);
       broadcastOutcome(state, "market_meetup", outcome.tier);
       return false;
     }
@@ -3656,8 +3661,28 @@
       return { available: false, reason: `Tier ${targetTier} needs loyalty ${req.loyalty} and ${req.daysRecruited} days on the crew.` };
     }
     if (crewId === "pherris") {
-      if (targetTier === 2) return blocks >= 1 ? { available: true, tier: 2, cost: 0 } : { available: false, reason: "Tier 2 needs one controlled block." };
-      return blocks >= 2 && state.player.cash >= 500 ? { available: true, tier: 3, cost: 500 } : { available: false, reason: "Tier 3 needs two blocks and $500." };
+      // v1.19: she manages the market, so the market is what promotes her. Tier
+      // 2 is proof the player is actually in the business - a run of flips, or
+      // enough lifetime margin that the volume says it instead. Tier 3 is a
+      // block of her own to work plus Broker standing, because a network that
+      // pays for itself needs somewhere to put the names.
+      //
+      // The old gate was blocks plus a $500 fee. Both are gone: Tone and Deshawn
+      // promote free once their proof holds, and territory plus Broker is a
+      // harder thing to reach than $500 is by the time you have either.
+      const list = state.nineZeroSevenList;
+      if (targetTier === 2) {
+        return list.flipCount >= Crew.PHERRIS_TIER2_FLIPS || list.profit >= Crew.PHERRIS_TIER2_PROFIT
+          ? { available: true, tier: 2, cost: 0 }
+          : { available: false, reason: `Tier 2 needs ${Crew.PHERRIS_TIER2_FLIPS} flips or $${Crew.PHERRIS_TIER2_PROFIT} of market profit.` };
+      }
+      // marketTier() rather than list.tier: the stored field is a mirror kept for
+      // saves and display, and the rule this file has followed since v1.9b is
+      // that it is never the source. A gate reading the mirror would open for a
+      // save that had drifted.
+      return blocks >= 1 && marketTier(state) >= Market.MAX_TIER
+        ? { available: true, tier: 3, cost: 0 }
+        : { available: false, reason: "Tier 3 needs one controlled block and Broker standing." };
     }
     if (crewId === "tone") {
       // v1.18: he does not promote on time served. Tier 2 is three fights he was
@@ -3671,8 +3696,20 @@
       return blocks >= 2 ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs two controlled blocks." };
     }
     if (crewId === "deshawn") {
-      if (targetTier === 2) return { available: true, tier: 2, cost: 0 };
-      return crew.trucesBrokered >= 2 && blocks >= 2 ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs two truces and two blocks." };
+      // v1.19: retro-gated onto his own ledger. His tier 2 used to be an
+      // unconditional pass and his tier 3 waited on a Curtis confrontation
+      // pipeline that was never built; both now read the lens he already has.
+      // It weights loyalty, discretion, and betrayal, so this is a CHARACTER
+      // gate rather than a skill one - he promotes people who have not burned
+      // anyone, which is the only thing his credibility is made of.
+      if (targetTier === 2) {
+        return atLeastBand(state, "deshawn", BANDS.TRUSTED)
+          ? { available: true, tier: 2, cost: 0 }
+          : { available: false, reason: "Tier 2 needs him to trust you, not just employ you." };
+      }
+      return atLeastBand(state, "deshawn", BANDS.BONDED)
+        ? { available: true, tier: 3, cost: 0 }
+        : { available: false, reason: "Tier 3 needs years of trust in a week. He is not there yet." };
     }
     return { available: false, reason: "This track is fully developed." };
   }

@@ -2,11 +2,45 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-The current playable build is **v1.17: Voice & Copy Polish**, on top of
-**v1.16: Caught & Consequences**.
+## Current Build (v1.17)
 
-New here? Read [ARCHITECTURE.md](ARCHITECTURE.md) — file map, state shape, event
-card schema, and the rules a change has to hold to.
+**v1.17: Voice & Copy Polish** — the system feed learns to sound like Spenard,
+the Leave Market button gives way to a nav-away close, the missing CSS tone
+aliases come back, and Mina Vale gets a real conversation tree. No balance
+changes.
+
+| | |
+|---|---|
+| Save schema | **v11** (`907ogr_v11`), loads v3 and up |
+| Tests | **601** passing (`npm test`) |
+| Simulation, 200 runs | `c828c00e7a5b6e0e0af740ca4f4f91a17fd16dcf8cc180265a629d1f07e07d08` |
+| Simulation, 2,000 runs | `5fefb813fc0a73e5d83271fbf0c1a50636b7a2842153728f9eb8b4ee36455e6f` |
+
+Both hashes are byte-identical to v1.16: the reducer was not touched.
+
+**The systems underneath:**
+
+- **Exposure System** — nine NPCs, each with a ledger of what they saw and a
+  personality lens that decides what it meant. Dispositions are derived, never
+  stored.
+- **Attribute Triangle** — Combat, Charisma, Intelligence. They buy *advantage*
+  (a second roll, then immunity to catastrophe), never a hidden percentage.
+- **Criminal Economy** — Stick, Boost, the plug market, and Slide's fence, all
+  priced by district difficulty, heat multipliers, plug suspicion, and bleed.
+- **Crew + Curtis Awareness** — 0-10 loyalty with nightly wage settlement, and a
+  separate 0-15 tracker for how hard Curtis's people are looking for you.
+- **Territory Blocks** — six Spenard blocks held by individual soldiers under
+  Eli, layered over the older district-wide takeover system.
+- **907List Broker** — a tiered resale track where the listing title is the
+  appraisal skill and the flip is a judgment call.
+- **Arrest & Jail** — bail and clock traded for heat relief and a permanent
+  record, with priors making the next one dearer and longer.
+- **The Nile** — two floors, two siblings, and the one place in Spenard that
+  Curtis's network cannot hear.
+
+Full structural reference: **[ARCHITECTURE.md](ARCHITECTURE.md)** (file map,
+state shape, event-card schema, and the rules a change has to hold to).
+Build-by-build history: **[PROJECT_STATUS.md](PROJECT_STATUS.md)**.
 
 ## What changed in v1.17
 

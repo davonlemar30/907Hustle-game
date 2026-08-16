@@ -2,11 +2,17 @@
 
 Last updated: 2026-08-16 (America/Anchorage)
 
-## v1.17 Voice & Copy Polish + Market Button Fix + CSS Fix — shipped on this branch
+**HEAD of `main` is `cf20d5a`, the v1.17 merge (PR #78).** Verified at that
+commit: `npm test` 601 passing, `--total 200`
+`c828c00e7a5b6e0e0af740ca4f4f91a17fd16dcf8cc180265a629d1f07e07d08`,
+`--total 2000` `5fefb813fc0a73e5d83271fbf0c1a50636b7a2842153728f9eb8b4ee36455e6f`,
+`npm run build` clean.
+
+## v1.17 Voice & Copy Polish + Market Button Fix + CSS Fix — shipped (PR #78)
 
 - Branch: `claude/clickup-2kyd583p-15874-hxww66`, on top of the v1.16 merge
-  (PR #77). Built from the "v1.17 Build Prompt — Voice & Copy Polish + Market
-  Button Fix + CSS Fix" doc.
+  (PR #77), merged to `main` as `cf20d5a`. Built from the "v1.17 Build Prompt —
+  Voice & Copy Polish + Market Button Fix + CSS Fix" doc.
 - **Save schema v11** (`907ogr_v11`), additive only: `nightOwl.recentMinaLines`
   (the Mina no-repeat window). `mergeDefaults` supplies it to v3–v11 saves.
 - **Leave Market button removed.** The shell fires `END_MARKET` on nav-away
@@ -36,7 +42,60 @@ Last updated: 2026-08-16 (America/Anchorage)
   `5fefb813…`), zero dead ends — the reducer was not touched, so the build
   prompt's predicted hash change correctly did not happen.
 
-## v1.15 Crew System + Curtis Ambient + Deshawn Tier 1 — shipped on this branch
+## v1.16 Arrest & Jail + Boost Caught-State — shipped (PR #77)
+
+- Branch: `claude/clickup-task-implementation-nneqd1`, on top of the v1.15 merge
+  (PR #76), merged as `b3078ac`. Built from the "v1.16 Build Prompt — Caught &
+  Consequences" doc.
+- **Save schema stays at v11** (`907ogr_v11`). Every field is additive —
+  `state.record` (`arrests`, `lastArrestDay`, `charges[]`),
+  `run.pendingArrestSlots`, `boost.pendingCaught`, and the crew
+  `jailedUntilDay` / `jailedSeverity` pair — so `mergeDefaults` supplies them to
+  v3–v11 saves with no migration pass.
+- **`arrestPlayer` is the single funnel** for every arrest: charges bail (dirty
+  cash first), returns a processing cost the caller feeds to its one
+  `advanceRun`, drops heat by a severity-scaled relief, writes the charge to
+  `state.record`, and broadcasts `heat_exposure` on the network channel — which
+  through v1.15's `broadcastTracked` is exactly what raises Curtis's awareness.
+  All numbers live in the new `src/data/arrest.js`.
+- **The release valve is priced to resist farming**: relief runs −2 (boost tier
+  1) to −5 (organized stick), priors multiply bail up to 3.5× and lengthen
+  processing one slot per two priors, and a player who cannot pay converts the
+  shortfall to time at $150 per part of day, capped at one whole day. No bail
+  can soft-lock a broke run.
+- **All three Stick tiers route through it**, replacing v1.13's flat $200 tier-3
+  stub, gated on a catastrophic outcome or heat above 10 / 8 / 6 by tier.
+- **Crew go to jail.** `jailCrewMember` sets `status: "arrested"` with a
+  severity-scaled `jailedUntilDay`; bail restores them at −1 loyalty, serving the
+  stretch at loyalty 1. `releaseServedCrew` also repairs a live v1.15 bug where
+  an arrested member silently stopped counting toward capacity and power with no
+  way back.
+- **A blown boost is a scene.** All three tiers open a fight / run / give-it-up
+  encounter through the consequence engine, reusing `EncounterModal` (no new UI
+  shell). Fight broadcasts a `violence` row win or lose. The first-boost
+  opportunity card routes through the same door.
+- **UI**: a Record card on Character (priors, last booking, current bail
+  multiplier); an arrested crew member's page swaps Pay-arrears for
+  **Bail out · $N**.
+
+### Verification
+
+- 588 tests passing (565 baseline + 23 in `tests/v1-16.test.js`).
+- **New baselines, both moved on purpose** (two failure paths rewritten):
+  `--total 200` `c828c00e7a5b6e0e0af740ca4f4f91a17fd16dcf8cc180265a629d1f07e07d08`,
+  `--total 2000` `5fefb813fc0a73e5d83271fbf0c1a50636b7a2842153728f9eb8b4ee36455e6f`,
+  replacing v1.15's `01c618d5…` / `9f471dec…`. Zero dead ends.
+- Economy across 2,000 runs **−1.11%** overall, concentrated where expected:
+  `stickup` −4.5%, `aggressive` −4.1%, `thief` −1.8%; clean-money profiles
+  inside ±1%. 70 arrests across 2,000 runs, all in the criminal profiles.
+
+### Known limitations
+
+- Multi-day player sentences are out (they need a skip-N-days UX that does not
+  exist). Lawyers, police as a named faction, and arrest-to-job-loss beyond what
+  `applyHeatEmployment` already does are all unbuilt.
+
+## v1.15 Crew System + Curtis Ambient + Deshawn Tier 1 — shipped (PR #76)
 
 - Branch: `claude/crew-system-improvements-z33xv6`, on top of the v1.14 merge
   (PR #75). Built from the "v1.15 Build Prompt — Crew System + Curtis Ambient +
@@ -92,7 +151,43 @@ Last updated: 2026-08-16 (America/Anchorage)
 - Deshawn's introduced-contact betrayal penalty (−3) has a narrow surface
   today — most introduced contacts have no betrayal mechanic yet.
 
-## v1.13 Criminal Economy Cluster — branch in progress
+## v1.14 UI Architecture — shipped (PR #75)
+
+- Branch: `claude/clickup-2kyd583p-15794-voye0b`, on top of the v1.13 merge
+  (PR #74), merged as `88f1c6a`. A presentation build: **`game-core.js` is
+  untouched**, so the reducer, save schema (**v10** at the time), and both
+  simulation hashes are byte-identical to v1.13's.
+- **Three primitives extracted** into `src/ds/primitives.jsx` —
+  `AccordionSection`, `ActionCard`, `BadgeHeader` — with prop contracts in
+  `src/ds/index.d.ts`, replacing the private implementations behind the Phone's
+  five sections and Home's active-job card. Same markup, same 44px headers, same
+  `0fr → 1fr` animation and `prefers-reduced-motion` opt-out, zero visual change.
+- **Travel collapsed to three destinations**: Spenard, Home, Leave Spenard. Fares
+  are stated on the row and the blocking reason printed on any ride the player
+  cannot afford. Everything the old six-row menu carried is still reachable one
+  level down.
+- **Local Intel became content**, not a menu row: walks and discoveries fold into
+  a "What you've learned" accordion on the neighbourhood hub. The **Listings page
+  was deleted** — two of three cards were placeholders and the live one (the
+  garage lease) is already offered by 907List.
+- **Tonk plays fullscreen**, with a fixed 44px overlay carrying Quit (a real
+  drop, so it confirms) and Back (presentation only). Opponent plays animate off
+  the discard the reducer already publishes. A hand that ends always prints its
+  receipt, closing a v1.9c quiet-receipt gap where a loss moved no money and so
+  said nothing.
+- **"Finish Trading" relabelled "Leave Market · advance to {slot}"** — same
+  dispatch, same reducer, naming the price instead of a bookkeeping step. (v1.17
+  removes the button entirely.)
+
+### Verification
+
+- 531 tests passing (513 baseline + 18 in `tests/v1-14.test.js`).
+- **Both hashes unchanged from v1.13**, as intended for a UI-only build:
+  `--total 200` `bd77a59cb23c35c185f44a3fd0791349aede3ef65ddf06c2946b647c3424f922`,
+  `--total 2000` `5d6f9b0f67b63a176cb0a601c246b4a4a816c701cdc8ee957871dfdbf23da245`.
+  Zero dead ends.
+
+## v1.13 Criminal Economy Cluster — shipped (PR #74)
 
 - Branch: `claude/clickup-2kyd583p-15714-klwirj`, stacked on the v1.9c commit.
   Built from the "v1.12 Build Prompt — Criminal Economy Cluster" doc, shipped
@@ -139,7 +234,7 @@ Last updated: 2026-08-16 (America/Anchorage)
   fence card sells $350 of merchandise; zero overflow at 375px; zero console
   errors.
 
-## v1.9c UX Polish Pass — shipped on this branch
+## v1.9c UX Polish Pass — shipped (PR #73)
 
 - Branch: `claude/clickup-2kyd583p-15714-klwirj`, based on `main` commit
   `460a094` containing merged PR #72 (v1.12a). The build ships the UX pass
@@ -192,7 +287,7 @@ Last updated: 2026-08-16 (America/Anchorage)
 - Save schema v9, unchanged. Full notes in `README.md` §"What changed in
   v1.12a".
 
-## v1.11 Attribute Growth Triangle + The Nile — branch in progress
+## v1.11 Attribute Growth Triangle + The Nile — shipped (PR #70)
 
 - Branch: `codex/v1-11-attribute-growth`, based on `main` commit `b5bd304`
   containing merged PR #69 (v1.10).
@@ -262,7 +357,7 @@ Last updated: 2026-08-16 (America/Anchorage)
 - The `.entity-chip` inline name link remains at 23px. It is byte-identical to
   `main` and predates this build.
 
-## v1.10 Unified Stat Architecture — branch in progress
+## v1.10 Unified Stat Architecture — shipped (PR #69)
 
 - Branch: `codex/v1-10-stat-architecture`, based on `origin/main` commit `b7cf392`
   containing merged PR #68 (v1.9b).
@@ -410,7 +505,7 @@ Last updated: 2026-08-16 (America/Anchorage)
   sub-44px control remains, the inline `.entity-chip` name link, unchanged from
   v1.8.1. This build is ready for draft review and is not shipped.
 
-## v1.4 Week Zero and Early Game Rework — branch in progress
+## v1.4 Week Zero and Early Game Rework — shipped (PR #60)
 
 - Branch: `codex/v1-4-week-zero-early-game`, based on `origin/main` commit
   `87bf395` containing merged PR #59.

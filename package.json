@@ -11,7 +11,8 @@
     "build:watch": "npm run build -- --watch",
     "build:ds": "esbuild src/ds/index.jsx --bundle --format=esm --outfile=ds-dist/index.js --loader:.jsx=jsx --target=es2019 && cp src/ds/index.d.ts ds-dist/index.d.ts",
     "test": "node --test tests/*.test.js",
-    "sim": "node tests/simulate-runs.js --total 200"
+    "sim": "node tests/simulate-runs.js --total 200",
+    "check-docs": "node scripts/check-docs-version.js"
   },
   "repository": {
     "type": "git",

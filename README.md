@@ -2,27 +2,29 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-## Current Build (v1.19)
+## Current Build (v1.20)
 
-**v1.19: Observation-Gated Recruitment — Pherris + Deshawn Retro-Gate** — the
-pattern v1.18 built for Tone, applied until no flat gate is left. Pherris is
-earned through the market rather than through nerve: her lens counts money
-moving quietly, and 907List profit now travels on the network channel, so the
-people who trade in money for a living can finally hear about the money. Once
-she is on the payroll she is worth one effective level of Intelligence on market
-reads. Deshawn's tiers stop being a flat pass and read his own ledger, which
-makes **every crew advancement in the game an Exposure read**.
+**v1.20: Lieutenant Typed Modifiers on Soldiers** — the Made Men stop being
+better encounter rolls and start being better empire management. Each
+lieutenant now owns one number on the territory layer: **Tone** makes your
+blocks harder to take, **Pherris** shows you what Curtis is holding, **Deshawn**
+makes the whole operation quieter. Nothing new is stored — all three are derived
+from the crew record the save already carries, which is why the schema does not
+move.
 
 | | |
 |---|---|
 | Save schema | **v11** (`907ogr_v11`), loads v3 and up |
-| Tests | **676** passing (`npm test`) |
-| Simulation, 200 runs | `114d08f7aaf1ab529e36af7716da69e311cbe23db13af96a91b79c290799b9db` |
-| Simulation, 2,000 runs | `1bd2c29905bcb3dd55adff32c6787b4f659e5629fa5d1f225f7cbf40272acc36` |
+| Tests | **699** passing (`npm test`) |
+| Simulation, 200 runs | `c8b3bf0745871555c326f4861b0a8d576ce149c9fa7bd871e9215b51236092d8` |
+| Simulation, 2,000 runs | `d9d0fbf1d24c1c7cca8db9db7897f044811a46c4d41ff6a23ca678a0dc3dfb39` |
 
-Both hashes moved on purpose: a new lens adds telemetry keys, and the market
-strategies now spend cash on Pherris and pay her wage. The de-escalation
-refactor that shipped alongside is **hash-neutral across both run counts**.
+Both hashes moved for **bookkeeping only**: the simulator gained a territory
+telemetry block. Strip those keys back out and the output is byte-identical to
+v1.19's `114d08f7…` / `1bd2c299…` — no current sim strategy reaches the block
+layer, so no run's play changed. The modifiers are measured by a dedicated A/B
+harness instead (`tests/measure-lieutenant-modifiers.js`, numbers in
+Verification).
 
 **The systems underneath:**
 
@@ -37,7 +39,9 @@ refactor that shipped alongside is **hash-neutral across both run counts**.
 - **Crew + Curtis Awareness** — 0-10 loyalty with nightly wage settlement, and a
   separate 0-15 tracker for how hard Curtis's people are looking for you.
 - **Territory Blocks** — six Spenard blocks held by individual soldiers under
-  Eli, layered over the older district-wide takeover system.
+  Eli, layered over the older district-wide takeover system, and since v1.20
+  shaped by the **Made Men modifier triangle**: Tone's defense multiplier,
+  Pherris's intel ladder, Deshawn's heat reduction.
 - **907List Broker** — a tiered resale track where the listing title is the
   appraisal skill and the flip is a judgment call.
 - **Arrest & Jail** — bail and clock traded for heat relief and a permanent
@@ -48,6 +52,35 @@ refactor that shipped alongside is **hash-neutral across both run counts**.
 Full structural reference: **[ARCHITECTURE.md](ARCHITECTURE.md)** (file map,
 state shape, event-card schema, and the rules a change has to hold to).
 Build-by-build history: **[PROJECT_STATUS.md](PROJECT_STATUS.md)**.
+
+## What changed in v1.20
+
+**Your crew investment starts paying territorial dividends.**
+
+- **Tone → defense.** Raid resolution now reads a defense strength,
+  `soldiers * toneMultiplier` (1.15 / 1.30 / 1.50 by tier). One soldier under a
+  tier-2 Tone defends as well as 1.3 without him. Whether a raid *arrives* is
+  unchanged — heat and patrols decide that — but the garrison now decides how it
+  ends: a casualty roll Tone can beat, and a block-loss roll divided by the
+  defense. A second posted soldier now halves the chance of losing the corner,
+  where before it only gave the raid another name to take.
+- **Pherris → intel.** The one-shot `flags.spenardBlocksRevealed` boolean became
+  a ladder. Without her the flag still reads as level 1. With her it is her tier:
+  level 2 adds soldier counts on your corners and a ±1 estimate of what Curtis
+  has on his, level 3 makes that exact and names the corners his people are
+  lining up next. The jitter is hashed off the seed, so a reload never rerolls
+  an estimate.
+- **Deshawn → heat.** Held corners now cost ambient attention: one nightly roll
+  at `sum(heatExposure) * 0.06`, multiplied by his reduction (0.80 / 0.60 /
+  0.40). A player holding nothing rolls nothing and gets nothing from him — the
+  reduction is territory heat only, never criminal-action heat.
+- **The crew screen says so.** One read-only line per lieutenant ("Defense
+  +30%", "Intel Level 3", "Heat Reduction 60%"), shown only while they are
+  active and you hold at least one corner.
+- **`stringHash` moved to `src/hash.js`**, a leaf module that requires nothing,
+  so the selectors can hash without closing a cycle through
+  `src/events/random.js`. That file re-exports it; every old call site is
+  unchanged.
 
 ## What changed in v1.17
 
@@ -815,18 +848,44 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 ## Verification
 
-- Node tests: **676 passing** (637 through v1.18, 38 new in `tests/v1-19.test.js`,
-  one new in `tests/v1-15.test.js` for the de-escalation behavior change)
+- Node tests: **699 passing** (676 through v1.19, 23 new in `tests/v1-20.test.js`)
 - Deterministic simulations: **2,000 runs, zero crashes or dead ends**
-- Simulation SHA-256: `1bd2c29905bcb3dd55adff32c6787b4f659e5629fa5d1f225f7cbf40272acc36`
+- Simulation SHA-256: `d9d0fbf1d24c1c7cca8db9db7897f044811a46c4d41ff6a23ca678a0dc3dfb39`
   (`--total 2000`) and
-  `114d08f7aaf1ab529e36af7716da69e311cbe23db13af96a91b79c290799b9db`
-  (`--total 200`). **Both moved at v1.19 on purpose**, for the same two kinds of
-  reason as v1.18. Bookkeeping: the per-NPC telemetry loop covers
-  `EXPOSURE_NPC_IDS`, so Pherris's lens adds two keys per strategy block, and the
-  build added two more so her gate could be measured. Gameplay: 907List profit
-  reaches a new channel, she is recruitable, and the market strategies spend the
-  cash and pay the wage. The v1.18 baselines were `9ae8cd3c…` / `b233d725…`.
+  `c8b3bf0745871555c326f4861b0a8d576ce149c9fa7bd871e9215b51236092d8`
+  (`--total 200`). **Both moved at v1.20 for bookkeeping only.** The simulator
+  gained a `territory` telemetry block (claimed / held / lost / raids / income /
+  loss rate); delete those keys from the output and it hashes byte-identical to
+  the v1.19 baselines `1bd2c299…` / `114d08f7…`. That is the honest reading of
+  the gameplay change too: **no sim strategy reaches the block layer**, so the
+  new raid math and heat trickle never fire in a simulated run. The `operator`
+  strategy claims **zero** blocks in 2,000 runs — it is a run-pacing finding, not
+  a modifier measurement, and it is why the modifiers are measured separately.
+- **The modifiers, measured** (`node tests/measure-lieutenant-modifiers.js 300 10`
+  — 300 seeded runs, 10 nights, 3 corners, 6 soldiers, real reducer through
+  `CONFIRM_END_DAY`):
+
+  | Config | Block-loss rate | Soldiers lost / run | Avg peak Heat | Territory income / run |
+  |---|---|---|---|---|
+  | no lieutenants | 0.449 | 5.91 | 11.36 | $1,319 |
+  | Tone tier 1 | 0.383 | 5.88 | 12.11 | $1,453 |
+  | Tone tier 2 | 0.324 | 5.83 | 12.70 | $1,545 |
+  | Tone tier 3 | **0.288** | 5.61 | 13.26 | $1,694 |
+  | Deshawn tier 1 | 0.449 | 5.91 | 10.87 | $1,325 |
+  | Deshawn tier 2 | 0.453 | 5.91 | 10.36 | $1,327 |
+  | Deshawn tier 3 | 0.454 | 5.91 | **9.96** | $1,331 |
+  | Tone 3 + Deshawn 3 | 0.296 | 5.74 | 11.79 | $1,739 |
+
+  **Tone: 0.449 → 0.288 block-loss**, a 36% cut in corners lost, strictly
+  improving tier over tier, and +28% territory income because a corner held is a
+  corner earning. **Deshawn: 11.36 → 9.96 average peak Heat**, also strictly
+  tier-ordered, and the only config in the table whose worst-case peak is not 15.
+  A departed lieutenant measures identically to no lieutenant at all, asserted
+  metric-for-metric in `tests/v1-20.test.js`.
+  The counter-effect is real and worth naming: **Tone raises peak Heat**
+  (11.36 → 13.26) because corners he saves keep drawing raids and trickle. That
+  is the pairing the triangle is designed around — hold harder with Tone, carry
+  it with Deshawn.
 - **The de-escalation refactor is hash-neutral.** Routing Deshawn's three
   hardcoded sites through `presenceEffectsFor` was measured on its own commit
   first: both hashes came back byte-identical to v1.18. It is not
@@ -847,6 +906,15 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 - Viewports: 320×568, 360×640, 375×812, 414×896, 640×480, 768×1024, 834×1112,
   1024×768, 1280×720, and 1440×900 — all with zero horizontal overflow and no
   tap target under 44px
+- v1.20 browser pass (Chromium, 320 / 360 / 375 / 390 / 414 / 768 / 834 / 1024 /
+  1280 / 1440, a save loaded mid-run with three corners held): **50 views
+  audited, zero horizontal overflow, zero tap targets under 44px, zero console
+  errors from the app.** Tone's "Defense +30%", Pherris's "Intel Level 3", and
+  Deshawn's "Heat Reduction 60%" render on the crew detail cards; a Curtis
+  corner reads "Pherris: Curtis holds it with 2 on the corner" and a held one
+  reads "Pherris: Curtis's people are asking about this corner." The modifier
+  lines are text inside cards that already existed, so the build adds no new
+  control and no new tap target.
 - Browser criteria: zero console errors, usable Phone/Hustle locked states,
   correct five-tab navigation, and no Babel in the page
 - v1.9c browser pass: Phone opens with only Texts expanded at 375×667; Bills

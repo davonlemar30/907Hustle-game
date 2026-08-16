@@ -797,8 +797,12 @@
     const bands = Mina.MINA_LINES[Mina.minaBandKey(Exposure.getDispositionBand("mina", state))];
     const pool = statePool || (slot >= 3 ? bands.late : bands.early);
     const recent = state.nightOwl.recentMinaLines || [];
+    // A pool the size of the memory window would otherwise repeat a line seen
+    // two visits ago when it exhausts, so the fallback relaxes progressively:
+    // exclude the full window first, then just the freshest two.
     const fresh = pool.filter((line) => !recent.includes(line));
-    const candidates = fresh.length ? fresh : pool;
+    const relaxed = fresh.length ? fresh : pool.filter((line) => !recent.slice(-2).includes(line));
+    const candidates = relaxed.length ? relaxed : pool;
     const line = candidates[stringHash(`${state.run.seed}:mina-line:${day}:${slot}`) % candidates.length];
     state.nightOwl.recentMinaLines = [...recent, line].slice(-Mina.MINA_RECENT_LIMIT);
     return line;

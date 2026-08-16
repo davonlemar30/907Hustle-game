@@ -190,7 +190,7 @@ const CREW_BOOKED_LINES = [
 ];
 
 const CREW_BAIL_LINES = [
-  "%s comes out squinting and does not say thank you, but shows up the next morning.",
+  "%s comes out squinting, skips the thank you, and shows up the next morning anyway.",
   "You put the money down for %s. The debt between you moved, and both of you know it.",
   "%s walks out to find you already waiting. That gets remembered longer than the cell.",
 ];

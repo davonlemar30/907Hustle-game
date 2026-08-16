@@ -173,9 +173,11 @@ test("recruitmentEligible reads the band and the score floor", () => {
   assert.equal(Crew.recruitmentEligible("tone", BANDS.HOSTILE, -9), false);
 });
 
+// v1.19 took Pherris off this list by giving her an entry, which is the pattern
+// working rather than breaking. Eli is the remaining ungated crew member.
 test("the pattern is additive: no proof entry means no gate", () => {
-  assert.equal(Crew.recruitmentProofFor("pherris"), null);
-  assert.equal(Crew.recruitmentEligible("pherris", BANDS.HOSTILE, -20), true);
+  assert.equal(Crew.recruitmentProofFor("eli"), null);
+  assert.equal(Crew.recruitmentEligible("eli", BANDS.HOSTILE, -20), true);
   assert.equal(Crew.recruitmentEligible("deshawn", BANDS.HOSTILE, -20), true);
   assert.equal(Crew.recruitmentEligible("nobody_at_all", BANDS.BONDED, 99), true);
 });

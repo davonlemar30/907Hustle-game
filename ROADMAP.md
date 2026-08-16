@@ -4,6 +4,50 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
+## Shipped — v1.19 Observation-Gated Recruitment — Pherris + Deshawn Retro-Gate
+
+Branch: `claude/v1-19-pherris-deshawn-gates-hrl444`, on top of the v1.18 merge
+(PR #80). Save schema stays at v11 (additive); both sim hashes moved on purpose;
+zero dead ends across 2,000 runs; 676 tests passing.
+
+- **Pherris is earned through the market.** A lens that counts money moving
+  quietly, the channels of someone who *is* a network, and a `pherris_recruit`
+  card with no area restriction, because she is the one person on the roster who
+  works both districts. The `pherris_offer` booth scene about who owns her list
+  survives as a separate beat.
+- **907List profit now travels on `network` as well as `household`.** Until this
+  build the only financial channel in the game was the one the player lives on,
+  so the people who trade in money for a living could never hear about the
+  money. Curtis's existing $200 filter keeps it honest — small flips stay a
+  household fact, and a day big enough for Pherris to notice is a day his people
+  notice too.
+- **`intel_advantage` is the market half of Tone's `combat_advantage`**, capped
+  and applied the same way: one effective level of Intelligence on the 907List
+  meetup roll and on the sale swing.
+- **Deshawn's tiers read his own ledger.** Tier 2 was an unconditional pass and
+  tier 3 waited on a Curtis pipeline that was never built. Trusted and Bonded
+  now, on the lens he already had. **After this build no crew advancement in the
+  game runs on a flat counter.**
+- **The de-escalation migration ROADMAP flagged at v1.18 is done**, and it was
+  measured on its own commit first: both hashes byte-identical. It is not
+  behavior-identical in principle — an arrested Deshawn no longer de-escalates —
+  and that case is pinned by a unit test the simulation cannot reach.
+- **Her `minScore` was measured, not designed.** Numbers in README.md and
+  ARCHITECTURE.md.
+
+### Next
+
+- Lieutenant typed modifiers on soldiers (Phase 1.4): a Made Man at tier 2+
+  becoming a block's `managerId`, with domain flavor on the manager rather than
+  on the guard.
+- `curtisAwareness` still averages 0.33 of 15 across 2,000 runs. The new network
+  broadcast feeds it for the first time from clean money, but the `watching`
+  phase and everything behind it stay effectively unreachable.
+- `crew.trucesBrokered` is still incremented by `BROKER_CURTIS_TRUCE` and no
+  longer gates anything. Left in place as save state for a future gate.
+
+---
+
 ## Shipped — v1.18 Observation-Gated Recruitment — Tone
 
 Branch: `codex/v1-18-tone-recruitment`, on top of the v1.17 docs merge (PR #79).
@@ -28,8 +72,10 @@ eleven of thirteen strategies byte-identical; zero dead ends.
 - Feed `curtisAwareness` well enough that it can gate content. Today it averages
   0.32 of 15 across 2,000 runs, so anything behind the `watching` phase is
   effectively unreachable — that includes the watcher encounters it already owns.
+  *(v1.19 gave it a first clean-money source; the average moved to 0.33.)*
 - Migrate Deshawn's three hardcoded de-escalate sites onto `presenceEffectsFor`
   now that the framework has a live caller. Deliberately out of scope for v1.18.
+  *(Done in v1.19.)*
 
 ---
 

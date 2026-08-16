@@ -23,7 +23,11 @@ function exposureMetrics(state){
   const out={taxActive:state.npc.curtis.taxActive?1:0,curtisBetrayed:state.npc.curtis.betrayed?1:0,
     curtisAwareness:state.curtisAwareness?.level||0,
     toneProven:C.selectors.crewRecruitmentEligible(state,'tone')?1:0,
-    toneRecruited:state.people.crew.tone.recruited?1:0};
+    toneRecruited:state.people.crew.tone.recruited?1:0,
+    // v1.19: the same two numbers for Pherris. Proven is the ledger clearing her
+    // floor; recruited is whether the card then actually fired and was taken.
+    pherrisProven:C.selectors.crewRecruitmentEligible(state,'pherris')?1:0,
+    pherrisRecruited:state.people.crew.pherris.recruited?1:0};
   for(const id of C.EXPOSURE_NPC_IDS){
     out[id+'Score']=C.selectors.disposition(state,id);
     out[id+'Band']=C.selectors.dispositionBand(state,id);
@@ -210,6 +214,8 @@ function summarize(name,count){const runs=Array.from({length:count},(_,i)=>play(
   bothHalvesRuns:runs.filter(r=>r.curtisAwareness>=3&&r.toneProven).length,
   toneProvenRuns:runs.reduce((n,r)=>n+r.toneProven,0),
   toneRecruitedRuns:runs.reduce((n,r)=>n+r.toneRecruited,0),
+  pherrisProvenRuns:runs.reduce((n,r)=>n+r.pherrisProven,0),
+  pherrisRecruitedRuns:runs.reduce((n,r)=>n+r.pherrisRecruited,0),
   ...Object.fromEntries(C.EXPOSURE_NPC_IDS.flatMap(id=>[
     ['average'+id[0].toUpperCase()+id.slice(1)+'Score',Number((runs.reduce((n,r)=>n+r[id+'Score'],0)/count).toFixed(2))],
     ['average'+id[0].toUpperCase()+id.slice(1)+'Rows',Number((runs.reduce((n,r)=>n+r[id+'Rows'],0)/count).toFixed(1))],

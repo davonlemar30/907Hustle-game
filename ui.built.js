@@ -842,6 +842,21 @@
         tone: {
           archetype: "STREET",
           weights: { violence: 3, defiance: 2, growth: 1, discretion: -2, submission: -3 }
+        },
+        // v1.19: Pherris reads whether the player is worth being connected to. She
+        // trades in contacts, so what she counts is a book of business getting bigger
+        // and being handled quietly - money moving, the operation growing, information
+        // kept. Violence and defiance are heat on a network she has spent years
+        // building, and heat is what makes her names stop picking up.
+        //
+        // The event override is not decoration. `job_lost` is broadcast as a financial
+        // observation, and at weight 4 an unguarded lens would read getting fired as
+        // the best week the player ever had. Same trap SHARED_EVENT_WEIGHTS exists to
+        // catch, priced here because the category sign is only wrong for her.
+        pherris: {
+          archetype: "STREET",
+          weights: { financial: 4, growth: 3, discretion: 2, violence: -2, defiance: -1 },
+          eventWeights: { job_lost: -2 }
         }
       };
       var EXPOSURE_NPC_IDS = Object.keys(NPC_LENSES);
@@ -907,7 +922,12 @@
         // wire - that is how he already knows who parked the sedan. No household: he
         // does not live with the player. Not `reputation` either; that channel is
         // Curtis's alone, and it is the slow one anyway.
-        tone: ["direct", "neighborhood", "network"]
+        tone: ["direct", "neighborhood", "network"],
+        // Pherris IS a network - a Downtown contact list she has kept alive for years.
+        // She hears the block because she works it, and she hears the wire because she
+        // is most of it. No household: she has never been to the house. Not
+        // `reputation` either; that channel is Curtis's alone.
+        pherris: ["direct", "neighborhood", "network"]
       };
       var CURTIS_NETWORK_CATEGORIES = /* @__PURE__ */ new Set(["violence", "defiance", "growth"]);
       var CURTIS_VOLUME_THRESHOLD = 200;
@@ -933,7 +953,10 @@
         deshawn: [1, 2, 3],
         // Tone keeps door hours. He is around Spenard in the evening and at night,
         // which is when the work he does exists.
-        tone: [2, 3]
+        tone: [2, 3],
+        // Pherris works afternoons through the night. Mornings are for the phone, and
+        // a phone call is the network channel, which ignores shift anyway.
+        pherris: [1, 2, 3]
       };
       var NPC_PRESENCE_AREAS = {
         yalonda: ["north_star_lot"],
@@ -948,7 +971,10 @@
         // Deshawn thinks in terms of the block. He does not leave it.
         deshawn: ["north_star_lot"],
         // Spenard only for now. Downtown is not his stretch and never was.
-        tone: ["north_star_lot"]
+        tone: ["north_star_lot"],
+        // The only crew member who moves between districts. Her list is Downtown and
+        // her corner booth is there; Spenard is where she checks it against the street.
+        pherris: ["north_star_lot", "downtown"]
       };
       function channelFor(id) {
         return CHANNELS[id] || CHANNELS.direct;
@@ -1495,7 +1521,12 @@
         // v1.18: Tone is expensive because muscle is. Tier 2 means he has brought
         // hands with him, tier 3 means a squad, and the wage says so before the
         // player has to find out the other way.
-        tone: [85, 150, 250]
+        tone: [85, 150, 250],
+        // v1.19: information costs less than muscle, and it still scales - tier 2 is a
+        // couple of people making calls for her, tier 3 is a desk. Tier 1 matches her
+        // flat roster wage, so putting her on the curve changes nothing until she is
+        // actually promoted.
+        pherris: [60, 120, 220]
       };
       function wageFor(person, tier) {
         const curve = TIER_WAGES[person.id];
@@ -1536,6 +1567,15 @@
         tone: [
           { eventType: "encounter", modification: "combat_advantage", excludes: CURTIS_CREW_ENCOUNTER_IDS },
           { eventType: "stick_target", modification: "combat_advantage", excludes: [] }
+        ],
+        // v1.19: Pherris changes nothing about a fight and everything about a price.
+        // One effective level of Intelligence on market reads - she knows which of
+        // these buyers is serious, so the meetup is chosen better and the swing on a
+        // sale is narrower. No exclusions: a contact list does not care whose corner
+        // the deal is on.
+        pherris: [
+          { eventType: "market_transaction", modification: "intel_advantage", excludes: [] },
+          { eventType: "907list_flip", modification: "intel_advantage", excludes: [] }
         ]
       };
       function presenceEffectsFor(state, eventType, contextId) {
@@ -1551,6 +1591,12 @@
         }
         return effects;
       }
+      function deEscalateCrewIds(state, eventType, contextId) {
+        return presenceEffectsFor(state, eventType, contextId).filter((effect) => effect.modification === "de_escalate").map((effect) => effect.crewId);
+      }
+      function deEscalateAvailable(state, eventType, contextId) {
+        return deEscalateCrewIds(state, eventType, contextId).length > 0;
+      }
       var COMBAT_ADVANTAGE_CAP = 1;
       function combatAdvantageFor(state, eventType, contextId) {
         return Math.min(COMBAT_ADVANTAGE_CAP, combatAdvantageCrewIds(state, eventType, contextId).length);
@@ -1558,8 +1604,26 @@
       function combatAdvantageCrewIds(state, eventType, contextId) {
         return presenceEffectsFor(state, eventType, contextId).filter((effect) => effect.modification === "combat_advantage").map((effect) => effect.crewId);
       }
+      var INTEL_ADVANTAGE_CAP = 1;
+      function intelAdvantageFor(state, eventType, contextId) {
+        return Math.min(INTEL_ADVANTAGE_CAP, intelAdvantageCrewIds(state, eventType, contextId).length);
+      }
+      function intelAdvantageCrewIds(state, eventType, contextId) {
+        return presenceEffectsFor(state, eventType, contextId).filter((effect) => effect.modification === "intel_advantage").map((effect) => effect.crewId);
+      }
       var RECRUITMENT_PROOF = {
-        tone: { minBand: "WARM", minScore: 6 }
+        tone: { minBand: "WARM", minScore: 6 },
+        // v1.19: Pherris needs a floor for exactly the reason Tone does, and a higher
+        // one. Her financial weight is 4, so a single 907List day scores 4.0 on its
+        // own - past the Warm floor of 3 before the player has done anything twice.
+        //
+        // 8 is measured rather than designed. Across 2,000 seeded runs the floor moves
+        // her recruitment rate 16.1% (at 5) / 14.8% (6) / 10.8% (8) / 7.2% (10), and
+        // the dedicated flipper strategy 83% / 80% / 69% / 44%. Below 8 she is close
+        // to automatic for anyone who touches the market; above it she stops being
+        // reachable by a player who trades as one activity among several. 8 keeps her
+        // an earned hire for a market player and an impossible one for everybody else.
+        pherris: { minBand: "WARM", minScore: 8 }
       };
       function recruitmentProofFor(crewId) {
         return RECRUITMENT_PROOF[crewId] || null;
@@ -1572,6 +1636,8 @@
         return true;
       }
       var TONE_TIER2_COMBAT_WINS = 3;
+      var PHERRIS_TIER2_FLIPS = 5;
+      var PHERRIS_TIER2_PROFIT = 500;
       var DESHAWN_LOYALTY_TRIGGERS = {
         deescalateUsed: 1,
         // player lets him handle it
@@ -1594,10 +1660,17 @@
         COMBAT_ADVANTAGE_CAP,
         RECRUITMENT_PROOF,
         TONE_TIER2_COMBAT_WINS,
+        PHERRIS_TIER2_FLIPS,
+        PHERRIS_TIER2_PROFIT,
         recruitmentProofFor,
         recruitmentEligible,
         combatAdvantageFor,
         combatAdvantageCrewIds,
+        deEscalateCrewIds,
+        deEscalateAvailable,
+        INTEL_ADVANTAGE_CAP,
+        intelAdvantageFor,
+        intelAdvantageCrewIds,
         PRESENCE_EFFECTS,
         DESHAWN_LOYALTY_TRIGGERS,
         DESHAWN_VIOLENCE_WINDOW_DAYS,
@@ -2067,7 +2140,7 @@
           return { id, label, description: hint };
         }
         function getEligibleChoices(encounter, state) {
-          var _a, _b, _c, _d, _e, _f, _g, _h;
+          var _a, _b, _c, _d, _e, _f;
           if (!encounter || encounter.resolved) return [];
           if (encounter.type === "boost_caught") return boostCaughtChoices(encounter, state);
           const areaId = encounter.areaId || state.world.currentNeighborhoodId;
@@ -2087,8 +2160,7 @@
             if (encounter.type === "authored" && (((_a = state.flags) == null ? void 0 : _a.curtisArrangement) || ((_b = state.npc.curtis) == null ? void 0 : _b.respect) >= 3)) choices.push(choice("use_relationship", "Invoke Curtis's Arrangement", "Spend relationship leverage instead of blood or money."));
             if (((_d = (_c = state.player.gear) == null ? void 0 : _c.consumables) == null ? void 0 : _d.medical_kit) > 0 && state.player.health < 100) choices.push(choice("medical_kit", "Use Medical Kit", "Recover now, but the confrontation keeps moving."));
             if (((_f = (_e = state.player.gear) == null ? void 0 : _e.equipped) == null ? void 0 : _f.tool) === "burner_phone") choices.push(choice("burner_phone", "Burn the Phone", "Create a fast distraction; the phone will be gone afterward."));
-            const deshawn = (_h = (_g = state.people) == null ? void 0 : _g.crew) == null ? void 0 : _h.deshawn;
-            if (encounter.type === "random" && (deshawn == null ? void 0 : deshawn.recruited) && deshawn.status !== "departed" && deshawn.loyalty > 0 && !Crew.CURTIS_CREW_ENCOUNTER_IDS.includes(encounter.id)) {
+            if (encounter.type === "random" && Crew.deEscalateAvailable(state, "encounter", encounter.id)) {
               choices.push(choice("deshawn_deescalate", "Let Deshawn Handle It", "No blood, one point of heat worked off. He notices what you choose next."));
             }
           } else {
@@ -2606,6 +2678,7 @@
         pherris_offer: "She took the corner booth Downtown before you arrived and ordered for both of you, which tells you how the conversation is going to go.",
         tone_offer: "He stands under the broken security light, far enough back that he is out of the doorway. He leaves the part about Curtis for last.",
         tone_recruit: "He waited by the door this time instead of the light, which is a different kind of standing there. The number has not moved since the first conversation.",
+        pherris_recruit: "She did not ask where you would be, and she is there anyway, which is the whole demonstration. Everything she says next she already knew before you sat down.",
         deshawn_offer: "He was already at the counter when you came in, which means he knew your evening better than you did. The coffee in front of him is still full.",
         mina_shift_change: "The heater ticks over the door. The owner drinks his coffee here every Thursday and knows every face on this block. On this street a name is the first thing anyone trades.",
         mina_invitation: "She is outside when you come around the corner, coat already on. The lot's sodium light makes the slush look orange. She is asking what you can build in four hours, on foot, in Spenard.",
@@ -2646,7 +2719,8 @@
         mina_intro: { who: "Mina Vale, the Night Owl clerk meeting you for the first time", where: "Night Owl Mini-Mart, Spenard", stakes: "Choose the tone of a first conversation with someone who has no prior history with you." },
         eli_offer: { who: "Eli Ward, a local driver looking for work", where: "Outside North Star Garage, Spenard", stakes: "Decide whether Eli gets a test route, only shares road information, or remembers being turned away." },
         eli_callback: { who: "Eli Ward, still working the service roads", where: "North Star Garage, Spenard", stakes: "Reopen the door to a test route or confirm that Eli should look elsewhere." },
-        pherris_offer: { who: "Pherris Cole, a connected supplier", where: "Downtown corner booth", stakes: "Supplier access, loyalty, and how much ownership you are willing to share." },
+        pherris_offer: { who: "Pherris Dickens, a connected supplier", where: "Downtown corner booth", stakes: "Supplier access, loyalty, and how much ownership you are willing to share." },
+        pherris_recruit: { who: "Pherris Dickens, who has been counting your money from a distance", where: "Wherever you were already working", stakes: "A contact list, better Downtown prices, a wage every night, and someone who expects to be told things first." },
         tone_offer: { who: "Anton Bell, a former security worker", where: "North Star Garage", stakes: "Protection against Curtis at the cost of another wage." },
         tone_recruit: { who: "Anton Bell, back with a plate number and a price", where: "North Star Garage", stakes: "A body at the door, a wage every night, and how confrontations end from here." },
         deshawn_offer: { who: "Deshawn, the block's quiet fixer", where: "The Night Owl, Spenard", stakes: "A first crew member: de-escalation, introductions, and a wage every day." },
@@ -2812,7 +2886,7 @@
             { label: "Offer the test route", effect: { setCrewStage: { id: "eli", stage: "test_available" }, crewLoyalty: { id: "eli", delta: 1 }, setFlags: { eliRejectionReopened: true } }, preview: "Unlocks Give Eli a Test Route in People.", result: "He accepts without thanking you, which somehow lands better than gratitude would have. The route and its risks are waiting in People by the time he is back in his vehicle. He does not mention the last conversation, and neither do you." },
             { label: "Tell him it is still no", effect: { setFlags: { eliRejectedFinally: true } }, preview: "Eli stays outside this operation for the rest of the week.", result: "He nods once, the way somebody nods when they have already worked out the answer and only wanted it confirmed out loud. He leaves. The next route rumor that reaches you comes through somebody who charges for it and gets half the detail wrong." }
           ]),
-          pherris_offer: () => event("pherris_offer", "The List in Pherris's Pocket", "Pherris Cole puts one torn page on the table. Half the names are crossed out. The rest still pick up. She keeps her hand flat on the paper. Decide what supplier access is worth.", [
+          pherris_offer: () => event("pherris_offer", "The List in Pherris's Pocket", "Pherris Dickens puts one torn page on the table. Half the names are crossed out. The rest still pick up. She keeps her hand flat on the paper. Decide what supplier access is worth.", [
             { label: "Offer her a share of the take", effect: { introduceCrew: "pherris", crewLoyalty: { id: "pherris", delta: 2 }, setFlags: { gavePherrisOwnership: true } }, preview: "Opens a future recruitment option on her terms rather than yours.", result: "She leaves her hand where it is a second longer, then slides the page across and starts talking in terms of we, which she has not done once until now. She names two people on the list she will not introduce yet, and tells you exactly why not." },
             { label: "Ask to buy the list", effect: { introduceCrew: "pherris", crewLoyalty: { id: "pherris", delta: -1 } }, preview: "Opens a future recruitment option, colder than it could have been.", result: 'She laughs without any part of her face joining in, and folds the page back into quarters. "You want the names without the person who knows them." The page goes into her pocket. She still finishes the drink, and she still pays for it.' }
           ]),
@@ -2827,6 +2901,15 @@
           tone_recruit: () => event("tone_recruit", "Tone Brings a Number", `Tone is at the garage door before you are, with the plate already written down. "People say your name in rooms I stand in. That's a door problem now." He has a figure for the week.`, [
             { label: "Put him on the payroll", effect: { recruitCrew: "tone", recruitCrewPaid: true }, preview: `His number up front, then a wage every night. He starts tonight.`, result: `He counts it once, folds it flat, and puts it in the same pocket as the plate number. Then he walks the fence line without being asked and comes back with two things you did not know about your own building. "I don't start anything. You tell me when something's already started."` },
             { label: "Tell him not this week", effect: { toneDeclineOffer: true }, preview: "He comes back in a few days at the same number.", result: '"All right." He does not argue and he does not lower the figure. He writes the plate on the doorframe in pencil, small, where you will see it and nobody else will, and he is gone before you work out whether that was a favor.' }
+          ]),
+          // v1.19: the observation-gated version, and the market-domain twin of
+          // tone_recruit. pherris_offer above is the booth scene about who owns her
+          // list; this is the one she brings herself, after the money moving through
+          // her network started having the player's name attached to it. She opens
+          // with what she already knows, because that is the product.
+          pherris_recruit: () => event("pherris_recruit", "Pherris Runs the Numbers", `Pherris is already sitting down when you notice her. "Somebody's moving weight through my end of town and paying people on time. That's rarer than you think." She turns her phone face-down and names a wage.`, [
+            { label: "Let's talk", effect: { recruitCrew: "pherris", recruitCrewPaid: true }, preview: "Her price up front, then a wage every night. Downtown starts paying better.", result: `She takes the money without counting it, which is its own kind of statement, and starts talking before it is in her bag. Two buyers Downtown who pay over asking for anything clean. One name she used to work with and will not put you near. "I'll tell you who's buying. You tell me before you do anything that makes them stop."` },
+            { label: "Not right now", effect: { pherrisDeclineOffer: true }, preview: "She comes back in a few days at the same number.", result: '"Sure." She turns her phone back over and is halfway through a conversation with somebody else before you have stood up. The number does not come down later, and you get the strong impression it was never going to.' }
           ]),
           tone_jacksonville: () => event("tone_jacksonville", "Jacksonville Calls Collect", "A Jacksonville number reaches Tone after midnight. The people behind it know his old name and your two strongest blocks. Protection, separation, or leverage all leave a mark.", [
             { label: "Protect Tone", effect: { heat: 2, crewLoyalty: { id: "tone", delta: 2 }, setFlags: { toneJacksonvilleProtected: true } }, preview: "+2 Heat and +2 Tone loyalty. Keep him inside the operation.", result: "You put the garage and the blocks behind Tone. Jacksonville hears the boundary in the next call." },
@@ -3346,6 +3429,7 @@
         REQUEST_FILL_BONUS,
         REQUEST_MAX_CHANCE
       } = require_market();
+      var { intelAdvantageFor } = require_crew();
       var HASH_CEILING = 4294967296;
       function clamp(value, min, max) {
         return Math.min(max, Math.max(min, value));
@@ -3400,7 +3484,7 @@
       }
       function priceVolatility(state) {
         var _a, _b;
-        const intelligence = Number((_b = (_a = state == null ? void 0 : state.player) == null ? void 0 : _a.attributes) == null ? void 0 : _b.intelligence) || 0;
+        const intelligence = (Number((_b = (_a = state == null ? void 0 : state.player) == null ? void 0 : _a.attributes) == null ? void 0 : _b.intelligence) || 0) + intelAdvantageFor(state, "907list_flip");
         const band = INTELLIGENCE_VOLATILITY.find((entry) => intelligence >= entry.floor);
         return band ? band.volatility : PRICE_VOLATILITY;
       }
@@ -5990,7 +6074,12 @@
             // person knows and has been told. It has to exist for the loop below to
             // give him a ledger at all - a lens with no record here is a subscriber
             // broadcastObservation silently skips.
-            tone: { met: false, offersDeclined: 0 }
+            tone: { met: false, offersDeclined: 0 },
+            // v1.19: Pherris predates the Exposure System by several builds, so unlike
+            // Tone she already had crew mechanics and no ledger at all. This record is
+            // the missing half, and it is not optional - the loop below skips any lens
+            // without one, which would leave her a subscriber that never hears anything.
+            pherris: { met: false, offersDeclined: 0 }
           };
           for (const id of EXPOSURE_NPC_IDS) {
             if (!base[id]) continue;
@@ -7049,8 +7138,7 @@
         }
         function stickRetaliationEvent(state, entry) {
           var _a;
-          const deshawnRecord = state.people.crew.deshawn;
-          const deshawnActive = !!((deshawnRecord == null ? void 0 : deshawnRecord.recruited) && deshawnRecord.status !== "departed" && deshawnRecord.loyalty > 0);
+          const deshawnActive = Crew.deEscalateAvailable(state, "stick_retaliation");
           const target = STICK_TARGET_BY_ID[entry.targetId];
           const name = target ? target.name : "the last mark";
           const won = stringHash(`${state.run.seed}:retaliation:${state.run.day}:${entry.targetId}`) % 100 < clamp(35 + combatCompat(state) * 10, 20, 85);
@@ -7652,7 +7740,8 @@
           const district = marketMeetupDistrict(state) || state.world.currentNeighborhoodId;
           const carriedValue = marketCarriedValue(state);
           if (!MarketEvents.rollRobbery(state, { carriedValue, district, slot: state.run.slot, nonce })) {
-            const outcome = resolveOutcome(state, "market_meetup", 0.75, `${state.run.seed}:meetup:${state.run.day}:${state.run.slot}:${nonce}`);
+            const marketRead = Crew.intelAdvantageFor(state, "market_transaction");
+            const outcome = resolveOutcome(state, "market_meetup", 0.75, `${state.run.seed}:meetup:${state.run.day}:${state.run.slot}:${nonce}`, marketRead);
             broadcastOutcome(state, "market_meetup", outcome.tier);
             return false;
           }
@@ -7680,13 +7769,15 @@
             const read = Attributes.growthFor(state, "list_flip", list.flipCount - 1);
             if (read) improveAttribute(state, read.attribute, read.growth);
           }
-          Exposure.broadcastObservation(state, {
-            type: "financial",
-            event: "907list_profit",
-            location: district,
-            value: payout,
-            channel: "household"
-          });
+          for (const channel of ["household", "network"]) {
+            broadcastTracked(state, {
+              type: "financial",
+              event: "907list_profit",
+              location: district,
+              value: payout,
+              channel
+            });
+          }
           const beforeTier = list.tier;
           list.tier = marketTier(state);
           list.specialist = specialistCategory(state);
@@ -8237,7 +8328,7 @@
           return Math.max(1, Math.round(person.recruitCost * (1 - charismaDiscount - territoryDiscount)));
         }
         const INVERTED_LENS_IDS = ["curtis", "simone"];
-        const CREW_LENS_IDS = ["deshawn", "tone"];
+        const CREW_LENS_IDS = ["deshawn", "tone", "pherris"];
         function warmNpcContactCount(state) {
           return EXPOSURE_NPC_IDS.filter((id) => !CREW_LENS_IDS.includes(id) && !INVERTED_LENS_IDS.includes(id) && state.npc[id] && bandOf(state, id) >= BANDS.WARM).length;
         }
@@ -8252,6 +8343,15 @@
           if (recruitedCrew(state).length >= crewCapacityFor(state)) return { available: false, reason: "No room on the crew." };
           if (state.player.cash < recruitmentCost(state, "tone")) return { available: false, reason: "Not enough cash for what he asks up front." };
           return { available: true, reason: "Tone is ready to hear the offer." };
+        }
+        function pherrisRecruitmentAvailability(state) {
+          const crew = state.people.crew.pherris;
+          if (crew.recruited) return { available: false, reason: "She already works here." };
+          if (crew.status === "departed") return { available: false, reason: "She does not come back." };
+          if (!crewRecruitmentEligible(state, "pherris")) return { available: false, reason: "Nothing about your business has reached her yet." };
+          if (recruitedCrew(state).length >= crewCapacityFor(state)) return { available: false, reason: "No room on the crew." };
+          if (state.player.cash < recruitmentCost(state, "pherris")) return { available: false, reason: "Not enough cash for what she asks up front." };
+          return { available: true, reason: "Pherris is ready to hear the offer." };
         }
         function deshawnRecruitmentAvailability(state) {
           var _a;
@@ -8275,8 +8375,11 @@
             return { available: false, reason: `Tier ${targetTier} needs loyalty ${req.loyalty} and ${req.daysRecruited} days on the crew.` };
           }
           if (crewId === "pherris") {
-            if (targetTier === 2) return blocks >= 1 ? { available: true, tier: 2, cost: 0 } : { available: false, reason: "Tier 2 needs one controlled block." };
-            return blocks >= 2 && state.player.cash >= 500 ? { available: true, tier: 3, cost: 500 } : { available: false, reason: "Tier 3 needs two blocks and $500." };
+            const list = state.nineZeroSevenList;
+            if (targetTier === 2) {
+              return list.flipCount >= Crew.PHERRIS_TIER2_FLIPS || list.profit >= Crew.PHERRIS_TIER2_PROFIT ? { available: true, tier: 2, cost: 0 } : { available: false, reason: `Tier 2 needs ${Crew.PHERRIS_TIER2_FLIPS} flips or $${Crew.PHERRIS_TIER2_PROFIT} of market profit.` };
+            }
+            return blocks >= 1 && marketTier(state) >= Market.MAX_TIER ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs one controlled block and Broker standing." };
           }
           if (crewId === "tone") {
             if (targetTier === 2) {
@@ -8286,8 +8389,10 @@
             return blocks >= 2 ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs two controlled blocks." };
           }
           if (crewId === "deshawn") {
-            if (targetTier === 2) return { available: true, tier: 2, cost: 0 };
-            return crew.trucesBrokered >= 2 && blocks >= 2 ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs two truces and two blocks." };
+            if (targetTier === 2) {
+              return atLeastBand(state, "deshawn", BANDS.TRUSTED) ? { available: true, tier: 2, cost: 0 } : { available: false, reason: "Tier 2 needs him to trust you, not just employ you." };
+            }
+            return atLeastBand(state, "deshawn", BANDS.BONDED) ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs years of trust in a week. He is not there yet." };
           }
           return { available: false, reason: "This track is fully developed." };
         }
@@ -9922,6 +10027,28 @@
             weight: 5,
             exit: null
           },
+          // v1.19: Pherris's recruitment scene, the market-domain twin of tone_recruit.
+          // No area: she is the one person on this roster who moves between districts,
+          // so she turns up wherever the player is working. Reactive, because the whole
+          // characterization is that she already knew before you told her. Declining
+          // sets pherrisNextOfferDay and the cooldown paces the re-offer at three days.
+          // The Week Zero clause is explicit for the same reason Tone's is:
+          // character_intro is not a suppressed classification.
+          {
+            id: "pherris_recruit",
+            chain: null,
+            stage: null,
+            classification: "character_intro",
+            trigger: "reactive",
+            requires: (s) => s.run.phase !== "week_zero" && pherrisRecruitmentAvailability(s).available && (!s.flags.pherrisNextOfferDay || s.run.day >= s.flags.pherrisNextOfferDay),
+            area: null,
+            earliest: { day: 4, slot: 0 },
+            latest: null,
+            once: false,
+            cooldown: 3,
+            weight: 8,
+            exit: null
+          },
           // v1.15: Deshawn's recruitment scene. Fires at the Night Owl once his gate
           // holds; declining sets deshawnNextOfferDay, and the cooldown plus that
           // flag pace the re-offer at three days.
@@ -10460,6 +10587,19 @@
                   slot: state.run.slot
                 });
               }
+              if (crewId === "pherris") {
+                crew.loyalty = Crew.CREW_LOYALTY_START;
+                state.npc.pherris.met = true;
+                pushPhoneMessage(state, "Pherris", "Sending you three names tonight. Two of them buy. Don't call the third one before I do.");
+                broadcastTracked(state, {
+                  type: "growth",
+                  event: "crew_recruited",
+                  channel: "neighborhood",
+                  location: state.world.currentNeighborhoodId,
+                  day: state.run.day,
+                  slot: state.run.slot
+                });
+              }
               if (crewId === "deshawn") {
                 state.flags.extraRentGraceAvailable = true;
                 if ((((_c = state.people.dealers.goodie) == null ? void 0 : _c.robbedCount) || 0) > 0) state.flags.deshawnRedemptionPath = true;
@@ -10480,6 +10620,11 @@
             state.npc.tone.offersDeclined += 1;
             state.flags.toneOfferDeclined = true;
             state.flags.toneNextOfferDay = state.run.day + 3;
+          }
+          if (effect.pherrisDeclineOffer) {
+            state.npc.pherris.offersDeclined += 1;
+            state.flags.pherrisOfferDeclined = true;
+            state.flags.pherrisNextOfferDay = state.run.day + 3;
           }
           if (effect.addRumor) state.effects.rumors.push({ id: `contact_${state.run.day}_${state.run.slot}_${effect.addRumor.areaId}`, ...effect.addRumor, reliable: true, expiresAt: slotNumber(state.run.day, state.run.slot) + 3 });
           if (effect.crewLoyalty && state.people.crew[effect.crewLoyalty.id]) {
@@ -10871,8 +11016,7 @@
           const tone = state.people.crew.tone;
           if (tone.recruited && tone.status !== "departed" && tone.loyalty >= 5) choices.push({ id: "call_tone", label: "Call Tone", description: "Spend crew loyalty to end this on his terms." });
           if (encounter.id === "mina_sedan_night" && state.npc.mina.met) choices.push({ id: "call_mina", label: "Signal Mina", description: "Trust Mina to trigger the Night Owl alarm. This spends some of the trust between you." });
-          const deshawnCrew = state.people.crew.deshawn;
-          if (deshawnCrew.recruited && deshawnCrew.status !== "departed" && deshawnCrew.loyalty > 0 && !Crew.CURTIS_CREW_ENCOUNTER_IDS.includes(encounter.id)) choices.push({ id: "deshawn_deescalate", label: "Let Deshawn handle it", description: "No blood, one point of heat worked off. He notices what you choose next." });
+          if (Crew.deEscalateAvailable(state, "encounter", encounter.id)) choices.push({ id: "deshawn_deescalate", label: "Let Deshawn handle it", description: "No blood, one point of heat worked off. He notices what you choose next." });
           if (encounter.id === "late" && state.base.tracks.security >= 1) choices.push({ id: "use_base", label: "Fall back to the garage", description: "Security and crew assignments determine the result." });
           if (state.player.gear.consumables.medical_kit > 0 && state.player.health < 100) choices.push({ id: "medical_kit", label: "Use medical kit", description: "Recover before making the next move." });
           return choices;
@@ -13541,7 +13685,9 @@
             sharkLoanAvailability,
             deshawnRecruitmentAvailability,
             toneRecruitmentAvailability,
+            pherrisRecruitmentAvailability,
             crewRecruitmentEligible,
+            warmNpcContactCount,
             crewTierAvailability,
             crewBailAvailability,
             arrestRecord,
@@ -13753,7 +13899,7 @@
         const showCrew = C.selectors.recruitedCrew(state).length > 0;
         const showCurtis = state.npc.curtis.relationship !== "unaware";
         const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil(value / ceiling * 5))), total: 5 });
-        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.18"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day, state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
+        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.19"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day, state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
       }
       var NAV_ICONS = {
         home: "M12 3 3 10.4V21h6v-6h6v6h6V10.4z",
@@ -14228,8 +14374,9 @@
         const eliTest = person.id === "eli" ? C.selectors.eliTestRouteAvailability(state) : null;
         const tier = C.selectors.crewTierAvailability(state, person.id);
         const bail = C.selectors.crewBailAvailability(state, person.id);
+        const recruitGate = person.id === "deshawn" ? C.selectors.deshawnRecruitmentAvailability(state) : person.id === "tone" ? C.selectors.toneRecruitmentAvailability(state) : person.id === "pherris" ? C.selectors.pherrisRecruitmentAvailability(state) : null;
         const liability = person.id === "eli" ? "A compromised route can add Heat; unpaid wages cut his Power." : person.id === "pherris" ? "She expects ownership and may withhold information when treated like a list." : "His methods can raise Heat and provoke Curtis.";
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: person.name, sub: `${person.role} \xB7 Crew Power ${person.power}`, onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Current status", /* @__PURE__ */ React.createElement("small", null, crew.contactStage.replaceAll("_", " "))), /* @__PURE__ */ React.createElement("p", null, person.description), /* @__PURE__ */ React.createElement("div", { className: "detail-list" }, /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Recruitment:"), " ", money(cost)), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Daily wage:"), " ", money(C.Crew.wageFor(person, Math.max(1, crew.tier || 1))), " \xB7 auto-paid at day end"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Capacity:"), " 1 field crew slot"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Primary benefit:"), " Power ", person.power, " and role-specific operation choices"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Main liability:"), " ", liability), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Hiring time:"), " Free at North Star Garage"))), person.id === "eli" && !crew.recruited && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Give Eli a Test Route", /* @__PURE__ */ React.createElement("small", null, "$35 \xB7 one part of day")), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "Fund a small service-road delivery. A clean run can earn modest cash; trouble can cost Health and add Heat. Completing it unlocks recruitment."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !eliTest.available, onClick: () => dispatch({ type: "ELI_TEST_ROUTE" }) }, "Start the test route", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, eliTest.reason))), (crew.introduced && person.id !== "eli" || person.id === "deshawn") && !crew.recruited && /* @__PURE__ */ React.createElement("button", { className: "btn full good-btn", disabled: !state.base.visiting || state.player.cash < cost || person.id === "deshawn" && !C.selectors.deshawnRecruitmentAvailability(state).available, onClick: () => dispatch({ type: "RECRUIT_CREW", crewId: person.id }) }, "Recruit ", person.name.split(" ")[0], " \xB7 ", money(cost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, person.id === "deshawn" ? C.selectors.deshawnRecruitmentAvailability(state).reason : "Free at North Star Garage")), crew.introduced && !crew.recruited && person.id === "eli" && crew.contactStage === "recruitable" && /* @__PURE__ */ React.createElement("button", { className: "btn full good-btn", disabled: !state.base.visiting || state.player.cash < cost || C.selectors.recruitedCrew(state).length >= C.selectors.crewCapacityFor(state), onClick: () => dispatch({ type: "RECRUIT_CREW", crewId: person.id }) }, "Recruit Eli \xB7 ", money(cost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free at North Star Garage")), crew.recruited && /* @__PURE__ */ React.createElement("div", { className: "card" }, crew.status === "departed" ? /* @__PURE__ */ React.createElement("p", { className: "warn" }, "Departed. Loyalty ran out. The record of what was owed stays on the ledger.") : crew.status === "arrested" ? /* @__PURE__ */ React.createElement("p", { className: "warn" }, "In custody \xB7 Loyalty ", crew.loyalty, "/10 \xB7 out on Day ", crew.jailedUntilDay, ". Nobody who serves the whole stretch comes back loyal.") : /* @__PURE__ */ React.createElement("p", null, "Active \xB7 Loyalty ", crew.loyalty, "/10 \xB7 arrears ", money(crew.wageDue), " \xB7 assignment ", crew.assignment || "none"), crew.status === "arrested" && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !bail.available, onClick: () => dispatch({ type: "BAIL_CREW", crewId: person.id }) }, "Bail out \xB7 ", money(bail.cost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, bail.available ? "Costs one point of loyalty instead of all of it \xB7 no time passes" : bail.reason)), crew.status !== "departed" && crew.status !== "arrested" && crew.wageDue > 0 && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !state.base.visiting || state.player.cash < crew.wageDue, onClick: () => dispatch({ type: "PAY_CREW", crewId: person.id }) }, "Pay arrears \xB7 ", money(crew.wageDue), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Clears the unpaid Power penalty without advancing time"))), crew.recruited && ["pherris", "tone", "deshawn"].includes(person.id) && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Relationship track", /* @__PURE__ */ React.createElement("small", null, "TIER ", crew.tier)), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !tier.available, onClick: () => dispatch({ type: "PROMOTE_CREW_TIER", crewId: person.id }) }, "Advance relationship tier", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, tier.available ? `${tier.cost ? money(tier.cost) : "Free"} \xB7 no time passes` : tier.reason))), person.id === "eli" && crew.recruited && (crew.lieutenantStage === "operations_lieutenant" ? /* @__PURE__ */ React.createElement("div", { className: "card cleared-card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Operations Lieutenant", /* @__PURE__ */ React.createElement("small", null, "Effectiveness ", crew.lieutenantEffectiveness, "/3")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Eli places soldiers, rotates corners, and defends territory without a check-in each time."), findEliReport(state) && /* @__PURE__ */ React.createElement(EliReportCard, { state }), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Standing order"), /* @__PURE__ */ React.createElement("div", { className: "policy-grid", role: "radiogroup", "aria-label": "Eli's standing order" }, Object.entries(C.ELI_OPERATION_POLICIES).map(([id, policy]) => /* @__PURE__ */ React.createElement("button", { key: id, role: "radio", "aria-checked": crew.operationPolicy === id, className: `policy-btn${crew.operationPolicy === id ? " active" : ""}`, onClick: () => dispatch({ type: "SET_ELI_POLICY", policy: id }) }, /* @__PURE__ */ React.createElement("b", null, policy.label), /* @__PURE__ */ React.createElement("span", null, policy.description)))), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "Changing the order costs no time. ", crew.operationPolicy === "manual" ? "Assign soldiers yourself in Soldiers." : "Eli places and redistributes soldiers automatically each night.")) : (() => {
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: person.name, sub: `${person.role} \xB7 Crew Power ${person.power}`, onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Current status", /* @__PURE__ */ React.createElement("small", null, crew.contactStage.replaceAll("_", " "))), /* @__PURE__ */ React.createElement("p", null, person.description), /* @__PURE__ */ React.createElement("div", { className: "detail-list" }, /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Recruitment:"), " ", money(cost)), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Daily wage:"), " ", money(C.Crew.wageFor(person, Math.max(1, crew.tier || 1))), " \xB7 auto-paid at day end"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Capacity:"), " 1 field crew slot"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Primary benefit:"), " Power ", person.power, " and role-specific operation choices"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Main liability:"), " ", liability), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Hiring time:"), " Free at North Star Garage"))), person.id === "eli" && !crew.recruited && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Give Eli a Test Route", /* @__PURE__ */ React.createElement("small", null, "$35 \xB7 one part of day")), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "Fund a small service-road delivery. A clean run can earn modest cash; trouble can cost Health and add Heat. Completing it unlocks recruitment."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !eliTest.available, onClick: () => dispatch({ type: "ELI_TEST_ROUTE" }) }, "Start the test route", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, eliTest.reason))), (crew.introduced && person.id !== "eli" || person.id === "deshawn") && !crew.recruited && /* @__PURE__ */ React.createElement("button", { className: "btn full good-btn", disabled: !state.base.visiting || state.player.cash < cost || recruitGate && !recruitGate.available, onClick: () => dispatch({ type: "RECRUIT_CREW", crewId: person.id }) }, "Recruit ", person.name.split(" ")[0], " \xB7 ", money(cost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, recruitGate ? recruitGate.reason : "Free at North Star Garage")), crew.introduced && !crew.recruited && person.id === "eli" && crew.contactStage === "recruitable" && /* @__PURE__ */ React.createElement("button", { className: "btn full good-btn", disabled: !state.base.visiting || state.player.cash < cost || C.selectors.recruitedCrew(state).length >= C.selectors.crewCapacityFor(state), onClick: () => dispatch({ type: "RECRUIT_CREW", crewId: person.id }) }, "Recruit Eli \xB7 ", money(cost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free at North Star Garage")), crew.recruited && /* @__PURE__ */ React.createElement("div", { className: "card" }, crew.status === "departed" ? /* @__PURE__ */ React.createElement("p", { className: "warn" }, "Departed. Loyalty ran out. The record of what was owed stays on the ledger.") : crew.status === "arrested" ? /* @__PURE__ */ React.createElement("p", { className: "warn" }, "In custody \xB7 Loyalty ", crew.loyalty, "/10 \xB7 out on Day ", crew.jailedUntilDay, ". Nobody who serves the whole stretch comes back loyal.") : /* @__PURE__ */ React.createElement("p", null, "Active \xB7 Loyalty ", crew.loyalty, "/10 \xB7 arrears ", money(crew.wageDue), " \xB7 assignment ", crew.assignment || "none"), crew.status === "arrested" && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !bail.available, onClick: () => dispatch({ type: "BAIL_CREW", crewId: person.id }) }, "Bail out \xB7 ", money(bail.cost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, bail.available ? "Costs one point of loyalty instead of all of it \xB7 no time passes" : bail.reason)), crew.status !== "departed" && crew.status !== "arrested" && crew.wageDue > 0 && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !state.base.visiting || state.player.cash < crew.wageDue, onClick: () => dispatch({ type: "PAY_CREW", crewId: person.id }) }, "Pay arrears \xB7 ", money(crew.wageDue), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Clears the unpaid Power penalty without advancing time"))), crew.recruited && ["pherris", "tone", "deshawn"].includes(person.id) && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Relationship track", /* @__PURE__ */ React.createElement("small", null, "TIER ", crew.tier)), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !tier.available, onClick: () => dispatch({ type: "PROMOTE_CREW_TIER", crewId: person.id }) }, "Advance relationship tier", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, tier.available ? `${tier.cost ? money(tier.cost) : "Free"} \xB7 no time passes` : tier.reason))), person.id === "eli" && crew.recruited && (crew.lieutenantStage === "operations_lieutenant" ? /* @__PURE__ */ React.createElement("div", { className: "card cleared-card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Operations Lieutenant", /* @__PURE__ */ React.createElement("small", null, "Effectiveness ", crew.lieutenantEffectiveness, "/3")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Eli places soldiers, rotates corners, and defends territory without a check-in each time."), findEliReport(state) && /* @__PURE__ */ React.createElement(EliReportCard, { state }), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Standing order"), /* @__PURE__ */ React.createElement("div", { className: "policy-grid", role: "radiogroup", "aria-label": "Eli's standing order" }, Object.entries(C.ELI_OPERATION_POLICIES).map(([id, policy]) => /* @__PURE__ */ React.createElement("button", { key: id, role: "radio", "aria-checked": crew.operationPolicy === id, className: `policy-btn${crew.operationPolicy === id ? " active" : ""}`, onClick: () => dispatch({ type: "SET_ELI_POLICY", policy: id }) }, /* @__PURE__ */ React.createElement("b", null, policy.label), /* @__PURE__ */ React.createElement("span", null, policy.description)))), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "Changing the order costs no time. ", crew.operationPolicy === "manual" ? "Assign soldiers yourself in Soldiers." : "Eli places and redistributes soldiers automatically each night.")) : (() => {
           const promo = C.selectors.eliPromotionAvailability(state);
           return /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Promote to Operations Lieutenant", /* @__PURE__ */ React.createElement("small", null, "Runs soldiers and corners on their own")), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "Needs Eli's loyalty to reach ", C.ELI_LIEUTENANT_UNLOCK.minLoyalty, "."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !promo.available, onClick: () => dispatch({ type: "PROMOTE_LIEUTENANT", crewId: "eli" }) }, "Give Eli Operations", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, promo.available ? "Free \xB7 no time passes" : promo.reason)));
         })())));
@@ -14703,7 +14850,7 @@
           ExpandableMoreSection,
           {
             collapsedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-lead" }, "Autosave is on. This run saves to your browser after every action."),
-            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.18 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
+            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.19 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
             moreLabel: "Save detail",
             lessLabel: "Hide detail"
           }

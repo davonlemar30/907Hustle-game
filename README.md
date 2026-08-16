@@ -2,24 +2,27 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-## Current Build (v1.18)
+## Current Build (v1.19)
 
-**v1.18: Observation-Gated Recruitment — Tone** — Tone stops being a flat gate
-and becomes someone the player earns. Combat-domain behavior propagates through
-the Exposure System into his ledger; when it reads far enough past Warm through a
-lens that only counts nerve, he comes to the garage himself. Once he is on the
-payroll his presence is worth one effective level of Combat, and his promotion
-counts fights he was actually standing in.
+**v1.19: Observation-Gated Recruitment — Pherris + Deshawn Retro-Gate** — the
+pattern v1.18 built for Tone, applied until no flat gate is left. Pherris is
+earned through the market rather than through nerve: her lens counts money
+moving quietly, and 907List profit now travels on the network channel, so the
+people who trade in money for a living can finally hear about the money. Once
+she is on the payroll she is worth one effective level of Intelligence on market
+reads. Deshawn's tiers stop being a flat pass and read his own ledger, which
+makes **every crew advancement in the game an Exposure read**.
 
 | | |
 |---|---|
 | Save schema | **v11** (`907ogr_v11`), loads v3 and up |
-| Tests | **637** passing (`npm test`) |
-| Simulation, 200 runs | `b233d725c18d3cd51872b4ed09a5031ccb549f8d7566318e3dd845de597e976c` |
-| Simulation, 2,000 runs | `9ae8cd3cf01537977fae1e98218292eb6d866bad6166f0e1a6d2623ebabdd49d` |
+| Tests | **676** passing (`npm test`) |
+| Simulation, 200 runs | `114d08f7aaf1ab529e36af7716da69e311cbe23db13af96a91b79c290799b9db` |
+| Simulation, 2,000 runs | `1bd2c29905bcb3dd55adff32c6787b4f659e5629fa5d1f225f7cbf40272acc36` |
 
-Both hashes moved on purpose. Eleven of the thirteen simulation strategies are
-byte-identical; the two that drift are the two that reach Tone's gate.
+Both hashes moved on purpose: a new lens adds telemetry keys, and the market
+strategies now spend cash on Pherris and pay her wage. The de-escalation
+refactor that shipped alongside is **hash-neutral across both run counts**.
 
 **The systems underneath:**
 
@@ -679,10 +682,10 @@ identical to v1.8, which is the check that nothing the player can see moved.
 - **Curtis Foyer** reacts to concrete exposure instead of generic Respect. Attention rises from cumulative sales, rolling illegal revenue, conspicuous Spenard business, reports, and network escalation. Tax, friendship, guarded independence, rejection, betrayal, protection, and truce paths are all persistent.
 - **Dre Smooth** is no longer required to end Week Zero. Juan or a missed phone bill can introduce him; repeat loans, four mission types, relationship tiers, five backstory fragments, and the Shark lending track deepen his route.
 - **Goodie** is a dealer only. His standing, discounts, rumors, supply retaliation, robbery history, and disappearance limit remain; the finance-lieutenant and laundering progression has been removed.
-- **Pherris Dickens** grows from a paid rumor source into a social territory manager and seeded network-income operator.
+- **Pherris Dickens** is recruited through the market, not hired off a list. Her lens counts money moving quietly; when her ledger reads far enough past Warm she turns up wherever the player is working. On the payroll she is worth one effective level of Intelligence on market reads, and she grows from a paid rumor source into a social territory manager and seeded network-income operator.
 - **Simone Hart** is Curtis's independent partner, with her own trust, threat, leverage, and truce state.
 - **Tone** gains territory-defense tiers and the Day 7+ Jacksonville chain.
-- **Deshawn** is recruitable through an intact Goodie relationship or restitution. His higher tiers reduce recruiting costs, broker truces, and can stop Curtis's betrayal.
+- **Deshawn** is recruitable through an intact Goodie relationship or restitution. His higher tiers reduce recruiting costs, broker truces, and can stop Curtis's betrayal — and since v1.19 they are gated on his own disposition rather than on time served: Trusted for tier 2, Bonded for tier 3.
 
 Legacy aliases remain only in migration code and fixtures; player-facing copy uses the v1.8 identities throughout.
 
@@ -812,25 +815,33 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 ## Verification
 
-- Node tests: **637 passing** (601 through v1.17, 36 new in `tests/v1-18.test.js`)
+- Node tests: **676 passing** (637 through v1.18, 38 new in `tests/v1-19.test.js`,
+  one new in `tests/v1-15.test.js` for the de-escalation behavior change)
 - Deterministic simulations: **2,000 runs, zero crashes or dead ends**
-- Simulation SHA-256: `9ae8cd3cf01537977fae1e98218292eb6d866bad6166f0e1a6d2623ebabdd49d`
+- Simulation SHA-256: `1bd2c29905bcb3dd55adff32c6787b4f659e5629fa5d1f225f7cbf40272acc36`
   (`--total 2000`) and
-  `b233d725c18d3cd51872b4ed09a5031ccb549f8d7566318e3dd845de597e976c`
-  (`--total 200`). **Both moved at v1.18 on purpose**, for two independent
-  reasons. Bookkeeping: the per-NPC telemetry loop covers `EXPOSURE_NPC_IDS`, so
-  Tone's lens adds two keys per strategy block, and the build added four more so
-  the new recruitment gate could be measured at all. Gameplay: Tone is
-  recruitable now, and the two strategies that reach his gate spend the cash, pay
-  the wage, and fire the beat. **Eleven of thirteen strategies are
-  byte-identical** — the check that proves the new `bonus` argument on
-  `resolveAction` defaults to zero everywhere it was not passed. The v1.17
-  baselines were `c828c00e…` / `5fefb813…`.
-- Tone's gate, measured: gated as the build prompt specified
-  (`curtisAwareness >= 7`) the card fired **zero times in 2,000 runs** — average
-  awareness is 0.32 of 15. Gated on ledger proof alone he recruits in **75 of
-  2,000 runs** across seven strategies. The awareness clause was dropped for that
-  reason, not for convenience.
+  `114d08f7aaf1ab529e36af7716da69e311cbe23db13af96a91b79c290799b9db`
+  (`--total 200`). **Both moved at v1.19 on purpose**, for the same two kinds of
+  reason as v1.18. Bookkeeping: the per-NPC telemetry loop covers
+  `EXPOSURE_NPC_IDS`, so Pherris's lens adds two keys per strategy block, and the
+  build added two more so her gate could be measured. Gameplay: 907List profit
+  reaches a new channel, she is recruitable, and the market strategies spend the
+  cash and pay the wage. The v1.18 baselines were `9ae8cd3c…` / `b233d725…`.
+- **The de-escalation refactor is hash-neutral.** Routing Deshawn's three
+  hardcoded sites through `presenceEffectsFor` was measured on its own commit
+  first: both hashes came back byte-identical to v1.18. It is not
+  behavior-identical in principle — an arrested Deshawn no longer talks people
+  down from a cell — but the simulation never lands an arrest on him and a
+  de-escalatable encounter in the same run, so the case is pinned by a unit test
+  instead of by the hash.
+- Pherris's gate, measured: her `minScore` floor was chosen against 2,000 runs
+  rather than designed. At 5 / 6 / 8 / 10 she recruits in **16.1% / 14.8% /
+  10.8% / 7.2%** of runs, and in **83% / 80% / 69% / 44%** of the dedicated
+  flipper strategy. **8 ships.** Below it she is close to automatic for anyone
+  who touches the market; above it she stops being reachable by a player who
+  trades as one activity among several. At 8 she is proven in 334 runs and hired
+  in 215, **entirely inside the three market-leaning strategies and zero
+  everywhere else** — which is the lens doing its job. Tone sits at 267/152.
 - Build: `npm run build` completes in ~30ms with no circular imports
 - Title art over the wire: 68KB at 375px, 145KB at 1280px, down from 1,976KB
 - Viewports: 320×568, 360×640, 375×812, 414×896, 640×480, 768×1024, 834×1112,

@@ -13,8 +13,8 @@ const C = require("../game-core.js");
 // Categories that move a disposition hardest in each direction, per archetype.
 // Chosen to be things the character would actually notice, so a seeded ledger
 // still reads as a story someone could have lived.
-const UP = { mina: "honesty", curtis: "submission", dre: "financial", yalonda: "loyalty", juan: "loyalty", simone: "submission", selam: "discretion", biniam: "discretion", deshawn: "loyalty", tone: "violence" };
-const DOWN = { mina: "violence", curtis: "growth", dre: "defiance", yalonda: "heat_exposure", juan: "violence", simone: "growth", selam: "heat_exposure", biniam: "violence", deshawn: "violence", tone: "submission" };
+const UP = { mina: "honesty", curtis: "submission", dre: "financial", yalonda: "loyalty", juan: "loyalty", simone: "submission", selam: "discretion", biniam: "discretion", deshawn: "loyalty", tone: "violence", pherris: "financial" };
+const DOWN = { mina: "violence", curtis: "growth", dre: "defiance", yalonda: "heat_exposure", juan: "violence", simone: "growth", selam: "heat_exposure", biniam: "violence", deshawn: "violence", tone: "submission", pherris: "violence" };
 
 function ledgerRow(type, count, source) {
   return { type, event: "test_history", location: null, value: null, day: 1, count: Math.max(1, count), source: source || "witnessed" };

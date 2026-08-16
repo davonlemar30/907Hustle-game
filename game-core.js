@@ -1331,6 +1331,11 @@
       // give him a ledger at all - a lens with no record here is a subscriber
       // broadcastObservation silently skips.
       tone: { met: false, offersDeclined: 0 },
+      // v1.19: Pherris predates the Exposure System by several builds, so unlike
+      // Tone she already had crew mechanics and no ledger at all. This record is
+      // the missing half, and it is not optional - the loop below skips any lens
+      // without one, which would leave her a subscriber that never hears anything.
+      pherris: { met: false, offersDeclined: 0 },
     };
     for (const id of EXPOSURE_NPC_IDS) {
       if (!base[id]) continue;
@@ -2298,8 +2303,11 @@
   // Retaliation is decided when the card is built so the choices carry plain
   // declarative effects; hash-keyed, so replaying the morning is stable.
   function stickRetaliationEvent(state, entry) {
-    const deshawnRecord = state.people.crew.deshawn;
-    const deshawnActive = !!(deshawnRecord?.recruited && deshawnRecord.status !== "departed" && deshawnRecord.loyalty > 0);
+    // v1.19: one expression, two uses. It decides whether the third choice
+    // exists AND whether standing your ground reads as overriding his judgment,
+    // and those two have to agree - tagging a violent choice against someone who
+    // was never offered would charge the player for a choice they did not have.
+    const deshawnActive = Crew.deEscalateAvailable(state, "stick_retaliation");
     const target = STICK_TARGET_BY_ID[entry.targetId];
     const name = target ? target.name : "the last mark";
     const won = stringHash(`${state.run.seed}:retaliation:${state.run.day}:${entry.targetId}`) % 100 < clamp(35 + combatCompat(state) * 10, 20, 85);
@@ -2960,7 +2968,12 @@
       // The meetup went ahead. How visible it was is an Intelligence read -
       // picking the hour and the lot. The robbery roll itself is deliberately
       // left alone so the risk number the page shows stays honest.
-      const outcome = resolveOutcome(state, "market_meetup", 0.75, `${state.run.seed}:meetup:${state.run.day}:${state.run.slot}:${nonce}`);
+      //
+      // v1.19: Pherris's edge applies here, as one effective level, the same
+      // shape as Tone's on a confrontation. Knowing which buyer is serious is
+      // exactly what picking the hour and the lot is made of.
+      const marketRead = Crew.intelAdvantageFor(state, "market_transaction");
+      const outcome = resolveOutcome(state, "market_meetup", 0.75, `${state.run.seed}:meetup:${state.run.day}:${state.run.slot}:${nonce}`, marketRead);
       broadcastOutcome(state, "market_meetup", outcome.tier);
       return false;
     }
@@ -3003,13 +3016,23 @@
     // value carries the payout because Curtis's network filter gates financial
     // observations at $200: a big 907List day is exactly how this is meant to
     // reach him, and a $40 space heater is exactly how it is meant not to.
-    Exposure.broadcastObservation(state, {
-      type: "financial",
-      event: "907list_profit",
-      location: district,
-      value: payout,
-      channel: "household",
-    });
+    //
+    // v1.19: network as well as household. Until now the only financial channel
+    // in the game was the one the player lives on, so the people who trade in
+    // money for a living - Pherris, Dre - could never hear about the money. The
+    // filter above is what keeps this honest: small flips stay a household fact,
+    // and a day big enough for Pherris to notice is a day Curtis's people notice
+    // too. Getting large enough to attract talent is what attracts attention.
+    // Tracked rather than raw so the network arrival credits his awareness.
+    for (const channel of ["household", "network"]) {
+      broadcastTracked(state, {
+        type: "financial",
+        event: "907list_profit",
+        location: district,
+        value: payout,
+        channel,
+      });
+    }
     const beforeTier = list.tier;
     list.tier = marketTier(state);
     list.specialist = specialistCategory(state);
@@ -3575,10 +3598,10 @@
   // means they consider the player harmless, not that they like them, so they
   // never count as vouching contacts.
   const INVERTED_LENS_IDS = ["curtis", "simone"];
-  // Crew are not references. Deshawn and Tone both carry lenses now, and letting
-  // either count toward the other's recruitment gate would be the crew vouching
-  // for itself.
-  const CREW_LENS_IDS = ["deshawn", "tone"];
+  // Crew are not references. Deshawn, Tone, and Pherris all carry lenses now,
+  // and letting any of them count toward another's recruitment gate would be the
+  // crew vouching for itself.
+  const CREW_LENS_IDS = ["deshawn", "tone", "pherris"];
   function warmNpcContactCount(state) {
     return EXPOSURE_NPC_IDS.filter((id) => !CREW_LENS_IDS.includes(id) && !INVERTED_LENS_IDS.includes(id) && state.npc[id] && bandOf(state, id) >= BANDS.WARM).length;
   }
@@ -3612,6 +3635,20 @@
     if (state.player.cash < recruitmentCost(state, "tone")) return { available: false, reason: "Not enough cash for what he asks up front." };
     return { available: true, reason: "Tone is ready to hear the offer." };
   }
+  // v1.19: the same gate, one domain over. Tone reads whether the player holds a
+  // position; Pherris reads whether they are worth being connected to, which her
+  // lens scores as money moving and an operation growing without noise. She does
+  // not need to have been introduced first - the pherris_offer booth scene is a
+  // separate beat about ownership of her list, and either can happen first.
+  function pherrisRecruitmentAvailability(state) {
+    const crew = state.people.crew.pherris;
+    if (crew.recruited) return { available: false, reason: "She already works here." };
+    if (crew.status === "departed") return { available: false, reason: "She does not come back." };
+    if (!crewRecruitmentEligible(state, "pherris")) return { available: false, reason: "Nothing about your business has reached her yet." };
+    if (recruitedCrew(state).length >= crewCapacityFor(state)) return { available: false, reason: "No room on the crew." };
+    if (state.player.cash < recruitmentCost(state, "pherris")) return { available: false, reason: "Not enough cash for what she asks up front." };
+    return { available: true, reason: "Pherris is ready to hear the offer." };
+  }
   function deshawnRecruitmentAvailability(state) {
     if (state.flags.deshawnBusinessSevered) return { available: false, reason: "'It was business' permanently closed this route." };
     if (state.run.day < 5) return { available: false, reason: "Deshawn does not make this call before Day 5." };
@@ -3638,8 +3675,28 @@
       return { available: false, reason: `Tier ${targetTier} needs loyalty ${req.loyalty} and ${req.daysRecruited} days on the crew.` };
     }
     if (crewId === "pherris") {
-      if (targetTier === 2) return blocks >= 1 ? { available: true, tier: 2, cost: 0 } : { available: false, reason: "Tier 2 needs one controlled block." };
-      return blocks >= 2 && state.player.cash >= 500 ? { available: true, tier: 3, cost: 500 } : { available: false, reason: "Tier 3 needs two blocks and $500." };
+      // v1.19: she manages the market, so the market is what promotes her. Tier
+      // 2 is proof the player is actually in the business - a run of flips, or
+      // enough lifetime margin that the volume says it instead. Tier 3 is a
+      // block of her own to work plus Broker standing, because a network that
+      // pays for itself needs somewhere to put the names.
+      //
+      // The old gate was blocks plus a $500 fee. Both are gone: Tone and Deshawn
+      // promote free once their proof holds, and territory plus Broker is a
+      // harder thing to reach than $500 is by the time you have either.
+      const list = state.nineZeroSevenList;
+      if (targetTier === 2) {
+        return list.flipCount >= Crew.PHERRIS_TIER2_FLIPS || list.profit >= Crew.PHERRIS_TIER2_PROFIT
+          ? { available: true, tier: 2, cost: 0 }
+          : { available: false, reason: `Tier 2 needs ${Crew.PHERRIS_TIER2_FLIPS} flips or $${Crew.PHERRIS_TIER2_PROFIT} of market profit.` };
+      }
+      // marketTier() rather than list.tier: the stored field is a mirror kept for
+      // saves and display, and the rule this file has followed since v1.9b is
+      // that it is never the source. A gate reading the mirror would open for a
+      // save that had drifted.
+      return blocks >= 1 && marketTier(state) >= Market.MAX_TIER
+        ? { available: true, tier: 3, cost: 0 }
+        : { available: false, reason: "Tier 3 needs one controlled block and Broker standing." };
     }
     if (crewId === "tone") {
       // v1.18: he does not promote on time served. Tier 2 is three fights he was
@@ -3653,8 +3710,20 @@
       return blocks >= 2 ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs two controlled blocks." };
     }
     if (crewId === "deshawn") {
-      if (targetTier === 2) return { available: true, tier: 2, cost: 0 };
-      return crew.trucesBrokered >= 2 && blocks >= 2 ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs two truces and two blocks." };
+      // v1.19: retro-gated onto his own ledger. His tier 2 used to be an
+      // unconditional pass and his tier 3 waited on a Curtis confrontation
+      // pipeline that was never built; both now read the lens he already has.
+      // It weights loyalty, discretion, and betrayal, so this is a CHARACTER
+      // gate rather than a skill one - he promotes people who have not burned
+      // anyone, which is the only thing his credibility is made of.
+      if (targetTier === 2) {
+        return atLeastBand(state, "deshawn", BANDS.TRUSTED)
+          ? { available: true, tier: 2, cost: 0 }
+          : { available: false, reason: "Tier 2 needs him to trust you, not just employ you." };
+      }
+      return atLeastBand(state, "deshawn", BANDS.BONDED)
+        ? { available: true, tier: 3, cost: 0 }
+        : { available: false, reason: "Tier 3 needs years of trust in a week. He is not there yet." };
     }
     return { available: false, reason: "This track is fully developed." };
   }
@@ -4932,6 +5001,18 @@
       requires: () => true, area: "downtown", earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
     { id: "tone_offer", chain: null, stage: null, classification: "character_intro", trigger: "ambient",
       requires: (s) => s.base.controlled, area: "north_star_lot", earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
+    // v1.19: Pherris's recruitment scene, the market-domain twin of tone_recruit.
+    // No area: she is the one person on this roster who moves between districts,
+    // so she turns up wherever the player is working. Reactive, because the whole
+    // characterization is that she already knew before you told her. Declining
+    // sets pherrisNextOfferDay and the cooldown paces the re-offer at three days.
+    // The Week Zero clause is explicit for the same reason Tone's is:
+    // character_intro is not a suppressed classification.
+    { id: "pherris_recruit", chain: null, stage: null, classification: "character_intro", trigger: "reactive",
+      requires: (s) => s.run.phase !== "week_zero"
+        && pherrisRecruitmentAvailability(s).available
+        && (!s.flags.pherrisNextOfferDay || s.run.day >= s.flags.pherrisNextOfferDay),
+      area: null, earliest: { day: 4, slot: 0 }, latest: null, once: false, cooldown: 3, weight: 8, exit: null },
     // v1.15: Deshawn's recruitment scene. Fires at the Night Owl once his gate
     // holds; declining sets deshawnNextOfferDay, and the cooldown plus that
     // flag pace the re-offer at three days.
@@ -5278,6 +5359,20 @@
             location: "north_star_lot", day: state.run.day, slot: state.run.slot,
           });
         }
+        if (crewId === "pherris") {
+          // Same reading as Tone. She made the player prove it first, so she
+          // starts level rather than grateful.
+          crew.loyalty = Crew.CREW_LOYALTY_START;
+          state.npc.pherris.met = true;
+          pushPhoneMessage(state, "Pherris", "Sending you three names tonight. Two of them buy. Don't call the third one before I do.");
+          // Neighborhood, same as Tone: the block sees who is working with whom.
+          // Her own channel is the network, but broadcasting a hire onto it would
+          // hand Curtis a free point of attention for making a phone call.
+          broadcastTracked(state, {
+            type: "growth", event: "crew_recruited", channel: "neighborhood",
+            location: state.world.currentNeighborhoodId, day: state.run.day, slot: state.run.slot,
+          });
+        }
         if (crewId === "deshawn") {
           state.flags.extraRentGraceAvailable = true;
           // He came around because the player robbed Goodie and then paid the
@@ -5304,6 +5399,13 @@
       state.npc.tone.offersDeclined += 1;
       state.flags.toneOfferDeclined = true;
       state.flags.toneNextOfferDay = state.run.day + 3;
+    }
+    // v1.19: Pherris the same. She has other people to call in the meantime and
+    // says so, which is why the number does not move either.
+    if (effect.pherrisDeclineOffer) {
+      state.npc.pherris.offersDeclined += 1;
+      state.flags.pherrisOfferDeclined = true;
+      state.flags.pherrisNextOfferDay = state.run.day + 3;
     }
     if (effect.addRumor) state.effects.rumors.push({ id: `contact_${state.run.day}_${state.run.slot}_${effect.addRumor.areaId}`, ...effect.addRumor, reliable: true, expiresAt: slotNumber(state.run.day, state.run.slot) + 3 });
     if (effect.crewLoyalty && state.people.crew[effect.crewLoyalty.id]) { const record = state.people.crew[effect.crewLoyalty.id]; record.loyalty = Crew.clampLoyalty(record.loyalty + effect.crewLoyalty.delta); }
@@ -5707,8 +5809,9 @@
     const tone = state.people.crew.tone;
     if (tone.recruited && tone.status !== "departed" && tone.loyalty >= 5) choices.push({ id: "call_tone", label: "Call Tone", description: "Spend crew loyalty to end this on his terms." });
     if (encounter.id === "mina_sedan_night" && state.npc.mina.met) choices.push({ id: "call_mina", label: "Signal Mina", description: "Trust Mina to trigger the Night Owl alarm. This spends some of the trust between you." });
-    const deshawnCrew = state.people.crew.deshawn;
-    if (deshawnCrew.recruited && deshawnCrew.status !== "departed" && deshawnCrew.loyalty > 0 && !Crew.CURTIS_CREW_ENCOUNTER_IDS.includes(encounter.id)) choices.push({ id: "deshawn_deescalate", label: "Let Deshawn handle it", description: "No blood, one point of heat worked off. He notices what you choose next." });
+    // v1.19: through the presence-effect framework rather than an inline read of
+    // his record. The exclusion list is the effect's own, not this call site's.
+    if (Crew.deEscalateAvailable(state, "encounter", encounter.id)) choices.push({ id: "deshawn_deescalate", label: "Let Deshawn handle it", description: "No blood, one point of heat worked off. He notices what you choose next." });
     if (encounter.id === "late" && state.base.tracks.security >= 1) choices.push({ id: "use_base", label: "Fall back to the garage", description: "Security and crew assignments determine the result." });
     if (state.player.gear.consumables.medical_kit > 0 && state.player.health < 100) choices.push({ id: "medical_kit", label: "Use medical kit", description: "Recover before making the next move." });
     return choices;
@@ -8211,7 +8314,7 @@
       soldierRecruitAvailability, soldierAssignAvailability, blockClaimAvailability, eliPromotionAvailability,
       weeklyIncomeEstimate,
       dreTrustTier, dreIntroductionEligible, dreMissionAvailability, sharkUnlocked, sharkRiskLabel, sharkLoanAvailability,
-      deshawnRecruitmentAvailability, toneRecruitmentAvailability, crewRecruitmentEligible, crewTierAvailability, crewBailAvailability, arrestRecord,
+      deshawnRecruitmentAvailability, toneRecruitmentAvailability, pherrisRecruitmentAvailability, crewRecruitmentEligible, warmNpcContactCount, crewTierAvailability, crewBailAvailability, arrestRecord,
       districtControlTier, districtHasBlockLayer, unassignedSoldiers,
       homeSituation, homeUnlocks, homePriorities, homeSummary, actionResult,
       juanWorkIntelKnown, jobRankForXp, jobPayRange, discoveredJobs, jobAvailability, quickShift, ambientFlavor, phoneIntel, knownWorkplaceContacts, knownSocialContacts, personalContacts, contactAvailability,

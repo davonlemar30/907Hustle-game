@@ -413,6 +413,16 @@ test("repeated flips reach the household, and a big one clears Curtis's volume f
   assert.equal(rows[0].type, "financial");
   assert.ok(playing.nineZeroSevenList.flipCount >= 1);
 
+  // v1.19: the same flip also goes out on the network, which is how the people
+  // who trade in money for a living finally hear about the money. Pherris is on
+  // that channel and not on the household one, so this is her only route in.
+  let drained = playing;
+  for (let day = 0; day < 3; day += 1) drained = settle(C.reduceGame(drained, { type: "WANDER_SPENARD" }));
+  const networkRows = drained.npc.pherris.ledger.filter((row) => row.event === "907list_profit");
+  assert.ok(networkRows.length, "Pherris never heard about the money she is supposed to notice");
+  assert.equal(networkRows[0].source, "network");
+  assert.ok(C.selectors.disposition(drained, "pherris") > 0, "and it reads as a credit");
+
   // The same observation only reaches Curtis when the number is big enough.
   const small = { type: "financial", event: "907list_profit", value: 40 };
   const large = { type: "financial", event: "907list_profit", value: M.LISTING_ITEM_BY_ID.snow_blower.trueValue[1] };

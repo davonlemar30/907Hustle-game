@@ -32,6 +32,11 @@ const TIER_WAGES = {
   // hands with him, tier 3 means a squad, and the wage says so before the
   // player has to find out the other way.
   tone: [85, 150, 250],
+  // v1.19: information costs less than muscle, and it still scales - tier 2 is a
+  // couple of people making calls for her, tier 3 is a desk. Tier 1 matches her
+  // flat roster wage, so putting her on the curve changes nothing until she is
+  // actually promoted.
+  pherris: [60, 120, 220],
 };
 
 function wageFor(person, tier) {
@@ -41,8 +46,9 @@ function wageFor(person, tier) {
 }
 
 // Generic tier gates. Each crew member layers NPC-specific conditions on top
-// (deshawn: truces brokered; pherris: cash; tone/pherris: controlled blocks) -
-// those stay in crewTierAvailability in game-core. daysRecruited compares
+// (deshawn: his own disposition; pherris: market activity, then territory and
+// Broker standing; tone: fights he stood in, then controlled blocks) - those
+// stay in crewTierAvailability in game-core. daysRecruited compares
 // against crew.recruitedDay; a migrated member with recruitedDay null counts
 // as recruited long ago and passes the day gate.
 const TIER_REQUIREMENTS = {
@@ -95,6 +101,15 @@ const PRESENCE_EFFECTS = {
     { eventType: "encounter", modification: "combat_advantage", excludes: CURTIS_CREW_ENCOUNTER_IDS },
     { eventType: "stick_target", modification: "combat_advantage", excludes: [] },
   ],
+  // v1.19: Pherris changes nothing about a fight and everything about a price.
+  // One effective level of Intelligence on market reads - she knows which of
+  // these buyers is serious, so the meetup is chosen better and the swing on a
+  // sale is narrower. No exclusions: a contact list does not care whose corner
+  // the deal is on.
+  pherris: [
+    { eventType: "market_transaction", modification: "intel_advantage", excludes: [] },
+    { eventType: "907list_flip", modification: "intel_advantage", excludes: [] },
+  ],
 };
 
 function presenceEffectsFor(state, eventType, contextId) {
@@ -113,6 +128,26 @@ function presenceEffectsFor(state, eventType, contextId) {
   return effects;
 }
 
+// v1.19: the de-escalate consumer. The two `de_escalate` records above were
+// declared in v1.15 and read by nobody - the three sites that offer Deshawn's
+// choice each rebuilt the predicate inline instead. These are what they call
+// now, so "who can talk this down" is answered in one place.
+//
+// Note this is stricter than the inline checks were, and deliberately: they
+// tested `status !== "departed"`, which let an ARRESTED Deshawn talk down an
+// encounter he was in a cell for. getActiveCrew tests `status === "active"`,
+// so a jailed member now stays out of it. That is the intended reading of the
+// framework, and it is why this refactor moves the simulation hash.
+function deEscalateCrewIds(state, eventType, contextId) {
+  return presenceEffectsFor(state, eventType, contextId)
+    .filter((effect) => effect.modification === "de_escalate")
+    .map((effect) => effect.crewId);
+}
+
+function deEscalateAvailable(state, eventType, contextId) {
+  return deEscalateCrewIds(state, eventType, contextId).length > 0;
+}
+
 // One effective attribute level, no matter how many people are standing there.
 // A second enforcer is a second person, not a second bonus - the roster already
 // prices headcount through wages and capacity.
@@ -128,6 +163,20 @@ function combatAdvantageFor(state, eventType, contextId) {
 function combatAdvantageCrewIds(state, eventType, contextId) {
   return presenceEffectsFor(state, eventType, contextId)
     .filter((effect) => effect.modification === "combat_advantage")
+    .map((effect) => effect.crewId);
+}
+
+// v1.19: the market half of the same idea, and capped for the same reason. A
+// second connector is a second person, not a second bonus.
+const INTEL_ADVANTAGE_CAP = 1;
+
+function intelAdvantageFor(state, eventType, contextId) {
+  return Math.min(INTEL_ADVANTAGE_CAP, intelAdvantageCrewIds(state, eventType, contextId).length);
+}
+
+function intelAdvantageCrewIds(state, eventType, contextId) {
+  return presenceEffectsFor(state, eventType, contextId)
+    .filter((effect) => effect.modification === "intel_advantage")
     .map((effect) => effect.crewId);
 }
 
@@ -151,6 +200,17 @@ function combatAdvantageCrewIds(state, eventType, contextId) {
 // resolves the ledger and passes the numbers in.
 const RECRUITMENT_PROOF = {
   tone: { minBand: "WARM", minScore: 6 },
+  // v1.19: Pherris needs a floor for exactly the reason Tone does, and a higher
+  // one. Her financial weight is 4, so a single 907List day scores 4.0 on its
+  // own - past the Warm floor of 3 before the player has done anything twice.
+  //
+  // 8 is measured rather than designed. Across 2,000 seeded runs the floor moves
+  // her recruitment rate 16.1% (at 5) / 14.8% (6) / 10.8% (8) / 7.2% (10), and
+  // the dedicated flipper strategy 83% / 80% / 69% / 44%. Below 8 she is close
+  // to automatic for anyone who touches the market; above it she stops being
+  // reachable by a player who trades as one activity among several. 8 keeps her
+  // an earned hire for a market player and an impossible one for everybody else.
+  pherris: { minBand: "WARM", minScore: 8 },
 };
 
 function recruitmentProofFor(crewId) {
@@ -171,6 +231,13 @@ function recruitmentEligible(crewId, band, score) {
 // Standing next to someone while it goes badly three times is the version of
 // proof a promotion needs, and it is the one thing here that cannot be bought.
 const TONE_TIER2_COMBAT_WINS = 3;
+
+// v1.19: Pherris's tier-2 condition. Either shape of proof that the player is
+// actually in the business she manages - a run of completed flips, or enough
+// lifetime margin that the volume speaks for itself. OR rather than AND because
+// a few large flips and many small ones are the same evidence to her.
+const PHERRIS_TIER2_FLIPS = 5;
+const PHERRIS_TIER2_PROFIT = 500;
 
 // Deshawn's loyalty triggers (tier 1). The generic missed-wage bleed applies to
 // every crew member and lives in the wage settlement; these are his.
@@ -242,10 +309,17 @@ module.exports = {
   COMBAT_ADVANTAGE_CAP,
   RECRUITMENT_PROOF,
   TONE_TIER2_COMBAT_WINS,
+  PHERRIS_TIER2_FLIPS,
+  PHERRIS_TIER2_PROFIT,
   recruitmentProofFor,
   recruitmentEligible,
   combatAdvantageFor,
   combatAdvantageCrewIds,
+  deEscalateCrewIds,
+  deEscalateAvailable,
+  INTEL_ADVANTAGE_CAP,
+  intelAdvantageFor,
+  intelAdvantageCrewIds,
   PRESENCE_EFFECTS,
   DESHAWN_LOYALTY_TRIGGERS,
   DESHAWN_VIOLENCE_WINDOW_DAYS,

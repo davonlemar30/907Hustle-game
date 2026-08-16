@@ -78,6 +78,10 @@ The `goodie_corner` chain covers introduction, customer trust, Atlanta backstory
 
 Information-focused and protective of her network. She distinguishes rumor, confirmation, and opinion. She wants credit, compensation, and authority over contacts she supplies. Tier 2 makes her a social territory manager; Tier 3 makes her network economically independent enough to create conflict with Simone and Curtis.
 
+She is not hired off a list, and she does not audition. What she reads is whether the player is worth being connected to, which for her means money moving and an operation growing without noise — violence and defiance are heat on a network she spent years building, and heat is what makes her names stop picking up. Write her as someone who arrives already knowing the number, because knowing before you told her is the product. She opens with what she has, not with what she wants. The `pherris_offer` booth scene is about who owns her list; `pherris_recruit` is the one she brings herself, and she does not lower the figure to stay wanted.
+
+Her tiers are earned in the market she manages: a run of completed flips or enough lifetime margin to say the same thing, then a block of her own plus Broker standing.
+
 ### Anton “Tone” Bell
 
 Direct, restrained, and experienced with physical risk. He speaks in practical assessments, values preparation and stated limits, and dislikes reckless violence that creates exposure. His Jacksonville chain asks whether loyalty means protection, release, or leverage; none should read as a cosmetic branch.
@@ -87,6 +91,8 @@ He is not hired. He is earned, and he decides when. He reads one axis — whethe
 ### Deshawn
 
 A mediator and recruiter whose credibility depends on whether the player treated Goodie's relationship as real. An intact relationship opens recruitment; restitution plus clean work can repair damage; calling betrayal “business” closes the door permanently. At high loyalty he can prevent a betrayal because people trust him, not because he is physically stronger.
+
+His advancement is a character gate, never a skill one. Paying him and keeping him around is not the same as him trusting you, and the game should never let those two read as one thing: tier 2 needs him Trusted and tier 3 needs him Bonded, on the same lens that weights loyalty, discretion, and — hardest of all — betrayal of anyone at all.
 
 ### Eli “Shortcut” Ward
 
@@ -127,15 +133,15 @@ Kieran Vale arrives only when Curtis attention is at least 6, cumulative sales r
 
 ## Crew arcs
 
-- **Pherris Tier 1:** wage, daily rumor, Downtown buyer premium.
-- **Pherris Tier 2:** social management with lower Heat and slower threat response.
-- **Pherris Tier 3:** seeded network income and the Simone/Curtis conflict.
+- **Pherris Tier 1:** wage, daily rumor, Downtown buyer premium, and one effective level of Intelligence on market reads — the 907List meetup and the swing on a sale. She changes prices, never fights.
+- **Pherris Tier 2:** earned by five completed flips or $500 of lifetime market profit, not by time served. Social management with lower Heat and slower threat response.
+- **Pherris Tier 3:** needs one controlled block and Broker standing. Seeded network income and the Simone/Curtis conflict.
 - **Tone Tier 1:** garage defense (posting him clears a watched base), the loyalty-spend option to end a confrontation on his terms, and one effective level of Combat on any fight he is present for. The edge does not work on Curtis's own people, who knew him when he worked their side of it.
 - **Tone Tier 2:** earned by three fights his backup was actually in, not by time served. Adds crew Power and makes him eligible to run a block.
 - **Tone Tier 3:** needs two controlled blocks. More Power again, and the squad the wage implies.
 - **Deshawn Tier 1:** de-escalation and weekly rent grace.
-- **Deshawn Tier 2:** cheaper soldier recruitment and temporary Curtis truces.
-- **Deshawn Tier 3:** betrayal prevention and lower managed-block Heat.
+- **Deshawn Tier 2:** needs him Trusted, not merely employed. Cheaper soldier recruitment and temporary Curtis truces.
+- **Deshawn Tier 3:** needs him Bonded, which is a long run of loyalty and discretion with nobody burned. Betrayal prevention and lower managed-block Heat.
 
 Non-field contacts do not consume crew capacity. Garage operations upgrades raise field capacity from two to four so Eli, Pherris, Tone, and Deshawn can coexist.
 

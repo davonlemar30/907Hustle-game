@@ -367,8 +367,11 @@
       if (encounter.type === "authored" && (state.flags?.curtisArrangement || state.npc.curtis?.respect >= 3)) choices.push(choice("use_relationship", "Invoke Curtis's Arrangement", "Spend relationship leverage instead of blood or money."));
       if (state.player.gear?.consumables?.medical_kit > 0 && state.player.health < 100) choices.push(choice("medical_kit", "Use Medical Kit", "Recover now, but the confrontation keeps moving."));
       if (state.player.gear?.equipped?.tool === "burner_phone") choices.push(choice("burner_phone", "Burn the Phone", "Create a fast distraction; the phone will be gone afterward."));
-      const deshawn = state.people?.crew?.deshawn;
-      if (encounter.type === "random" && deshawn?.recruited && deshawn.status !== "departed" && deshawn.loyalty > 0 && !Crew.CURTIS_CREW_ENCOUNTER_IDS.includes(encounter.id)) {
+      // v1.19: the framework owns who can de-escalate and which encounters are
+      // off limits. `type === "random"` stays here on purpose - an authored
+      // encounter is a written scene, and that is a property of this engine's
+      // content rather than of anyone standing on the payroll.
+      if (encounter.type === "random" && Crew.deEscalateAvailable(state, "encounter", encounter.id)) {
         choices.push(choice("deshawn_deescalate", "Let Deshawn Handle It", "No blood, one point of heat worked off. He notices what you choose next."));
       }
     } else {

@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const C = require("../game-core.js");
+const Encounters = require("../encounters.js");
 const Crew = require("../src/data/crew.js");
 const CurtisAwareness = require("../src/data/curtis-awareness.js");
 const { stringHash } = require("../src/events/random.js");
@@ -182,10 +183,14 @@ test("PAY_CREW clears arrears and resets the missed-wage clock", () => {
 
 // --- Tier gates -------------------------------------------------------------
 
+// This test owns the UNIVERSAL half of the gate - loyalty and days served. His
+// domain half moved onto his ledger in v1.19 and is covered in v1-19.test.js,
+// so the disposition is put where it needs to be up front and left alone.
 test("tier promotion needs loyalty 7 plus five days, then loyalty 9 plus twelve", () => {
   const state = fresh(4220);
   state.run.day = 7;
   withDeshawn(state, { loyalty: 6, recruitedDay: 1 });
+  putInBand(state, "deshawn", C.BANDS.TRUSTED);
   assert.equal(C.selectors.crewTierAvailability(state, "deshawn").available, false, "loyalty 6 blocks tier 2");
   state.people.crew.deshawn.loyalty = 7;
   state.people.crew.deshawn.recruitedDay = 5;
@@ -195,10 +200,8 @@ test("tier promotion needs loyalty 7 plus five days, then loyalty 9 plus twelve"
   // Tier 3: the generic gate plus his own conditions.
   state.people.crew.deshawn.tier = 2;
   state.people.crew.deshawn.loyalty = 9;
-  state.people.crew.deshawn.trucesBrokered = 2;
   state.run.day = 14;
-  state.world.territoryBlocks.spenard_rec_lot.owner = "player";
-  state.world.territoryBlocks.northern_lights_motels.owner = "player";
+  putInBand(state, "deshawn", C.BANDS.BONDED);
   assert.equal(C.selectors.crewTierAvailability(state, "deshawn").available, true);
   state.people.crew.deshawn.recruitedDay = 10;
   assert.equal(C.selectors.crewTierAvailability(state, "deshawn").available, false, "tier 3 needs twelve days on the crew");
@@ -474,11 +477,45 @@ test("violence within two days of a de-escalation costs the point even when he i
   assert.equal(state.npc.deshawn.lastDeescalationDay, null, "one penalty per de-escalation");
 });
 
+// v1.19: this used to grep encounters.js for the literal CURTIS_CREW_ENCOUNTER_IDS.
+// The exclusion list moved into the presence-effect record, so the source text no
+// longer names it and the assertion is behavioral instead - which is what it was
+// always trying to prove.
+function consequenceEncounter(id) {
+  return { id, type: "random", phase: 0, areaId: "north_star_lot", npc: { demand: 60 }, resolved: false };
+}
+
 test("the consequence engine carries the same choice and the retaliation card offers it", () => {
   assert.ok(encountersSource.includes('"deshawn_deescalate"') || encountersSource.includes("deshawn_deescalate"), "consequence engine knows the choice");
-  assert.ok(encountersSource.includes("CURTIS_CREW_ENCOUNTER_IDS"), "consequence engine honors the exclusion list");
+  const state = fresh(4251);
+  withDeshawn(state);
+  assert.ok(Encounters.getEligibleChoices(consequenceEncounter("dre_collector"), state).some((item) => item.id === "deshawn_deescalate"), "consequence engine offers his choice");
+  for (const id of Crew.CURTIS_CREW_ENCOUNTER_IDS) {
+    assert.ok(!Encounters.getEligibleChoices(consequenceEncounter(id), state).some((item) => item.id === "deshawn_deescalate"), `${id} is Curtis's people`);
+  }
   const core = fs.readFileSync(path.join(root, "game-core.js"), "utf8");
   assert.ok(core.includes("deshawnDeescalate: true"), "stick retaliation card carries the option");
+});
+
+// v1.19: the one behavior the presence-effect migration changed. The three
+// inline checks tested `status !== "departed"`, so a Deshawn sitting in a cell
+// still talked people down; the framework reads getActiveCrew, which does not.
+// Measured across 2,000 seeded runs this changes no hash - the simulation never
+// lands an arrest on him and a de-escalatable encounter in the same run - so the
+// case is pinned here rather than by the simulation.
+test("an arrested Deshawn de-escalates nothing", () => {
+  const state = fresh(4252);
+  withDeshawn(state);
+  state.run.pendingEncounter = legacyEncounter("dre_collector");
+  assert.ok(C.selectors.encounterChoices(state).some((item) => item.id === "deshawn_deescalate"), "active, so he is offered");
+  assert.ok(Encounters.getEligibleChoices(consequenceEncounter("dre_collector"), state).some((item) => item.id === "deshawn_deescalate"));
+  assert.ok(Crew.deEscalateAvailable(state, "stick_retaliation"), "and the retaliation card offers him");
+
+  state.people.crew.deshawn.status = "arrested";
+  state.people.crew.deshawn.jailedUntilDay = state.run.day + 2;
+  assert.ok(!C.selectors.encounterChoices(state).some((item) => item.id === "deshawn_deescalate"), "he is not there to do it");
+  assert.ok(!Encounters.getEligibleChoices(consequenceEncounter("dre_collector"), state).some((item) => item.id === "deshawn_deescalate"));
+  assert.ok(!Crew.deEscalateAvailable(state, "stick_retaliation"));
 });
 
 // --- Weekly introductions and rent grace ------------------------------------

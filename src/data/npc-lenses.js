@@ -185,6 +185,21 @@ const NPC_LENSES = {
     archetype: "STREET",
     weights: { violence: 3, defiance: 2, growth: 1, discretion: -2, submission: -3 },
   },
+  // v1.19: Pherris reads whether the player is worth being connected to. She
+  // trades in contacts, so what she counts is a book of business getting bigger
+  // and being handled quietly - money moving, the operation growing, information
+  // kept. Violence and defiance are heat on a network she has spent years
+  // building, and heat is what makes her names stop picking up.
+  //
+  // The event override is not decoration. `job_lost` is broadcast as a financial
+  // observation, and at weight 4 an unguarded lens would read getting fired as
+  // the best week the player ever had. Same trap SHARED_EVENT_WEIGHTS exists to
+  // catch, priced here because the category sign is only wrong for her.
+  pherris: {
+    archetype: "STREET",
+    weights: { financial: 4, growth: 3, discretion: 2, violence: -2, defiance: -1 },
+    eventWeights: { job_lost: -2 },
+  },
 };
 
 const EXPOSURE_NPC_IDS = Object.keys(NPC_LENSES);

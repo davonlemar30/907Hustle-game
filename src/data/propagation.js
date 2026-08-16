@@ -51,6 +51,11 @@ const NPC_CHANNELS = {
   // does not live with the player. Not `reputation` either; that channel is
   // Curtis's alone, and it is the slow one anyway.
   tone: ["direct", "neighborhood", "network"],
+  // Pherris IS a network - a Downtown contact list she has kept alive for years.
+  // She hears the block because she works it, and she hears the wire because she
+  // is most of it. No household: she has never been to the house. Not
+  // `reputation` either; that channel is Curtis's alone.
+  pherris: ["direct", "neighborhood", "network"],
 };
 
 // Curtis does not care about corner-level activity, and the whole design of his
@@ -93,6 +98,9 @@ const NPC_PRESENCE_SLOTS = {
   // Tone keeps door hours. He is around Spenard in the evening and at night,
   // which is when the work he does exists.
   tone: [2, 3],
+  // Pherris works afternoons through the night. Mornings are for the phone, and
+  // a phone call is the network channel, which ignores shift anyway.
+  pherris: [1, 2, 3],
 };
 
 // Where each NPC can pick something up in person. Null means anywhere in the
@@ -111,6 +119,9 @@ const NPC_PRESENCE_AREAS = {
   deshawn: ["north_star_lot"],
   // Spenard only for now. Downtown is not his stretch and never was.
   tone: ["north_star_lot"],
+  // The only crew member who moves between districts. Her list is Downtown and
+  // her corner booth is there; Spenard is where she checks it against the street.
+  pherris: ["north_star_lot", "downtown"],
 };
 
 function channelFor(id) {

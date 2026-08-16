@@ -17,6 +17,7 @@
   const AttributeData = require("./src/data/attributes.js");
   const Attributes = require("./src/systems/attributes.js");
   const Nile = require("./src/data/nile.js");
+  const Mina = require("./src/data/mina.js");
   const Gambling = require("./src/data/gambling.js");
   const GamblingEvents = require("./src/events/gambling-events.js");
   const Crew = require("./src/data/crew.js");
@@ -775,6 +776,29 @@
     logEntry(state, line, "warn");
     pushConsequence(state, line, "warn");
   }
+  // v1.17: Mina's counter line for this visit. Same discipline as the watcher
+  // pool above - stringHash off seed/day/slot, never the rng stream, a last-3
+  // exclusion window, and no writes beyond the rotation memory. She reads the
+  // player before the register: a recent arrest first, then an injury, then a
+  // pocket full of money; otherwise the disposition band and her shift decide
+  // the register. The Night Owl keeps Evening/Night hours, so slot 2 is the
+  // on-shift voice and slot 3 is the shop-to-herself voice.
+  function pickMinaLine(state) {
+    const day = state.run.day; const slot = state.run.slot;
+    const arrestedRecently = state.record?.lastArrestDay != null && day - state.record.lastArrestDay <= Mina.MINA_ARREST_RECENT_DAYS;
+    const statePool = arrestedRecently ? Mina.MINA_STATE_LINES.arrested
+      : state.player.health < Mina.MINA_INJURED_HEALTH ? Mina.MINA_STATE_LINES.injured
+      : state.player.cash >= Mina.MINA_FLUSH_CASH ? Mina.MINA_STATE_LINES.flush
+      : null;
+    const bands = Mina.MINA_LINES[Mina.minaBandKey(Exposure.getDispositionBand("mina", state))];
+    const pool = statePool || (slot >= 3 ? bands.late : bands.early);
+    const recent = state.nightOwl.recentMinaLines || [];
+    const fresh = pool.filter((line) => !recent.includes(line));
+    const candidates = fresh.length ? fresh : pool;
+    const line = candidates[stringHash(`${state.run.seed}:mina-line:${day}:${slot}`) % candidates.length];
+    state.nightOwl.recentMinaLines = [...recent, line].slice(-Mina.MINA_RECENT_LIMIT);
+    return line;
+  }
   function broadcastOutcome(state, actionType, tier, value) {
     const specs = AttributeData.OUTCOME_OBSERVATIONS[actionType]?.[tier] || [];
     for (const spec of specs) {
@@ -1447,6 +1471,10 @@
       onboarding: { shiftsWorked: 0, visitedLocations: ["home"], metNpcs: [], dreEligible: false },
       nightOwl: {
         boardViewedDays: [], ambientSeen: [], socialSessions: 0,
+        // v1.17: the last three Mina lines shown, so no line repeats within a
+        // three-visit window. Additive - schema stays at v11 and mergeDefaults
+        // supplies this to every old save.
+        recentMinaLines: [],
         regulars: Object.fromEntries(NIGHT_OWL_REGULARS.map((person) => [person.id, { met: false, relationship: 0, lastTalkDay: null }])),
       },
       // v1.9b: the broker track. `tier` is derived on every read by marketTier()
@@ -7034,7 +7062,7 @@
       if (base.npc.mina.met) addStreetReadEntry(base, "social", "mina:visit");
       base.nightOwl.socialSessions += 1;
       growAtNightOwl(base);
-      logEntry(base, state.npc.mina.met ? "Mina sets a clean cup beside the register and waits for you to choose the conversation." : "Mina looks up from the register and gives you enough time to introduce yourself.", "");
+      logEntry(base, state.npc.mina.met ? pickMinaLine(base) : "Mina looks up from the register and gives you enough time to introduce yourself.", "");
       if (base.run.status === "playing" && !base.npc.mina.met && !base.run.pendingEvent) fireStory(base, STORY_BY_ID.mina_intro);
       return base;
     }
@@ -7701,7 +7729,7 @@
         const product = PRODUCTS[stringHash(`${base.run.seed}:mina-tip:${base.run.day}`) % PRODUCTS.length];
         base.effects.rumors.push({ id: `mina_${base.run.day}`, areaId: "north_star_lot", productId: product.id, reliable: true, text: `Mina passes along one reliable Spenard buyer tip for ${product.name}.`, expiresAt: slotNumber(base.run.day + 1, 0) });
       }
-      logEntry(base, "Mina keeps the conversation local, direct, and off the clock.", "good");
+      logEntry(base, pickMinaLine(base), "good");
       return base;
     }
     if (action.type === "BUY_FROM_DEALER") {

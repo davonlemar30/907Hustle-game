@@ -1965,7 +1965,7 @@
           return [
             choice("fight", "Fight", `${opponent.difficulty} opponent. Win and you leave with the take. Lose and you are hurt and booked.`),
             choice("run", "Run for it", "Keep the take if you get clear. Get caught and it is a ban, more Heat, and bruises."),
-            choice("surrender", "Give it up", "They keep the goods. No Heat, no damage, no arrest \u2014 only the take.")
+            choice("surrender", "Give it up", "They keep the goods. No Heat, no damage, no arrest. It only costs the take.")
           ];
         }
         function resolveBoostFight(state, encounter, rng) {
@@ -2710,10 +2710,10 @@
         if (effect.cash) parts.push(`${effect.cash > 0 ? "+" : "\u2212"}$${Math.abs(effect.cash)} cash`);
         if (effect.health) parts.push(`${effect.health > 0 ? "+" : "\u2212"}${Math.abs(effect.health)} Health`);
         if (effect.heat) parts.push(`${effect.heat > 0 ? "+" : "\u2212"}${Math.abs(effect.heat)} Heat`);
-        if (effect.minaTrust) parts.push(`${effect.minaTrust > 0 ? "+" : "\u2212"}${Math.abs(effect.minaTrust)} Mina trust`);
-        if (effect.lenderTrust) parts.push(`${effect.lenderTrust > 0 ? "+" : "\u2212"}${Math.abs(effect.lenderTrust)} Dre trust`);
-        if (effect.rivalPressure) parts.push(`${effect.rivalPressure > 0 ? "+" : "\u2212"}${Math.abs(effect.rivalPressure)} Curtis pressure`);
-        if (effect.rivalRespect) parts.push(`${effect.rivalRespect > 0 ? "+" : "\u2212"}${Math.abs(effect.rivalRespect)} Curtis respect`);
+        if (effect.minaTrust) parts.push(effect.minaTrust > 0 ? "Mina files it under honest" : "Mina remembers being managed");
+        if (effect.lenderTrust) parts.push(effect.lenderTrust > 0 ? "Dre marks you reliable" : "Dre's patience gets shorter");
+        if (effect.rivalPressure) parts.push(effect.rivalPressure > 0 ? "Curtis's people hear about it" : "Curtis's people look elsewhere for a while");
+        if (effect.rivalRespect) parts.push(effect.rivalRespect > 0 ? "Curtis starts weighing you differently" : "Curtis stops taking you seriously");
         if (effect.loseRandomInventory) parts.push(`risk ${effect.loseRandomInventory} cargo`);
         if (effect.secondLoan) parts.push("take $1,200 cash and owe $1,380 within five days or by the checkpoint");
         if (effect.access) parts.push(`unlock ${effect.access} access`);
@@ -3407,6 +3407,96 @@
     }
   });
 
+  // src/data/mina.js
+  var require_mina = __commonJS({
+    "src/data/mina.js"(exports, module) {
+      var { BANDS } = require_disposition_bands();
+      function minaBandKey(band) {
+        return band > BANDS.NEUTRAL ? band : BANDS.NEUTRAL;
+      }
+      var MINA_LINES = {
+        [BANDS.NEUTRAL]: {
+          early: [
+            `"What can I get you." It isn't a question. The register stays between you.`,
+            `"Drip's fresh. Pastries came in at six." She's already looking past you at the door.`,
+            "She takes the order, makes it, sets it down. Three motions, no spare words."
+          ],
+          late: [
+            `"Last pot of the night. It's stronger than it should be." She almost smiles about it.`,
+            `"We close at eleven." A beat. "The corner table's free until then."`,
+            "She wipes the counter in slow circles while your coffee brews. The shop answers questions for her."
+          ]
+        },
+        [BANDS.WARM]: {
+          early: [
+            `"The usual?" She's pouring before you answer.`,
+            `"You're in early. Or you haven't slept." She doesn't push either way. The cup lands soft.`,
+            `"That car's been outside three nights now. Probably nothing." She says it to the espresso machine.`
+          ],
+          late: [
+            '"Sit. You look like the day won." The good chair is somehow already clear.',
+            '"The laundromat guy asked about you. I said you drink drip. Nothing else."',
+            `"One question. You don't have to answer it." She only ever spends the one.`
+          ]
+        },
+        [BANDS.TRUSTED]: {
+          early: [
+            `"I moved here to stop being someone's daughter. Anchorage is far enough." She refills your cup unasked.`,
+            '"My family runs bars back east. The bars were never the business." She leaves it there.',
+            `"Two men sat in that corner an hour last night. They didn't drink. Watch yourself today."`
+          ],
+          late: [
+            '"I keep the shop open late because quiet rooms scared me once. Now I sell them."',
+            `"You remind me of my brother. That isn't a compliment yet." She holds the eye contact.`,
+            `"Whatever you're into, it followed you here twice this week. I notice things. Family trait."`
+          ]
+        },
+        [BANDS.BONDED]: {
+          early: [
+            "The good pastry is under the counter with your name on the bag. She doesn't mention it.",
+            '"I was going to text you before close. You saved me the trouble."',
+            `"Kieran called again. I didn't answer." First time she's said the name. She watches you hold it.`
+          ],
+          late: [
+            `"Stay until I lock up. I'll drive you." She's never offered anyone the passenger seat.`,
+            "The back door's unlocked when you need somewhere quiet. She never announced it. You just know.",
+            `"You know more about me than anyone in this state. Decide what that's worth to you."`
+          ]
+        }
+      };
+      var MINA_STATE_LINES = {
+        arrested: [
+          "She looks at your wrists first. Says nothing. The coffee arrives with two of the good sugars.",
+          `"Rough couple days." Told to the cup she's drying. The door chime sounds louder than usual.`,
+          `"You don't have to tell me. Everyone who came in already did." The cup lands gentle.`
+        ],
+        injured: [
+          "Her eyes go to how you're standing. She pulls the near chair out with her foot.",
+          `"Ice or coffee first?" She's already reaching under the counter for the first aid box.`,
+          "She sets the cup down slower than usual, like the sound might land on a bruise."
+        ],
+        flush: [
+          '"Big tipper tonight." She slides the bill back. "Money moves faster here than people think. Careful."',
+          "You pay from a folded stack. She looks at you a half second longer than the coffee costs.",
+          '"Whatever came in today, spend it boring." She counts your change exact and slow.'
+        ]
+      };
+      var MINA_ARREST_RECENT_DAYS = 2;
+      var MINA_INJURED_HEALTH = 40;
+      var MINA_FLUSH_CASH = 800;
+      var MINA_RECENT_LIMIT = 3;
+      module.exports = {
+        MINA_LINES,
+        MINA_STATE_LINES,
+        MINA_ARREST_RECENT_DAYS,
+        MINA_INJURED_HEALTH,
+        MINA_FLUSH_CASH,
+        MINA_RECENT_LIMIT,
+        minaBandKey
+      };
+    }
+  });
+
   // src/data/gambling.js
   var require_gambling = __commonJS({
     "src/data/gambling.js"(exports, module) {
@@ -3945,7 +4035,8 @@
         encounter: [
           "The lot fills with light and everybody's hands go where they are told.",
           "One radio call turns the whole block into a scene with your name in the middle of it.",
-          "You are the one still standing there when they arrive, which is the whole problem."
+          "You are the one still standing there when they arrive, which is the whole problem.",
+          "Plastic bench. Fluorescent hum. They already know your name."
         ]
       };
       var RELEASE_LINES = {
@@ -3955,14 +4046,15 @@
           "The money leaves, the file stays, and the street outside is suddenly quiet about you."
         ],
         served: [
-          "There is no bail money, so there is time instead. The clock is the payment.",
+          "No money for bail. You're here until they're done with you.",
           "You sit it out on a bench under a light that never changes, and the day goes with it.",
-          "Nobody comes, nothing gets paid, and the hours take what the cash could not."
+          "Nobody comes, nothing gets paid, and the hours take what the cash could not.",
+          "Forty-three hours and a headache. Spenard looks different at 6 AM."
         ]
       };
       var HEAT_RELIEF_LINES = [
         "Whatever the block thought it knew about you got filed and closed. The watching thins out.",
-        "The street heat goes cold the moment it becomes paperwork. That trade is not free.",
+        "The block goes cold on you the moment you become paperwork. That trade is not free.",
         "You are less interesting outside now, and permanently more interesting on paper."
       ];
       var CREW_BOOKED_LINES = [
@@ -3971,13 +4063,13 @@
         "%s goes in the car. The rest of the ring scatters and the take stays behind."
       ];
       var CREW_BAIL_LINES = [
-        "%s comes out squinting and does not say thank you, but shows up the next morning.",
+        "%s comes out squinting, skips the thank you, and shows up the next morning anyway.",
         "You put the money down for %s. The debt between you moved, and both of you know it.",
         "%s walks out to find you already waiting. That gets remembered longer than the cell."
       ];
       var CREW_SERVED_LINES = [
         "%s walks out on their own date. Nobody was waiting. They remember that part.",
-        "%s does the whole stretch and comes back thinner and quieter. The loyalty is gone.",
+        "%s does the whole stretch and comes back thinner and quieter. Whatever you two had, the cell kept it.",
         "%s gets released with nobody there. They come back to work, but only barely."
       ];
       function pickLine(bank, hash) {
@@ -4157,15 +4249,15 @@
         mountain_view: ["fairview"]
       };
       var STICK_TARGETS = [
-        { id: "chilkoots_stumbler", name: "Chilkoot's stumbler", areaId: "north_star_lot", tier: 1, take: [40, 80], slots: [3], resistance: 0, heat: 2, retaliation: 0 },
-        { id: "washgo_regular", name: "Wash & Go regular", areaId: "north_star_lot", tier: 1, take: [30, 50], resistance: 0, heat: 2, retaliation: 0 },
-        { id: "fourth_ave_crawler", name: "Fourth Avenue bar crawler", areaId: "downtown", tier: 1, take: [50, 100], slots: [2, 3], resistance: 0, heat: 2, retaliation: 0 },
-        { id: "c_street_atm", name: "C Street ATM run", areaId: "downtown", tier: 1, take: [60, 100], slots: [2], resistance: 1, heat: 2, retaliation: 0 },
-        { id: "lot_hauler", name: "Long-haul driver at the truck lot", areaId: "airport_industrial", tier: 1, take: [40, 90], slots: [0, 1], resistance: 0, heat: 2, retaliation: 0 },
-        { id: "spenard_fuel_till", name: "Spenard Fuel night till", areaId: "north_star_lot", tier: 2, take: [100, 180], slots: [3], resistance: 1, heat: 3, retaliation: 0.6 },
-        { id: "downtown_fuel_till", name: "Downtown Fuel register", areaId: "downtown", tier: 2, take: [100, 200], resistance: 1, heat: 3, retaliation: 0.6 },
-        { id: "goodie_stash", name: "Goodie's stash spot", areaId: "north_star_lot", tier: 3, take: [800, 1500], resistance: 3, heat: 4, retaliation: 0.6 },
-        { id: "rec_center_dice", name: "Dice game behind the rec center", areaId: "north_star_lot", tier: 3, take: [500, 1200], slots: [2, 3], resistance: 2, heat: 4, retaliation: 0.6 }
+        { id: "chilkoots_stumbler", name: "Stumbler outside Koots", areaId: "north_star_lot", tier: 1, take: [40, 80], slots: [3], resistance: 0, heat: 2, retaliation: 0, desc: "Somebody weaving out of Chilkoot Charlie's alone, cab money visible. Ten seconds before they reach Spenard Road." },
+        { id: "washgo_regular", name: "Wash & Go regular", areaId: "north_star_lot", tier: 1, take: [30, 50], resistance: 0, heat: 2, retaliation: 0, desc: "Same guy every week. Quarters and a phone, watching his drum spin with his back to the door." },
+        { id: "fourth_ave_crawler", name: "Fourth Avenue bar crawler", areaId: "downtown", tier: 1, take: [50, 100], slots: [2, 3], resistance: 0, heat: 2, retaliation: 0, desc: "Bar to bar on 4th with a fresh ATM stop in between. Loud enough to lose track of company." },
+        { id: "c_street_atm", name: "C Street ATM run", areaId: "downtown", tier: 1, take: [60, 100], slots: [2], resistance: 1, heat: 2, retaliation: 0, desc: "Office types pull dinner cash on C Street. Heads down, cards out, minds already at the restaurant." },
+        { id: "lot_hauler", name: "Long-haul driver at the truck lot", areaId: "airport_industrial", tier: 1, take: [40, 90], slots: [0, 1], resistance: 0, heat: 2, retaliation: 0, desc: "Overnighting off International with the cab curtains drawn. Road cash rides somewhere within reach of the wheel." },
+        { id: "spenard_fuel_till", name: "Spenard Chevron night till", areaId: "north_star_lot", tier: 2, take: [100, 180], slots: [3], resistance: 1, heat: 3, retaliation: 0.6, desc: "One clerk after midnight on Spenard Road, and a till that fattens until the morning pickup." },
+        { id: "downtown_fuel_till", name: "Holiday register on C Street", areaId: "downtown", tier: 2, take: [100, 200], resistance: 1, heat: 3, retaliation: 0.6, desc: "The register sits open between customers. One clerk, no partition, and the downtown foot traffic thinning out." },
+        { id: "goodie_stash", name: "Goodie's stash spot", areaId: "north_star_lot", tier: 3, take: [800, 1500], resistance: 3, heat: 4, retaliation: 0.6, desc: "Everybody knows Goodie keeps a spot. Nobody says where out loud. Finding out is the easy part." },
+        { id: "rec_center_dice", name: "Dice game behind the rec center", areaId: "north_star_lot", tier: 3, take: [500, 1200], slots: [2, 3], resistance: 2, heat: 4, retaliation: 0.6, desc: "Folding-table money behind the rec center. Fast pockets, faster tempers, and no cameras by anyone's design." }
       ];
       var STICK_TARGET_BY_ID = Object.fromEntries(STICK_TARGETS.map((target) => [target.id, target]));
       var STICK_TIER_2_REP = 4;
@@ -4412,6 +4504,7 @@
         const AttributeData = require_attributes();
         const Attributes = require_attributes2();
         const Nile = require_nile();
+        const Mina = require_mina();
         const Gambling = require_gambling();
         const GamblingEvents = require_gambling_events();
         const Crew = require_crew();
@@ -4590,18 +4683,18 @@
           return ((_b = (_a = state.plugs.records) == null ? void 0 : _a[plugId]) == null ? void 0 : _b.suspicion) || 0;
         }
         const BOOST_TARGETS = [
-          { id: "night_owl", name: "Night Owl Mini-Mart", areaId: "north_star_lot", tier: 1, take: [15, 40] },
-          { id: "spenard_fuel", name: "Spenard Fuel", areaId: "north_star_lot", tier: 1, take: [15, 40] },
-          { id: "fourth_ave_market", name: "Fourth Avenue Market", areaId: "downtown", tier: 1, take: [15, 40] },
-          { id: "downtown_fuel", name: "Downtown Fuel", areaId: "downtown", tier: 1, take: [15, 40] },
-          { id: "service_stop", name: "Service Road Stop", areaId: "airport_industrial", tier: 1, take: [15, 40] },
-          { id: "airport_fuel", name: "Airport Fuel", areaId: "airport_industrial", tier: 1, take: [15, 40] },
-          { id: "northern_value", name: "Northern Value", areaId: "north_star_lot", tier: 2, take: [60, 150], windowSlot: 1 },
-          { id: "midtown_pharmacy", name: "Midtown Pharmacy", areaId: "north_star_lot", tier: 2, take: [60, 150], windowSlot: 2 },
-          { id: "fourth_ave_electronics", name: "Fourth Avenue Electronics", areaId: "downtown", tier: 2, take: [60, 150], windowSlot: 3 },
-          { id: "warehouse_club", name: "Warehouse Club", areaId: "north_star_lot", tier: 3, take: [200, 500] },
-          { id: "loading_dock_seven", name: "Loading Dock Seven", areaId: "airport_industrial", tier: 3, take: [200, 500] },
-          { id: "delivery_route_4", name: "Delivery Route 4", areaId: "downtown", tier: 3, take: [200, 500] }
+          { id: "night_owl", name: "Night Owl Mini-Mart", areaId: "north_star_lot", tier: 1, take: [15, 40], desc: "The counter you already know. The camera by the back aisle has a blind spot everyone in Spenard learned first." },
+          { id: "spenard_fuel", name: "Spenard Chevron", areaId: "north_star_lot", tier: 1, take: [15, 40], desc: "Two pumps and a cooler aisle on Spenard Road. The clerk watches the lot, never the shelves." },
+          { id: "fourth_ave_market", name: "Rebel Convenience on 4th", areaId: "downtown", tier: 1, take: [15, 40], desc: "Chips, chargers, single cans. One camera, aimed at the register, exactly like the sticker on the door promises." },
+          { id: "downtown_fuel", name: "Holiday on C Street", areaId: "downtown", tier: 1, take: [15, 40], desc: "Downtown gas at downtown prices. The snack aisle sits behind a pillar the security mirror cannot see around." },
+          { id: "service_stop", name: "Denali Express", areaId: "airport_industrial", tier: 1, take: [15, 40], desc: "A truck-stop shop off Old Seward. Everything is bolted down except what you came in for." },
+          { id: "airport_fuel", name: "Shell on International", areaId: "airport_industrial", tier: 1, take: [15, 40], desc: "Fuel for the airport runs. Half the customers are on the clock and all of them are on their phones." },
+          { id: "northern_value", name: "Northern Value", areaId: "north_star_lot", tier: 2, take: [60, 150], windowSlot: 1, desc: "The Spenard thrift barn. Racks too dense to police and tags too cheap for anyone to chase." },
+          { id: "midtown_pharmacy", name: "Northern Lights Pharmacy", areaId: "north_star_lot", tier: 2, take: [60, 150], windowSlot: 2, desc: "Strip-mall pharmacy on Northern Lights. The pickup line keeps every eye in the building pointed forward." },
+          { id: "fourth_ave_electronics", name: "Gateway Electronics on 4th", areaId: "downtown", tier: 2, take: [60, 150], windowSlot: 3, desc: "Locked cases up front, open stock in the back. The one clerk cannot be both places." },
+          { id: "warehouse_club", name: "Arctic Cash & Carry", areaId: "north_star_lot", tier: 3, take: [200, 500], desc: "Pallet aisles off Minnesota Drive. The membership desk checks cards on the way in, never boxes on the way out." },
+          { id: "loading_dock_seven", name: "Ship Creek Yards, Dock Seven", areaId: "airport_industrial", tier: 3, take: [200, 500], desc: "Container rows off Ship Creek. The manifest says more than the fence-line cameras ever will." },
+          { id: "delivery_route_4", name: "Minnesota Drive Route", areaId: "downtown", tier: 3, take: [200, 500], desc: "A box truck running the same Minnesota Drive loop every day. A schedule is a kind of key." }
         ];
         const BOOST_TARGET_BY_ID = Object.fromEntries(BOOST_TARGETS.map((target) => [target.id, target]));
         const { JOB_RANK_THRESHOLDS, JOB_APPROACHES, SPENARD_JOBS, SPENARD_JOB_BY_ID, STARTER_JOB_IDS } = require_jobs();
@@ -5279,6 +5372,22 @@
           awareness.recentWatcherLines = [...awareness.recentWatcherLines, line].slice(-3);
           logEntry(state, line, "warn");
           pushConsequence(state, line, "warn");
+        }
+        function pickMinaLine(state) {
+          var _a;
+          const day = state.run.day;
+          const slot = state.run.slot;
+          const arrestedRecently = ((_a = state.record) == null ? void 0 : _a.lastArrestDay) != null && day - state.record.lastArrestDay <= Mina.MINA_ARREST_RECENT_DAYS;
+          const statePool = arrestedRecently ? Mina.MINA_STATE_LINES.arrested : state.player.health < Mina.MINA_INJURED_HEALTH ? Mina.MINA_STATE_LINES.injured : state.player.cash >= Mina.MINA_FLUSH_CASH ? Mina.MINA_STATE_LINES.flush : null;
+          const bands = Mina.MINA_LINES[Mina.minaBandKey(Exposure.getDispositionBand("mina", state))];
+          const pool = statePool || (slot >= 3 ? bands.late : bands.early);
+          const recent = state.nightOwl.recentMinaLines || [];
+          const fresh = pool.filter((line2) => !recent.includes(line2));
+          const relaxed = fresh.length ? fresh : pool.filter((line2) => !recent.slice(-2).includes(line2));
+          const candidates = relaxed.length ? relaxed : pool;
+          const line = candidates[stringHash(`${state.run.seed}:mina-line:${day}:${slot}`) % candidates.length];
+          state.nightOwl.recentMinaLines = [...recent, line].slice(-Mina.MINA_RECENT_LIMIT);
+          return line;
         }
         function broadcastOutcome(state, actionType, tier, value) {
           var _a, _b;
@@ -6058,6 +6167,10 @@
               boardViewedDays: [],
               ambientSeen: [],
               socialSessions: 0,
+              // v1.17: the last three Mina lines shown, so no line repeats within a
+              // three-visit window. Additive - schema stays at v11 and mergeDefaults
+              // supplies this to every old save.
+              recentMinaLines: [],
               regulars: Object.fromEntries(NIGHT_OWL_REGULARS.map((person) => [person.id, { met: false, relationship: 0, lastTalkDay: null }]))
             },
             // v1.9b: the broker track. `tier` is derived on every read by marketTier()
@@ -8766,7 +8879,7 @@
           logEntry(state, Arrest.pickLine(bookingBank, hash), "bad");
           const releaseBank = shortfall > 0 ? Arrest.RELEASE_LINES.served : Arrest.RELEASE_LINES.paid;
           pushConsequence(state, Arrest.pickLine(releaseBank, hash), "bad");
-          pushConsequence(state, shortfall > 0 ? `Bail set at $${bail}. You covered $${paid} and served the rest. Prior arrests: ${state.record.arrests}.` : `Bail $${bail} paid. Prior arrests: ${state.record.arrests}.`, "warn");
+          pushConsequence(state, shortfall > 0 ? `Bail was $${bail}. You had $${paid}. The rest came out of your hours. That makes ${state.record.arrests} on the sheet.` : `$${bail} to walk. The sheet says ${state.record.arrests} now, and sheets do not forget.`, "warn");
           if (relief > 0) pushConsequence(state, `${Arrest.pickLine(Arrest.HEAT_RELIEF_LINES, hash)} (-${relief} Heat)`, "");
           return { severity, source, bail, paid, shortfall, processingSlots, heatRelief: relief, priors: state.record.arrests };
         }
@@ -8787,7 +8900,7 @@
           const name = CREW_BY_ID[crewId].name.split(" ")[0];
           const hash = stringHash(`${state.run.seed}:crew-arrest:${crewId}:${state.run.day}`);
           logEntry(state, Arrest.pickLine(Arrest.CREW_BOOKED_LINES, hash).replace("%s", name), "bad");
-          pushConsequence(state, `${name} is in custody. Bail is $${Arrest.crewBailFor(key)} until Day ${crew.jailedUntilDay}.`, "bad");
+          pushConsequence(state, `${name} got picked up. $${Arrest.crewBailFor(key)} makes it go away before Day ${crew.jailedUntilDay}.`, "bad");
           return crew;
         }
         function releaseServedCrew(state) {
@@ -8804,7 +8917,7 @@
             const name = person.name.split(" ")[0];
             const hash = stringHash(`${state.run.seed}:crew-release:${person.id}:${state.run.day}`);
             logEntry(state, Arrest.pickLine(Arrest.CREW_SERVED_LINES, hash).replace("%s", name), "bad");
-            pushConsequence(state, `${name} served the whole stretch. Loyalty is down to ${crew.loyalty}.`, "bad");
+            pushConsequence(state, `${name} served the whole stretch. Nobody was at the door. They clocked that.`, "bad");
           }
         }
         function arrestRecord(state) {
@@ -8843,7 +8956,7 @@
               state.flags.crewUnderpaid = true;
               if (state.run.day - crew.wageMissedSince >= Crew.CREW_WAGE_GRACE_DAYS) {
                 crew.loyalty = Crew.clampLoyalty(crew.loyalty - 1);
-                logEntry(state, `${person.name.split(" ")[0]}'s pay is short again. The patience is visibly thinner.`, "bad");
+                logEntry(state, `${person.name.split(" ")[0]} didn't say anything about the money again. That's worse.`, "bad");
               } else {
                 logEntry(state, `No cash for ${person.name.split(" ")[0]}'s wage tonight. It goes on the ledger.`, "bad");
               }
@@ -8857,8 +8970,8 @@
             for (const block of Object.values(state.world.territoryBlocks || {})) {
               if (block.managerId === person.id) block.managerId = null;
             }
-            logEntry(state, `${person.name.split(" ")[0]} is gone. No note, no argument. The unpaid ledger stays behind.`, "bad");
-            pushConsequence(state, `${person.name.split(" ")[0]} left the crew. Loyalty ran out.`, "bad");
+            logEntry(state, `${person.name.split(" ")[0]}'s number doesn't ring anymore. The people they introduced you to stop texting back.`, "bad");
+            pushConsequence(state, `${person.name.split(" ")[0]} is gone. No note, no argument. The unpaid ledger stays behind.`, "bad");
           }
         }
         function applyPressure(state, context, crossedDay) {
@@ -11073,9 +11186,9 @@
         function plugIntroductionEvent(plugId) {
           const plug = PLUG_BY_ID[plugId];
           const copy = {
-            goodie: { title: "Goodie at the Wash & Go", who: "Goodie", where: "Wash & Go, Spenard", description: "Guy outside the Wash & Go catches your eye and asks if you're looking. He's got weed, nothing crazy. Prices are mid. Take it or leave it." },
-            tasha: { title: "Goodie's Introduction", who: "Tasha", where: "Spenard", description: "Goodie sends a number. Tasha answers, quotes pills and lean, and names the most she'll move at once. Cash only. No small talk." },
-            malik: { title: "Tasha's Introduction", who: "Malik", where: "Downtown", description: "Tasha sends Malik's number. He quotes coke and molly, says he has weight, and asks what quantity you can pay for today." }
+            goodie: { title: "Goodie at the Wash & Go", who: "Goodie", where: "Wash & Go, Spenard Road", description: "Guy outside the Wash & Go on Spenard catches your eye and asks if you're looking. He's got weed, nothing crazy. Prices are mid. Take it or leave it." },
+            tasha: { title: "Goodie's Introduction", who: "Tasha", where: "Bus shelter, Spenard and Northern Lights", description: "Goodie sends a number. Tasha answers from the bus shelter at Spenard and Northern Lights, quotes pills and lean, and names the most she'll move at once. Cash only. No small talk." },
+            malik: { title: "Tasha's Introduction", who: "Malik", where: "Parking garage, 4th and Gambell", description: "Tasha sends Malik's number. He works out of the parking garage at 4th and Gambell, quotes coke and molly, says he has weight, and asks what quantity you can pay for today." }
           }[plugId];
           if (!plug || !copy) return null;
           return {
@@ -11094,7 +11207,7 @@
         const BOOST_FIRST_FRAMINGS = [
           { id: "blind_spot", title: "Blind Spot", line: (name) => `You're browsing ${name}. The camera has a blind spot by the back aisle. Pocket something or keep walking.` },
           { id: "back_turned", title: "Back Turned", line: (name) => `The clerk at ${name} is deep in a phone argument, back to the floor. Pocket something or keep walking.` },
-          { id: "propped_door", title: "Propped Door", line: (name) => `A vendor drop has ${name} in chaos \u2014 boxes stacked, door propped, nobody watching. Pocket something or keep walking.` }
+          { id: "propped_door", title: "Propped Door", line: (name) => `A vendor drop has ${name} in chaos. Boxes stacked, door propped, nobody watching. Pocket something or keep walking.` }
         ];
         function firstBoostOpportunityEvent(state) {
           var _a, _b;
@@ -11405,7 +11518,7 @@
             state.run.currentVisit.grossBuy += cost;
             addStreetReadEntry(state, "trading", `${state.world.currentNeighborhoodId}:${product.id}`);
             if (state.player.heat >= 8) addStreetReadEntry(state, "risk", `high_heat_trade:${state.world.currentNeighborhoodId}`);
-            logEntry(state, `You move ${qty} ${product.name} into the bag for $${cost}.`, "good");
+            logEntry(state, `${qty} ${product.name} in the bag. $${cost} out the other pocket. Nobody looked twice.`, "good");
             const record = plugRecord(state, plug.id);
             if (record && record.lastPurchaseDay !== state.run.day) {
               record.lastPurchaseDay = state.run.day;
@@ -11453,7 +11566,7 @@
               influenceChange(state, state.world.currentNeighborhoodId, 1);
               state.world.tradeInfluenceGranted[state.world.currentNeighborhoodId] = true;
             }
-            logEntry(state, `The buyer takes ${qty} ${product.name}. You count $${total} before leaving the block.`, profit >= 0 ? "good" : "bad");
+            logEntry(state, `${qty} ${product.name} gone. $${total} cash. Quick count, quick exit.`, profit >= 0 ? "good" : "bad");
             reconcileCash(state);
             return state;
           }
@@ -11610,7 +11723,7 @@
             const name = CREW_BY_ID[action.crewId].name.split(" ")[0];
             const hash = stringHash(`${state.run.seed}:crew-bail:${action.crewId}:${state.run.day}`);
             logEntry(state, Arrest.pickLine(Arrest.CREW_BAIL_LINES, hash).replace("%s", name), "good");
-            pushConsequence(state, `${name} is out. $${availability.cost} gone, loyalty ${crew.loyalty}.`, "warn");
+            pushConsequence(state, `${name} is out. $${availability.cost} lighter. They don't say thank you. You don't ask for one.`, "warn");
             recordBehavior(state, "connector", 1, `crew_bail:${action.crewId}:${state.run.day}`, "crew_bail");
             reconcileCash(state);
             return state;
@@ -12042,7 +12155,7 @@
             if (base.npc.mina.met) addStreetReadEntry(base, "social", "mina:visit");
             base.nightOwl.socialSessions += 1;
             growAtNightOwl(base);
-            logEntry(base, state.npc.mina.met ? "Mina sets a clean cup beside the register and waits for you to choose the conversation." : "Mina looks up from the register and gives you enough time to introduce yourself.", "");
+            logEntry(base, state.npc.mina.met ? pickMinaLine(base) : "Mina looks up from the register and gives you enough time to introduce yourself.", "");
             if (base.run.status === "playing" && !base.npc.mina.met && !base.run.pendingEvent) fireStory(base, STORY_BY_ID.mina_intro);
             return base;
           }
@@ -12299,7 +12412,7 @@
               if (arrested) {
                 arrestDetail = arrestPlayer(base, { severity: `stick${target.tier}`, source: "stick" });
                 effects.push(
-                  arrestDetail.shortfall > 0 ? `Booked \u2014 $${arrestDetail.paid} of $${arrestDetail.bail} bail, the rest served` : `Booked and released \u2014 $${arrestDetail.bail} bail`,
+                  arrestDetail.shortfall > 0 ? `Booked. $${arrestDetail.paid} of $${arrestDetail.bail} bail, the rest served` : `Booked and released. $${arrestDetail.bail} bail`,
                   `-${arrestDetail.heatRelief} Heat on the record`,
                   `Prior arrests: ${arrestDetail.priors}`
                 );
@@ -12711,7 +12824,7 @@
               const product = PRODUCTS[stringHash(`${base.run.seed}:mina-tip:${base.run.day}`) % PRODUCTS.length];
               base.effects.rumors.push({ id: `mina_${base.run.day}`, areaId: "north_star_lot", productId: product.id, reliable: true, text: `Mina passes along one reliable Spenard buyer tip for ${product.name}.`, expiresAt: slotNumber(base.run.day + 1, 0) });
             }
-            logEntry(base, "Mina keeps the conversation local, direct, and off the clock.", "good");
+            logEntry(base, pickMinaLine(base), "good");
             return base;
           }
           if (action.type === "BUY_FROM_DEALER") {
@@ -13605,7 +13718,7 @@
         const products = C.selectors.visibleMarketProducts(state);
         const compact = products.length < MARKET_TABLE_MIN;
         const detail = (product) => ({ signal: C.selectors.priceSignal(state, area.id, product.id), prices: C.selectors.tradeUnitPrices(state, product.id), owned: state.player.inventory[product.id].qty });
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Street Market", sub: `${area.name} \xB7 buy and sell freely; finishing the visit uses one part of day` }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, !compact && /* @__PURE__ */ React.createElement("div", { className: "market-grid market-head" }, /* @__PURE__ */ React.createElement("span", null, "Product"), /* @__PURE__ */ React.createElement("span", null, "Buy"), /* @__PURE__ */ React.createElement("span", null, "Signal"), /* @__PURE__ */ React.createElement("span", null, "Own")), products.map((product) => {
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Street Market", sub: state.run.currentVisit.trades > 0 ? `${area.name} \xB7 leaving advances to ${nextPartLabel(state)}` : `${area.name} \xB7 browse freely; trading and leaving uses one part of day` }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, !compact && /* @__PURE__ */ React.createElement("div", { className: "market-grid market-head" }, /* @__PURE__ */ React.createElement("span", null, "Product"), /* @__PURE__ */ React.createElement("span", null, "Buy"), /* @__PURE__ */ React.createElement("span", null, "Signal"), /* @__PURE__ */ React.createElement("span", null, "Own")), products.map((product) => {
           const { signal, prices, owned } = detail(product);
           if (compact) return /* @__PURE__ */ React.createElement("div", { key: product.id, className: `card product-card signal-${signal.id}`, role: "button", tabIndex: 0, onClick: () => onTrade(product.id), onKeyDown: (event) => event.key === "Enter" && onTrade(product.id) }, /* @__PURE__ */ React.createElement("div", { className: "product-card-head" }, /* @__PURE__ */ React.createElement("span", { className: "product-name" }, product.name), /* @__PURE__ */ React.createElement("span", { className: "product-owned" }, owned, " held")), /* @__PURE__ */ React.createElement("div", { className: "role" }, product.role, " \xB7 ", market.availability[product.id], " available"), /* @__PURE__ */ React.createElement("div", { className: "product-card-foot" }, /* @__PURE__ */ React.createElement("span", { className: "price" }, money(prices.buy)), /* @__PURE__ */ React.createElement("span", { className: "signal" }, signal.symbol, " ", signal.label)));
           return /* @__PURE__ */ React.createElement("div", { key: product.id, className: `card product market-grid signal-${signal.id}`, role: "button", tabIndex: 0, onClick: () => onTrade(product.id), onKeyDown: (event) => event.key === "Enter" && onTrade(product.id) }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { className: "product-name" }, product.name), /* @__PURE__ */ React.createElement("div", { className: "role" }, product.role, " \xB7 ", market.availability[product.id], " available")), /* @__PURE__ */ React.createElement("div", { className: "price" }, money(prices.buy)), /* @__PURE__ */ React.createElement("div", { className: "signal" }, signal.symbol, " ", signal.label), /* @__PURE__ */ React.createElement("div", { className: "own" }, owned));
@@ -13621,8 +13734,7 @@
           const hit = state.boost.dailyHits[target.id] === state.run.day;
           const discovered = state.boost.discoveredWindows.includes(target.id);
           const window2 = target.tier === 2 && discovered ? `Best window: ${C.SLOTS[target.windowSlot]}` : null;
-          const encounter = target.tier === 1 ? `You're browsing ${target.name}. The camera has a blind spot by the back aisle.` : target.tier === 2 ? `${target.name} has what you need behind minimal security. Move now or wait for a better window.` : "Pick the target, keep the crew moving, and deliver the merchandise to the fence.";
-          return /* @__PURE__ */ React.createElement("div", { className: `card boost-target${availability.available ? "" : " locked"}`, key: target.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, target.name, /* @__PURE__ */ React.createElement("small", null, "TIER ", target.tier, " \xB7 $", target.take[0], "\u2013$", target.take[1])), /* @__PURE__ */ React.createElement("p", { className: "compact" }, encounter), /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, /* @__PURE__ */ React.createElement(Outcome, { label: "Status", value: banned ? "Banned" : hit ? "Hit today" : "Ready" }), target.tier === 2 && /* @__PURE__ */ React.createElement(Outcome, { label: "Window", value: window2 || "Unknown" })), target.tier === 2 && !discovered && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", onClick: () => dispatch({ type: "ASK_BOOST_WINDOW", targetId: target.id }) }, "Ask around", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Uses one social action")), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !availability.available, onClick: () => dispatch({ type: "BOOST", targetId: target.id }) }, "Make the lift", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, availability.available ? "Uses one part of day" : availability.reason)));
+          return /* @__PURE__ */ React.createElement("div", { className: `card boost-target${availability.available ? "" : " locked"}`, key: target.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, target.name, /* @__PURE__ */ React.createElement("small", null, "TIER ", target.tier, " \xB7 $", target.take[0], "\u2013$", target.take[1])), /* @__PURE__ */ React.createElement("p", { className: "compact" }, target.desc), /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, /* @__PURE__ */ React.createElement(Outcome, { label: "Status", value: banned ? "Banned" : hit ? "Hit today" : "Ready" }), target.tier === 2 && /* @__PURE__ */ React.createElement(Outcome, { label: "Window", value: window2 || "Unknown" })), target.tier === 2 && !discovered && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", onClick: () => dispatch({ type: "ASK_BOOST_WINDOW", targetId: target.id }) }, "Ask around", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Uses one social action")), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !availability.available, onClick: () => dispatch({ type: "BOOST", targetId: target.id }) }, "Make the lift", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, availability.available ? "Uses one part of day" : availability.reason)));
         }), state.boost.tier >= 3 && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Slide Okafor", /* @__PURE__ */ React.createElement("small", null, Math.round(C.selectors.boostFenceRate(state.boost.fenceStanding) * 100), "% RATE")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "A storage unit off Tudor Road. Slide looks at what you brought, quotes a number. There is no somewhere else."), /* @__PURE__ */ React.createElement("button", { className: "btn full good-btn", disabled: !state.boost.merchandise, onClick: () => dispatch({ type: "FENCE_BOOST_GOODS" }) }, "Sell $", state.boost.merchandise, " merchandise", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Standing ", state.boost.fenceStanding, "/5 \xB7 no time cost")))));
       }
       function Destinations({ state, dispatch, onBack }) {
@@ -13680,7 +13792,7 @@
             melded: meldedIds.includes(card.id),
             onSelect: (picked) => setSelected(picked.id)
           }
-        ))), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, meldedIds.length ? `${view.spreads.length} spread${view.spreads.length === 1 ? "" : "s"}, ${view.runs.length} run${view.runs.length === 1 ? "" : "s"} laid down.` : "Nothing lays down yet. Three of a kind, or three in a row in one suit."), /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, /* @__PURE__ */ React.createElement("button", { className: `btn ${draw === "stock" ? "primary" : "secondary"}`, onClick: () => setDraw("stock") }, "Draw from stock", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, view.stockLeft, " left")), /* @__PURE__ */ React.createElement("button", { className: `btn ${draw === "discard" ? "primary" : "secondary"}`, disabled: !view.discardTop, onClick: () => setDraw("discard") }, "Take the discard", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, view.discardTop ? `${view.discardTop.rank}${SUIT_GLYPH[view.discardTop.suit]} showing` : "Nothing showing"))), /* @__PURE__ */ React.createElement("div", { className: "detail-list" }, view.opponents.map((opponent) => /* @__PURE__ */ React.createElement("span", { key: opponent.seat }, /* @__PURE__ */ React.createElement("b", null, "Seat ", opponent.seat), " \u2014 ", opponent.label, opponent.hesitates ? /* @__PURE__ */ React.createElement("em", { className: "warn" }, " hesitates before drawing.") : "", opponent.estimate ? /* @__PURE__ */ React.createElement("em", { className: "muted" }, " ", opponent.estimate, ".") : ""))), !view.vision.tells && /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "They give you nothing. Reading a table is a Charisma skill and yours is not there yet."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !canPlay, onClick: () => {
+        ))), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, meldedIds.length ? `${view.spreads.length} spread${view.spreads.length === 1 ? "" : "s"}, ${view.runs.length} run${view.runs.length === 1 ? "" : "s"} laid down.` : "Nothing lays down yet. Three of a kind, or three in a row in one suit."), /* @__PURE__ */ React.createElement("div", { className: "btn-row" }, /* @__PURE__ */ React.createElement("button", { className: `btn ${draw === "stock" ? "primary" : "secondary"}`, onClick: () => setDraw("stock") }, "Draw from stock", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, view.stockLeft, " left")), /* @__PURE__ */ React.createElement("button", { className: `btn ${draw === "discard" ? "primary" : "secondary"}`, disabled: !view.discardTop, onClick: () => setDraw("discard") }, "Take the discard", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, view.discardTop ? `${view.discardTop.rank}${SUIT_GLYPH[view.discardTop.suit]} showing` : "Nothing showing"))), /* @__PURE__ */ React.createElement("div", { className: "detail-list" }, view.opponents.map((opponent) => /* @__PURE__ */ React.createElement("span", { key: opponent.seat }, /* @__PURE__ */ React.createElement("b", null, "Seat ", opponent.seat), " \xB7 ", opponent.label, opponent.hesitates ? /* @__PURE__ */ React.createElement("em", { className: "warn" }, " hesitates before drawing.") : "", opponent.estimate ? /* @__PURE__ */ React.createElement("em", { className: "muted" }, " ", opponent.estimate, ".") : ""))), !view.vision.tells && /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "They give you nothing. Reading a table is a Charisma skill and yours is not there yet."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !canPlay, onClick: () => {
           dispatch({ type: "NILE_TONK_TURN", draw, discardId: selected });
           setSelected(null);
         } }, canPlay ? "Draw and discard" : "Pick a card to discard", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, canPlay ? "Then the table answers" : "Tap a card above")), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", onClick: () => dispatch({ type: "NILE_TONK_DROP" }) }, "Drop with ", view.value, /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Lowest hand takes the pot. Wrong and you pay double.")));
@@ -13815,7 +13927,13 @@
         const coffeeAccess = C.selectors.districtActionAvailability(state, "night_owl_coffee");
         const regularAccess = C.selectors.districtActionAvailability(state, "night_owl_regular");
         const visitAccess = C.selectors.districtActionAvailability(state, "night_owl_visit");
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Night Owl", sub: "Coffee, a community board, and people who keep late hours", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Coffee", /* @__PURE__ */ React.createElement("small", null, "$4")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "A hot cup is immediate and restores one point of the reserve that keeps you moving."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !coffeeAccess.available, onClick: () => dispatch({ type: "BUY_COFFEE" }) }, "Buy coffee \xB7 $4", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, coffeeAccess.available ? "Free \xB7 restores reserve" : coffeeAccess.reason))), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Community board", /* @__PURE__ */ React.createElement("small", null, viewed ? "VIEWED TODAY" : "FREE DAILY")), viewed ? /* @__PURE__ */ React.createElement("div", { className: "detail-list" }, board.map((entry) => /* @__PURE__ */ React.createElement("span", { key: entry.id }, /* @__PURE__ */ React.createElement("b", null, entry.title, ":"), " ", entry.body))) : /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Three postings rotate each day. Reading them costs no time."), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !boardAccess.available, onClick: () => dispatch({ type: "VIEW_NIGHT_OWL_BOARD" }) }, viewed ? "Read today's postings" : "Check the board", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, boardAccess.available ? "Free \xB7 no time passes" : boardAccess.reason)), viewed && board.some((entry) => entry.id === "laptop") && !state.inventory.laptop && /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: state.player.cash < 250, onClick: () => dispatch({ type: "BUY_LAPTOP" }) }, "Buy used laptop \xB7 $250", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Adds five daily Home listings"))), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, present.name, /* @__PURE__ */ React.createElement("small", null, present.role.toUpperCase())), /* @__PURE__ */ React.createElement("p", { className: "compact" }, present.hint), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "Relationship ", regular.relationship, " \xB7 ", regular.met ? "Met" : "New face"), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !regularAccess.available || regular.lastTalkDay === state.run.day, onClick: () => dispatch({ type: "TALK_NIGHT_OWL_REGULAR", regularId: present.id }) }, "Talk with ", present.name.split(" ")[0], /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, !regularAccess.available ? regularAccess.reason : regular.lastTalkDay === state.run.day ? "Already talked today" : "One part of day"))), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Mina Vale", /* @__PURE__ */ React.createElement("small", null, state.npc.mina.met ? state.npc.mina.status.toUpperCase() : "AT THE REGISTER")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, state.npc.mina.met ? "Mina remembers the tone of your first conversation." : "The clerk watches the counter and lets new customers decide how to begin."), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !visitAccess.available, onClick: () => dispatch({ type: "VISIT_NIGHT_OWL" }) }, state.npc.mina.met ? "Talk with Mina" : "Introduce yourself", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, visitAccess.available ? "One part of day" : visitAccess.reason))), nightJob && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Night Owl job", /* @__PURE__ */ React.createElement("small", null, "RANK ", state.jobs.records.night_owl.rank)), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "The counter shift, Rank 2 stash, and Rank 3 Deshawn vouch remain part of the job track.")), /* @__PURE__ */ React.createElement(NightOwlStash, { state, dispatch })));
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Night Owl", sub: "Coffee, a community board, and people who keep late hours", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Coffee", /* @__PURE__ */ React.createElement("small", null, "$4")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "A hot cup is immediate and restores one point of the reserve that keeps you moving."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !coffeeAccess.available, onClick: () => dispatch({ type: "BUY_COFFEE" }) }, "Buy coffee \xB7 $4", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, coffeeAccess.available ? "Free \xB7 restores reserve" : coffeeAccess.reason))), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Community board", /* @__PURE__ */ React.createElement("small", null, viewed ? "VIEWED TODAY" : "FREE DAILY")), viewed ? /* @__PURE__ */ React.createElement("div", { className: "detail-list" }, board.map((entry) => /* @__PURE__ */ React.createElement("span", { key: entry.id }, /* @__PURE__ */ React.createElement("b", null, entry.title, ":"), " ", entry.body))) : /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Three postings rotate each day. Reading them costs no time."), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !boardAccess.available, onClick: () => dispatch({ type: "VIEW_NIGHT_OWL_BOARD" }) }, viewed ? "Read today's postings" : "Check the board", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, boardAccess.available ? "Free \xB7 no time passes" : boardAccess.reason)), viewed && board.some((entry) => entry.id === "laptop") && !state.inventory.laptop && /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: state.player.cash < 250, onClick: () => dispatch({ type: "BUY_LAPTOP" }) }, "Buy used laptop \xB7 $250", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Adds five daily Home listings"))), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, present.name, /* @__PURE__ */ React.createElement("small", null, present.role.toUpperCase())), /* @__PURE__ */ React.createElement("p", { className: "compact" }, present.hint), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "Relationship ", regular.relationship, " \xB7 ", regular.met ? "Met" : "New face"), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !regularAccess.available || regular.lastTalkDay === state.run.day, onClick: () => dispatch({ type: "TALK_NIGHT_OWL_REGULAR", regularId: present.id }) }, "Talk with ", present.name.split(" ")[0], /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, !regularAccess.available ? regularAccess.reason : regular.lastTalkDay === state.run.day ? "Already talked today" : "One part of day"))), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Mina Vale", /* @__PURE__ */ React.createElement("small", null, state.npc.mina.met ? state.npc.mina.status.toUpperCase() : "AT THE REGISTER")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, state.npc.mina.met ? {
+          committed: "The guard comes down in moments now. The corner table is somehow always clear when you need it.",
+          trusted: "She talks past the register with you these days. The counter stopped being a wall.",
+          cautious: "She remembers your order and the tone of your first conversation. She is still deciding.",
+          compromised: "She serves you exact and polite. Whatever was building here, you spent some of it.",
+          gone: "A new clerk works the counter now. Nobody at the Night Owl says the name you knew."
+        }[state.npc.mina.status] || "Polite, exact, impersonal. The register stays between you." : "The clerk watches the counter and lets new customers decide how to begin."), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !visitAccess.available, onClick: () => dispatch({ type: "VISIT_NIGHT_OWL" }) }, state.npc.mina.met ? "Talk with Mina" : "Introduce yourself", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, visitAccess.available ? "One part of day" : visitAccess.reason))), nightJob && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Night Owl job", /* @__PURE__ */ React.createElement("small", null, "RANK ", state.jobs.records.night_owl.rank)), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "The counter shift, Rank 2 stash, and Rank 3 Deshawn vouch remain part of the job track.")), /* @__PURE__ */ React.createElement(NightOwlStash, { state, dispatch })));
       }
       function ReturnToSpenardActions({ state, dispatch }) {
         if (state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID) return null;
@@ -14008,8 +14126,8 @@
           const availability = C.selectors.stickTargetAvailability(state, target.id);
           const cased = C.selectors.stickCasing(state, target.id);
           const canCase = target.tier >= 2 && (!cased || cased.timesObserved < 2);
-          return /* @__PURE__ */ React.createElement("div", { className: `card boost-target${availability.available ? "" : " locked"}`, key: target.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, target.name, /* @__PURE__ */ React.createElement("small", null, "TIER ", target.tier, " \xB7 ", target.tier === 1 || cased ? `$${target.take[0]}\u2013$${target.take[1]}` : "CASE TO PRICE")), /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, target.slots && /* @__PURE__ */ React.createElement(Outcome, { label: "Window", value: target.slots.map((slot) => C.SLOTS[slot]).join(" / ") }), target.tier >= 2 && /* @__PURE__ */ React.createElement(Outcome, { label: "Cased", value: `${Math.min(2, (cased == null ? void 0 : cased.timesObserved) || 0)}/2` })), canCase && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", onClick: () => dispatch({ type: "CASE_TARGET", targetId: target.id }) }, "Case the target", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Uses one part of day \xB7 prices the take, sharpens the job")), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !availability.available, onClick: () => dispatch({ type: "STICKUP", targetId: target.id }) }, "Run it", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, availability.available ? "Uses one part of day" : availability.reason)));
-        }), tier >= 2 && /* @__PURE__ */ React.createElement("p", { className: "compact muted" }, "Goodie is a walking Tier 2 target. His corner works the same ladder \u2014 find him through Street \u2192 People."), /* @__PURE__ */ React.createElement("div", { className: "card debt-card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Service-road envelope", /* @__PURE__ */ React.createElement("small", null, "Once each day \xB7 one part of day")), /* @__PURE__ */ React.createElement("p", null, "Take a direct cash risk. Weapons, Combat, Intelligence, crew, and Heat affect the approach. Repeated attempts raise exposure and injury risk; legal work remains the safer long-term plan."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !score.available, onClick: () => dispatch({ type: "ROB" }) }, "Attempt today's Rob", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, score.available ? `${score.chanceLabel} estimated success \xB7 uses one part of day` : score.reason)))));
+          return /* @__PURE__ */ React.createElement("div", { className: `card boost-target${availability.available ? "" : " locked"}`, key: target.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, target.name, /* @__PURE__ */ React.createElement("small", null, "TIER ", target.tier, " \xB7 ", target.tier === 1 || cased ? `$${target.take[0]}\u2013$${target.take[1]}` : "CASE TO PRICE")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, target.desc), /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, target.slots && /* @__PURE__ */ React.createElement(Outcome, { label: "Window", value: target.slots.map((slot) => C.SLOTS[slot]).join(" / ") }), target.tier >= 2 && /* @__PURE__ */ React.createElement(Outcome, { label: "Cased", value: `${Math.min(2, (cased == null ? void 0 : cased.timesObserved) || 0)}/2` })), canCase && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", onClick: () => dispatch({ type: "CASE_TARGET", targetId: target.id }) }, "Case the target", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Uses one part of day \xB7 prices the take, sharpens the job")), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !availability.available, onClick: () => dispatch({ type: "STICKUP", targetId: target.id }) }, "Run it", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, availability.available ? "Uses one part of day" : availability.reason)));
+        }), tier >= 2 && /* @__PURE__ */ React.createElement("p", { className: "compact muted" }, "Goodie is a walking Tier 2 target. His corner works the same ladder. Find him through Street \u2192 People."), /* @__PURE__ */ React.createElement("div", { className: "card debt-card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Service-road envelope", /* @__PURE__ */ React.createElement("small", null, "Once each day \xB7 one part of day")), /* @__PURE__ */ React.createElement("p", null, "Take a direct cash risk. Weapons, Combat, Intelligence, crew, and Heat affect the approach. Repeated attempts raise exposure and injury risk; legal work remains the safer long-term plan."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !score.available, onClick: () => dispatch({ type: "ROB" }) }, "Attempt today's Rob", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, score.available ? `${score.chanceLabel} estimated success \xB7 uses one part of day` : score.reason)))));
       }
       function Gear({ state, dispatch, onBack }) {
         return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Gear", sub: "Weapons, armor, tools, utility, and consumables", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, !state.base.visiting && /* @__PURE__ */ React.createElement("p", { className: "warn" }, "Visit North Star Garage in Safehouse before buying gear."), C.GEAR.map((gear) => {
@@ -14151,7 +14269,7 @@
         return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Recovery", sub: "Essential care first; larger options appear when the damage justifies them", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Health", /* @__PURE__ */ React.createElement("small", null, state.player.health, "/100")), /* @__PURE__ */ React.createElement("div", { className: "meter" }, /* @__PURE__ */ React.createElement("span", { style: { width: `${state.player.health}%`, background: state.player.health < 40 ? "var(--red)" : "var(--green)" } }))), /* @__PURE__ */ React.createElement("div", { className: "card inventory-row" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "First aid"), /* @__PURE__ */ React.createElement("div", { className: "muted" }, "Immediate care \xB7 restore up to 18 Health")), /* @__PURE__ */ React.createElement("button", { className: "btn good-btn", disabled: state.player.cash < firstAidCost || state.player.health >= 100, onClick: () => dispatch({ type: "USE_FIRST_AID", amount: 18, cost: firstAidCost }) }, money(firstAidCost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free \xB7 no time passes"))), state.player.health <= 82 && treatment(40, 135, "Clinic visit", "Larger treatment for a serious injury"), state.player.health <= 55 && (doctorOpen ? treatment(75, 290, "No-Questions Doctor", "Private care unlocked through trust or Safehouse recovery") : /* @__PURE__ */ React.createElement("div", { className: "card locked" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Private medical contact", /* @__PURE__ */ React.createElement("small", null, "Locked")), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "Build a trusted medical relationship or install the Safe Room recovery upgrade."))), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Lay Low", /* @__PURE__ */ React.createElement("small", null, "Next part of day")), /* @__PURE__ */ React.createElement("p", null, "Expected immediate result: lower Heat by ", layLow.heatReduction, ". Debt, wages, markets, and Curtis continue moving while the lights are off."), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", onClick: () => dispatch({ type: "LAY_LOW" }) }, "Lay Low", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Lowers Heat and advances time")))));
       }
       function Help({ onBack, marketVisible }) {
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "How to Play", sub: "The four-part rhythm of One Good Run", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Your run"), /* @__PURE__ */ React.createElement("p", null, "Each day contains Morning, Afternoon, Evening, and Night. Week Zero establishes your life in Spenard. A later approach sets the checkpoint.")), marketVisible && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Market visits"), /* @__PURE__ */ React.createElement("p", null, "Buy and sell several times at locked prices. Trading does not advance time until you close the visit.")), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Major actions"), /* @__PURE__ */ React.createElement("p", null, "Travel, recovery, meetings, debt payments, and operations advance to the next part of day. Resolve an event choice without paying a second time cost.")), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "The pressure phase"), /* @__PURE__ */ React.createElement("p", null, "Protect working capital, manage Heat and Health, build relationships, and decide whether territory or a clean exit is worth the risk."))));
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "How to Play", sub: "The four-part rhythm of One Good Run", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Your run"), /* @__PURE__ */ React.createElement("p", null, "Each day contains Morning, Afternoon, Evening, and Night. Week Zero establishes your life in Spenard. A later approach sets the checkpoint.")), marketVisible && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Market visits"), /* @__PURE__ */ React.createElement("p", null, "Buy and sell several times at locked prices. Walking away after a trade uses one part of day. Looking costs nothing.")), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Major actions"), /* @__PURE__ */ React.createElement("p", null, "Travel, recovery, meetings, debt payments, and operations advance to the next part of day. Resolve an event choice without paying a second time cost.")), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "The pressure phase"), /* @__PURE__ */ React.createElement("p", null, "Protect working capital, manage Heat and Health, build relationships, and decide whether territory or a clean exit is worth the risk."))));
       }
       function Character({ state, onBack }) {
         var _a;
@@ -14212,7 +14330,7 @@
           const daysLeft = state.lender.dueDay - day;
           rows.push({
             id: "debt",
-            name: "Dre \u2014 debt",
+            name: "Debt to Dre",
             amount: state.lender.balance,
             where: "Pay in Finances",
             due: `Day ${state.lender.dueDay}`,
@@ -14509,6 +14627,7 @@
         const tonkStage = tonkLive && tonkFullscreen;
         function navigate(nextTab, more = "root", sub = null, street = "root") {
           var _a, _b, _c;
+          closeMarketIfTraded((nextTab === "street" || nextTab === "hustle") && street === "market");
           const apply = () => {
             setNav((prev) => ({ tab: nextTab, more, sub, token: prev.token + 1 }));
             if (nextTab === "street") setStreetPage(street);
@@ -14529,6 +14648,18 @@
         }
         const setTab = (nextTab) => navigate(nextTab);
         const setMorePage = (page) => setNav((prev) => ({ ...prev, more: page, sub: null }));
+        const marketOpen = tab === "hustle" && hustlePage === "market" || tab === "street" && streetPage === "market";
+        function closeMarketIfTraded(nextIsMarket) {
+          if (marketOpen && !nextIsMarket && state.run.currentVisit.trades > 0) act({ type: "END_MARKET" });
+        }
+        const setStreetPageSafe = (page) => {
+          if (tab === "street") closeMarketIfTraded(page === "market");
+          setStreetPage(page);
+        };
+        const setHustlePageSafe = (page) => {
+          if (tab === "hustle") closeMarketIfTraded(page === "market");
+          setHustlePage(page);
+        };
         function act(action) {
           pending.current = { type: action.type, before: state };
           dispatch(action);
@@ -14552,12 +14683,12 @@
         const navigateMore = () => navigate("more", "finances", "debt");
         const screens = {
           home: /* @__PURE__ */ React.createElement(Home, { state, dispatch: act, navigate }),
-          street: /* @__PURE__ */ React.createElement(StreetScreen, { state, dispatch: act, page: streetPage, setPage: setStreetPage, onTrade: setTrade }),
-          hustle: /* @__PURE__ */ React.createElement(HustleScreen, { state, dispatch: act, page: hustlePage, setPage: setHustlePage, onTrade: setTrade }),
+          street: /* @__PURE__ */ React.createElement(StreetScreen, { state, dispatch: act, page: streetPage, setPage: setStreetPageSafe, onTrade: setTrade }),
+          hustle: /* @__PURE__ */ React.createElement(HustleScreen, { state, dispatch: act, page: hustlePage, setPage: setHustlePageSafe, onTrade: setTrade }),
           phone: /* @__PURE__ */ React.createElement(PhoneScreen, { state, dispatch: act, openList: () => navigate("more", "907list"), navigateMore }),
           more: /* @__PURE__ */ React.createElement(More, { state, dispatch: act, features, page: nav.more, setPage: setMorePage, sub: nav.sub, subToken: nav.token })
         };
-        return /* @__PURE__ */ React.createElement("div", { className: `app${tonkStage ? " tonk-fullscreen" : ""}` }, /* @__PURE__ */ React.createElement(Header, { state, onMenu: () => setMenu(true) }), /* @__PURE__ */ React.createElement("main", { className: "main" }, tonkStage ? /* @__PURE__ */ React.createElement(TonkStage, { state, dispatch: act, onBack: () => setTonkFullscreen(false), onQuit: () => setConfirmQuitTonk(true) }) : screens[tab]), /* @__PURE__ */ React.createElement("div", { className: "dock" }, /* @__PURE__ */ React.createElement(AmbientTicker, { state }), /* @__PURE__ */ React.createElement(Feed, { entries: state.log }), tonkLive && !tonkFullscreen && /* @__PURE__ */ React.createElement("div", { className: "action-bar one" }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: () => setTonkFullscreen(true) }, "Back to the table", /* @__PURE__ */ React.createElement("small", null, "Your hand is still live upstairs at The Nile"))), (tab === "hustle" && hustlePage === "market" || tab === "street" && streetPage === "market") && /* @__PURE__ */ React.createElement("div", { className: "action-bar one" }, /* @__PURE__ */ React.createElement("button", { className: "btn primary", onClick: () => act({ type: "END_MARKET" }) }, "Leave Market \xB7 advance to ", nextPartLabel(state), /* @__PURE__ */ React.createElement("small", null, "Ends your market visit"))), state.run.overtimeArmed && /* @__PURE__ */ React.createElement("div", { className: "action-bar one" }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: () => act({ type: "CONFIRM_END_DAY" }) }, "End Day Now", /* @__PURE__ */ React.createElement("small", null, "Cancel the armed extension and process tonight"))), /* @__PURE__ */ React.createElement(Navigation, { tab, setTab, hustleVisible: state.hustle.visible, phoneBadge: state.phone.active ? state.phone.inbox.length : 0 })), /* @__PURE__ */ React.createElement("div", { className: "fx-overlay", "aria-hidden": "true" }), /* @__PURE__ */ React.createElement(ExposureDebug, { state }), confirmQuitTonk && /* @__PURE__ */ React.createElement(ConfirmPrompt, { title: "Quit the hand?", text: "Quitting drops with the hand you are holding. Lowest at the table takes the pot; anything less and you pay double.", confirmLabel: "Drop and quit", onConfirm: () => {
+        return /* @__PURE__ */ React.createElement("div", { className: `app${tonkStage ? " tonk-fullscreen" : ""}` }, /* @__PURE__ */ React.createElement(Header, { state, onMenu: () => setMenu(true) }), /* @__PURE__ */ React.createElement("main", { className: "main" }, tonkStage ? /* @__PURE__ */ React.createElement(TonkStage, { state, dispatch: act, onBack: () => setTonkFullscreen(false), onQuit: () => setConfirmQuitTonk(true) }) : screens[tab]), /* @__PURE__ */ React.createElement("div", { className: "dock" }, /* @__PURE__ */ React.createElement(AmbientTicker, { state }), /* @__PURE__ */ React.createElement(Feed, { entries: state.log }), tonkLive && !tonkFullscreen && /* @__PURE__ */ React.createElement("div", { className: "action-bar one" }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: () => setTonkFullscreen(true) }, "Back to the table", /* @__PURE__ */ React.createElement("small", null, "Your hand is still live upstairs at The Nile"))), state.run.overtimeArmed && /* @__PURE__ */ React.createElement("div", { className: "action-bar one" }, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: () => act({ type: "CONFIRM_END_DAY" }) }, "End Day Now", /* @__PURE__ */ React.createElement("small", null, "Cancel the armed extension and process tonight"))), /* @__PURE__ */ React.createElement(Navigation, { tab, setTab, hustleVisible: state.hustle.visible, phoneBadge: state.phone.active ? state.phone.inbox.length : 0 })), /* @__PURE__ */ React.createElement("div", { className: "fx-overlay", "aria-hidden": "true" }), /* @__PURE__ */ React.createElement(ExposureDebug, { state }), confirmQuitTonk && /* @__PURE__ */ React.createElement(ConfirmPrompt, { title: "Quit the hand?", text: "Quitting drops with the hand you are holding. Lowest at the table takes the pot; anything less and you pay double.", confirmLabel: "Drop and quit", onConfirm: () => {
           setConfirmQuitTonk(false);
           act({ type: "NILE_TONK_DROP" });
         }, onCancel: () => setConfirmQuitTonk(false) }), trade && /* @__PURE__ */ React.createElement(TradeModal, { state, productId: trade, dispatch: act, onClose: () => setTrade(null) }), menu && /* @__PURE__ */ React.createElement(MenuModal, { state, dispatch, onClose: () => setMenu(false), onTitle }), state.run.openingPending && /* @__PURE__ */ React.createElement(OpeningModal, { dispatch: act }), state.run.pendingEncounter && /* @__PURE__ */ React.createElement(EncounterModal, { state, dispatch: act }), !state.run.pendingEncounter && state.run.pendingOperationResult && /* @__PURE__ */ React.createElement(OperationResultModal, { result: state.run.pendingOperationResult, dispatch: act }), !state.run.pendingEncounter && !state.run.pendingOperationResult && state.run.pendingEvent && /* @__PURE__ */ React.createElement(EventModal, { event: state.run.pendingEvent, dispatch: act }), !state.run.pendingEncounter && !state.run.pendingOperationResult && !state.run.pendingEvent && state.run.dayEndPending && state.run.status === "playing" && /* @__PURE__ */ React.createElement(EndDayModal, { state, dispatch: act }), state.run.status === "ended" && /* @__PURE__ */ React.createElement(EndModal, { state, onTitle }), result && !state.run.dayEndPending && !state.run.pendingEvent && !state.run.pendingEncounter && /* @__PURE__ */ React.createElement(ActionResultOverlay, { result, onDismiss: () => setResult(null) }), state.run.pendingUnlocks[0] && !result && !state.run.openingPending && !state.run.pendingEvent && !state.run.pendingEncounter && !state.run.pendingOperationResult && !state.run.dayEndPending && state.run.status === "playing" && /* @__PURE__ */ React.createElement(TabUnlockedOverlay, { unlock: state.run.pendingUnlocks[0], onDismiss: () => dispatch({ type: "DISMISS_TAB_UNLOCK" }) }), /* @__PURE__ */ React.createElement(ConsequencePopup, { items: state.run.consequenceQueue || [], onDismiss: (id) => dispatch({ type: "DISMISS_CONSEQUENCE", id }) }));

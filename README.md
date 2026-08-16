@@ -2,11 +2,65 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-The current playable build is **v1.16: Caught & Consequences**, on top of
-**v1.15: Crew System, Curtis Ambient Pressure & Deshawn Tier 1**.
+The current playable build is **v1.17: Voice & Copy Polish**, on top of
+**v1.16: Caught & Consequences**.
 
 New here? Read [ARCHITECTURE.md](ARCHITECTURE.md) — file map, state shape, event
 card schema, and the rules a change has to hold to.
+
+## What changed in v1.17
+
+**The game stops reading like a system log and starts sounding like Spenard.**
+Every player-facing line that reported a mechanic — the market receipt, the
+crew wage warning, the bail popup — now communicates the same information
+through physicality, place, and character. Save schema **stays at 11**
+(`907ogr_v11`): the only new field is `nightOwl.recentMinaLines`, additive, so
+`mergeDefaults` hands it to v3–v11 saves with no migration pass. **Both
+simulation hashes are unchanged on purpose** — the reducer was not touched;
+see Verification.
+
+- **The Leave Market button is gone.** It read as a mandatory step and was
+  really a time-cost gate. Leaving the Market is now the close: the shell fires
+  the same `END_MARKET` dispatch on the way out, and only when the visit
+  recorded a buy or sell (`run.currentVisit.trades > 0`, the counter that
+  already existed). Window shopping costs nothing. The reducer still advances
+  time on a bare `END_MARKET` — the simulation harness and a decade of tests
+  use it as "stay put and advance," so the gate lives in the shell where the
+  button lived.
+- **Consequence cards got their severity stripes back.** `v05.css` had
+  referenced `--text`, `--good`, `--warn`, and `--bad` since v1.11 without ever
+  defining them, so every card rendered without its tone accent. A v1.17
+  `:root` layer defines the four as aliases of the base palette.
+- **Voice pass on the system feed.** Arrest banks gain the plastic-bench
+  booking line and the 6 AM release; crew events speak in behavior (the number
+  that stops ringing, the silence about money) instead of stat receipts; the
+  market feed reads as the player's own count. Event-card previews keep numeric
+  tags only for HUD-visible cash, Health, and Heat — hidden relationship state
+  (Mina, Dre, Curtis) previews in-world. No em dashes in player-facing prose.
+- **Mina Vale has a conversation tree.** `src/data/mina.js` carries dialogue
+  pools per disposition band (Neutral through Bonded; Cold and Hostile clamp up
+  to her formal transactional register), split by shift — the Evening on-shift
+  voice and the Night comfort-zone voice, since the Night Owl keeps
+  Evening/Night hours — plus state-reactive pools for a player who arrives
+  recently arrested, hurt, or flush. Lines rotate with a three-visit no-repeat
+  window (`nightOwl.recentMinaLines`, the watcher-pool pattern). Her trust,
+  exposure, and story cards are untouched.
+- **The criminal economy speaks Anchorage.** Boost targets are the Spenard
+  Chevron, Rebel Convenience on 4th, Holiday on C Street, Denali Express,
+  Northern Lights Pharmacy, Arctic Cash & Carry, and Ship Creek Yards, each
+  with a one-line read of the place; stick targets get the same identity (the
+  stumbler outside Koots, the Wash & Go regular); plug introductions name their
+  corners (the bus shelter at Spenard and Northern Lights, the parking garage
+  at 4th and Gambell). Ids, tiers, takes, and windows are untouched.
+
+**Balance: none.** No probabilities, outcome pools, growth rates, or NPC lens
+weights moved. The only behavior change is where the Market's time cost fires,
+and that path was always UI-dispatched.
+
+**Out of scope, on purpose:** the new plugs (Nell, Yuri), Mina's romance-arc
+mechanics (only her dialogue voice ships here), territory changes, and the
+numeric labels on the crew roster and Status screens — those stay
+numeric-on-demand per the mechanical-labels design-debt task.
 
 ## What changed in v1.16
 
@@ -720,16 +774,20 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 ## Verification
 
-- Node tests: **588 passing** (565 through v1.15, 23 new in `tests/v1-16.test.js`)
+- Node tests: **601 passing** (588 through v1.16, 13 new in `tests/v1-17.test.js`)
 - Deterministic simulations: **2,000 runs, zero crashes or dead ends**
 - Simulation SHA-256: `5fefb813fc0a73e5d83271fbf0c1a50636b7a2842153728f9eb8b4ee36455e6f`
   (`--total 2000`) and
   `c828c00e7a5b6e0e0af740ca4f4f91a17fd16dcf8cc180265a629d1f07e07d08`
-  (`--total 200`). **Both moved at v1.16 on purpose**: every Stick tier routes
+  (`--total 200`). **Both moved at v1.16 on purpose** (every Stick tier routes
   through `arrestPlayer`, and a failed boost opens the fight/run/surrender scene
-  instead of auto-resolving. The simulator reports `arrests` and
-  `crewJailedAtEnd` so the new paths are measurable rather than inferred. The
-  v1.15 baselines were `01c618d5…` / `9f471dec…`.
+  instead of auto-resolving; the v1.15 baselines were `01c618d5…` /
+  `9f471dec…`) and **stayed byte-identical at v1.17, verified**: the Market
+  close moved from a button to the shell's nav-away hook, but the reducer's
+  `END_MARKET` is untouched and the simulator drives the reducer directly. The
+  build prompt predicted a hash change; that prediction assumed a reducer-side
+  gate, which would have dead-ended every simulation strategy that uses bare
+  `END_MARKET` as "stay put and advance."
 - Build: `npm run build` completes in ~30ms with no circular imports
 - Title art over the wire: 68KB at 375px, 145KB at 1280px, down from 1,976KB
 - Viewports: 320×568, 360×640, 375×812, 414×896, 640×480, 768×1024, 834×1112,

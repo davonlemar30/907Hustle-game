@@ -564,7 +564,7 @@ Two invariants worth naming:
 ## Testing
 
 ```bash
-npm test                              # 437 tests
+npm test                              # 601 tests
 node tests/simulate-runs.js --total 200
 node tests/simulate-runs.js --total 2000   # slower, for balance work
 ```
@@ -579,12 +579,16 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 Compare after. A matching hash proves you changed nothing the player can see.
 
-**v1.16 baselines.** The arrest build rewrites two failure paths — every Stick
-tier now routes through `arrestPlayer`, and a blown boost opens a
-fight/run/surrender scene instead of auto-resolving — so both hashes move on
-purpose. Check the per-strategy metric blocks when a hash moves; the simulator
-reports `arrests` and `crewJailedAtEnd` for exactly that. These replace the
-v1.15 hashes of `01c618d5…` / `9f471dec…`:
+**v1.16 baselines, unchanged at v1.17.** The arrest build rewrote two failure
+paths — every Stick tier routes through `arrestPlayer`, and a blown boost opens
+a fight/run/surrender scene instead of auto-resolving — so both hashes moved on
+purpose at v1.16, replacing the v1.15 hashes of `01c618d5…` / `9f471dec…`.
+v1.17 (the copy pass and the Market button removal) left both hashes
+byte-identical, verified: the Market close moved from a dock button to the
+shell's nav-away hook, but the reducer's `END_MARKET` behavior is exactly what
+it was — the simulator dispatches actions directly and never saw a difference.
+Check the per-strategy metric blocks when a hash moves; the simulator reports
+`arrests` and `crewJailedAtEnd` for exactly that.
 
 | Run | SHA-256 |
 |---|---|

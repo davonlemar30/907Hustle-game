@@ -17,6 +17,7 @@
   const AttributeData = require("./src/data/attributes.js");
   const Attributes = require("./src/systems/attributes.js");
   const Nile = require("./src/data/nile.js");
+  const Mina = require("./src/data/mina.js");
   const Gambling = require("./src/data/gambling.js");
   const GamblingEvents = require("./src/events/gambling-events.js");
   const Crew = require("./src/data/crew.js");
@@ -249,19 +250,23 @@
 
 
 
+  // v1.17: every boost target carries an Anchorage name and a one-line read of
+  // the place (rendered on the Boost screen). Ids never change - tests and
+  // saved runs look targets up by id, and the take/tier/window numbers are the
+  // balance, which this pass does not touch.
   const BOOST_TARGETS = [
-    { id: "night_owl", name: "Night Owl Mini-Mart", areaId: "north_star_lot", tier: 1, take: [15, 40] },
-    { id: "spenard_fuel", name: "Spenard Fuel", areaId: "north_star_lot", tier: 1, take: [15, 40] },
-    { id: "fourth_ave_market", name: "Fourth Avenue Market", areaId: "downtown", tier: 1, take: [15, 40] },
-    { id: "downtown_fuel", name: "Downtown Fuel", areaId: "downtown", tier: 1, take: [15, 40] },
-    { id: "service_stop", name: "Service Road Stop", areaId: "airport_industrial", tier: 1, take: [15, 40] },
-    { id: "airport_fuel", name: "Airport Fuel", areaId: "airport_industrial", tier: 1, take: [15, 40] },
-    { id: "northern_value", name: "Northern Value", areaId: "north_star_lot", tier: 2, take: [60, 150], windowSlot: 1 },
-    { id: "midtown_pharmacy", name: "Midtown Pharmacy", areaId: "north_star_lot", tier: 2, take: [60, 150], windowSlot: 2 },
-    { id: "fourth_ave_electronics", name: "Fourth Avenue Electronics", areaId: "downtown", tier: 2, take: [60, 150], windowSlot: 3 },
-    { id: "warehouse_club", name: "Warehouse Club", areaId: "north_star_lot", tier: 3, take: [200, 500] },
-    { id: "loading_dock_seven", name: "Loading Dock Seven", areaId: "airport_industrial", tier: 3, take: [200, 500] },
-    { id: "delivery_route_4", name: "Delivery Route 4", areaId: "downtown", tier: 3, take: [200, 500] },
+    { id: "night_owl", name: "Night Owl Mini-Mart", areaId: "north_star_lot", tier: 1, take: [15, 40], desc: "The counter you already know. The camera by the back aisle has a blind spot everyone in Spenard learned first." },
+    { id: "spenard_fuel", name: "Spenard Chevron", areaId: "north_star_lot", tier: 1, take: [15, 40], desc: "Two pumps and a cooler aisle on Spenard Road. The clerk watches the lot, never the shelves." },
+    { id: "fourth_ave_market", name: "Rebel Convenience on 4th", areaId: "downtown", tier: 1, take: [15, 40], desc: "Chips, chargers, single cans. One camera, aimed at the register, exactly like the sticker on the door promises." },
+    { id: "downtown_fuel", name: "Holiday on C Street", areaId: "downtown", tier: 1, take: [15, 40], desc: "Downtown gas at downtown prices. The snack aisle sits behind a pillar the security mirror cannot see around." },
+    { id: "service_stop", name: "Denali Express", areaId: "airport_industrial", tier: 1, take: [15, 40], desc: "A truck-stop shop off Old Seward. Everything is bolted down except what you came in for." },
+    { id: "airport_fuel", name: "Shell on International", areaId: "airport_industrial", tier: 1, take: [15, 40], desc: "Fuel for the airport runs. Half the customers are on the clock and all of them are on their phones." },
+    { id: "northern_value", name: "Northern Value", areaId: "north_star_lot", tier: 2, take: [60, 150], windowSlot: 1, desc: "The Spenard thrift barn. Racks too dense to police and tags too cheap for anyone to chase." },
+    { id: "midtown_pharmacy", name: "Northern Lights Pharmacy", areaId: "north_star_lot", tier: 2, take: [60, 150], windowSlot: 2, desc: "Strip-mall pharmacy on Northern Lights. The pickup line keeps every eye in the building pointed forward." },
+    { id: "fourth_ave_electronics", name: "Gateway Electronics on 4th", areaId: "downtown", tier: 2, take: [60, 150], windowSlot: 3, desc: "Locked cases up front, open stock in the back. The one clerk cannot be both places." },
+    { id: "warehouse_club", name: "Arctic Cash & Carry", areaId: "north_star_lot", tier: 3, take: [200, 500], desc: "Pallet aisles off Minnesota Drive. The membership desk checks cards on the way in, never boxes on the way out." },
+    { id: "loading_dock_seven", name: "Ship Creek Yards, Dock Seven", areaId: "airport_industrial", tier: 3, take: [200, 500], desc: "Container rows off Ship Creek. The manifest says more than the fence-line cameras ever will." },
+    { id: "delivery_route_4", name: "Minnesota Drive Route", areaId: "downtown", tier: 3, take: [200, 500], desc: "A box truck running the same Minnesota Drive loop every day. A schedule is a kind of key." },
   ];
   const BOOST_TARGET_BY_ID = Object.fromEntries(BOOST_TARGETS.map((target) => [target.id, target]));
 
@@ -774,6 +779,33 @@
     awareness.recentWatcherLines = [...awareness.recentWatcherLines, line].slice(-3);
     logEntry(state, line, "warn");
     pushConsequence(state, line, "warn");
+  }
+  // v1.17: Mina's counter line for this visit. Same discipline as the watcher
+  // pool above - stringHash off seed/day/slot, never the rng stream, a last-3
+  // exclusion window, and no writes beyond the rotation memory. She reads the
+  // player before the register: a recent arrest first, then an injury, then a
+  // pocket full of money; otherwise the disposition band and her shift decide
+  // the register. The Night Owl keeps Evening/Night hours, so slot 2 is the
+  // on-shift voice and slot 3 is the shop-to-herself voice.
+  function pickMinaLine(state) {
+    const day = state.run.day; const slot = state.run.slot;
+    const arrestedRecently = state.record?.lastArrestDay != null && day - state.record.lastArrestDay <= Mina.MINA_ARREST_RECENT_DAYS;
+    const statePool = arrestedRecently ? Mina.MINA_STATE_LINES.arrested
+      : state.player.health < Mina.MINA_INJURED_HEALTH ? Mina.MINA_STATE_LINES.injured
+      : state.player.cash >= Mina.MINA_FLUSH_CASH ? Mina.MINA_STATE_LINES.flush
+      : null;
+    const bands = Mina.MINA_LINES[Mina.minaBandKey(Exposure.getDispositionBand("mina", state))];
+    const pool = statePool || (slot >= 3 ? bands.late : bands.early);
+    const recent = state.nightOwl.recentMinaLines || [];
+    // A pool the size of the memory window would otherwise repeat a line seen
+    // two visits ago when it exhausts, so the fallback relaxes progressively:
+    // exclude the full window first, then just the freshest two.
+    const fresh = pool.filter((line) => !recent.includes(line));
+    const relaxed = fresh.length ? fresh : pool.filter((line) => !recent.slice(-2).includes(line));
+    const candidates = relaxed.length ? relaxed : pool;
+    const line = candidates[stringHash(`${state.run.seed}:mina-line:${day}:${slot}`) % candidates.length];
+    state.nightOwl.recentMinaLines = [...recent, line].slice(-Mina.MINA_RECENT_LIMIT);
+    return line;
   }
   function broadcastOutcome(state, actionType, tier, value) {
     const specs = AttributeData.OUTCOME_OBSERVATIONS[actionType]?.[tier] || [];
@@ -1447,6 +1479,10 @@
       onboarding: { shiftsWorked: 0, visitedLocations: ["home"], metNpcs: [], dreEligible: false },
       nightOwl: {
         boardViewedDays: [], ambientSeen: [], socialSessions: 0,
+        // v1.17: the last three Mina lines shown, so no line repeats within a
+        // three-visit window. Additive - schema stays at v11 and mergeDefaults
+        // supplies this to every old save.
+        recentMinaLines: [],
         regulars: Object.fromEntries(NIGHT_OWL_REGULARS.map((person) => [person.id, { met: false, relationship: 0, lastTalkDay: null }])),
       },
       // v1.9b: the broker track. `tier` is derived on every read by marketTier()
@@ -4335,8 +4371,8 @@
     const releaseBank = shortfall > 0 ? Arrest.RELEASE_LINES.served : Arrest.RELEASE_LINES.paid;
     pushConsequence(state, Arrest.pickLine(releaseBank, hash), "bad");
     pushConsequence(state, shortfall > 0
-      ? `Bail set at $${bail}. You covered $${paid} and served the rest. Prior arrests: ${state.record.arrests}.`
-      : `Bail $${bail} paid. Prior arrests: ${state.record.arrests}.`, "warn");
+      ? `Bail was $${bail}. You had $${paid}. The rest came out of your hours. That makes ${state.record.arrests} on the sheet.`
+      : `$${bail} to walk. The sheet says ${state.record.arrests} now, and sheets do not forget.`, "warn");
     if (relief > 0) pushConsequence(state, `${Arrest.pickLine(Arrest.HEAT_RELIEF_LINES, hash)} (-${relief} Heat)`, "");
     return { severity, source, bail, paid, shortfall, processingSlots, heatRelief: relief, priors: state.record.arrests };
   }
@@ -4360,7 +4396,7 @@
     const name = CREW_BY_ID[crewId].name.split(" ")[0];
     const hash = stringHash(`${state.run.seed}:crew-arrest:${crewId}:${state.run.day}`);
     logEntry(state, Arrest.pickLine(Arrest.CREW_BOOKED_LINES, hash).replace("%s", name), "bad");
-    pushConsequence(state, `${name} is in custody. Bail is $${Arrest.crewBailFor(key)} until Day ${crew.jailedUntilDay}.`, "bad");
+    pushConsequence(state, `${name} got picked up. $${Arrest.crewBailFor(key)} makes it go away before Day ${crew.jailedUntilDay}.`, "bad");
     return crew;
   }
 
@@ -4381,7 +4417,7 @@
       const name = person.name.split(" ")[0];
       const hash = stringHash(`${state.run.seed}:crew-release:${person.id}:${state.run.day}`);
       logEntry(state, Arrest.pickLine(Arrest.CREW_SERVED_LINES, hash).replace("%s", name), "bad");
-      pushConsequence(state, `${name} served the whole stretch. Loyalty is down to ${crew.loyalty}.`, "bad");
+      pushConsequence(state, `${name} served the whole stretch. Nobody was at the door. They clocked that.`, "bad");
     }
   }
 
@@ -4431,7 +4467,7 @@
         state.flags.crewUnderpaid = true;
         if (state.run.day - crew.wageMissedSince >= Crew.CREW_WAGE_GRACE_DAYS) {
           crew.loyalty = Crew.clampLoyalty(crew.loyalty - 1);
-          logEntry(state, `${person.name.split(" ")[0]}'s pay is short again. The patience is visibly thinner.`, "bad");
+          logEntry(state, `${person.name.split(" ")[0]} didn't say anything about the money again. That's worse.`, "bad");
         } else {
           logEntry(state, `No cash for ${person.name.split(" ")[0]}'s wage tonight. It goes on the ledger.`, "bad");
         }
@@ -4445,8 +4481,8 @@
       for (const block of Object.values(state.world.territoryBlocks || {})) {
         if (block.managerId === person.id) block.managerId = null;
       }
-      logEntry(state, `${person.name.split(" ")[0]} is gone. No note, no argument. The unpaid ledger stays behind.`, "bad");
-      pushConsequence(state, `${person.name.split(" ")[0]} left the crew. Loyalty ran out.`, "bad");
+      logEntry(state, `${person.name.split(" ")[0]}'s number doesn't ring anymore. The people they introduced you to stop texting back.`, "bad");
+      pushConsequence(state, `${person.name.split(" ")[0]} is gone. No note, no argument. The unpaid ledger stays behind.`, "bad");
     }
   }
   function applyPressure(state, context, crossedDay) {
@@ -6059,9 +6095,9 @@
   function plugIntroductionEvent(plugId) {
     const plug = PLUG_BY_ID[plugId];
     const copy = {
-      goodie: { title: "Goodie at the Wash & Go", who: "Goodie", where: "Wash & Go, Spenard", description: "Guy outside the Wash & Go catches your eye and asks if you're looking. He's got weed, nothing crazy. Prices are mid. Take it or leave it." },
-      tasha: { title: "Goodie's Introduction", who: "Tasha", where: "Spenard", description: "Goodie sends a number. Tasha answers, quotes pills and lean, and names the most she'll move at once. Cash only. No small talk." },
-      malik: { title: "Tasha's Introduction", who: "Malik", where: "Downtown", description: "Tasha sends Malik's number. He quotes coke and molly, says he has weight, and asks what quantity you can pay for today." },
+      goodie: { title: "Goodie at the Wash & Go", who: "Goodie", where: "Wash & Go, Spenard Road", description: "Guy outside the Wash & Go on Spenard catches your eye and asks if you're looking. He's got weed, nothing crazy. Prices are mid. Take it or leave it." },
+      tasha: { title: "Goodie's Introduction", who: "Tasha", where: "Bus shelter, Spenard and Northern Lights", description: "Goodie sends a number. Tasha answers from the bus shelter at Spenard and Northern Lights, quotes pills and lean, and names the most she'll move at once. Cash only. No small talk." },
+      malik: { title: "Tasha's Introduction", who: "Malik", where: "Parking garage, 4th and Gambell", description: "Tasha sends Malik's number. He works out of the parking garage at 4th and Gambell, quotes coke and molly, says he has weight, and asks what quantity you can pay for today." },
     }[plugId];
     if (!plug || !copy) return null;
     return {
@@ -6080,7 +6116,7 @@
   const BOOST_FIRST_FRAMINGS = [
     { id: "blind_spot", title: "Blind Spot", line: (name) => `You're browsing ${name}. The camera has a blind spot by the back aisle. Pocket something or keep walking.` },
     { id: "back_turned", title: "Back Turned", line: (name) => `The clerk at ${name} is deep in a phone argument, back to the floor. Pocket something or keep walking.` },
-    { id: "propped_door", title: "Propped Door", line: (name) => `A vendor drop has ${name} in chaos — boxes stacked, door propped, nobody watching. Pocket something or keep walking.` },
+    { id: "propped_door", title: "Propped Door", line: (name) => `A vendor drop has ${name} in chaos. Boxes stacked, door propped, nobody watching. Pocket something or keep walking.` },
   ];
   function firstBoostOpportunityEvent(state) {
     const areaId = state?.world?.currentNeighborhoodId || HOME_DISTRICT_ID;
@@ -6400,7 +6436,7 @@
       state.run.currentVisit.grossBuy += cost;
       addStreetReadEntry(state, "trading", `${state.world.currentNeighborhoodId}:${product.id}`);
       if (state.player.heat >= 8) addStreetReadEntry(state, "risk", `high_heat_trade:${state.world.currentNeighborhoodId}`);
-      logEntry(state, `You move ${qty} ${product.name} into the bag for $${cost}.`, "good");
+      logEntry(state, `${qty} ${product.name} in the bag. $${cost} out the other pocket. Nobody looked twice.`, "good");
       const record = plugRecord(state, plug.id);
       if (record && record.lastPurchaseDay !== state.run.day) {
         record.lastPurchaseDay = state.run.day;
@@ -6450,7 +6486,7 @@
         influenceChange(state, state.world.currentNeighborhoodId, 1);
         state.world.tradeInfluenceGranted[state.world.currentNeighborhoodId] = true;
       }
-      logEntry(state, `The buyer takes ${qty} ${product.name}. You count $${total} before leaving the block.`, profit >= 0 ? "good" : "bad");
+      logEntry(state, `${qty} ${product.name} gone. $${total} cash. Quick count, quick exit.`, profit >= 0 ? "good" : "bad");
       reconcileCash(state);
       return state;
     }
@@ -6595,7 +6631,7 @@
       const name = CREW_BY_ID[action.crewId].name.split(" ")[0];
       const hash = stringHash(`${state.run.seed}:crew-bail:${action.crewId}:${state.run.day}`);
       logEntry(state, Arrest.pickLine(Arrest.CREW_BAIL_LINES, hash).replace("%s", name), "good");
-      pushConsequence(state, `${name} is out. $${availability.cost} gone, loyalty ${crew.loyalty}.`, "warn");
+      pushConsequence(state, `${name} is out. $${availability.cost} lighter. They don't say thank you. You don't ask for one.`, "warn");
       recordBehavior(state, "connector", 1, `crew_bail:${action.crewId}:${state.run.day}`, "crew_bail");
       reconcileCash(state);
       return state;
@@ -7034,7 +7070,7 @@
       if (base.npc.mina.met) addStreetReadEntry(base, "social", "mina:visit");
       base.nightOwl.socialSessions += 1;
       growAtNightOwl(base);
-      logEntry(base, state.npc.mina.met ? "Mina sets a clean cup beside the register and waits for you to choose the conversation." : "Mina looks up from the register and gives you enough time to introduce yourself.", "");
+      logEntry(base, state.npc.mina.met ? pickMinaLine(base) : "Mina looks up from the register and gives you enough time to introduce yourself.", "");
       if (base.run.status === "playing" && !base.npc.mina.met && !base.run.pendingEvent) fireStory(base, STORY_BY_ID.mina_intro);
       return base;
     }
@@ -7319,8 +7355,8 @@
           arrestDetail = arrestPlayer(base, { severity: `stick${target.tier}`, source: "stick" });
           effects.push(
             arrestDetail.shortfall > 0
-              ? `Booked — $${arrestDetail.paid} of $${arrestDetail.bail} bail, the rest served`
-              : `Booked and released — $${arrestDetail.bail} bail`,
+              ? `Booked. $${arrestDetail.paid} of $${arrestDetail.bail} bail, the rest served`
+              : `Booked and released. $${arrestDetail.bail} bail`,
             `-${arrestDetail.heatRelief} Heat on the record`,
             `Prior arrests: ${arrestDetail.priors}`,
           );
@@ -7701,7 +7737,7 @@
         const product = PRODUCTS[stringHash(`${base.run.seed}:mina-tip:${base.run.day}`) % PRODUCTS.length];
         base.effects.rumors.push({ id: `mina_${base.run.day}`, areaId: "north_star_lot", productId: product.id, reliable: true, text: `Mina passes along one reliable Spenard buyer tip for ${product.name}.`, expiresAt: slotNumber(base.run.day + 1, 0) });
       }
-      logEntry(base, "Mina keeps the conversation local, direct, and off the clock.", "good");
+      logEntry(base, pickMinaLine(base), "good");
       return base;
     }
     if (action.type === "BUY_FROM_DEALER") {

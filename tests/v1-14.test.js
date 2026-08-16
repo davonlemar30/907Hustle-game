@@ -197,15 +197,17 @@ test("fullscreen Tonk changes presentation only", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 4. The Market close label
+// 4. The Market close (v1.17: the button is gone; leaving is the close)
 // ---------------------------------------------------------------------------
 
-test("the Market close button names the move and its price in time", () => {
-  assert.ok(ui.includes("Leave Market · advance to {nextPartLabel(state)}"));
-  assert.ok(ui.includes("<small>Ends your market visit</small>"));
+test("the Market has no close button; navigating away ends a traded visit", () => {
+  assert.doesNotMatch(ui, />Leave Market/);
+  assert.doesNotMatch(ui, /Ends your market visit/);
   assert.doesNotMatch(ui, /Finish Trading/);
-  // Same dispatch as before the relabel.
+  // Same dispatch as the button used, now fired by the shell on the way out,
+  // and only when the visit recorded a buy or sell.
   assert.ok(ui.includes('act({ type: "END_MARKET" })'));
+  assert.ok(ui.includes("state.run.currentVisit.trades > 0"));
 });
 
 test("END_MARKET still closes the visit and advances the clock", () => {

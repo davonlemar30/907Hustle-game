@@ -1,6 +1,40 @@
 # 907Hustle: One Good Run — Project Status
 
-Last updated: 2026-08-15 (America/Anchorage)
+Last updated: 2026-08-16 (America/Anchorage)
+
+## v1.17 Voice & Copy Polish + Market Button Fix + CSS Fix — shipped on this branch
+
+- Branch: `claude/clickup-2kyd583p-15874-hxww66`, on top of the v1.16 merge
+  (PR #77). Built from the "v1.17 Build Prompt — Voice & Copy Polish + Market
+  Button Fix + CSS Fix" doc.
+- **Save schema v11** (`907ogr_v11`), additive only: `nightOwl.recentMinaLines`
+  (the Mina no-repeat window). `mergeDefaults` supplies it to v3–v11 saves.
+- **Leave Market button removed.** The shell fires `END_MARKET` on nav-away
+  from the Market, gated on `run.currentVisit.trades > 0` (the counter that
+  already existed; the spec's proposed `marketVisitActions` would have
+  duplicated it). Browsing without trading costs nothing. No reducer guard,
+  deliberately: the sim harness and the older suites use bare `END_MARKET` as
+  "stay put and advance time."
+- **CSS tone aliases defined** (`--text/--good/--warn/--bad`, a v1.17 `:root`
+  layer of base-palette aliases), restoring consequence-card severity stripes
+  broken since v1.11.
+- **Voice pass**: arrest banks, crew events, market feed, hybrid popups.
+  Event-card previews keep numbers for HUD-visible cash/Health/Heat and speak
+  in-world for hidden relationship state. Prose em dashes removed.
+- **Mina conversation tree** in `src/data/mina.js`: pools per disposition band
+  (Cold/Hostile clamp to the Neutral register), Evening vs Night shift
+  registers (the Night Owl keeps Evening/Night hours), state-reactive pools
+  (arrested/injured/flush), three-visit no-repeat rotation via stringHash.
+  Trust, exposure, story cards, and the once-per-day gate untouched.
+- **Anchorage names**: boost targets (Spenard Chevron, Rebel Convenience on
+  4th, Holiday on C Street, Denali Express, Northern Lights Pharmacy, Arctic
+  Cash & Carry, Ship Creek Yards, Minnesota Drive Route) and stick targets
+  carry `desc` identity lines rendered in the Boost and Stickup screens; plug
+  intros name their corners. Ids and balance numbers untouched.
+- **Verification**: 601 node tests passing (13 new in `tests/v1-17.test.js`);
+  simulation hashes byte-identical to the v1.16 baselines (`c828c00e…` /
+  `5fefb813…`), zero dead ends — the reducer was not touched, so the build
+  prompt's predicted hash change correctly did not happen.
 
 ## v1.15 Crew System + Curtis Ambient + Deshawn Tier 1 — shipped on this branch
 

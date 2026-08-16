@@ -728,3 +728,14 @@ body{background:
    Walks and discoveries are content, not a destination, so they collapse into
    the neighbourhood hub rather than spending a navigation row of their own. */
 .learned-list{display:grid;gap:7px;padding:8px 0;color:#c7c7c7;font-size:.74rem}
+
+/* ==========================================================================
+   v1.17 — semantic tone aliases.
+   The v1.1 consequence layer (lines 183-186) referenced --text, --good,
+   --warn, and --bad without ever defining them, so consequence cards lost
+   their severity stripe at computed-value time. Defined here as aliases of
+   the base palette, matching the v1.1 token convention (--success, --danger).
+   Appended so every rule above keeps the exact shape the contract tests
+   match against.
+   ========================================================================== */
+:root{--text:var(--white);--good:var(--green);--warn:var(--amber);--bad:var(--red2)}

@@ -16,10 +16,13 @@ function effectPreview(effect) {
   if (effect.cash) parts.push(`${effect.cash > 0 ? "+" : "−"}$${Math.abs(effect.cash)} cash`);
   if (effect.health) parts.push(`${effect.health > 0 ? "+" : "−"}${Math.abs(effect.health)} Health`);
   if (effect.heat) parts.push(`${effect.heat > 0 ? "+" : "−"}${Math.abs(effect.heat)} Heat`);
-  if (effect.minaTrust) parts.push(`${effect.minaTrust > 0 ? "+" : "−"}${Math.abs(effect.minaTrust)} Mina trust`);
-  if (effect.lenderTrust) parts.push(`${effect.lenderTrust > 0 ? "+" : "−"}${Math.abs(effect.lenderTrust)} Dre trust`);
-  if (effect.rivalPressure) parts.push(`${effect.rivalPressure > 0 ? "+" : "−"}${Math.abs(effect.rivalPressure)} Curtis pressure`);
-  if (effect.rivalRespect) parts.push(`${effect.rivalRespect > 0 ? "+" : "−"}${Math.abs(effect.rivalRespect)} Curtis respect`);
+  // v1.17 — relationships are hidden state, so their previews speak in-world
+  // instead of naming a stat. Cash, Health, and Heat stay numeric: all three
+  // sit on the HUD by name, and the player prices choices with them.
+  if (effect.minaTrust) parts.push(effect.minaTrust > 0 ? "Mina files it under honest" : "Mina remembers being managed");
+  if (effect.lenderTrust) parts.push(effect.lenderTrust > 0 ? "Dre marks you reliable" : "Dre's patience gets shorter");
+  if (effect.rivalPressure) parts.push(effect.rivalPressure > 0 ? "Curtis's people hear about it" : "Curtis's people look elsewhere for a while");
+  if (effect.rivalRespect) parts.push(effect.rivalRespect > 0 ? "Curtis starts weighing you differently" : "Curtis stops taking you seriously");
   if (effect.loseRandomInventory) parts.push(`risk ${effect.loseRandomInventory} cargo`);
   if (effect.secondLoan) parts.push("take $1,200 cash and owe $1,380 within five days or by the checkpoint");
   if (effect.access) parts.push(`unlock ${effect.access} access`);

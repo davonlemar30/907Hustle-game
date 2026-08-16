@@ -157,6 +157,7 @@ const BOOKING_LINES = {
     "The lot fills with light and everybody's hands go where they are told.",
     "One radio call turns the whole block into a scene with your name in the middle of it.",
     "You are the one still standing there when they arrive, which is the whole problem.",
+    "Plastic bench. Fluorescent hum. They already know your name.",
   ],
 };
 
@@ -167,9 +168,10 @@ const RELEASE_LINES = {
     "The money leaves, the file stays, and the street outside is suddenly quiet about you.",
   ],
   served: [
-    "There is no bail money, so there is time instead. The clock is the payment.",
+    "No money for bail. You're here until they're done with you.",
     "You sit it out on a bench under a light that never changes, and the day goes with it.",
     "Nobody comes, nothing gets paid, and the hours take what the cash could not.",
+    "Forty-three hours and a headache. Spenard looks different at 6 AM.",
   ],
 };
 
@@ -177,7 +179,7 @@ const RELEASE_LINES = {
 // dropped, so the player learns the mechanic without a tooltip.
 const HEAT_RELIEF_LINES = [
   "Whatever the block thought it knew about you got filed and closed. The watching thins out.",
-  "The street heat goes cold the moment it becomes paperwork. That trade is not free.",
+  "The block goes cold on you the moment you become paperwork. That trade is not free.",
   "You are less interesting outside now, and permanently more interesting on paper.",
 ];
 
@@ -188,14 +190,14 @@ const CREW_BOOKED_LINES = [
 ];
 
 const CREW_BAIL_LINES = [
-  "%s comes out squinting and does not say thank you, but shows up the next morning.",
+  "%s comes out squinting, skips the thank you, and shows up the next morning anyway.",
   "You put the money down for %s. The debt between you moved, and both of you know it.",
   "%s walks out to find you already waiting. That gets remembered longer than the cell.",
 ];
 
 const CREW_SERVED_LINES = [
   "%s walks out on their own date. Nobody was waiting. They remember that part.",
-  "%s does the whole stretch and comes back thinner and quieter. The loyalty is gone.",
+  "%s does the whole stretch and comes back thinner and quieter. Whatever you two had, the cell kept it.",
   "%s gets released with nobody there. They come back to work, but only barely.",
 ];
 

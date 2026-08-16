@@ -383,7 +383,7 @@ function Market({ state, onTrade }) {
   const products = C.selectors.visibleMarketProducts(state);
   const compact = products.length < MARKET_TABLE_MIN;
   const detail = (product) => ({ signal: C.selectors.priceSignal(state, area.id, product.id), prices: C.selectors.tradeUnitPrices(state, product.id), owned: state.player.inventory[product.id].qty });
-  return <><PageHead title="Street Market" sub={`${area.name} · buy and sell freely; finishing the visit uses one part of day`} /><div className="scroll">
+  return <><PageHead title="Street Market" sub={state.run.currentVisit.trades > 0 ? `${area.name} · leaving advances to ${nextPartLabel(state)}` : `${area.name} · browse freely; trading and leaving uses one part of day`} /><div className="scroll">
     {!compact && <div className="market-grid market-head"><span>Product</span><span>Buy</span><span>Signal</span><span>Own</span></div>}
     {products.map((product) => { const { signal, prices, owned } = detail(product);
       if (compact) return <div key={product.id} className={`card product-card signal-${signal.id}`} role="button" tabIndex={0} onClick={() => onTrade(product.id)} onKeyDown={(event) => event.key === "Enter" && onTrade(product.id)}>
@@ -408,8 +408,7 @@ function Boost({ state, dispatch }) {
       const hit = state.boost.dailyHits[target.id] === state.run.day;
       const discovered = state.boost.discoveredWindows.includes(target.id);
       const window = target.tier === 2 && discovered ? `Best window: ${C.SLOTS[target.windowSlot]}` : null;
-      const encounter = target.tier === 1 ? `You're browsing ${target.name}. The camera has a blind spot by the back aisle.` : target.tier === 2 ? `${target.name} has what you need behind minimal security. Move now or wait for a better window.` : "Pick the target, keep the crew moving, and deliver the merchandise to the fence.";
-      return <div className={`card boost-target${availability.available ? "" : " locked"}`} key={target.id}><div className="card-title">{target.name}<small>TIER {target.tier} · ${target.take[0]}–${target.take[1]}</small></div><p className="compact">{encounter}</p><div className="outcome-grid"><Outcome label="Status" value={banned ? "Banned" : hit ? "Hit today" : "Ready"} />{target.tier === 2 && <Outcome label="Window" value={window || "Unknown"} />}</div>{target.tier === 2 && !discovered && <button className="btn full secondary" onClick={() => dispatch({ type: "ASK_BOOST_WINDOW", targetId: target.id })}>Ask around<span className="action-copy">Uses one social action</span></button>}<button className="btn full primary" disabled={!availability.available} onClick={() => dispatch({ type: "BOOST", targetId: target.id })}>Make the lift<span className="action-copy">{availability.available ? "Uses one part of day" : availability.reason}</span></button></div>;
+      return <div className={`card boost-target${availability.available ? "" : " locked"}`} key={target.id}><div className="card-title">{target.name}<small>TIER {target.tier} · ${target.take[0]}–${target.take[1]}</small></div><p className="compact">{target.desc}</p><div className="outcome-grid"><Outcome label="Status" value={banned ? "Banned" : hit ? "Hit today" : "Ready"} />{target.tier === 2 && <Outcome label="Window" value={window || "Unknown"} />}</div>{target.tier === 2 && !discovered && <button className="btn full secondary" onClick={() => dispatch({ type: "ASK_BOOST_WINDOW", targetId: target.id })}>Ask around<span className="action-copy">Uses one social action</span></button>}<button className="btn full primary" disabled={!availability.available} onClick={() => dispatch({ type: "BOOST", targetId: target.id })}>Make the lift<span className="action-copy">{availability.available ? "Uses one part of day" : availability.reason}</span></button></div>;
     })}
     {state.boost.tier >= 3 && <div className="card"><div className="card-title">Slide Okafor<small>{Math.round(C.selectors.boostFenceRate(state.boost.fenceStanding) * 100)}% RATE</small></div><p className="compact">A storage unit off Tudor Road. Slide looks at what you brought, quotes a number. There is no somewhere else.</p><button className="btn full good-btn" disabled={!state.boost.merchandise} onClick={() => dispatch({ type: "FENCE_BOOST_GOODS" })}>Sell ${state.boost.merchandise} merchandise<span className="action-copy">Standing {state.boost.fenceStanding}/5 · no time cost</span></button></div>}
   </div></>;
@@ -527,7 +526,7 @@ function TonkTable({ state, dispatch }) {
       <button className={`btn ${draw === "discard" ? "primary" : "secondary"}`} disabled={!view.discardTop} onClick={() => setDraw("discard")}>Take the discard<span className="action-copy">{view.discardTop ? `${view.discardTop.rank}${SUIT_GLYPH[view.discardTop.suit]} showing` : "Nothing showing"}</span></button>
     </div>
     <div className="detail-list">{view.opponents.map((opponent) => <span key={opponent.seat}>
-      <b>Seat {opponent.seat}</b> — {opponent.label}
+      <b>Seat {opponent.seat}</b> · {opponent.label}
       {opponent.hesitates ? <em className="warn"> hesitates before drawing.</em> : ""}
       {opponent.estimate ? <em className="muted"> {opponent.estimate}.</em> : ""}
     </span>)}</div>
@@ -788,7 +787,13 @@ function NightOwlHub({ state, dispatch, onBack }) {
     <div className="card"><div className="card-title">Coffee<small>$4</small></div><p className="compact">A hot cup is immediate and restores one point of the reserve that keeps you moving.</p><button className="btn full primary" disabled={!coffeeAccess.available} onClick={() => dispatch({ type: "BUY_COFFEE" })}>Buy coffee · $4<span className="action-copy">{coffeeAccess.available ? "Free · restores reserve" : coffeeAccess.reason}</span></button></div>
     <div className="card"><div className="card-title">Community board<small>{viewed ? "VIEWED TODAY" : "FREE DAILY"}</small></div>{viewed ? <div className="detail-list">{board.map((entry) => <span key={entry.id}><b>{entry.title}:</b> {entry.body}</span>)}</div> : <p className="compact">Three postings rotate each day. Reading them costs no time.</p>}<button className="btn full secondary" disabled={!boardAccess.available} onClick={() => dispatch({ type: "VIEW_NIGHT_OWL_BOARD" })}>{viewed ? "Read today's postings" : "Check the board"}<span className="action-copy">{boardAccess.available ? "Free · no time passes" : boardAccess.reason}</span></button>{viewed && board.some((entry) => entry.id === "laptop") && !state.inventory.laptop && <button className="btn full primary" disabled={state.player.cash < 250} onClick={() => dispatch({ type: "BUY_LAPTOP" })}>Buy used laptop · $250<span className="action-copy">Adds five daily Home listings</span></button>}</div>
     <div className="card"><div className="card-title">{present.name}<small>{present.role.toUpperCase()}</small></div><p className="compact">{present.hint}</p><p className="muted compact">Relationship {regular.relationship} · {regular.met ? "Met" : "New face"}</p><button className="btn full secondary" disabled={!regularAccess.available || regular.lastTalkDay === state.run.day} onClick={() => dispatch({ type: "TALK_NIGHT_OWL_REGULAR", regularId: present.id })}>Talk with {present.name.split(" ")[0]}<span className="action-copy">{!regularAccess.available ? regularAccess.reason : regular.lastTalkDay === state.run.day ? "Already talked today" : "One part of day"}</span></button></div>
-    <div className="card"><div className="card-title">Mina Vale<small>{state.npc.mina.met ? state.npc.mina.status.toUpperCase() : "AT THE REGISTER"}</small></div><p className="compact">{state.npc.mina.met ? "Mina remembers the tone of your first conversation." : "The clerk watches the counter and lets new customers decide how to begin."}</p><button className="btn full secondary" disabled={!visitAccess.available} onClick={() => dispatch({ type: "VISIT_NIGHT_OWL" })}>{state.npc.mina.met ? "Talk with Mina" : "Introduce yourself"}<span className="action-copy">{visitAccess.available ? "One part of day" : visitAccess.reason}</span></button></div>
+    <div className="card"><div className="card-title">Mina Vale<small>{state.npc.mina.met ? state.npc.mina.status.toUpperCase() : "AT THE REGISTER"}</small></div><p className="compact">{state.npc.mina.met ? ({
+      committed: "The guard comes down in moments now. The corner table is somehow always clear when you need it.",
+      trusted: "She talks past the register with you these days. The counter stopped being a wall.",
+      cautious: "She remembers your order and the tone of your first conversation. She is still deciding.",
+      compromised: "She serves you exact and polite. Whatever was building here, you spent some of it.",
+      gone: "A new clerk works the counter now. Nobody at the Night Owl says the name you knew.",
+    }[state.npc.mina.status] || "Polite, exact, impersonal. The register stays between you.") : "The clerk watches the counter and lets new customers decide how to begin."}</p><button className="btn full secondary" disabled={!visitAccess.available} onClick={() => dispatch({ type: "VISIT_NIGHT_OWL" })}>{state.npc.mina.met ? "Talk with Mina" : "Introduce yourself"}<span className="action-copy">{visitAccess.available ? "One part of day" : visitAccess.reason}</span></button></div>
     {nightJob && <div className="card"><div className="card-title">Night Owl job<small>RANK {state.jobs.records.night_owl.rank}</small></div><p className="compact">The counter shift, Rank 2 stash, and Rank 3 Deshawn vouch remain part of the job track.</p></div>}
     <NightOwlStash state={state} dispatch={dispatch} />
   </div></>;
@@ -1136,12 +1141,13 @@ function Rob({ state, dispatch, onBack }) {
       const canCase = target.tier >= 2 && (!cased || cased.timesObserved < 2);
       return <div className={`card boost-target${availability.available ? "" : " locked"}`} key={target.id}>
         <div className="card-title">{target.name}<small>TIER {target.tier} · {target.tier === 1 || cased ? `$${target.take[0]}–$${target.take[1]}` : "CASE TO PRICE"}</small></div>
+        <p className="compact">{target.desc}</p>
         <div className="outcome-grid">{target.slots && <Outcome label="Window" value={target.slots.map((slot) => C.SLOTS[slot]).join(" / ")} />}{target.tier >= 2 && <Outcome label="Cased" value={`${Math.min(2, cased?.timesObserved || 0)}/2`} />}</div>
         {canCase && <button className="btn full secondary" onClick={() => dispatch({ type: "CASE_TARGET", targetId: target.id })}>Case the target<span className="action-copy">Uses one part of day · prices the take, sharpens the job</span></button>}
         <button className="btn full primary" disabled={!availability.available} onClick={() => dispatch({ type: "STICKUP", targetId: target.id })}>Run it<span className="action-copy">{availability.available ? "Uses one part of day" : availability.reason}</span></button>
       </div>;
     })}
-    {tier >= 2 && <p className="compact muted">Goodie is a walking Tier 2 target. His corner works the same ladder — find him through Street → People.</p>}
+    {tier >= 2 && <p className="compact muted">Goodie is a walking Tier 2 target. His corner works the same ladder. Find him through Street → People.</p>}
     <div className="card debt-card"><div className="card-title">Service-road envelope<small>Once each day · one part of day</small></div><p>Take a direct cash risk. Weapons, Combat, Intelligence, crew, and Heat affect the approach. Repeated attempts raise exposure and injury risk; legal work remains the safer long-term plan.</p><button className="btn full primary" disabled={!score.available} onClick={() => dispatch({ type: "ROB" })}>Attempt today's Rob<span className="action-copy">{score.available ? `${score.chanceLabel} estimated success · uses one part of day` : score.reason}</span></button></div>
   </div></>;
 }
@@ -1381,7 +1387,7 @@ function Recovery({ state, dispatch, onBack }) {
   return <><PageHead title="Recovery" sub="Essential care first; larger options appear when the damage justifies them" onBack={onBack} /><div className="scroll"><div className="card"><div className="card-title">Health<small>{state.player.health}/100</small></div><div className="meter"><span style={{ width: `${state.player.health}%`, background: state.player.health < 40 ? "var(--red)" : "var(--green)" }} /></div></div><div className="card inventory-row"><div><div className="card-title">First aid</div><div className="muted">Immediate care · restore up to 18 Health</div></div><button className="btn good-btn" disabled={state.player.cash < firstAidCost || state.player.health >= 100} onClick={() => dispatch({ type: "USE_FIRST_AID", amount: 18, cost: firstAidCost })}>{money(firstAidCost)}<span className="action-copy">Free · no time passes</span></button></div>{state.player.health <= 82 && treatment(40, 135, "Clinic visit", "Larger treatment for a serious injury")}{state.player.health <= 55 && (doctorOpen ? treatment(75, 290, "No-Questions Doctor", "Private care unlocked through trust or Safehouse recovery") : <div className="card locked"><div className="card-title">Private medical contact<small>Locked</small></div><p className="muted">Build a trusted medical relationship or install the Safe Room recovery upgrade.</p></div>)}<div className="card"><div className="card-title">Lay Low<small>Next part of day</small></div><p>Expected immediate result: lower Heat by {layLow.heatReduction}. Debt, wages, markets, and Curtis continue moving while the lights are off.</p><button className="btn full secondary" onClick={() => dispatch({ type: "LAY_LOW" })}>Lay Low<span className="action-copy">Lowers Heat and advances time</span></button></div></div></>;
 }
 
-function Help({ onBack, marketVisible }) { return <><PageHead title="How to Play" sub="The four-part rhythm of One Good Run" onBack={onBack} /><div className="scroll"><div className="card"><h2>Your run</h2><p>Each day contains Morning, Afternoon, Evening, and Night. Week Zero establishes your life in Spenard. A later approach sets the checkpoint.</p></div>{marketVisible && <div className="card"><h2>Market visits</h2><p>Buy and sell several times at locked prices. Trading does not advance time until you close the visit.</p></div>}<div className="card"><h2>Major actions</h2><p>Travel, recovery, meetings, debt payments, and operations advance to the next part of day. Resolve an event choice without paying a second time cost.</p></div><div className="card"><h2>The pressure phase</h2><p>Protect working capital, manage Heat and Health, build relationships, and decide whether territory or a clean exit is worth the risk.</p></div></div></>; }
+function Help({ onBack, marketVisible }) { return <><PageHead title="How to Play" sub="The four-part rhythm of One Good Run" onBack={onBack} /><div className="scroll"><div className="card"><h2>Your run</h2><p>Each day contains Morning, Afternoon, Evening, and Night. Week Zero establishes your life in Spenard. A later approach sets the checkpoint.</p></div>{marketVisible && <div className="card"><h2>Market visits</h2><p>Buy and sell several times at locked prices. Walking away after a trade uses one part of day. Looking costs nothing.</p></div>}<div className="card"><h2>Major actions</h2><p>Travel, recovery, meetings, debt payments, and operations advance to the next part of day. Resolve an event choice without paying a second time cost.</p></div><div className="card"><h2>The pressure phase</h2><p>Protect working capital, manage Heat and Health, build relationships, and decide whether territory or a clean exit is worth the risk.</p></div></div></>; }
 
 function Character({ state, onBack }) {
   const identity = C.selectors.streetIdentityView(state);
@@ -1471,7 +1477,7 @@ function phoneBills(state) {
   }
   if (state.lender.balance > 0) {
     const daysLeft = state.lender.dueDay - day;
-    rows.push({ id: "debt", name: "Dre — debt", amount: state.lender.balance, where: "Pay in Finances", due: `Day ${state.lender.dueDay}`,
+    rows.push({ id: "debt", name: "Debt to Dre", amount: state.lender.balance, where: "Pay in Finances", due: `Day ${state.lender.dueDay}`,
       ...(daysLeft < 0 ? { status: "Overdue", severity: 2 }
         : daysLeft === 0 ? { status: "Due tonight", severity: 2 }
         : upcoming(state.lender.dueDay)) });
@@ -1861,6 +1867,7 @@ function GameShell({ state, dispatch, onTitle }) {
   // flushed synchronously. Browsers without the API take the plain path and
   // swap instantly, exactly as before.
   function navigate(nextTab, more = "root", sub = null, street = "root") {
+    closeMarketIfTraded((nextTab === "street" || nextTab === "hustle") && street === "market");
     const apply = () => { setNav((prev) => ({ tab: nextTab, more, sub, token: prev.token + 1 })); if (nextTab === "street") setStreetPage(street); if (nextTab === "hustle") setHustlePage(street); };
     if (typeof document === "undefined" || typeof document.startViewTransition !== "function") { apply(); return; }
     // Switching tabs faster than a transition can finish makes the browser
@@ -1873,6 +1880,19 @@ function GameShell({ state, dispatch, onTitle }) {
   }
   const setTab = (nextTab) => navigate(nextTab);
   const setMorePage = (page) => setNav((prev) => ({ ...prev, more: page, sub: null }));
+
+  // v1.17 — the Leave Market button is gone. Walking away from the Market is
+  // what ends the visit, and only a visit where something changed hands costs
+  // a part of day: END_MARKET fires on the way out when this visit recorded a
+  // buy or sell (run.currentVisit.trades > 0), and window shopping stays free.
+  // The reducer is untouched; the shell is the only dispatcher, same as the
+  // button was.
+  const marketOpen = (tab === "hustle" && hustlePage === "market") || (tab === "street" && streetPage === "market");
+  function closeMarketIfTraded(nextIsMarket) {
+    if (marketOpen && !nextIsMarket && state.run.currentVisit.trades > 0) act({ type: "END_MARKET" });
+  }
+  const setStreetPageSafe = (page) => { if (tab === "street") closeMarketIfTraded(page === "market"); setStreetPage(page); };
+  const setHustlePageSafe = (page) => { if (tab === "hustle") closeMarketIfTraded(page === "market"); setHustlePage(page); };
 
   // Every dispatch is routed through `act` so the shell can diff the committed
   // state before and after. The reducer is untouched — this is a pure read,
@@ -1901,8 +1921,8 @@ function GameShell({ state, dispatch, onTitle }) {
   const navigateMore = () => navigate("more", "finances", "debt");
   const screens = {
     home: <Home state={state} dispatch={act} navigate={navigate} />,
-    street: <StreetScreen state={state} dispatch={act} page={streetPage} setPage={setStreetPage} onTrade={setTrade} />,
-    hustle: <HustleScreen state={state} dispatch={act} page={hustlePage} setPage={setHustlePage} onTrade={setTrade} />,
+    street: <StreetScreen state={state} dispatch={act} page={streetPage} setPage={setStreetPageSafe} onTrade={setTrade} />,
+    hustle: <HustleScreen state={state} dispatch={act} page={hustlePage} setPage={setHustlePageSafe} onTrade={setTrade} />,
     phone: <PhoneScreen state={state} dispatch={act} openList={() => navigate("more", "907list")} navigateMore={navigateMore} />,
     more: <More state={state} dispatch={act} features={features} page={nav.more} setPage={setMorePage} sub={nav.sub} subToken={nav.token} />,
   };
@@ -1915,7 +1935,6 @@ function GameShell({ state, dispatch, onTitle }) {
       <AmbientTicker state={state} />
       <Feed entries={state.log} />
       {tonkLive && !tonkFullscreen && <div className="action-bar one"><button className="btn secondary" onClick={() => setTonkFullscreen(true)}>Back to the table<small>Your hand is still live upstairs at The Nile</small></button></div>}
-      {((tab === "hustle" && hustlePage === "market") || (tab === "street" && streetPage === "market")) && <div className="action-bar one"><button className="btn primary" onClick={() => act({ type: "END_MARKET" })}>Leave Market · advance to {nextPartLabel(state)}<small>Ends your market visit</small></button></div>}
       {state.run.overtimeArmed && <div className="action-bar one"><button className="btn secondary" onClick={() => act({ type: "CONFIRM_END_DAY" })}>End Day Now<small>Cancel the armed extension and process tonight</small></button></div>}
       <Navigation tab={tab} setTab={setTab} hustleVisible={state.hustle.visible} phoneBadge={state.phone.active ? state.phone.inbox.length : 0} />
     </div>

@@ -250,19 +250,23 @@
 
 
 
+  // v1.17: every boost target carries an Anchorage name and a one-line read of
+  // the place (rendered on the Boost screen). Ids never change - tests and
+  // saved runs look targets up by id, and the take/tier/window numbers are the
+  // balance, which this pass does not touch.
   const BOOST_TARGETS = [
-    { id: "night_owl", name: "Night Owl Mini-Mart", areaId: "north_star_lot", tier: 1, take: [15, 40] },
-    { id: "spenard_fuel", name: "Spenard Fuel", areaId: "north_star_lot", tier: 1, take: [15, 40] },
-    { id: "fourth_ave_market", name: "Fourth Avenue Market", areaId: "downtown", tier: 1, take: [15, 40] },
-    { id: "downtown_fuel", name: "Downtown Fuel", areaId: "downtown", tier: 1, take: [15, 40] },
-    { id: "service_stop", name: "Service Road Stop", areaId: "airport_industrial", tier: 1, take: [15, 40] },
-    { id: "airport_fuel", name: "Airport Fuel", areaId: "airport_industrial", tier: 1, take: [15, 40] },
-    { id: "northern_value", name: "Northern Value", areaId: "north_star_lot", tier: 2, take: [60, 150], windowSlot: 1 },
-    { id: "midtown_pharmacy", name: "Midtown Pharmacy", areaId: "north_star_lot", tier: 2, take: [60, 150], windowSlot: 2 },
-    { id: "fourth_ave_electronics", name: "Fourth Avenue Electronics", areaId: "downtown", tier: 2, take: [60, 150], windowSlot: 3 },
-    { id: "warehouse_club", name: "Warehouse Club", areaId: "north_star_lot", tier: 3, take: [200, 500] },
-    { id: "loading_dock_seven", name: "Loading Dock Seven", areaId: "airport_industrial", tier: 3, take: [200, 500] },
-    { id: "delivery_route_4", name: "Delivery Route 4", areaId: "downtown", tier: 3, take: [200, 500] },
+    { id: "night_owl", name: "Night Owl Mini-Mart", areaId: "north_star_lot", tier: 1, take: [15, 40], desc: "The counter you already know. The camera by the back aisle has a blind spot everyone in Spenard learned first." },
+    { id: "spenard_fuel", name: "Spenard Chevron", areaId: "north_star_lot", tier: 1, take: [15, 40], desc: "Two pumps and a cooler aisle on Spenard Road. The clerk watches the lot, never the shelves." },
+    { id: "fourth_ave_market", name: "Rebel Convenience on 4th", areaId: "downtown", tier: 1, take: [15, 40], desc: "Chips, chargers, single cans. One camera, aimed at the register, exactly like the sticker on the door promises." },
+    { id: "downtown_fuel", name: "Holiday on C Street", areaId: "downtown", tier: 1, take: [15, 40], desc: "Downtown gas at downtown prices. The snack aisle sits behind a pillar the security mirror cannot see around." },
+    { id: "service_stop", name: "Denali Express", areaId: "airport_industrial", tier: 1, take: [15, 40], desc: "A truck-stop shop off Old Seward. Everything is bolted down except what you came in for." },
+    { id: "airport_fuel", name: "Shell on International", areaId: "airport_industrial", tier: 1, take: [15, 40], desc: "Fuel for the airport runs. Half the customers are on the clock and all of them are on their phones." },
+    { id: "northern_value", name: "Northern Value", areaId: "north_star_lot", tier: 2, take: [60, 150], windowSlot: 1, desc: "The Spenard thrift barn. Racks too dense to police and tags too cheap for anyone to chase." },
+    { id: "midtown_pharmacy", name: "Northern Lights Pharmacy", areaId: "north_star_lot", tier: 2, take: [60, 150], windowSlot: 2, desc: "Strip-mall pharmacy on Northern Lights. The pickup line keeps every eye in the building pointed forward." },
+    { id: "fourth_ave_electronics", name: "Gateway Electronics on 4th", areaId: "downtown", tier: 2, take: [60, 150], windowSlot: 3, desc: "Locked cases up front, open stock in the back. The one clerk cannot be both places." },
+    { id: "warehouse_club", name: "Arctic Cash & Carry", areaId: "north_star_lot", tier: 3, take: [200, 500], desc: "Pallet aisles off Minnesota Drive. The membership desk checks cards on the way in, never boxes on the way out." },
+    { id: "loading_dock_seven", name: "Ship Creek Yards, Dock Seven", areaId: "airport_industrial", tier: 3, take: [200, 500], desc: "Container rows off Ship Creek. The manifest says more than the fence-line cameras ever will." },
+    { id: "delivery_route_4", name: "Minnesota Drive Route", areaId: "downtown", tier: 3, take: [200, 500], desc: "A box truck running the same Minnesota Drive loop every day. A schedule is a kind of key." },
   ];
   const BOOST_TARGET_BY_ID = Object.fromEntries(BOOST_TARGETS.map((target) => [target.id, target]));
 
@@ -6087,9 +6091,9 @@
   function plugIntroductionEvent(plugId) {
     const plug = PLUG_BY_ID[plugId];
     const copy = {
-      goodie: { title: "Goodie at the Wash & Go", who: "Goodie", where: "Wash & Go, Spenard", description: "Guy outside the Wash & Go catches your eye and asks if you're looking. He's got weed, nothing crazy. Prices are mid. Take it or leave it." },
-      tasha: { title: "Goodie's Introduction", who: "Tasha", where: "Spenard", description: "Goodie sends a number. Tasha answers, quotes pills and lean, and names the most she'll move at once. Cash only. No small talk." },
-      malik: { title: "Tasha's Introduction", who: "Malik", where: "Downtown", description: "Tasha sends Malik's number. He quotes coke and molly, says he has weight, and asks what quantity you can pay for today." },
+      goodie: { title: "Goodie at the Wash & Go", who: "Goodie", where: "Wash & Go, Spenard Road", description: "Guy outside the Wash & Go on Spenard catches your eye and asks if you're looking. He's got weed, nothing crazy. Prices are mid. Take it or leave it." },
+      tasha: { title: "Goodie's Introduction", who: "Tasha", where: "Bus shelter, Spenard and Northern Lights", description: "Goodie sends a number. Tasha answers from the bus shelter at Spenard and Northern Lights, quotes pills and lean, and names the most she'll move at once. Cash only. No small talk." },
+      malik: { title: "Tasha's Introduction", who: "Malik", where: "Parking garage, 4th and Gambell", description: "Tasha sends Malik's number. He works out of the parking garage at 4th and Gambell, quotes coke and molly, says he has weight, and asks what quantity you can pay for today." },
     }[plugId];
     if (!plug || !copy) return null;
     return {

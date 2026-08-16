@@ -65,16 +65,18 @@ const DISTRICT_ADJACENCY = {
 //   take: [min,max] cash. resistance: 0-1 chance penalty steps (like diffMod).
 //   slots: allowed slot indices (absent = any). heat: base heat before the
 //   district multiplier. retaliation: chance the victim's people come looking.
+// v1.17: each target carries a `desc`, one line of identity so the mark reads
+// as a person or a place, never a menu row. Ids and the numbers stay put.
 const STICK_TARGETS = [
-  { id: "chilkoots_stumbler", name: "Chilkoot's stumbler", areaId: "north_star_lot", tier: 1, take: [40, 80], slots: [3], resistance: 0, heat: 2, retaliation: 0 },
-  { id: "washgo_regular", name: "Wash & Go regular", areaId: "north_star_lot", tier: 1, take: [30, 50], resistance: 0, heat: 2, retaliation: 0 },
-  { id: "fourth_ave_crawler", name: "Fourth Avenue bar crawler", areaId: "downtown", tier: 1, take: [50, 100], slots: [2, 3], resistance: 0, heat: 2, retaliation: 0 },
-  { id: "c_street_atm", name: "C Street ATM run", areaId: "downtown", tier: 1, take: [60, 100], slots: [2], resistance: 1, heat: 2, retaliation: 0 },
-  { id: "lot_hauler", name: "Long-haul driver at the truck lot", areaId: "airport_industrial", tier: 1, take: [40, 90], slots: [0, 1], resistance: 0, heat: 2, retaliation: 0 },
-  { id: "spenard_fuel_till", name: "Spenard Fuel night till", areaId: "north_star_lot", tier: 2, take: [100, 180], slots: [3], resistance: 1, heat: 3, retaliation: 0.6 },
-  { id: "downtown_fuel_till", name: "Downtown Fuel register", areaId: "downtown", tier: 2, take: [100, 200], resistance: 1, heat: 3, retaliation: 0.6 },
-  { id: "goodie_stash", name: "Goodie's stash spot", areaId: "north_star_lot", tier: 3, take: [800, 1500], resistance: 3, heat: 4, retaliation: 0.6 },
-  { id: "rec_center_dice", name: "Dice game behind the rec center", areaId: "north_star_lot", tier: 3, take: [500, 1200], slots: [2, 3], resistance: 2, heat: 4, retaliation: 0.6 },
+  { id: "chilkoots_stumbler", name: "Stumbler outside Koots", areaId: "north_star_lot", tier: 1, take: [40, 80], slots: [3], resistance: 0, heat: 2, retaliation: 0, desc: "Somebody weaving out of Chilkoot Charlie's alone, cab money visible. Ten seconds before they reach Spenard Road." },
+  { id: "washgo_regular", name: "Wash & Go regular", areaId: "north_star_lot", tier: 1, take: [30, 50], resistance: 0, heat: 2, retaliation: 0, desc: "Same guy every week. Quarters and a phone, watching his drum spin with his back to the door." },
+  { id: "fourth_ave_crawler", name: "Fourth Avenue bar crawler", areaId: "downtown", tier: 1, take: [50, 100], slots: [2, 3], resistance: 0, heat: 2, retaliation: 0, desc: "Bar to bar on 4th with a fresh ATM stop in between. Loud enough to lose track of company." },
+  { id: "c_street_atm", name: "C Street ATM run", areaId: "downtown", tier: 1, take: [60, 100], slots: [2], resistance: 1, heat: 2, retaliation: 0, desc: "Office types pull dinner cash on C Street. Heads down, cards out, minds already at the restaurant." },
+  { id: "lot_hauler", name: "Long-haul driver at the truck lot", areaId: "airport_industrial", tier: 1, take: [40, 90], slots: [0, 1], resistance: 0, heat: 2, retaliation: 0, desc: "Overnighting off International with the cab curtains drawn. Road cash rides somewhere within reach of the wheel." },
+  { id: "spenard_fuel_till", name: "Spenard Chevron night till", areaId: "north_star_lot", tier: 2, take: [100, 180], slots: [3], resistance: 1, heat: 3, retaliation: 0.6, desc: "One clerk after midnight on Spenard Road, and a till that fattens until the morning pickup." },
+  { id: "downtown_fuel_till", name: "Holiday register on C Street", areaId: "downtown", tier: 2, take: [100, 200], resistance: 1, heat: 3, retaliation: 0.6, desc: "The register sits open between customers. One clerk, no partition, and the downtown foot traffic thinning out." },
+  { id: "goodie_stash", name: "Goodie's stash spot", areaId: "north_star_lot", tier: 3, take: [800, 1500], resistance: 3, heat: 4, retaliation: 0.6, desc: "Everybody knows Goodie keeps a spot. Nobody says where out loud. Finding out is the easy part." },
+  { id: "rec_center_dice", name: "Dice game behind the rec center", areaId: "north_star_lot", tier: 3, take: [500, 1200], slots: [2, 3], resistance: 2, heat: 4, retaliation: 0.6, desc: "Folding-table money behind the rec center. Fast pockets, faster tempers, and no cameras by anyone's design." },
 ];
 const STICK_TARGET_BY_ID = Object.fromEntries(STICK_TARGETS.map((target) => [target.id, target]));
 

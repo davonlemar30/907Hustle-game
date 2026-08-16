@@ -842,6 +842,21 @@
         tone: {
           archetype: "STREET",
           weights: { violence: 3, defiance: 2, growth: 1, discretion: -2, submission: -3 }
+        },
+        // v1.19: Pherris reads whether the player is worth being connected to. She
+        // trades in contacts, so what she counts is a book of business getting bigger
+        // and being handled quietly - money moving, the operation growing, information
+        // kept. Violence and defiance are heat on a network she has spent years
+        // building, and heat is what makes her names stop picking up.
+        //
+        // The event override is not decoration. `job_lost` is broadcast as a financial
+        // observation, and at weight 4 an unguarded lens would read getting fired as
+        // the best week the player ever had. Same trap SHARED_EVENT_WEIGHTS exists to
+        // catch, priced here because the category sign is only wrong for her.
+        pherris: {
+          archetype: "STREET",
+          weights: { financial: 4, growth: 3, discretion: 2, violence: -2, defiance: -1 },
+          eventWeights: { job_lost: -2 }
         }
       };
       var EXPOSURE_NPC_IDS = Object.keys(NPC_LENSES);
@@ -907,7 +922,12 @@
         // wire - that is how he already knows who parked the sedan. No household: he
         // does not live with the player. Not `reputation` either; that channel is
         // Curtis's alone, and it is the slow one anyway.
-        tone: ["direct", "neighborhood", "network"]
+        tone: ["direct", "neighborhood", "network"],
+        // Pherris IS a network - a Downtown contact list she has kept alive for years.
+        // She hears the block because she works it, and she hears the wire because she
+        // is most of it. No household: she has never been to the house. Not
+        // `reputation` either; that channel is Curtis's alone.
+        pherris: ["direct", "neighborhood", "network"]
       };
       var CURTIS_NETWORK_CATEGORIES = /* @__PURE__ */ new Set(["violence", "defiance", "growth"]);
       var CURTIS_VOLUME_THRESHOLD = 200;
@@ -933,7 +953,10 @@
         deshawn: [1, 2, 3],
         // Tone keeps door hours. He is around Spenard in the evening and at night,
         // which is when the work he does exists.
-        tone: [2, 3]
+        tone: [2, 3],
+        // Pherris works afternoons through the night. Mornings are for the phone, and
+        // a phone call is the network channel, which ignores shift anyway.
+        pherris: [1, 2, 3]
       };
       var NPC_PRESENCE_AREAS = {
         yalonda: ["north_star_lot"],
@@ -948,7 +971,10 @@
         // Deshawn thinks in terms of the block. He does not leave it.
         deshawn: ["north_star_lot"],
         // Spenard only for now. Downtown is not his stretch and never was.
-        tone: ["north_star_lot"]
+        tone: ["north_star_lot"],
+        // The only crew member who moves between districts. Her list is Downtown and
+        // her corner booth is there; Spenard is where she checks it against the street.
+        pherris: ["north_star_lot", "downtown"]
       };
       function channelFor(id) {
         return CHANNELS[id] || CHANNELS.direct;
@@ -5997,7 +6023,12 @@
             // person knows and has been told. It has to exist for the loop below to
             // give him a ledger at all - a lens with no record here is a subscriber
             // broadcastObservation silently skips.
-            tone: { met: false, offersDeclined: 0 }
+            tone: { met: false, offersDeclined: 0 },
+            // v1.19: Pherris predates the Exposure System by several builds, so unlike
+            // Tone she already had crew mechanics and no ledger at all. This record is
+            // the missing half, and it is not optional - the loop below skips any lens
+            // without one, which would leave her a subscriber that never hears anything.
+            pherris: { met: false, offersDeclined: 0 }
           };
           for (const id of EXPOSURE_NPC_IDS) {
             if (!base[id]) continue;
@@ -7686,13 +7717,15 @@
             const read = Attributes.growthFor(state, "list_flip", list.flipCount - 1);
             if (read) improveAttribute(state, read.attribute, read.growth);
           }
-          Exposure.broadcastObservation(state, {
-            type: "financial",
-            event: "907list_profit",
-            location: district,
-            value: payout,
-            channel: "household"
-          });
+          for (const channel of ["household", "network"]) {
+            broadcastTracked(state, {
+              type: "financial",
+              event: "907list_profit",
+              location: district,
+              value: payout,
+              channel
+            });
+          }
           const beforeTier = list.tier;
           list.tier = marketTier(state);
           list.specialist = specialistCategory(state);
@@ -8243,7 +8276,7 @@
           return Math.max(1, Math.round(person.recruitCost * (1 - charismaDiscount - territoryDiscount)));
         }
         const INVERTED_LENS_IDS = ["curtis", "simone"];
-        const CREW_LENS_IDS = ["deshawn", "tone"];
+        const CREW_LENS_IDS = ["deshawn", "tone", "pherris"];
         function warmNpcContactCount(state) {
           return EXPOSURE_NPC_IDS.filter((id) => !CREW_LENS_IDS.includes(id) && !INVERTED_LENS_IDS.includes(id) && state.npc[id] && bandOf(state, id) >= BANDS.WARM).length;
         }

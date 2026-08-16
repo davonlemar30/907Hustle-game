@@ -1331,6 +1331,11 @@
       // give him a ledger at all - a lens with no record here is a subscriber
       // broadcastObservation silently skips.
       tone: { met: false, offersDeclined: 0 },
+      // v1.19: Pherris predates the Exposure System by several builds, so unlike
+      // Tone she already had crew mechanics and no ledger at all. This record is
+      // the missing half, and it is not optional - the loop below skips any lens
+      // without one, which would leave her a subscriber that never hears anything.
+      pherris: { met: false, offersDeclined: 0 },
     };
     for (const id of EXPOSURE_NPC_IDS) {
       if (!base[id]) continue;
@@ -3006,13 +3011,23 @@
     // value carries the payout because Curtis's network filter gates financial
     // observations at $200: a big 907List day is exactly how this is meant to
     // reach him, and a $40 space heater is exactly how it is meant not to.
-    Exposure.broadcastObservation(state, {
-      type: "financial",
-      event: "907list_profit",
-      location: district,
-      value: payout,
-      channel: "household",
-    });
+    //
+    // v1.19: network as well as household. Until now the only financial channel
+    // in the game was the one the player lives on, so the people who trade in
+    // money for a living - Pherris, Dre - could never hear about the money. The
+    // filter above is what keeps this honest: small flips stay a household fact,
+    // and a day big enough for Pherris to notice is a day Curtis's people notice
+    // too. Getting large enough to attract talent is what attracts attention.
+    // Tracked rather than raw so the network arrival credits his awareness.
+    for (const channel of ["household", "network"]) {
+      broadcastTracked(state, {
+        type: "financial",
+        event: "907list_profit",
+        location: district,
+        value: payout,
+        channel,
+      });
+    }
     const beforeTier = list.tier;
     list.tier = marketTier(state);
     list.specialist = specialistCategory(state);
@@ -3578,10 +3593,10 @@
   // means they consider the player harmless, not that they like them, so they
   // never count as vouching contacts.
   const INVERTED_LENS_IDS = ["curtis", "simone"];
-  // Crew are not references. Deshawn and Tone both carry lenses now, and letting
-  // either count toward the other's recruitment gate would be the crew vouching
-  // for itself.
-  const CREW_LENS_IDS = ["deshawn", "tone"];
+  // Crew are not references. Deshawn, Tone, and Pherris all carry lenses now,
+  // and letting any of them count toward another's recruitment gate would be the
+  // crew vouching for itself.
+  const CREW_LENS_IDS = ["deshawn", "tone", "pherris"];
   function warmNpcContactCount(state) {
     return EXPOSURE_NPC_IDS.filter((id) => !CREW_LENS_IDS.includes(id) && !INVERTED_LENS_IDS.includes(id) && state.npc[id] && bandOf(state, id) >= BANDS.WARM).length;
   }

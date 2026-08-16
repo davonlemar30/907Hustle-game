@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.17**. This file
+How 907Hustle: One Good Run is put together, current as of **v1.18**. This file
 is meant to be the only thing you need to read before changing code; for *why*
 the game is designed the way it is, see the ClickUp docs at the bottom.
 
@@ -54,7 +54,8 @@ src/data/               Static definitions. No logic, no state.
   gambling.js           Tonk and Cee-lo rules: deck, hand value, dice, odds, settlement
   propagation.js        CHANNELS, NPC_CHANNELS, Curtis's filter, heat thresholds
   crew.js               Loyalty scale (0-10), tier requirements, wage curve,
-                        presence-effect framework, Made Men / Guards note
+                        presence-effect framework, RECRUITMENT_PROOF and the
+                        recruitmentEligible() predicate, Made Men / Guards note
   curtis-awareness.js   Phases and floors, watcher pools, phase texts, chance formula
   arrest.js             Bail, priors, processing slots, heat relief, crew jail, copy
   disposition-bands.js  BANDS, bandFor()
@@ -98,7 +99,9 @@ ones that land in two places, or in a place you would not guess.
 | Adding | Goes in |
 |---|---|
 | A story beat / character arc card | `src/events/cards.js` **+** a descriptor in `STORY_REGISTRY` |
-| A new NPC | `src/data/npcs.js`, state in `createNpcState()`, a lens in `NPC_LENSES`, channels in `NPC_CHANNELS` |
+| A new NPC | `src/data/npcs.js`, state in `createNpcState()`, a lens in `NPC_LENSES`, channels in `NPC_CHANNELS`. The `createNpcState()` record is **not optional**: the loop that hands out ledgers skips any lens with no record, so a lens alone is a subscriber that silently hears nothing |
+| A recruitment gate that reads a ledger | an entry in `RECRUITMENT_PROOF` (`src/data/crew.js`) — data only. `crewRecruitmentEligible()` in game-core resolves the band and score and passes them in |
+| An outside-the-player modifier on an attribute roll | the `bonus` argument of `resolveAction()`, sourced from `Crew.combatAdvantageFor()`. One seam, so the ceiling is enforced in one place |
 | A new growth source | a rate in `GROWTH_RATES` **and** an attribute in `GROWTH_ATTRIBUTES` — half a definition trains nothing, silently |
 | A card or dice rule | `src/data/gambling.js`; how it plays against an attribute goes in `src/events/gambling-events.js` |
 | A new observation category | `OBSERVATION_CATEGORIES` **+** a weight in all four archetypes |
@@ -506,11 +509,47 @@ delta accumulator centered on 0; `migrateSave` rescales with
 are uniform in `TIER_REQUIREMENTS` — **tier 2** needs loyalty 7 and 5 days
 recruited, **tier 3** loyalty 9 and 12 days — and each member layers
 NPC-specific conditions on top in `crewTierAvailability` (Deshawn: two truces and
-two blocks; Tone and Pherris: controlled blocks; Pherris: cash). Tier 3's
+two blocks; Pherris: blocks and cash; Tone: three encounter wins his backup
+applied to for tier 2, then two blocks for tier 3). Tier 3's
 twelve-day gate is near-unreachable inside a 7-day pressure window; it ships as
 written, centralized so it can be tuned in one place. Wages come off a per-tier
-curve in `TIER_WAGES` — only Deshawn's is authored ($50 / $100 / $200), and
-anyone without an entry keeps their flat roster wage at every tier.
+curve in `TIER_WAGES` — Deshawn's ($50 / $100 / $200) and Tone's
+($85 / $150 / $250) are authored, and anyone without an entry keeps their flat
+roster wage at every tier.
+
+Tone's tier-2 counter is `crew.combatWins`, incremented in the two fight
+resolvers from `Crew.combatAdvantageCrewIds()` — the same exclusion-aware read
+that supplies the bonus, so a win his edge did not apply to can never reach the
+gate. It lives on the crew record rather than being counted out of
+`encounterLog.resolved`, which truncates to its last 80 rows and would silently
+reset a gate the player had already earned.
+
+### Recruitment proof (v1.18)
+
+Some crew want proof of standing before they take a wage. `RECRUITMENT_PROOF` in
+`src/data/crew.js` names the band and score floor per person, and
+`recruitmentEligible(crewId, band, score)` is the predicate. **No entry means no
+gate**, which is what makes it additive — giving Pherris a requirement later is a
+data edit, not a code change. Both recruitment paths (the scene effect and the
+garage `RECRUIT_CREW` action) go through `crewRecruitmentEligible()` in
+game-core, so the gate cannot be walked around.
+
+It is band-gated rather than category-counting on purpose: the lens already
+decides what counts for a given person, and re-implementing that arithmetic in
+the predicate would be a second copy that drifts. The `minScore` floor exists
+because a band is a wide bucket — one witnessed fight scores exactly 3.0 through
+Tone's lens, which is the Warm floor on the nose, so without the floor he would
+sign on after a single fight.
+
+**Tone's gate deliberately does not read `curtisAwareness`.** The v1.18 build
+prompt specified `curtisAwareness >= 7`. Measured over 2,000 seeded runs that is
+not a difficulty but a wall: average awareness is **0.32 of 15**, two runs in two
+thousand reach the watching phase, and the card fired **zero** times. The halves
+pull apart because awareness is fed by successful robberies (+2 each) while
+Tone's proof is fed by violence and defiance on the neighborhood channel, which
+never reaches Curtis. With the clause dropped he recruits in 75 of 2,000 runs
+across seven strategies. Feeding the awareness counter well enough to gate a
+character behind it is its own build.
 
 ### Wage settlement
 
@@ -745,15 +784,22 @@ before and after: a matching hash proves you changed nothing the player can see.
 Nothing in the run path may use `Math.random()` — only `makeRandom(seed)`, and
 not even that where a `stringHash` off the seed will do.
 
-**Current baselines, verified at v1.17.** Both moved on purpose at v1.16 (the
-arrest build rewrote two failure paths) and v1.17's copy pass and Market button
-removal left both **byte-identical**, because the reducer's `END_MARKET`
-behavior did not change and the simulator dispatches actions directly.
+**Current baselines, verified at v1.18.** Both moved on purpose at v1.18 for two
+independent reasons. The first is bookkeeping: the per-NPC telemetry loop covers
+`EXPOSURE_NPC_IDS`, so Tone's lens adds two keys per strategy block, and the
+build added four more (`averageCurtisAwareness`, `ambientPhaseRuns`,
+`watchingPhaseRuns`, `toneProvenRuns`/`toneRecruitedRuns`) to make the new
+recruitment gate measurable at all. The second is gameplay: Tone is now
+recruitable, and in the two strategies that reach his gate the hire changes cash,
+wages, story beats, and the ledgers the recruit broadcast lands in. **Eleven of
+the thirteen strategies are byte-identical**, which is the check that matters —
+it proves the new `bonus` parameter defaults to zero everywhere it was not
+passed. The v1.17 baselines were `c828c00e…` / `5fefb813…`.
 
 | Run | SHA-256 |
 |---|---|
-| `--total 200` | `c828c00e7a5b6e0e0af740ca4f4f91a17fd16dcf8cc180265a629d1f07e07d08` |
-| `--total 2000` | `5fefb813fc0a73e5d83271fbf0c1a50636b7a2842153728f9eb8b4ee36455e6f` |
+| `--total 200` | `b233d725c18d3cd51872b4ed09a5031ccb549f8d7566318e3dd845de597e976c` |
+| `--total 2000` | `9ae8cd3cf01537977fae1e98218292eb6d866bad6166f0e1a6d2623ebabdd49d` |
 
 When a hash moves, read the per-strategy metric blocks — the simulator reports
 `arrests` and `crewJailedAtEnd` for exactly that. The two argument forms differ:

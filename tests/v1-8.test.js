@@ -32,7 +32,7 @@ test("v1.15 owns save version 11 and continues to advertise v3 through v10 migra
 
 test("fresh v5 state has authoritative Mina, Curtis, Dre, Simone, jobs, and hustle records", () => {
   const state = fresh();
-  assert.deepEqual(Object.keys(state.npc), ["yalonda", "juan", "mina", "curtis", "dre", "simone", "selam", "biniam", "deshawn"]);
+  assert.deepEqual(Object.keys(state.npc), ["yalonda", "juan", "mina", "curtis", "dre", "simone", "selam", "biniam", "deshawn", "tone"]);
   assert.equal(state.npc.curtis.attention, 0);
   assert.equal(state.npc.mina.cleanLifeAtRisk, false);
   assert.deepEqual(state.jobs.hired, ["day_labor"]);
@@ -313,6 +313,10 @@ test("Pherris, Tone, and Deshawn tier prerequisites are independently enforced",
   state.people.crew.tone.loyalty = 7;
   state.people.crew.deshawn.loyalty = 7;
   assert.equal(C.selectors.crewTierAvailability(state, "pherris").available, true);
+  // v1.18: loyalty and days are not enough for Tone. He wants three fights he
+  // was standing in, which is the gate money cannot reach.
+  assert.equal(C.selectors.crewTierAvailability(state, "tone").available, false, "loyalty alone does not promote Tone");
+  state.people.crew.tone.combatWins = 3;
   assert.equal(C.selectors.crewTierAvailability(state, "tone").available, true);
   assert.equal(C.selectors.crewTierAvailability(state, "deshawn").available, true);
 });

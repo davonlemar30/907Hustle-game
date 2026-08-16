@@ -101,8 +101,8 @@
   // A banked gym streak is worth one effective level on the next check that
   // reads the attribute, and it is spent when it is used - the same contract
   // game-core's resolveOutcome honours for the reducer's own checks.
-  function resolve(state, encounter, actionType, chance, choice) {
-    const outcome = Attributes.resolveAction(state, actionType, chance, outcomeKey(state, encounter, choice));
+  function resolve(state, encounter, actionType, chance, choice, bonus) {
+    const outcome = Attributes.resolveAction(state, actionType, chance, outcomeKey(state, encounter, choice), bonus);
     if (Attributes.gymStreakBonus(state, "combat")) { state.player.gymStreak = 0; state.player.gymStreakDay = null; }
     state.run.lastOutcomeTier = outcome.tier;
     return outcome;
@@ -428,13 +428,26 @@
     // constant is the old formula at the old starting attribute of 2, so a fresh
     // player's odds are unchanged and training is what buys the improvement.
     const chance = clamp(0.48 + (weapon?.accuracy || 0) + tone - threat * 0.045, 0.12, 0.88);
+    // v1.18: two different things on purpose. `tone` above is the assignment -
+    // he is posted here, so the other side counts heads before they start, and
+    // that moves the chance. `backup` below is the payroll: he is yours, so the
+    // roll gets a second look. An assigned Tone earns both, because a slot spent
+    // on the door is a slot not spent anywhere else.
+    const backup = Crew.combatAdvantageFor(state, "encounter", encounter.id);
     if (encounter.type === "random") state.encounterLog.randomFights += 1;
     if (firearm) {
       addHeat(state, weapon.heat || 0);
       if (encounter.type === "authored" && encounter.areaId === "downtown") state.flags.firedWeaponDowntown = true;
     }
-    const outcome = resolve(state, encounter, "confrontation", chance, "fight");
+    const outcome = resolve(state, encounter, "confrontation", chance, "fight", backup);
     if (Attributes.isSuccessTier(outcome.tier)) {
+      // Credit the win to whoever actually supplied the edge. Sourced from the
+      // same exclusion-aware helper as the bonus, so a win against Curtis's own
+      // crew never counts - Tone was not the reason for that one.
+      for (const crewId of Crew.combatAdvantageCrewIds(state, "encounter", encounter.id)) {
+        const record = state.people.crew[crewId];
+        if (record) record.combatWins = (record.combatWins || 0) + 1;
+      }
       // A clean win is one you walk away from. Only the messy kind turns lethal,
       // which is why a high-Combat player is quieter, not just luckier.
       const lethalChance = firearm ? 0.35 : weapon?.type === "close" ? 0.08 : 0.02;

@@ -161,10 +161,24 @@ function resolveWithAttribute(outcomePool, attributeValue, seed) {
 
 // Convenience wrapper for the common shape: an action id, a computed chance, and
 // a state to read the attribute from.
-function resolveAction(state, actionType, chance, seed) {
+//
+// `bonus` (v1.18) is an effective-level modifier from something outside the
+// player - crew standing next to them, for now. It is re-clamped to the same
+// ceiling the attribute itself lives under, so backup can push a Combat 5 up to
+// the catastrophe-immunity line but can never push anyone past the top tier.
+// Omitting it resolves exactly as before, which is what keeps every call site
+// that has no backup byte-identical.
+//
+// Deliberately a level and not a chance bump: ADVANTAGE_THRESHOLD is 3 and
+// CATASTROPHE_IMMUNITY_THRESHOLD is 6, so a single level is invisible at 0-1 and
+// 3-4 and decisive at 2 and 5. That is what a big guy standing next to you
+// actually does - it does not make you better at fighting, it takes the worst
+// ending off the table.
+function resolveAction(state, actionType, chance, seed, bonus) {
   const attribute = ACTION_ATTRIBUTE_MAP[actionType];
   const pool = buildOutcomePool(actionType, chance);
-  const outcome = resolveWithAttribute(pool, effectiveAttribute(state, attribute), seed);
+  const level = clamp(effectiveAttribute(state, attribute) + (Number(bonus) || 0), ATTRIBUTE_MIN, ATTRIBUTE_MAX);
+  const outcome = resolveWithAttribute(pool, level, seed);
   return outcome || { tier: "failure", value: OUTCOME_VALUES.failure };
 }
 

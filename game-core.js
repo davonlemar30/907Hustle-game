@@ -822,8 +822,8 @@
   // A check that reads an attribute spends whichever streak is banked against
   // it. Both are spent on use rather than carried, so three days of discipline
   // buys exactly one better roll and then it is gone.
-  function resolveOutcome(state, actionType, chance, key) {
-    const outcome = Attributes.resolveAction(state, actionType, chance, key);
+  function resolveOutcome(state, actionType, chance, key, bonus) {
+    const outcome = Attributes.resolveAction(state, actionType, chance, key, bonus);
     const attribute = AttributeData.ACTION_ATTRIBUTE_MAP[actionType];
     if (Attributes.gymStreakBonus(state, attribute)) { state.player.gymStreak = 0; state.player.gymStreakDay = null; }
     if (Attributes.nileStreakBonus(state, attribute)) {
@@ -1249,6 +1249,11 @@
       // v1.16: set when status flips to "arrested". Null for everyone else, so
       // mergeDefaults hands it to every pre-v1.16 save without a migration.
       jailedUntilDay: null, jailedSeverity: null,
+      // v1.18: encounter wins where this member's backup actually applied. Tone's
+      // tier-2 gate reads it. Kept on the crew record rather than counted out of
+      // encounterLog, which truncates to its last 80 rows and would silently
+      // reset a gate the player had already earned.
+      combatWins: 0,
     }]));
   }
 
@@ -1320,6 +1325,12 @@
       // person knows and does: his weekly introductions and the de-escalation
       // window his loyalty triggers read.
       deshawn: { lastIntroDay: null, introducedContacts: [], lastDeescalationDay: null },
+      // v1.18: same split as Deshawn. Crew mechanics (loyalty, tier, wage,
+      // combat wins) live in state.people.crew.tone; this record is what the
+      // person knows and has been told. It has to exist for the loop below to
+      // give him a ledger at all - a lens with no record here is a subscriber
+      // broadcastObservation silently skips.
+      tone: { met: false, offersDeclined: 0 },
     };
     for (const id of EXPOSURE_NPC_IDS) {
       if (!base[id]) continue;
@@ -3564,8 +3575,42 @@
   // means they consider the player harmless, not that they like them, so they
   // never count as vouching contacts.
   const INVERTED_LENS_IDS = ["curtis", "simone"];
+  // Crew are not references. Deshawn and Tone both carry lenses now, and letting
+  // either count toward the other's recruitment gate would be the crew vouching
+  // for itself.
+  const CREW_LENS_IDS = ["deshawn", "tone"];
   function warmNpcContactCount(state) {
-    return EXPOSURE_NPC_IDS.filter((id) => id !== "deshawn" && !INVERTED_LENS_IDS.includes(id) && state.npc[id] && bandOf(state, id) >= BANDS.WARM).length;
+    return EXPOSURE_NPC_IDS.filter((id) => !CREW_LENS_IDS.includes(id) && !INVERTED_LENS_IDS.includes(id) && state.npc[id] && bandOf(state, id) >= BANDS.WARM).length;
+  }
+  // v1.18: the proof gate, resolved. crew.js owns which band and score each
+  // person needs; the ledger read stays here because src/data may not reach into
+  // src/exposure. Returns true for anyone with no proof requirement.
+  function crewRecruitmentEligible(state, crewId) {
+    return Crew.recruitmentEligible(crewId, bandOf(state, crewId), Exposure.getDisposition(crewId, state));
+  }
+  // v1.18: Tone's gate, as one reason string the card and the UI can both read.
+  // The condition that matters is earned rather than bought: his own ledger has
+  // to say the player holds a position, read through a lens that only counts
+  // nerve. He does not approach nobodies, and the ledger is what decides who is
+  // one.
+  //
+  // The build prompt also gated this on curtisAwareness >= 7, on the theory that
+  // the network telling Curtis told Tone too. Measured over 2,000 seeded runs
+  // that gate is not a difficulty, it is a wall: average awareness is 0.32 of
+  // 15 and two runs in two thousand reach the watching phase, so the card fired
+  // zero times. The two halves pull apart because awareness is fed by
+  // successful robberies while Tone's proof is fed by violence and defiance on
+  // the neighborhood channel, which never reaches Curtis at all. Feeding the
+  // awareness counter properly is its own build; gating a character behind it
+  // today would ship him as content nobody sees.
+  function toneRecruitmentAvailability(state) {
+    const crew = state.people.crew.tone;
+    if (crew.recruited) return { available: false, reason: "He already works here." };
+    if (crew.status === "departed") return { available: false, reason: "He does not come back." };
+    if (!crewRecruitmentEligible(state, "tone")) return { available: false, reason: "He has not heard anything about you worth hearing." };
+    if (recruitedCrew(state).length >= crewCapacityFor(state)) return { available: false, reason: "No room on the crew." };
+    if (state.player.cash < recruitmentCost(state, "tone")) return { available: false, reason: "Not enough cash for what he asks up front." };
+    return { available: true, reason: "Tone is ready to hear the offer." };
   }
   function deshawnRecruitmentAvailability(state) {
     if (state.flags.deshawnBusinessSevered) return { available: false, reason: "'It was business' permanently closed this route." };
@@ -3597,7 +3642,14 @@
       return blocks >= 2 && state.player.cash >= 500 ? { available: true, tier: 3, cost: 500 } : { available: false, reason: "Tier 3 needs two blocks and $500." };
     }
     if (crewId === "tone") {
-      if (targetTier === 2) return { available: true, tier: 2, cost: 0 };
+      // v1.18: he does not promote on time served. Tier 2 is three fights he was
+      // standing in, which is the one thing on this screen money cannot buy.
+      if (targetTier === 2) {
+        const wins = crew.combatWins || 0;
+        return wins >= Crew.TONE_TIER2_COMBAT_WINS
+          ? { available: true, tier: 2, cost: 0 }
+          : { available: false, reason: `Tier 2 needs ${Crew.TONE_TIER2_COMBAT_WINS} fights he was in. He has been in ${wins}.` };
+      }
       return blocks >= 2 ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs two controlled blocks." };
     }
     if (crewId === "deshawn") {
@@ -4888,6 +4940,19 @@
         && recruitedCrew(s).length < crewCapacityFor(s)
         && (!s.flags.deshawnNextOfferDay || s.run.day >= s.flags.deshawnNextOfferDay),
       area: "north_star_lot", earliest: { day: 5, slot: 0 }, latest: null, once: false, cooldown: 3, weight: 7, exit: null },
+    // v1.18: Tone's recruitment scene, gated on proof rather than on owning the
+    // garage. His ledger has to read Warm through a lens that only counts nerve,
+    // and it has to read it by enough of a margin that one fight is not the whole
+    // argument. Reactive: the moment it holds he is already standing there, which
+    // is the characterization. Declining sets toneNextOfferDay and paces the
+    // re-offer at three days, the same shape as Deshawn's. The Week Zero clause
+    // is explicit because character_intro is not a suppressed classification and
+    // this beat should never open the tutorial stretch.
+    { id: "tone_recruit", chain: null, stage: null, classification: "character_intro", trigger: "reactive",
+      requires: (s) => s.run.phase !== "week_zero"
+        && toneRecruitmentAvailability(s).available
+        && (!s.flags.toneNextOfferDay || s.run.day >= s.flags.toneNextOfferDay),
+      area: "north_star_lot", earliest: { day: 4, slot: 0 }, latest: null, once: false, cooldown: 3, weight: 8, exit: null },
     { id: "courier", chain: null, stage: null, classification: "opportunity", trigger: "ambient",
       requires: () => true, area: "airport_industrial", earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
     { id: "base_watch", chain: null, stage: null, classification: "threat", trigger: "ambient",
@@ -5185,13 +5250,34 @@
     if (effect.recruitCrew && state.people.crew[effect.recruitCrew]) {
       const crewId = effect.recruitCrew;
       const person = CREW_BY_ID[crewId], crew = state.people.crew[crewId];
+      // v1.18: a scene may charge the sticker price. Deshawn's does not, because
+      // the wage is his whole ask, so the cost is opt-in per card rather than a
+      // property of the token.
+      const cost = effect.recruitCrewPaid ? recruitmentCost(state, crewId) : 0;
       const eligible = !crew.recruited && recruitedCrew(state).length < crewCapacityFor(state)
+        && state.player.cash >= cost
+        && crewRecruitmentEligible(state, crewId)
         && (crewId !== "deshawn" || deshawnRecruitmentAvailability(state).available);
       if (eligible) {
+        if (cost) { spendCash(state, cost); state.stats.moneySpent.crew += cost; }
         crew.introduced = true; crew.recruited = true; crew.status = "active";
         crew.contactStage = "active"; crew.tier = Math.max(1, crew.tier || 0);
         crew.recruitedDay = state.run.day;
         crew.loyalty = Crew.clampLoyalty(crew.loyalty + 1);
+        if (crewId === "tone") {
+          // He starts at the neutral mark, not a point above it. Nobody who made
+          // you prove it first is grateful on day one.
+          crew.loyalty = Crew.CREW_LOYALTY_START;
+          state.npc.tone.met = true;
+          pushPhoneMessage(state, "Tone", "Key's on my belt. Call before you go somewhere you'd rather not go by yourself.");
+          // Neighborhood, not network. The block sees him at your door; Curtis
+          // finding out is its own event, and routing this through the network
+          // would hand him a free point of attention for hiring a guard.
+          broadcastTracked(state, {
+            type: "growth", event: "crew_recruited", channel: "neighborhood",
+            location: "north_star_lot", day: state.run.day, slot: state.run.slot,
+          });
+        }
         if (crewId === "deshawn") {
           state.flags.extraRentGraceAvailable = true;
           // He came around because the player robbed Goodie and then paid the
@@ -5211,6 +5297,13 @@
     if (effect.deshawnDeclineOffer) {
       state.flags.deshawnOfferDeclined = true;
       state.flags.deshawnNextOfferDay = state.run.day + 3;
+    }
+    // v1.18: declining Tone is a rain check too. Three days, and the number does
+    // not move - he does not negotiate himself down to stay wanted.
+    if (effect.toneDeclineOffer) {
+      state.npc.tone.offersDeclined += 1;
+      state.flags.toneOfferDeclined = true;
+      state.flags.toneNextOfferDay = state.run.day + 3;
     }
     if (effect.addRumor) state.effects.rumors.push({ id: `contact_${state.run.day}_${state.run.slot}_${effect.addRumor.areaId}`, ...effect.addRumor, reliable: true, expiresAt: slotNumber(state.run.day, state.run.slot) + 3 });
     if (effect.crewLoyalty && state.people.crew[effect.crewLoyalty.id]) { const record = state.people.crew[effect.crewLoyalty.id]; record.loyalty = Crew.clampLoyalty(record.loyalty + effect.crewLoyalty.delta); }
@@ -5781,12 +5874,20 @@
         state.player.heat = clamp(state.player.heat + weapon.heat, 0, 15);
         state.flags.firedWeaponDowntown = state.world.currentNeighborhoodId === "downtown";
       }
-      const outcome = resolveOutcome(state, "confrontation", chance, `${state.run.seed}:confrontation:${state.run.day}:${state.run.slot}:${encounter.id}:${encounter.step}`);
+      const backup = Crew.combatAdvantageFor(state, "encounter", encounter.id);
+      const outcome = resolveOutcome(state, "confrontation", chance, `${state.run.seed}:confrontation:${state.run.day}:${state.run.slot}:${encounter.id}:${encounter.step}`, backup);
       broadcastOutcome(state, "confrontation", outcome.tier);
       if (Attributes.isSuccessTier(outcome.tier)) {
         const damage = weapon ? random.int(weapon.damage[0], weapon.damage[1]) + (firearm ? 0 : Math.floor(combatCompat(state) / 2)) : random.int(4, 8) + combatCompat(state);
         encounter.enemyHealth -= damage;
         if (encounter.enemyHealth <= 0) {
+          // At the kill, not per successful step. This engine resolves a fight
+          // over several steps, so crediting each one would count a single
+          // encounter two or three times.
+          for (const crewId of Crew.combatAdvantageCrewIds(state, "encounter", encounter.id)) {
+            const record = state.people.crew[crewId];
+            if (record) record.combatWins = (record.combatWins || 0) + 1;
+          }
           if (firearm || encounter.id === "late") state.flags.seriousViolence = true;
           Exposure.recordObservation(state, "curtis", { type: "submission", event: "won_the_room", source: "witnessed" });
           influenceChange(state, state.world.currentNeighborhoodId, 1);
@@ -7283,7 +7384,11 @@
       reconcileCash(base);
       base.stats.robbery = normalizeRobberyStats(base.stats.robbery, base);
       const random = makeRandom(base.run.rngState);
-      const outcome = resolveOutcome(base, "robbery", availability.chance, `${base.run.seed}:stickup:${base.run.day}:${base.run.slot}:${target.id}`);
+      // v1.18: Tone at the confrontation is worth one effective level here too.
+      // No combatWins credit: his tier gate counts fights somebody stood next to
+      // him in, and walking into a store is not one of those.
+      const stickBackup = Crew.combatAdvantageFor(base, "stick_target", target.id);
+      const outcome = resolveOutcome(base, "robbery", availability.chance, `${base.run.seed}:stickup:${base.run.day}:${base.run.slot}:${target.id}`, stickBackup);
       const success = Attributes.isSuccessTier(outcome.tier);
       // Streak first: the Nth repeat in the same district inside two days is
       // the one the block was already talking about.
@@ -7640,6 +7745,9 @@
       const person = CREW_BY_ID[action.crewId], crew = state.people.crew[action.crewId], cost = recruitmentCost(state, action.crewId);
       if ((!crew.introduced && person.id !== "deshawn") || crew.recruited || state.player.cash < cost || (person.id === "eli" && crew.contactStage !== "recruitable")) return inputState;
       if (person.id === "deshawn" && !deshawnRecruitmentAvailability(state).available) return inputState;
+      // v1.18: the proof gate holds at the garage too. Without this, walking
+      // into the base is a way around the whole thing.
+      if (!crewRecruitmentEligible(state, person.id)) return inputState;
       if (person.id === "deshawn") crew.introduced = true;
       base.player.cash -= cost; crew.recruited = true; crew.status = "active"; crew.loyalty = Crew.clampLoyalty(crew.loyalty + 1); crew.recruitedDay = base.run.day; base.stats.moneySpent.crew += cost;
       crew.contactStage = "active"; crew.tier = Math.max(1, crew.tier || 0);
@@ -8103,7 +8211,7 @@
       soldierRecruitAvailability, soldierAssignAvailability, blockClaimAvailability, eliPromotionAvailability,
       weeklyIncomeEstimate,
       dreTrustTier, dreIntroductionEligible, dreMissionAvailability, sharkUnlocked, sharkRiskLabel, sharkLoanAvailability,
-      deshawnRecruitmentAvailability, crewTierAvailability, crewBailAvailability, arrestRecord,
+      deshawnRecruitmentAvailability, toneRecruitmentAvailability, crewRecruitmentEligible, crewTierAvailability, crewBailAvailability, arrestRecord,
       districtControlTier, districtHasBlockLayer, unassignedSoldiers,
       homeSituation, homeUnlocks, homePriorities, homeSummary, actionResult,
       juanWorkIntelKnown, jobRankForXp, jobPayRange, discoveredJobs, jobAvailability, quickShift, ambientFlavor, phoneIntel, knownWorkplaceContacts, knownSocialContacts, personalContacts, contactAvailability,

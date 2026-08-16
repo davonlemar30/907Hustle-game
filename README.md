@@ -2,27 +2,31 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-## Current Build (v1.17)
+## Current Build (v1.18)
 
-**v1.17: Voice & Copy Polish** — the system feed learns to sound like Spenard,
-the Leave Market button gives way to a nav-away close, the missing CSS tone
-aliases come back, and Mina Vale gets a real conversation tree. No balance
-changes.
+**v1.18: Observation-Gated Recruitment — Tone** — Tone stops being a flat gate
+and becomes someone the player earns. Combat-domain behavior propagates through
+the Exposure System into his ledger; when it reads far enough past Warm through a
+lens that only counts nerve, he comes to the garage himself. Once he is on the
+payroll his presence is worth one effective level of Combat, and his promotion
+counts fights he was actually standing in.
 
 | | |
 |---|---|
 | Save schema | **v11** (`907ogr_v11`), loads v3 and up |
-| Tests | **601** passing (`npm test`) |
-| Simulation, 200 runs | `c828c00e7a5b6e0e0af740ca4f4f91a17fd16dcf8cc180265a629d1f07e07d08` |
-| Simulation, 2,000 runs | `5fefb813fc0a73e5d83271fbf0c1a50636b7a2842153728f9eb8b4ee36455e6f` |
+| Tests | **637** passing (`npm test`) |
+| Simulation, 200 runs | `b233d725c18d3cd51872b4ed09a5031ccb549f8d7566318e3dd845de597e976c` |
+| Simulation, 2,000 runs | `9ae8cd3cf01537977fae1e98218292eb6d866bad6166f0e1a6d2623ebabdd49d` |
 
-Both hashes are byte-identical to v1.16: the reducer was not touched.
+Both hashes moved on purpose. Eleven of the thirteen simulation strategies are
+byte-identical; the two that drift are the two that reach Tone's gate.
 
 **The systems underneath:**
 
-- **Exposure System** — nine NPCs, each with a ledger of what they saw and a
+- **Exposure System** — ten NPCs, each with a ledger of what they saw and a
   personality lens that decides what it meant. Dispositions are derived, never
-  stored.
+  stored, and one of them is now a recruitment gate: Tone reads the same ledger
+  everyone else does and signs on for what it says.
 - **Attribute Triangle** — Combat, Charisma, Intelligence. They buy *advantage*
   (a second roll, then immunity to catastrophe), never a hidden percentage.
 - **Criminal Economy** — Stick, Boost, the plug market, and Slide's fence, all
@@ -808,20 +812,25 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 ## Verification
 
-- Node tests: **601 passing** (588 through v1.16, 13 new in `tests/v1-17.test.js`)
+- Node tests: **637 passing** (601 through v1.17, 36 new in `tests/v1-18.test.js`)
 - Deterministic simulations: **2,000 runs, zero crashes or dead ends**
-- Simulation SHA-256: `5fefb813fc0a73e5d83271fbf0c1a50636b7a2842153728f9eb8b4ee36455e6f`
+- Simulation SHA-256: `9ae8cd3cf01537977fae1e98218292eb6d866bad6166f0e1a6d2623ebabdd49d`
   (`--total 2000`) and
-  `c828c00e7a5b6e0e0af740ca4f4f91a17fd16dcf8cc180265a629d1f07e07d08`
-  (`--total 200`). **Both moved at v1.16 on purpose** (every Stick tier routes
-  through `arrestPlayer`, and a failed boost opens the fight/run/surrender scene
-  instead of auto-resolving; the v1.15 baselines were `01c618d5…` /
-  `9f471dec…`) and **stayed byte-identical at v1.17, verified**: the Market
-  close moved from a button to the shell's nav-away hook, but the reducer's
-  `END_MARKET` is untouched and the simulator drives the reducer directly. The
-  build prompt predicted a hash change; that prediction assumed a reducer-side
-  gate, which would have dead-ended every simulation strategy that uses bare
-  `END_MARKET` as "stay put and advance."
+  `b233d725c18d3cd51872b4ed09a5031ccb549f8d7566318e3dd845de597e976c`
+  (`--total 200`). **Both moved at v1.18 on purpose**, for two independent
+  reasons. Bookkeeping: the per-NPC telemetry loop covers `EXPOSURE_NPC_IDS`, so
+  Tone's lens adds two keys per strategy block, and the build added four more so
+  the new recruitment gate could be measured at all. Gameplay: Tone is
+  recruitable now, and the two strategies that reach his gate spend the cash, pay
+  the wage, and fire the beat. **Eleven of thirteen strategies are
+  byte-identical** — the check that proves the new `bonus` argument on
+  `resolveAction` defaults to zero everywhere it was not passed. The v1.17
+  baselines were `c828c00e…` / `5fefb813…`.
+- Tone's gate, measured: gated as the build prompt specified
+  (`curtisAwareness >= 7`) the card fired **zero times in 2,000 runs** — average
+  awareness is 0.32 of 15. Gated on ledger proof alone he recruits in **75 of
+  2,000 runs** across seven strategies. The awareness clause was dropped for that
+  reason, not for convenience.
 - Build: `npm run build` completes in ~30ms with no circular imports
 - Title art over the wire: 68KB at 375px, 145KB at 1280px, down from 1,976KB
 - Viewports: 320×568, 360×640, 375×812, 414×896, 640×480, 768×1024, 834×1112,

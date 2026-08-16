@@ -832,6 +832,16 @@
         deshawn: {
           archetype: "STREET",
           weights: { violence: -3, discretion: 3, loyalty: 4, betrayal: -5, presence: 2 }
+        },
+        // Tone reads one axis: whether you hold a position. He worked doors for years
+        // and lost the last one to Curtis's people, so backing down is what he scores
+        // hardest against - submission costs more with him than violence earns. He is
+        // the only lens in the game that reads violence as a credit and discretion as
+        // a debt, which is the whole character: quiet is not a virtue to him when the
+        // sedan is still parked outside.
+        tone: {
+          archetype: "STREET",
+          weights: { violence: 3, defiance: 2, growth: 1, discretion: -2, submission: -3 }
         }
       };
       var EXPOSURE_NPC_IDS = Object.keys(NPC_LENSES);
@@ -892,7 +902,12 @@
         // Deshawn hears the block and the household, never the network. He is
         // deliberately off Curtis's radar - his whole value is that he moves through
         // Spenard as a neighbor, not as an operator.
-        deshawn: ["direct", "neighborhood", "household"]
+        deshawn: ["direct", "neighborhood", "household"],
+        // Tone worked doors for a living, so he hears the block and he hears the
+        // wire - that is how he already knows who parked the sedan. No household: he
+        // does not live with the player. Not `reputation` either; that channel is
+        // Curtis's alone, and it is the slow one anyway.
+        tone: ["direct", "neighborhood", "network"]
       };
       var CURTIS_NETWORK_CATEGORIES = /* @__PURE__ */ new Set(["violence", "defiance", "growth"]);
       var CURTIS_VOLUME_THRESHOLD = 200;
@@ -915,7 +930,10 @@
         selam: [0, 1, 2],
         biniam: [2, 3],
         // Deshawn is around from midday on - mornings are his own.
-        deshawn: [1, 2, 3]
+        deshawn: [1, 2, 3],
+        // Tone keeps door hours. He is around Spenard in the evening and at night,
+        // which is when the work he does exists.
+        tone: [2, 3]
       };
       var NPC_PRESENCE_AREAS = {
         yalonda: ["north_star_lot"],
@@ -928,7 +946,9 @@
         selam: ["north_star_lot"],
         biniam: ["north_star_lot"],
         // Deshawn thinks in terms of the block. He does not leave it.
-        deshawn: ["north_star_lot"]
+        deshawn: ["north_star_lot"],
+        // Spenard only for now. Downtown is not his stretch and never was.
+        tone: ["north_star_lot"]
       };
       function channelFor(id) {
         return CHANNELS[id] || CHANNELS.direct;
@@ -1243,10 +1263,11 @@
         if (!second) return first;
         return (Number(first.value) || 0) >= (Number(second.value) || 0) ? first : second;
       }
-      function resolveAction(state, actionType, chance, seed) {
+      function resolveAction(state, actionType, chance, seed, bonus) {
         const attribute = ACTION_ATTRIBUTE_MAP[actionType];
         const pool = buildOutcomePool(actionType, chance);
-        const outcome = resolveWithAttribute(pool, effectiveAttribute(state, attribute), seed);
+        const level = clamp(effectiveAttribute(state, attribute) + (Number(bonus) || 0), ATTRIBUTE_MIN, ATTRIBUTE_MAX);
+        const outcome = resolveWithAttribute(pool, level, seed);
         return outcome || { tier: "failure", value: OUTCOME_VALUES.failure };
       }
       function isSuccessTier(tier) {
@@ -1464,12 +1485,17 @@
   var require_crew = __commonJS({
     "src/data/crew.js"(exports, module) {
       var { CREW } = require_npcs();
+      var { BANDS } = require_disposition_bands();
       var CREW_LOYALTY_MIN = 0;
       var CREW_LOYALTY_MAX = 10;
       var CREW_LOYALTY_START = 5;
       var CREW_WAGE_GRACE_DAYS = 2;
       var TIER_WAGES = {
-        deshawn: [50, 100, 200]
+        deshawn: [50, 100, 200],
+        // v1.18: Tone is expensive because muscle is. Tier 2 means he has brought
+        // hands with him, tier 3 means a squad, and the wage says so before the
+        // player has to find out the other way.
+        tone: [85, 150, 250]
       };
       function wageFor(person, tier) {
         const curve = TIER_WAGES[person.id];
@@ -1502,11 +1528,21 @@
         deshawn: [
           { eventType: "encounter", modification: "de_escalate", excludes: CURTIS_CREW_ENCOUNTER_IDS },
           { eventType: "stick_retaliation", modification: "de_escalate", excludes: [] }
+        ],
+        // v1.18: Tone talks nobody down. What he changes is how it goes once it has
+        // started - one effective level of Combat on the roll. Never against Curtis's
+        // own people: they knew him when he worked their side of it, and a face they
+        // already know is not a reason to walk away.
+        tone: [
+          { eventType: "encounter", modification: "combat_advantage", excludes: CURTIS_CREW_ENCOUNTER_IDS },
+          { eventType: "stick_target", modification: "combat_advantage", excludes: [] }
         ]
       };
       function presenceEffectsFor(state, eventType, contextId) {
+        var _a, _b, _c;
         const effects = [];
         for (const person of getActiveCrew(state)) {
+          if ((Number((_c = (_b = (_a = state.people) == null ? void 0 : _a.crew) == null ? void 0 : _b[person.id]) == null ? void 0 : _c.loyalty) || 0) <= 0) continue;
           for (const effect of PRESENCE_EFFECTS[person.id] || []) {
             if (effect.eventType !== eventType) continue;
             if (contextId && effect.excludes.includes(contextId)) continue;
@@ -1515,6 +1551,27 @@
         }
         return effects;
       }
+      var COMBAT_ADVANTAGE_CAP = 1;
+      function combatAdvantageFor(state, eventType, contextId) {
+        return Math.min(COMBAT_ADVANTAGE_CAP, combatAdvantageCrewIds(state, eventType, contextId).length);
+      }
+      function combatAdvantageCrewIds(state, eventType, contextId) {
+        return presenceEffectsFor(state, eventType, contextId).filter((effect) => effect.modification === "combat_advantage").map((effect) => effect.crewId);
+      }
+      var RECRUITMENT_PROOF = {
+        tone: { minBand: "WARM", minScore: 6 }
+      };
+      function recruitmentProofFor(crewId) {
+        return RECRUITMENT_PROOF[crewId] || null;
+      }
+      function recruitmentEligible(crewId, band, score) {
+        const proof = RECRUITMENT_PROOF[crewId];
+        if (!proof) return true;
+        if ((Number(band) || 0) < BANDS[proof.minBand]) return false;
+        if (proof.minScore != null && (Number(score) || 0) < proof.minScore) return false;
+        return true;
+      }
+      var TONE_TIER2_COMBAT_WINS = 3;
       var DESHAWN_LOYALTY_TRIGGERS = {
         deescalateUsed: 1,
         // player lets him handle it
@@ -1534,6 +1591,13 @@
         TIER_WAGES,
         TIER_REQUIREMENTS,
         CURTIS_CREW_ENCOUNTER_IDS,
+        COMBAT_ADVANTAGE_CAP,
+        RECRUITMENT_PROOF,
+        TONE_TIER2_COMBAT_WINS,
+        recruitmentProofFor,
+        recruitmentEligible,
+        combatAdvantageFor,
+        combatAdvantageCrewIds,
         PRESENCE_EFFECTS,
         DESHAWN_LOYALTY_TRIGGERS,
         DESHAWN_VIOLENCE_WINDOW_DAYS,
@@ -1699,8 +1763,8 @@
         function outcomeKey(state, encounter, action) {
           return `${state.run.seed}:${action}:${state.run.day}:${state.run.slot}:${encounter.id || encounter.type}`;
         }
-        function resolve(state, encounter, actionType, chance, choice2) {
-          const outcome = Attributes.resolveAction(state, actionType, chance, outcomeKey(state, encounter, choice2));
+        function resolve(state, encounter, actionType, chance, choice2, bonus) {
+          const outcome = Attributes.resolveAction(state, actionType, chance, outcomeKey(state, encounter, choice2), bonus);
           if (Attributes.gymStreakBonus(state, "combat")) {
             state.player.gymStreak = 0;
             state.player.gymStreakDay = null;
@@ -2084,13 +2148,18 @@
           const tone = toneNearby(state, encounter.areaId) ? 0.1 : 0;
           const threat = encounter.type === "random" ? encounter.npc.threat : encounter.threat;
           const chance = clamp(0.48 + ((weapon == null ? void 0 : weapon.accuracy) || 0) + tone - threat * 0.045, 0.12, 0.88);
+          const backup = Crew.combatAdvantageFor(state, "encounter", encounter.id);
           if (encounter.type === "random") state.encounterLog.randomFights += 1;
           if (firearm) {
             addHeat(state, weapon.heat || 0);
             if (encounter.type === "authored" && encounter.areaId === "downtown") state.flags.firedWeaponDowntown = true;
           }
-          const outcome = resolve(state, encounter, "confrontation", chance, "fight");
+          const outcome = resolve(state, encounter, "confrontation", chance, "fight", backup);
           if (Attributes.isSuccessTier(outcome.tier)) {
+            for (const crewId of Crew.combatAdvantageCrewIds(state, "encounter", encounter.id)) {
+              const record = state.people.crew[crewId];
+              if (record) record.combatWins = (record.combatWins || 0) + 1;
+            }
             const lethalChance = firearm ? 0.35 : (weapon == null ? void 0 : weapon.type) === "close" ? 0.08 : 0.02;
             const killed = outcome.tier === "messy" && next(rng) < lethalChance;
             if (encounter.type === "random") {
@@ -2536,6 +2605,7 @@
         eli_callback: "He comes up beside the garage without knocking, which is new. He wanted you to hear about the other driver from him first. Repeating his terms word for word is how he shows the price has not moved.",
         pherris_offer: "She took the corner booth Downtown before you arrived and ordered for both of you, which tells you how the conversation is going to go.",
         tone_offer: "He stands under the broken security light, far enough back that he is out of the doorway. He leaves the part about Curtis for last.",
+        tone_recruit: "He waited by the door this time instead of the light, which is a different kind of standing there. The number has not moved since the first conversation.",
         deshawn_offer: "He was already at the counter when you came in, which means he knew your evening better than you did. The coffee in front of him is still full.",
         mina_shift_change: "The heater ticks over the door. The owner drinks his coffee here every Thursday and knows every face on this block. On this street a name is the first thing anyone trades.",
         mina_invitation: "She is outside when you come around the corner, coat already on. The lot's sodium light makes the slush look orange. She is asking what you can build in four hours, on foot, in Spenard.",
@@ -2578,6 +2648,7 @@
         eli_callback: { who: "Eli Ward, still working the service roads", where: "North Star Garage, Spenard", stakes: "Reopen the door to a test route or confirm that Eli should look elsewhere." },
         pherris_offer: { who: "Pherris Cole, a connected supplier", where: "Downtown corner booth", stakes: "Supplier access, loyalty, and how much ownership you are willing to share." },
         tone_offer: { who: "Anton Bell, a former security worker", where: "North Star Garage", stakes: "Protection against Curtis at the cost of another wage." },
+        tone_recruit: { who: "Anton Bell, back with a plate number and a price", where: "North Star Garage", stakes: "A body at the door, a wage every night, and how confrontations end from here." },
         deshawn_offer: { who: "Deshawn, the block's quiet fixer", where: "The Night Owl, Spenard", stakes: "A first crew member: de-escalation, introductions, and a wage every day." },
         mina_shift_change: { who: "Mina Vale, twenty minutes past close", where: "Night Owl Mini-Mart, Spenard", stakes: "Mina is building an exit that public association with your operation would close. How much you tell her sets the terms." },
         mina_invitation: { who: "Mina, off shift early and without a car", where: "The Night Owl lot, Spenard", stakes: "Four hours away from the block, or four hours she spends near your operation. Both cost time." },
@@ -2748,6 +2819,14 @@
           tone_offer: () => event("tone_offer", "Tone at the Garage Door", "Anton Bell points out a sedan parked in the one spot your camera misses, and says how long it has sat there. Curtis's people cost him his last job. He wants a wage to guard the garage.", [
             { label: "Offer protection work", effect: { introduceCrew: "tone", crewLoyalty: { id: "tone", delta: 1 } }, preview: "Opens a future recruitment option and another wage against Curtis.", result: `He checks the doorframe, then the hinge side, then the lock, in that order, before he asks what the work pays. "Two things. I don't start anything, and you tell me when something's already started." He waits on the second one specifically.` },
             { label: "Say the garage is handled", effect: { introduceCrew: "tone", crewLoyalty: { id: "tone", delta: -1 } }, preview: "Tone stays available later, with less patience for the offer.", result: 'He looks at the lock, then at you, and does not say the obvious thing about either. "All right." He walks back toward the street past the sedan without changing his pace, and the sedan is still in the same spot in the morning.' }
+          ]),
+          // v1.18: the observation-gated version. tone_offer above is the garage-door
+          // introduction; this is the one he brings himself, after his own people have
+          // told him how the player handles pressure. He leads with the work, not the
+          // compliment, and the price is the price.
+          tone_recruit: () => event("tone_recruit", "Tone Brings a Number", `Tone is at the garage door before you are, with the plate already written down. "People say your name in rooms I stand in. That's a door problem now." He has a figure for the week.`, [
+            { label: "Put him on the payroll", effect: { recruitCrew: "tone", recruitCrewPaid: true }, preview: `His number up front, then a wage every night. He starts tonight.`, result: `He counts it once, folds it flat, and puts it in the same pocket as the plate number. Then he walks the fence line without being asked and comes back with two things you did not know about your own building. "I don't start anything. You tell me when something's already started."` },
+            { label: "Tell him not this week", effect: { toneDeclineOffer: true }, preview: "He comes back in a few days at the same number.", result: '"All right." He does not argue and he does not lower the figure. He writes the plate on the doorframe in pencil, small, where you will see it and nobody else will, and he is gone before you work out whether that was a favor.' }
           ]),
           tone_jacksonville: () => event("tone_jacksonville", "Jacksonville Calls Collect", "A Jacksonville number reaches Tone after midnight. The people behind it know his old name and your two strongest blocks. Protection, separation, or leverage all leave a mark.", [
             { label: "Protect Tone", effect: { heat: 2, crewLoyalty: { id: "tone", delta: 2 }, setFlags: { toneJacksonvilleProtected: true } }, preview: "+2 Heat and +2 Tone loyalty. Keep him inside the operation.", result: "You put the garage and the blocks behind Tone. Jacksonville hears the boundary in the next call." },
@@ -5402,8 +5481,8 @@
           }
           return specs.length;
         }
-        function resolveOutcome(state, actionType, chance, key) {
-          const outcome = Attributes.resolveAction(state, actionType, chance, key);
+        function resolveOutcome(state, actionType, chance, key, bonus) {
+          const outcome = Attributes.resolveAction(state, actionType, chance, key, bonus);
           const attribute = AttributeData.ACTION_ATTRIBUTE_MAP[actionType];
           if (Attributes.gymStreakBonus(state, attribute)) {
             state.player.gymStreak = 0;
@@ -5805,7 +5884,12 @@
             // v1.16: set when status flips to "arrested". Null for everyone else, so
             // mergeDefaults hands it to every pre-v1.16 save without a migration.
             jailedUntilDay: null,
-            jailedSeverity: null
+            jailedSeverity: null,
+            // v1.18: encounter wins where this member's backup actually applied. Tone's
+            // tier-2 gate reads it. Kept on the crew record rather than counted out of
+            // encounterLog, which truncates to its last 80 rows and would silently
+            // reset a gate the player had already earned.
+            combatWins: 0
           }]));
         }
         function createPlugState() {
@@ -5900,7 +5984,13 @@
             // wage) live in state.people.crew.deshawn; this record carries what the
             // person knows and does: his weekly introductions and the de-escalation
             // window his loyalty triggers read.
-            deshawn: { lastIntroDay: null, introducedContacts: [], lastDeescalationDay: null }
+            deshawn: { lastIntroDay: null, introducedContacts: [], lastDeescalationDay: null },
+            // v1.18: same split as Deshawn. Crew mechanics (loyalty, tier, wage,
+            // combat wins) live in state.people.crew.tone; this record is what the
+            // person knows and has been told. It has to exist for the loop below to
+            // give him a ledger at all - a lens with no record here is a subscriber
+            // broadcastObservation silently skips.
+            tone: { met: false, offersDeclined: 0 }
           };
           for (const id of EXPOSURE_NPC_IDS) {
             if (!base[id]) continue;
@@ -8147,8 +8237,21 @@
           return Math.max(1, Math.round(person.recruitCost * (1 - charismaDiscount - territoryDiscount)));
         }
         const INVERTED_LENS_IDS = ["curtis", "simone"];
+        const CREW_LENS_IDS = ["deshawn", "tone"];
         function warmNpcContactCount(state) {
-          return EXPOSURE_NPC_IDS.filter((id) => id !== "deshawn" && !INVERTED_LENS_IDS.includes(id) && state.npc[id] && bandOf(state, id) >= BANDS.WARM).length;
+          return EXPOSURE_NPC_IDS.filter((id) => !CREW_LENS_IDS.includes(id) && !INVERTED_LENS_IDS.includes(id) && state.npc[id] && bandOf(state, id) >= BANDS.WARM).length;
+        }
+        function crewRecruitmentEligible(state, crewId) {
+          return Crew.recruitmentEligible(crewId, bandOf(state, crewId), Exposure.getDisposition(crewId, state));
+        }
+        function toneRecruitmentAvailability(state) {
+          const crew = state.people.crew.tone;
+          if (crew.recruited) return { available: false, reason: "He already works here." };
+          if (crew.status === "departed") return { available: false, reason: "He does not come back." };
+          if (!crewRecruitmentEligible(state, "tone")) return { available: false, reason: "He has not heard anything about you worth hearing." };
+          if (recruitedCrew(state).length >= crewCapacityFor(state)) return { available: false, reason: "No room on the crew." };
+          if (state.player.cash < recruitmentCost(state, "tone")) return { available: false, reason: "Not enough cash for what he asks up front." };
+          return { available: true, reason: "Tone is ready to hear the offer." };
         }
         function deshawnRecruitmentAvailability(state) {
           var _a;
@@ -8176,7 +8279,10 @@
             return blocks >= 2 && state.player.cash >= 500 ? { available: true, tier: 3, cost: 500 } : { available: false, reason: "Tier 3 needs two blocks and $500." };
           }
           if (crewId === "tone") {
-            if (targetTier === 2) return { available: true, tier: 2, cost: 0 };
+            if (targetTier === 2) {
+              const wins = crew.combatWins || 0;
+              return wins >= Crew.TONE_TIER2_COMBAT_WINS ? { available: true, tier: 2, cost: 0 } : { available: false, reason: `Tier 2 needs ${Crew.TONE_TIER2_COMBAT_WINS} fights he was in. He has been in ${wins}.` };
+            }
             return blocks >= 2 ? { available: true, tier: 3, cost: 0 } : { available: false, reason: "Tier 3 needs two controlled blocks." };
           }
           if (crewId === "deshawn") {
@@ -9834,6 +9940,29 @@
             weight: 7,
             exit: null
           },
+          // v1.18: Tone's recruitment scene, gated on proof rather than on owning the
+          // garage. His ledger has to read Warm through a lens that only counts nerve,
+          // and it has to read it by enough of a margin that one fight is not the whole
+          // argument. Reactive: the moment it holds he is already standing there, which
+          // is the characterization. Declining sets toneNextOfferDay and paces the
+          // re-offer at three days, the same shape as Deshawn's. The Week Zero clause
+          // is explicit because character_intro is not a suppressed classification and
+          // this beat should never open the tutorial stretch.
+          {
+            id: "tone_recruit",
+            chain: null,
+            stage: null,
+            classification: "character_intro",
+            trigger: "reactive",
+            requires: (s) => s.run.phase !== "week_zero" && toneRecruitmentAvailability(s).available && (!s.flags.toneNextOfferDay || s.run.day >= s.flags.toneNextOfferDay),
+            area: "north_star_lot",
+            earliest: { day: 4, slot: 0 },
+            latest: null,
+            once: false,
+            cooldown: 3,
+            weight: 8,
+            exit: null
+          },
           {
             id: "courier",
             chain: null,
@@ -10304,8 +10433,13 @@
           if (effect.recruitCrew && state.people.crew[effect.recruitCrew]) {
             const crewId = effect.recruitCrew;
             const person = CREW_BY_ID[crewId], crew = state.people.crew[crewId];
-            const eligible = !crew.recruited && recruitedCrew(state).length < crewCapacityFor(state) && (crewId !== "deshawn" || deshawnRecruitmentAvailability(state).available);
+            const cost = effect.recruitCrewPaid ? recruitmentCost(state, crewId) : 0;
+            const eligible = !crew.recruited && recruitedCrew(state).length < crewCapacityFor(state) && state.player.cash >= cost && crewRecruitmentEligible(state, crewId) && (crewId !== "deshawn" || deshawnRecruitmentAvailability(state).available);
             if (eligible) {
+              if (cost) {
+                spendCash(state, cost);
+                state.stats.moneySpent.crew += cost;
+              }
               crew.introduced = true;
               crew.recruited = true;
               crew.status = "active";
@@ -10313,6 +10447,19 @@
               crew.tier = Math.max(1, crew.tier || 0);
               crew.recruitedDay = state.run.day;
               crew.loyalty = Crew.clampLoyalty(crew.loyalty + 1);
+              if (crewId === "tone") {
+                crew.loyalty = Crew.CREW_LOYALTY_START;
+                state.npc.tone.met = true;
+                pushPhoneMessage(state, "Tone", "Key's on my belt. Call before you go somewhere you'd rather not go by yourself.");
+                broadcastTracked(state, {
+                  type: "growth",
+                  event: "crew_recruited",
+                  channel: "neighborhood",
+                  location: "north_star_lot",
+                  day: state.run.day,
+                  slot: state.run.slot
+                });
+              }
               if (crewId === "deshawn") {
                 state.flags.extraRentGraceAvailable = true;
                 if ((((_c = state.people.dealers.goodie) == null ? void 0 : _c.robbedCount) || 0) > 0) state.flags.deshawnRedemptionPath = true;
@@ -10328,6 +10475,11 @@
           if (effect.deshawnDeclineOffer) {
             state.flags.deshawnOfferDeclined = true;
             state.flags.deshawnNextOfferDay = state.run.day + 3;
+          }
+          if (effect.toneDeclineOffer) {
+            state.npc.tone.offersDeclined += 1;
+            state.flags.toneOfferDeclined = true;
+            state.flags.toneNextOfferDay = state.run.day + 3;
           }
           if (effect.addRumor) state.effects.rumors.push({ id: `contact_${state.run.day}_${state.run.slot}_${effect.addRumor.areaId}`, ...effect.addRumor, reliable: true, expiresAt: slotNumber(state.run.day, state.run.slot) + 3 });
           if (effect.crewLoyalty && state.people.crew[effect.crewLoyalty.id]) {
@@ -10886,12 +11038,17 @@
               state.player.heat = clamp(state.player.heat + weapon.heat, 0, 15);
               state.flags.firedWeaponDowntown = state.world.currentNeighborhoodId === "downtown";
             }
-            const outcome = resolveOutcome(state, "confrontation", chance, `${state.run.seed}:confrontation:${state.run.day}:${state.run.slot}:${encounter.id}:${encounter.step}`);
+            const backup = Crew.combatAdvantageFor(state, "encounter", encounter.id);
+            const outcome = resolveOutcome(state, "confrontation", chance, `${state.run.seed}:confrontation:${state.run.day}:${state.run.slot}:${encounter.id}:${encounter.step}`, backup);
             broadcastOutcome(state, "confrontation", outcome.tier);
             if (Attributes.isSuccessTier(outcome.tier)) {
               const damage = weapon ? random.int(weapon.damage[0], weapon.damage[1]) + (firearm ? 0 : Math.floor(combatCompat(state) / 2)) : random.int(4, 8) + combatCompat(state);
               encounter.enemyHealth -= damage;
               if (encounter.enemyHealth <= 0) {
+                for (const crewId of Crew.combatAdvantageCrewIds(state, "encounter", encounter.id)) {
+                  const record = state.people.crew[crewId];
+                  if (record) record.combatWins = (record.combatWins || 0) + 1;
+                }
                 if (firearm || encounter.id === "late") state.flags.seriousViolence = true;
                 Exposure.recordObservation(state, "curtis", { type: "submission", event: "won_the_room", source: "witnessed" });
                 influenceChange(state, state.world.currentNeighborhoodId, 1);
@@ -12347,7 +12504,8 @@
             reconcileCash(base);
             base.stats.robbery = normalizeRobberyStats(base.stats.robbery, base);
             const random2 = makeRandom(base.run.rngState);
-            const outcome = resolveOutcome(base, "robbery", availability.chance, `${base.run.seed}:stickup:${base.run.day}:${base.run.slot}:${target.id}`);
+            const stickBackup = Crew.combatAdvantageFor(base, "stick_target", target.id);
+            const outcome = resolveOutcome(base, "robbery", availability.chance, `${base.run.seed}:stickup:${base.run.day}:${base.run.slot}:${target.id}`, stickBackup);
             const success = Attributes.isSuccessTier(outcome.tier);
             recordRobberyActivity(base, target.areaId, {});
             const heatScale = (amount) => districtHeat(base, target.areaId, "stick", amount) * stickHeatMultiplier(base);
@@ -12725,6 +12883,7 @@
             const person = CREW_BY_ID[action.crewId], crew = state.people.crew[action.crewId], cost = recruitmentCost(state, action.crewId);
             if (!crew.introduced && person.id !== "deshawn" || crew.recruited || state.player.cash < cost || person.id === "eli" && crew.contactStage !== "recruitable") return inputState;
             if (person.id === "deshawn" && !deshawnRecruitmentAvailability(state).available) return inputState;
+            if (!crewRecruitmentEligible(state, person.id)) return inputState;
             if (person.id === "deshawn") crew.introduced = true;
             base.player.cash -= cost;
             crew.recruited = true;
@@ -13381,6 +13540,8 @@
             sharkRiskLabel,
             sharkLoanAvailability,
             deshawnRecruitmentAvailability,
+            toneRecruitmentAvailability,
+            crewRecruitmentEligible,
             crewTierAvailability,
             crewBailAvailability,
             arrestRecord,
@@ -13592,7 +13753,7 @@
         const showCrew = C.selectors.recruitedCrew(state).length > 0;
         const showCurtis = state.npc.curtis.relationship !== "unaware";
         const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil(value / ceiling * 5))), total: 5 });
-        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.16"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day, state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
+        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.18"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day, state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
       }
       var NAV_ICONS = {
         home: "M12 3 3 10.4V21h6v-6h6v6h6V10.4z",
@@ -14542,7 +14703,7 @@
           ExpandableMoreSection,
           {
             collapsedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-lead" }, "Autosave is on. This run saves to your browser after every action."),
-            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.16 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
+            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.18 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
             moreLabel: "Save detail",
             lessLabel: "Hide detail"
           }

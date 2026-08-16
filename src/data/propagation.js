@@ -46,6 +46,11 @@ const NPC_CHANNELS = {
   // deliberately off Curtis's radar - his whole value is that he moves through
   // Spenard as a neighbor, not as an operator.
   deshawn: ["direct", "neighborhood", "household"],
+  // Tone worked doors for a living, so he hears the block and he hears the
+  // wire - that is how he already knows who parked the sedan. No household: he
+  // does not live with the player. Not `reputation` either; that channel is
+  // Curtis's alone, and it is the slow one anyway.
+  tone: ["direct", "neighborhood", "network"],
 };
 
 // Curtis does not care about corner-level activity, and the whole design of his
@@ -85,6 +90,9 @@ const NPC_PRESENCE_SLOTS = {
   biniam: [2, 3],
   // Deshawn is around from midday on - mornings are his own.
   deshawn: [1, 2, 3],
+  // Tone keeps door hours. He is around Spenard in the evening and at night,
+  // which is when the work he does exists.
+  tone: [2, 3],
 };
 
 // Where each NPC can pick something up in person. Null means anywhere in the
@@ -101,6 +109,8 @@ const NPC_PRESENCE_AREAS = {
   biniam: ["north_star_lot"],
   // Deshawn thinks in terms of the block. He does not leave it.
   deshawn: ["north_star_lot"],
+  // Spenard only for now. Downtown is not his stretch and never was.
+  tone: ["north_star_lot"],
 };
 
 function channelFor(id) {

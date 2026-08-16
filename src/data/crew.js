@@ -109,33 +109,49 @@ const DESHAWN_LOYALTY_TRIGGERS = {
 // overriding his judgment.
 const DESHAWN_VIOLENCE_WINDOW_DAYS = 2;
 
-// FUTURE: Soldier system (ships with the territory build).
-// Each leader at Tier 2+ manages a squad of unnamed soldiers. Soldiers are
-// numbers, not characters. Three types:
-//   MUSCLE     - recruited by Tone, combat strength in battles
-//   RUNNERS    - recruited by Pherris, info network + market coverage
-//   CONNECTORS - recruited by Deshawn, community stability + heat reduction
+// MADE MEN AND GUARDS: how this file's tiers meet the soldiers that already
+// exist.
 //
-// Schema shape (not active):
-// state.people.crew[id].soldiers = {
-//   count: 0,          // headcount
-//   type: "muscle",    // matches leader's domain
-//   morale: 100,       // 0-100, decays on missed wages or reckless orders
-//   combatRating: 0,   // derived from count + leader tier + equipment
-// }
+// An earlier draft of this comment proposed a per-leader squad
+// (state.people.crew[id].soldiers = { count, type, morale, combatRating }) with
+// its own battle math. That schema is dead and must not be built: game-core
+// already owns a soldier system, and a second one would double-count every
+// headcount, wage, and territory payout.
 //
-// Territory battles resolve as:
-//   attackStrength = soldiers.count * (1 + leader.tier * 0.3) * (morale / 100)
-//   vs defenderStrength (same formula for the enemy org)
-//   Player attributes modify: Combat boosts Tone's force, Charisma boosts
-//   Deshawn's diplomacy path, Intelligence boosts Pherris's intel advantage.
+// What actually exists today:
+//   state.world.soldiers      individual records, { id, status, blockId }.
+//                             Anonymous - an id and a posting, nothing else.
+//   state.world.territoryBlocks[*].soldiersAssigned
+//                             which soldiers hold which block, capped at 3.
+//   Eli as Operations Lieutenant  the gate on the whole system (loyalty 8),
+//                             plus the standing-order policy that redistributes
+//                             them nightly in resolveSoldierOperations.
 //
-// Wage scaling: the leader wage covers their whole operation (see TIER_WAGES -
-// tier 1 is the leader alone, tier 2 is leader + 2-3 implied soldiers, tier 3
-// is leader + 5-8 soldiers, a department).
+// So the two populations are already separate, and the reconciliation is about
+// naming them, not merging them:
 //
-// Problems escalate, not tasks. Leaders handle their domain automatically; the
-// player intervenes only on escalation events:
+//   MADE MEN are the named crew in this file - Eli, Pherris, Tone, Deshawn.
+//   They carry loyalty, a tier, a wage, presence effects, and story. A tier is
+//   scope of responsibility, NOT a headcount: tier 2 does not grant soldiers,
+//   it grants what that person can be trusted to handle alone. That is why
+//   TIER_WAGES prices the person and not an implied squad.
+//
+//   GUARDS are the world.soldiers records. They are recruited through Eli
+//   against a capacity of 2 + 2 per controlled block, posted to blocks, and
+//   lost to raids and attrition. They belong to the ORGANIZATION, never to a
+//   leader, which is what keeps their income and losses in one resolution pass.
+//
+// The open work is the seam between them, and it is small:
+//   - a Made Man at tier 2+ could become a block's managerId (the field exists
+//     on every territoryBlock record and is currently only cleared, never set
+//     by a tier gate), giving that block a named face and a reason to care.
+//   - domain flavor belongs on the manager, not on a soldier type: Tone's block
+//     resists raids, Pherris's reads the market, Deshawn's cools heat. Guards
+//     stay identical to each other on purpose - the moment a guard has a type,
+//     it wants a name, and then it is a character with no story.
+//
+// Problems escalate, not tasks. Whatever ships here, the player should be
+// intervening on escalations rather than assigning work:
 //   "Tone's guy got arrested. Bail him ($200) or let it ride?"
 //   "One of Pherris's runners is skimming. Confront or let Pherris handle it?"
 

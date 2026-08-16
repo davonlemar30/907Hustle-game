@@ -4,6 +4,71 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
+## Shipped — v1.17 Voice & Copy Polish + Market Button Fix + CSS Fix
+
+Branch: `claude/clickup-2kyd583p-15874-hxww66` (PR #78, `main` HEAD). Save
+schema stays at v11; **both sim hashes byte-identical to v1.16** because the
+reducer was never touched; zero dead ends.
+
+- **Voice pass on the system feed**: arrest banks, crew events, market feed,
+  and hybrid popups stop reporting mechanics and start reporting behavior.
+  Event-card previews keep numbers only for HUD-visible cash, Health, and Heat.
+- **The Leave Market button is gone.** The shell fires the same `END_MARKET` on
+  nav-away, gated on the visit having traded, so window shopping is free.
+- **CSS tone aliases restored** (`--text/--good/--warn/--bad`), bringing back
+  consequence-card severity stripes broken since v1.11.
+- **Mina Vale gets a conversation tree** (`src/data/mina.js`): a pool per
+  disposition band, split by shift, with state-reactive pools and a three-visit
+  no-repeat window. Her trust, exposure, and story cards are untouched.
+- **The criminal economy speaks Anchorage**: boost and stick targets carry
+  one-line identity reads, plug intros name their corners. Numbers untouched.
+
+### Next
+
+- Mina's romance-arc mechanics (only her dialogue voice ships here).
+- The new plugs (Nell, Yuri).
+- Numeric labels on the crew roster and Status screens go numeric-on-demand,
+  per the mechanical-labels design-debt task.
+
+## Shipped — v1.16 Arrest & Jail + Boost Caught-State
+
+Branch: `claude/clickup-task-implementation-nneqd1` (PR #77). Save schema stays
+at v11 (all fields additive); both sim hashes moved on purpose; zero dead ends.
+
+- **Arrest resolves heat and replaces it with a record.** `arrestPlayer` is the
+  one funnel: bail, a processing cost in parts of day, a severity-scaled heat
+  relief, a permanent charge on `state.record`, and a network broadcast that
+  feeds Curtis's awareness. Numbers live in `src/data/arrest.js`.
+- **Priced against farming**: relief runs −2 to −5, priors raise bail to 3.5×
+  and lengthen processing, and a broke player converts the shortfall to time
+  rather than soft-locking.
+- **All three Stick tiers route through it**, retiring v1.13's flat $200 stub.
+- **Crew go to jail** with severity-scaled sentences, and `releaseServedCrew`
+  repairs the v1.15 bug where an arrested member had no way back.
+- **A blown boost is a fight / run / give-it-up scene** through the consequence
+  engine, at every tier, instead of an auto-resolved log line.
+
+### Next
+
+- Multi-day player sentences wait on a skip-N-days UX that does not exist.
+- Lawyers as a service, police as a named faction, and arrest-to-job-loss
+  beyond `applyHeatEmployment` are all still unbuilt.
+
+## Shipped — v1.14 UI Architecture
+
+Branch: `claude/clickup-2kyd583p-15794-voye0b` (PR #75). A presentation build —
+`game-core.js` untouched, so the save schema and **both sim hashes are
+byte-identical to v1.13's**.
+
+- **Three primitives extracted** into `src/ds/primitives.jsx`
+  (`AccordionSection`, `ActionCard`, `BadgeHeader`) with prop contracts,
+  replacing the private implementations they were pulled from.
+- **Travel collapses to three destinations** — Spenard, Home, Leave Spenard —
+  with fares and blocking reasons stated on the row.
+- **Local Intel becomes content** on the neighbourhood hub; the Listings page,
+  two-thirds placeholder and unreachable after the Travel change, is deleted.
+- **Tonk plays fullscreen**, and a hand that ends always prints its receipt.
+
 ## Shipped — v1.15 Crew System + Curtis Ambient + Deshawn Tier 1
 
 Branch: `claude/crew-system-improvements-z33xv6`. Built from the "v1.15 Build
@@ -30,8 +95,9 @@ purpose; zero dead ends.
 - Deshawn Tier 2/3 abilities (truce with Curtis's people, autonomous
   negotiation) wait on the Curtis confrontation pipeline.
 - Tone and Pherris as scene-recruited crew with their own presence effects
-  (86bbe2b23, 86bbe2b20); the soldier/territory layer wakes the schema
-  comments in `src/data/crew.js`.
+  (86bbe2b23, 86bbe2b20). Note the soldier layer this entry expected to "wake"
+  already existed under Eli (`world.soldiers`, `world.territoryBlocks`) — the
+  reconciliation, not a second schema, is what `src/data/crew.js` now describes.
 - Curtis `approaching` phase currently sets atmosphere only — the
   confrontation build cashes it in.
 
@@ -55,14 +121,15 @@ purpose; zero dead ends.
 
 ### Next
 
-- The Tier 3 arrest stub wants the full arrest/jail system (86bbamm18).
+- ~~The Tier 3 arrest stub wants the full arrest/jail system (86bbamm18).~~
+  **Shipped in v1.16** — all three tiers route through `arrestPlayer`.
+- ~~Boost's caught-state still resolves by chance roll (86bbe3k0b).~~
+  **Shipped in v1.16** as a fight / run / give-it-up encounter.
 - Weapons still come only from the garage gear shop; the Gun Counter listing
   is browse-only. An acquisition path would open Stick Tier 2 earlier.
 - Fairview and Mountain View exist in district data but not on the map —
   the district-content builds (86bbe2bkf, 86bbe2bmg) can now plug straight
   into the modifier table.
-- Boost's caught-state still resolves by chance roll; the combat-integration
-  ticket (86bbe3k0b) remains open.
 - No simulation strategy works the Stick ladder yet (the spec said document,
   don't add profiles) — worth a profile once balance settles, like the Nile
   note before it.
@@ -336,10 +403,23 @@ should be worth walking around before a second district gets built out.
 
 ## Later builds
 
-Expanded transportation · car ownership and upkeep · arrest and jail · multiple
-lenders with anti-arbitrage rules · regular employment · additional romantic
-interests · new Anchorage districts · Mat-Su and regional travel · open-ended
-continuation past Day 7 ("Keep Moving") · larger gang and territory management.
+The near arc is **the Godfather adaptation**: the run stops being a week of
+hustling and becomes an organization with a rival who plans back. One line each,
+in rough order — the specs come when the build does.
+
+- **Territory expansion** — blocks beyond Spenard, so Downtown and Industrial
+  get the layer Spenard already has.
+- **Curtis planner** — Curtis acts on a plan of his own instead of reacting to
+  awareness thresholds, and the `approaching` phase finally cashes in.
+- **Intel economy** — information becomes a thing you buy, trade, and get fed
+  badly on, rather than a passive Street Read tier.
+- **Combat system** — the encounter engine grows into something a territory war
+  can actually resolve through.
+
+Still queued behind those, unchanged: expanded transportation · car ownership
+and upkeep · multiple lenders with anti-arbitrage rules · regular employment ·
+additional romantic interests · new Anchorage districts · Mat-Su and regional
+travel · open-ended continuation past Day 7 ("Keep Moving").
 
 ### Sequencing notes
 
@@ -351,5 +431,10 @@ continuation past Day 7 ("Keep Moving") · larger gang and territory management.
   daily tick, with loyalty cost when unpaid — rather than a parallel system.
 - **Multiple lenders should not ship before the anti-arbitrage rules do**, or
   borrowing from one to repay another becomes free money.
-- **Jail should not ship before obligations do.** A setback is only meaningful
-  once missing time actually costs something scheduled.
+- **Territory expansion should reuse the block layer, not fork it.** Block ids
+  are already globally unique and `districtHasBlockLayer` is the only gate — a
+  second district is data plus flipping that predicate, and anything more means
+  the abstraction was wrong.
+- **The Curtis planner wants the awareness tracker as its input**, not a new
+  number. `curtisAwareness` already knows how visible the player is; a planner
+  reads it and decides, rather than measuring visibility a second way.

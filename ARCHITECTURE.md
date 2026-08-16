@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.18**. This file
+How 907Hustle: One Good Run is put together, current as of **v1.19**. This file
 is meant to be the only thing you need to read before changing code; for *why*
 the game is designed the way it is, see the ClickUp docs at the bottom.
 
@@ -508,14 +508,27 @@ delta accumulator centered on 0; `migrateSave` rescales with
 `clamp(5 + old, 0, 10)`. Constants live in `src/data/crew.js`. Generic tier gates
 are uniform in `TIER_REQUIREMENTS` — **tier 2** needs loyalty 7 and 5 days
 recruited, **tier 3** loyalty 9 and 12 days — and each member layers
-NPC-specific conditions on top in `crewTierAvailability` (Deshawn: two truces and
-two blocks; Pherris: blocks and cash; Tone: three encounter wins his backup
-applied to for tier 2, then two blocks for tier 3). Tier 3's
+NPC-specific conditions on top in `crewTierAvailability`. **As of v1.19 every one
+of those conditions is a domain read rather than a flat counter**: Deshawn's own
+disposition at Trusted then Bonded; Pherris's market at five flips or $500 of
+lifetime profit, then one controlled block plus Broker standing; Tone's three
+encounter wins his backup applied to, then two blocks. Tier 3's
 twelve-day gate is near-unreachable inside a 7-day pressure window; it ships as
 written, centralized so it can be tuned in one place. Wages come off a per-tier
-curve in `TIER_WAGES` — Deshawn's ($50 / $100 / $200) and Tone's
-($85 / $150 / $250) are authored, and anyone without an entry keeps their flat
-roster wage at every tier.
+curve in `TIER_WAGES` — Deshawn's ($50 / $100 / $200), Tone's
+($85 / $150 / $250), and Pherris's ($60 / $120 / $220) are authored, and anyone
+without an entry keeps their flat roster wage at every tier.
+
+Two notes on the v1.19 conversion. Pherris's tier-3 read calls `marketTier(state)`
+rather than the stored `nineZeroSevenList.tier`, because that field has been a
+display mirror and never the source since v1.9b; a gate reading the mirror would
+open for a save that had drifted. And her tier-3 wage of $220 is larger than the
+$75–$125 nightly network income the promotion unlocks, so tier 3 has to earn its
+keep on the Downtown premium and the block instead — the curve was specified and
+ships as written rather than tuned to make the one number positive.
+
+`crew.trucesBrokered` survives as save state but no longer gates anything;
+`BROKER_CURTIS_TRUCE` still increments it for a future gate to read.
 
 Tone's tier-2 counter is `crew.combatWins`, incremented in the two fight
 resolvers from `Crew.combatAdvantageCrewIds()` — the same exclusion-aware read
@@ -524,15 +537,18 @@ gate. It lives on the crew record rather than being counted out of
 `encounterLog.resolved`, which truncates to its last 80 rows and would silently
 reset a gate the player had already earned.
 
-### Recruitment proof (v1.18)
+### Recruitment proof (v1.18, extended v1.19)
 
 Some crew want proof of standing before they take a wage. `RECRUITMENT_PROOF` in
 `src/data/crew.js` names the band and score floor per person, and
 `recruitmentEligible(crewId, band, score)` is the predicate. **No entry means no
-gate**, which is what makes it additive — giving Pherris a requirement later is a
-data edit, not a code change. Both recruitment paths (the scene effect and the
-garage `RECRUIT_CREW` action) go through `crewRecruitmentEligible()` in
-game-core, so the gate cannot be walked around.
+gate**, which is what made it additive — v1.18 predicted that giving Pherris a
+requirement would be a data edit rather than a code change, and at v1.19 it was
+exactly that. Eli is the only ungated crew member left. Both recruitment paths
+(the scene effect and the garage `RECRUIT_CREW` action) go through
+`crewRecruitmentEligible()` in game-core, so the gate cannot be walked around;
+since v1.19 the roster button also *renders* the gate's reason, because an
+enabled button the reducer silently refuses is worse than a disabled one.
 
 It is band-gated rather than category-counting on purpose: the lens already
 decides what counts for a given person, and re-implementing that arithmetic in
@@ -540,6 +556,17 @@ the predicate would be a second copy that drifts. The `minScore` floor exists
 because a band is a wide bucket — one witnessed fight scores exactly 3.0 through
 Tone's lens, which is the Warm floor on the nose, so without the floor he would
 sign on after a single fight.
+
+**Pherris's floor is 8, and it was measured rather than designed.** Her financial
+weight is 4, so one 907List day scores 4.0 on its own — already past the Warm
+floor of 3. Sweeping the floor across 2,000 seeded runs gives a recruitment rate
+of **16.1% at 5, 14.8% at 6, 10.8% at 8, and 7.2% at 10**, and inside the
+dedicated `flipper` strategy **83% / 80% / 69% / 44%**. Below 8 she is close to
+automatic for anyone who touches the market at all; above it she stops being
+reachable by a player who trades as one activity among several. At 8 she is
+proven in 334 of 2,000 runs and hired in 215, and — the number that says the lens
+works — **all of them fall inside the three market-leaning strategies, with zero
+in the other ten.**
 
 **Tone's gate deliberately does not read `curtisAwareness`.** The v1.18 build
 prompt specified `curtisAwareness >= 7`. Measured over 2,000 seeded runs that is
@@ -566,9 +593,35 @@ effects. `PAY_CREW` clears arrears mid-run.
 `PRESENCE_EFFECTS` is what an active member changes about event resolution just
 by being on the payroll. Checked at **choice-build time** (the encounter
 selectors and card builders), not at render time, so the reducer and the UI
-agree about which choices exist. Deshawn is the only one authored: he
-de-escalates encounters and the stick retaliation card, but deliberately **not**
-`CURTIS_CREW_ENCOUNTER_IDS` — Curtis's own people pay him no respect at tier 1.
+agree about which choices exist. Three modifications are authored, and as of
+v1.19 each has a live caller:
+
+| Modification | Who | What it does | Reader |
+|---|---|---|---|
+| `de_escalate` | Deshawn | adds the "let him handle it" choice | `deEscalateAvailable()` |
+| `combat_advantage` | Tone | +1 effective Combat on the roll | `combatAdvantageFor()` |
+| `intel_advantage` | Pherris | +1 effective Intelligence on market reads | `intelAdvantageFor()` |
+
+Deshawn's de-escalation excludes `CURTIS_CREW_ENCOUNTER_IDS` — Curtis's own
+people pay him no respect at tier 1 — and so does Tone's combat edge, for the
+different reason that they knew him when he worked their side of it. Pherris
+excludes nothing: a contact list does not care whose corner the deal is on. Every
+advantage is an **effective attribute level passed as the trailing `bonus` to
+`resolveAction`**, never a chance bump, and every one is capped at 1: a second
+person is a second wage, not a second bonus.
+
+`intel_advantage` reaches two call sites — the `market_meetup` roll in game-core
+and `priceVolatility` in `src/events/market-events.js`. The second is why
+`market-events.js` requires `src/data/crew.js`; that edge is legal (neither file
+reaches game-core) and adds no cycle.
+
+**`de_escalate` was declared in v1.15 and read by nobody until v1.19.** All three
+sites that offered Deshawn's choice rebuilt the predicate inline instead. Routing
+them through the framework closed that, and tightened one thing in passing: the
+inline checks tested `status !== "departed"` while `getActiveCrew` tests
+`status === "active"`, so an **arrested** member no longer supplies a presence
+effect from a cell. `tests/v1-19.test.js` asserts that nothing in
+`PRESENCE_EFFECTS` is dead again.
 
 ### Eli, soldiers, and blocks
 
@@ -724,7 +777,7 @@ Line numbers are `game-core.js` unless noted, and they drift.
 | Juan trust → lead quality | **Wired** | `juanWorkIntelKnown` (:1752) unlocks the `ship_creek` job (:1913); trust gates the Dre route (:2418) and two story cards (:3003, :3011) |
 | Consequence cards → phone / day log | **Wired** | `logEntry` (:452), `pushConsequence` (:456), `pushPhoneMessage` (:461) |
 | Heat → encounter frequency | **Wired, not via weightedPick** | ambient chance carries `+ heat * 0.01` (:3156); police/rival cards gate on heat (:3033 `heat >= 5`, :2933 `heat >= 10`); block raids scale with `RAID_HEAT_WEIGHT` (:2607). Heat is **not** a term in `getWeight` |
-| Reputation → vendor pricing | **Closed as a design decision** | see *Reputation is not a stat* below. `tradeUnitPrices` reads five things on the sell side — charisma above 1 (+1.5% each), district `influence` (+0.5% each, capped 2%), Curtis friendship while protection holds (+10%), Pherris recruited at tier 1+ in Downtown (+10%), and territory control (+4%) — and on the buy side district difficulty plus market awareness (4% a step), the plug's own modifier and standing discount, and plug suspicion (+10% at 3). The Goodie discount also reads Mina's band; Intelligence narrows the 907List sell swing |
+| Reputation → vendor pricing | **Closed as a design decision** | see *Reputation is not a stat* below. `tradeUnitPrices` reads five things on the sell side — charisma above 1 (+1.5% each), district `influence` (+0.5% each, capped 2%), Curtis friendship while protection holds (+10%), Pherris recruited at tier 1+ in Downtown (+10%), and territory control (+4%) — and on the buy side district difficulty plus market awareness (4% a step), the plug's own modifier and standing discount, and plug suspicion (+10% at 3). The Goodie discount also reads Mina's band; Intelligence narrows the 907List sell swing, and since v1.19 an active Pherris is worth one effective level of it |
 | Heat → the people around you | **Wired** | heat above 8 reaches the household, above 10 the neighborhood, above 12 the network (`propagateHeat`). There is still no job-*loss* mechanic; heat has social consequences instead of only police ones. The spec's ">60" remains unreachable: **heat is clamped 0–15** (`heatBand`: warm 4, high 8, critical 12, run ends at 15) |
 | Heat → arrest → heat | **Wired** | every Stick tier and a blown Boost route through `arrestPlayer`, which *subtracts* heat and adds a permanent prior. The one path where heat comes back down through a criminal outcome rather than lying low |
 | Criminal activity → Curtis's attention | **Wired** | `broadcastTracked` counts only observations that genuinely reach him on `network`; robberies add 2, heavy Spenard dealing 1/day. Quiet days bleed it back to the phase floor and no further |
@@ -784,22 +837,28 @@ before and after: a matching hash proves you changed nothing the player can see.
 Nothing in the run path may use `Math.random()` — only `makeRandom(seed)`, and
 not even that where a `stringHash` off the seed will do.
 
-**Current baselines, verified at v1.18.** Both moved on purpose at v1.18 for two
-independent reasons. The first is bookkeeping: the per-NPC telemetry loop covers
-`EXPOSURE_NPC_IDS`, so Tone's lens adds two keys per strategy block, and the
-build added four more (`averageCurtisAwareness`, `ambientPhaseRuns`,
-`watchingPhaseRuns`, `toneProvenRuns`/`toneRecruitedRuns`) to make the new
-recruitment gate measurable at all. The second is gameplay: Tone is now
-recruitable, and in the two strategies that reach his gate the hire changes cash,
-wages, story beats, and the ledgers the recruit broadcast lands in. **Eleven of
-the thirteen strategies are byte-identical**, which is the check that matters —
-it proves the new `bonus` parameter defaults to zero everywhere it was not
-passed. The v1.17 baselines were `c828c00e…` / `5fefb813…`.
+**Current baselines, verified at v1.19.** Both moved on purpose, for the same two
+kinds of reason v1.18 moved them. Bookkeeping: the per-NPC telemetry loop covers
+`EXPOSURE_NPC_IDS`, so Pherris's lens adds two keys per strategy block, and the
+build added `pherrisProvenRuns`/`pherrisRecruitedRuns` to make her gate
+measurable. Gameplay: `907list_profit` now reaches a second channel, she is
+recruitable, and the three market-leaning strategies spend her price and pay her
+wage. The v1.18 baselines were `9ae8cd3c…` / `b233d725…`.
+
+**The de-escalation refactor in the same build is hash-neutral**, and was
+measured that way deliberately: it shipped as its own commit and both hashes came
+back byte-identical to v1.18 before anything else landed. That is the check that
+matters for a refactor. It is *not* behavior-identical in principle — the three
+inline sites tested `status !== "departed"` and `getActiveCrew` tests
+`status === "active"`, so an arrested Deshawn no longer de-escalates — but the
+simulation never lands an arrest on him and a de-escalatable encounter in the
+same run. A hash cannot prove a case it never reaches, so that one is pinned by a
+unit test in `tests/v1-15.test.js`.
 
 | Run | SHA-256 |
 |---|---|
-| `--total 200` | `b233d725c18d3cd51872b4ed09a5031ccb549f8d7566318e3dd845de597e976c` |
-| `--total 2000` | `9ae8cd3cf01537977fae1e98218292eb6d866bad6166f0e1a6d2623ebabdd49d` |
+| `--total 200` | `114d08f7aaf1ab529e36af7716da69e311cbe23db13af96a91b79c290799b9db` |
+| `--total 2000` | `1bd2c29905bcb3dd55adff32c6787b4f659e5629fa5d1f225f7cbf40272acc36` |
 
 When a hash moves, read the per-strategy metric blocks — the simulator reports
 `arrests` and `crewJailedAtEnd` for exactly that. The two argument forms differ:

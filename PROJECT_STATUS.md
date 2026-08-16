@@ -2,11 +2,43 @@
 
 Last updated: 2026-08-16 (America/Anchorage)
 
-**HEAD of `main` is `f4ad786`, the v1.17 docs merge (PR #79).** v1.18 is built on
-branch `codex/v1-18-tone-recruitment` and verified there: `npm test` 637 passing,
-`npm run build` clean, 2,000-run simulation with zero dead ends, `--total 200`
-`b233d725c18d3cd51872b4ed09a5031ccb549f8d7566318e3dd845de597e976c`,
-`--total 2000` `9ae8cd3cf01537977fae1e98218292eb6d866bad6166f0e1a6d2623ebabdd49d`.
+**HEAD of `main` is `1d51b0a`, the v1.18 merge (PR #80).** v1.19 is built on
+branch `claude/v1-19-pherris-deshawn-gates-hrl444` and verified there:
+`npm test` 676 passing, `npm run build` clean, 2,000-run simulation with zero
+dead ends, `--total 200`
+`114d08f7aaf1ab529e36af7716da69e311cbe23db13af96a91b79c290799b9db`,
+`--total 2000` `1bd2c29905bcb3dd55adff32c6787b4f659e5629fa5d1f225f7cbf40272acc36`.
+
+## v1.19 Observation-Gated Recruitment — Pherris + Deshawn Retro-Gate — built (branch `claude/v1-19-pherris-deshawn-gates-hrl444`)
+
+- Branch: `claude/v1-19-pherris-deshawn-gates-hrl444`, on top of the v1.18 merge
+  (PR #80, `1d51b0a`). Built from the "v1.19 Build Prompt: Observation-Gated
+  Recruitment: Pherris + Deshawn Retro-Gate" spec. Save schema stays **v11** —
+  `state.npc.pherris` is additive and `mergeDefaults` supplies it for any v11
+  save written before this build.
+- **Pherris joins the Exposure System.** Lens (`financial 4, growth 3,
+  discretion 2, violence -2, defiance -1`, with a `job_lost` override so getting
+  fired is not read as a credit), channels `direct/neighborhood/network`,
+  presence in both districts she works, and the `state.npc.pherris` record
+  without which the ledger loop would have skipped her silently.
+- **907List profit broadcasts on `network` as well as `household`**, which is
+  what makes her reachable at all and gives `curtisAwareness` its first
+  clean-money source.
+- **`pherris_recruit`** — reactive, no area, three-day rain check on decline.
+  Her `minScore` of 8 was chosen against 2,000 seeded runs; the sweep is in
+  README.md and ARCHITECTURE.md.
+- **`intel_advantage`** — one effective level of Intelligence on the 907List
+  meetup roll and the sale swing, capped at one like Tone's combat edge.
+- **Tier gates**: hers read flips-or-profit then territory-plus-Broker, both
+  free; Deshawn's read Trusted then Bonded on his own ledger. **No crew
+  advancement in the game runs on a flat counter any more.**
+- **De-escalation migrated onto `presenceEffectsFor`** (the v1.18 ROADMAP item),
+  measured on its own commit as hash-neutral. One behavior moved: an arrested
+  Deshawn no longer de-escalates.
+- **UI**: the roster Recruit button now shows the gate reason for Tone and
+  Pherris, not only Deshawn. Before this a proof-gated hire rendered an enabled
+  button the reducer silently refused.
+- Naming: the retired "Pherris Cole" surname is gone from player-facing copy.
 
 ## v1.18 Observation-Gated Recruitment — Tone — built (branch `codex/v1-18-tone-recruitment`)
 

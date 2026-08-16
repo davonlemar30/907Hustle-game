@@ -1612,7 +1612,18 @@
         return presenceEffectsFor(state, eventType, contextId).filter((effect) => effect.modification === "intel_advantage").map((effect) => effect.crewId);
       }
       var RECRUITMENT_PROOF = {
-        tone: { minBand: "WARM", minScore: 6 }
+        tone: { minBand: "WARM", minScore: 6 },
+        // v1.19: Pherris needs a floor for exactly the reason Tone does, and a higher
+        // one. Her financial weight is 4, so a single 907List day scores 4.0 on its
+        // own - past the Warm floor of 3 before the player has done anything twice.
+        //
+        // 8 is measured rather than designed. Across 2,000 seeded runs the floor moves
+        // her recruitment rate 16.1% (at 5) / 14.8% (6) / 10.8% (8) / 7.2% (10), and
+        // the dedicated flipper strategy 83% / 80% / 69% / 44%. Below 8 she is close
+        // to automatic for anyone who touches the market; above it she stops being
+        // reachable by a player who trades as one activity among several. 8 keeps her
+        // an earned hire for a market player and an impossible one for everybody else.
+        pherris: { minBand: "WARM", minScore: 8 }
       };
       function recruitmentProofFor(crewId) {
         return RECRUITMENT_PROOF[crewId] || null;
@@ -2667,6 +2678,7 @@
         pherris_offer: "She took the corner booth Downtown before you arrived and ordered for both of you, which tells you how the conversation is going to go.",
         tone_offer: "He stands under the broken security light, far enough back that he is out of the doorway. He leaves the part about Curtis for last.",
         tone_recruit: "He waited by the door this time instead of the light, which is a different kind of standing there. The number has not moved since the first conversation.",
+        pherris_recruit: "She did not ask where you would be, and she is there anyway, which is the whole demonstration. Everything she says next she already knew before you sat down.",
         deshawn_offer: "He was already at the counter when you came in, which means he knew your evening better than you did. The coffee in front of him is still full.",
         mina_shift_change: "The heater ticks over the door. The owner drinks his coffee here every Thursday and knows every face on this block. On this street a name is the first thing anyone trades.",
         mina_invitation: "She is outside when you come around the corner, coat already on. The lot's sodium light makes the slush look orange. She is asking what you can build in four hours, on foot, in Spenard.",
@@ -2707,7 +2719,8 @@
         mina_intro: { who: "Mina Vale, the Night Owl clerk meeting you for the first time", where: "Night Owl Mini-Mart, Spenard", stakes: "Choose the tone of a first conversation with someone who has no prior history with you." },
         eli_offer: { who: "Eli Ward, a local driver looking for work", where: "Outside North Star Garage, Spenard", stakes: "Decide whether Eli gets a test route, only shares road information, or remembers being turned away." },
         eli_callback: { who: "Eli Ward, still working the service roads", where: "North Star Garage, Spenard", stakes: "Reopen the door to a test route or confirm that Eli should look elsewhere." },
-        pherris_offer: { who: "Pherris Cole, a connected supplier", where: "Downtown corner booth", stakes: "Supplier access, loyalty, and how much ownership you are willing to share." },
+        pherris_offer: { who: "Pherris Dickens, a connected supplier", where: "Downtown corner booth", stakes: "Supplier access, loyalty, and how much ownership you are willing to share." },
+        pherris_recruit: { who: "Pherris Dickens, who has been counting your money from a distance", where: "Wherever you were already working", stakes: "A contact list, better Downtown prices, a wage every night, and someone who expects to be told things first." },
         tone_offer: { who: "Anton Bell, a former security worker", where: "North Star Garage", stakes: "Protection against Curtis at the cost of another wage." },
         tone_recruit: { who: "Anton Bell, back with a plate number and a price", where: "North Star Garage", stakes: "A body at the door, a wage every night, and how confrontations end from here." },
         deshawn_offer: { who: "Deshawn, the block's quiet fixer", where: "The Night Owl, Spenard", stakes: "A first crew member: de-escalation, introductions, and a wage every day." },
@@ -2873,7 +2886,7 @@
             { label: "Offer the test route", effect: { setCrewStage: { id: "eli", stage: "test_available" }, crewLoyalty: { id: "eli", delta: 1 }, setFlags: { eliRejectionReopened: true } }, preview: "Unlocks Give Eli a Test Route in People.", result: "He accepts without thanking you, which somehow lands better than gratitude would have. The route and its risks are waiting in People by the time he is back in his vehicle. He does not mention the last conversation, and neither do you." },
             { label: "Tell him it is still no", effect: { setFlags: { eliRejectedFinally: true } }, preview: "Eli stays outside this operation for the rest of the week.", result: "He nods once, the way somebody nods when they have already worked out the answer and only wanted it confirmed out loud. He leaves. The next route rumor that reaches you comes through somebody who charges for it and gets half the detail wrong." }
           ]),
-          pherris_offer: () => event("pherris_offer", "The List in Pherris's Pocket", "Pherris Cole puts one torn page on the table. Half the names are crossed out. The rest still pick up. She keeps her hand flat on the paper. Decide what supplier access is worth.", [
+          pherris_offer: () => event("pherris_offer", "The List in Pherris's Pocket", "Pherris Dickens puts one torn page on the table. Half the names are crossed out. The rest still pick up. She keeps her hand flat on the paper. Decide what supplier access is worth.", [
             { label: "Offer her a share of the take", effect: { introduceCrew: "pherris", crewLoyalty: { id: "pherris", delta: 2 }, setFlags: { gavePherrisOwnership: true } }, preview: "Opens a future recruitment option on her terms rather than yours.", result: "She leaves her hand where it is a second longer, then slides the page across and starts talking in terms of we, which she has not done once until now. She names two people on the list she will not introduce yet, and tells you exactly why not." },
             { label: "Ask to buy the list", effect: { introduceCrew: "pherris", crewLoyalty: { id: "pherris", delta: -1 } }, preview: "Opens a future recruitment option, colder than it could have been.", result: 'She laughs without any part of her face joining in, and folds the page back into quarters. "You want the names without the person who knows them." The page goes into her pocket. She still finishes the drink, and she still pays for it.' }
           ]),
@@ -2888,6 +2901,15 @@
           tone_recruit: () => event("tone_recruit", "Tone Brings a Number", `Tone is at the garage door before you are, with the plate already written down. "People say your name in rooms I stand in. That's a door problem now." He has a figure for the week.`, [
             { label: "Put him on the payroll", effect: { recruitCrew: "tone", recruitCrewPaid: true }, preview: `His number up front, then a wage every night. He starts tonight.`, result: `He counts it once, folds it flat, and puts it in the same pocket as the plate number. Then he walks the fence line without being asked and comes back with two things you did not know about your own building. "I don't start anything. You tell me when something's already started."` },
             { label: "Tell him not this week", effect: { toneDeclineOffer: true }, preview: "He comes back in a few days at the same number.", result: '"All right." He does not argue and he does not lower the figure. He writes the plate on the doorframe in pencil, small, where you will see it and nobody else will, and he is gone before you work out whether that was a favor.' }
+          ]),
+          // v1.19: the observation-gated version, and the market-domain twin of
+          // tone_recruit. pherris_offer above is the booth scene about who owns her
+          // list; this is the one she brings herself, after the money moving through
+          // her network started having the player's name attached to it. She opens
+          // with what she already knows, because that is the product.
+          pherris_recruit: () => event("pherris_recruit", "Pherris Runs the Numbers", `Pherris is already sitting down when you notice her. "Somebody's moving weight through my end of town and paying people on time. That's rarer than you think." She turns her phone face-down and names a wage.`, [
+            { label: "Let's talk", effect: { recruitCrew: "pherris", recruitCrewPaid: true }, preview: "Her price up front, then a wage every night. Downtown starts paying better.", result: `She takes the money without counting it, which is its own kind of statement, and starts talking before it is in her bag. Two buyers Downtown who pay over asking for anything clean. One name she used to work with and will not put you near. "I'll tell you who's buying. You tell me before you do anything that makes them stop."` },
+            { label: "Not right now", effect: { pherrisDeclineOffer: true }, preview: "She comes back in a few days at the same number.", result: '"Sure." She turns her phone back over and is halfway through a conversation with somebody else before you have stood up. The number does not come down later, and you get the strong impression it was never going to.' }
           ]),
           tone_jacksonville: () => event("tone_jacksonville", "Jacksonville Calls Collect", "A Jacksonville number reaches Tone after midnight. The people behind it know his old name and your two strongest blocks. Protection, separation, or leverage all leave a mark.", [
             { label: "Protect Tone", effect: { heat: 2, crewLoyalty: { id: "tone", delta: 2 }, setFlags: { toneJacksonvilleProtected: true } }, preview: "+2 Heat and +2 Tone loyalty. Keep him inside the operation.", result: "You put the garage and the blocks behind Tone. Jacksonville hears the boundary in the next call." },
@@ -8322,6 +8344,15 @@
           if (state.player.cash < recruitmentCost(state, "tone")) return { available: false, reason: "Not enough cash for what he asks up front." };
           return { available: true, reason: "Tone is ready to hear the offer." };
         }
+        function pherrisRecruitmentAvailability(state) {
+          const crew = state.people.crew.pherris;
+          if (crew.recruited) return { available: false, reason: "She already works here." };
+          if (crew.status === "departed") return { available: false, reason: "She does not come back." };
+          if (!crewRecruitmentEligible(state, "pherris")) return { available: false, reason: "Nothing about your business has reached her yet." };
+          if (recruitedCrew(state).length >= crewCapacityFor(state)) return { available: false, reason: "No room on the crew." };
+          if (state.player.cash < recruitmentCost(state, "pherris")) return { available: false, reason: "Not enough cash for what she asks up front." };
+          return { available: true, reason: "Pherris is ready to hear the offer." };
+        }
         function deshawnRecruitmentAvailability(state) {
           var _a;
           if (state.flags.deshawnBusinessSevered) return { available: false, reason: "'It was business' permanently closed this route." };
@@ -9996,6 +10027,28 @@
             weight: 5,
             exit: null
           },
+          // v1.19: Pherris's recruitment scene, the market-domain twin of tone_recruit.
+          // No area: she is the one person on this roster who moves between districts,
+          // so she turns up wherever the player is working. Reactive, because the whole
+          // characterization is that she already knew before you told her. Declining
+          // sets pherrisNextOfferDay and the cooldown paces the re-offer at three days.
+          // The Week Zero clause is explicit for the same reason Tone's is:
+          // character_intro is not a suppressed classification.
+          {
+            id: "pherris_recruit",
+            chain: null,
+            stage: null,
+            classification: "character_intro",
+            trigger: "reactive",
+            requires: (s) => s.run.phase !== "week_zero" && pherrisRecruitmentAvailability(s).available && (!s.flags.pherrisNextOfferDay || s.run.day >= s.flags.pherrisNextOfferDay),
+            area: null,
+            earliest: { day: 4, slot: 0 },
+            latest: null,
+            once: false,
+            cooldown: 3,
+            weight: 8,
+            exit: null
+          },
           // v1.15: Deshawn's recruitment scene. Fires at the Night Owl once his gate
           // holds; declining sets deshawnNextOfferDay, and the cooldown plus that
           // flag pace the re-offer at three days.
@@ -10534,6 +10587,19 @@
                   slot: state.run.slot
                 });
               }
+              if (crewId === "pherris") {
+                crew.loyalty = Crew.CREW_LOYALTY_START;
+                state.npc.pherris.met = true;
+                pushPhoneMessage(state, "Pherris", "Sending you three names tonight. Two of them buy. Don't call the third one before I do.");
+                broadcastTracked(state, {
+                  type: "growth",
+                  event: "crew_recruited",
+                  channel: "neighborhood",
+                  location: state.world.currentNeighborhoodId,
+                  day: state.run.day,
+                  slot: state.run.slot
+                });
+              }
               if (crewId === "deshawn") {
                 state.flags.extraRentGraceAvailable = true;
                 if ((((_c = state.people.dealers.goodie) == null ? void 0 : _c.robbedCount) || 0) > 0) state.flags.deshawnRedemptionPath = true;
@@ -10554,6 +10620,11 @@
             state.npc.tone.offersDeclined += 1;
             state.flags.toneOfferDeclined = true;
             state.flags.toneNextOfferDay = state.run.day + 3;
+          }
+          if (effect.pherrisDeclineOffer) {
+            state.npc.pherris.offersDeclined += 1;
+            state.flags.pherrisOfferDeclined = true;
+            state.flags.pherrisNextOfferDay = state.run.day + 3;
           }
           if (effect.addRumor) state.effects.rumors.push({ id: `contact_${state.run.day}_${state.run.slot}_${effect.addRumor.areaId}`, ...effect.addRumor, reliable: true, expiresAt: slotNumber(state.run.day, state.run.slot) + 3 });
           if (effect.crewLoyalty && state.people.crew[effect.crewLoyalty.id]) {
@@ -13614,7 +13685,9 @@
             sharkLoanAvailability,
             deshawnRecruitmentAvailability,
             toneRecruitmentAvailability,
+            pherrisRecruitmentAvailability,
             crewRecruitmentEligible,
+            warmNpcContactCount,
             crewTierAvailability,
             crewBailAvailability,
             arrestRecord,

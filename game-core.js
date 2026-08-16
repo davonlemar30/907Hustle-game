@@ -3635,6 +3635,20 @@
     if (state.player.cash < recruitmentCost(state, "tone")) return { available: false, reason: "Not enough cash for what he asks up front." };
     return { available: true, reason: "Tone is ready to hear the offer." };
   }
+  // v1.19: the same gate, one domain over. Tone reads whether the player holds a
+  // position; Pherris reads whether they are worth being connected to, which her
+  // lens scores as money moving and an operation growing without noise. She does
+  // not need to have been introduced first - the pherris_offer booth scene is a
+  // separate beat about ownership of her list, and either can happen first.
+  function pherrisRecruitmentAvailability(state) {
+    const crew = state.people.crew.pherris;
+    if (crew.recruited) return { available: false, reason: "She already works here." };
+    if (crew.status === "departed") return { available: false, reason: "She does not come back." };
+    if (!crewRecruitmentEligible(state, "pherris")) return { available: false, reason: "Nothing about your business has reached her yet." };
+    if (recruitedCrew(state).length >= crewCapacityFor(state)) return { available: false, reason: "No room on the crew." };
+    if (state.player.cash < recruitmentCost(state, "pherris")) return { available: false, reason: "Not enough cash for what she asks up front." };
+    return { available: true, reason: "Pherris is ready to hear the offer." };
+  }
   function deshawnRecruitmentAvailability(state) {
     if (state.flags.deshawnBusinessSevered) return { available: false, reason: "'It was business' permanently closed this route." };
     if (state.run.day < 5) return { available: false, reason: "Deshawn does not make this call before Day 5." };
@@ -4987,6 +5001,18 @@
       requires: () => true, area: "downtown", earliest: { day: 3, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
     { id: "tone_offer", chain: null, stage: null, classification: "character_intro", trigger: "ambient",
       requires: (s) => s.base.controlled, area: "north_star_lot", earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 5, exit: null },
+    // v1.19: Pherris's recruitment scene, the market-domain twin of tone_recruit.
+    // No area: she is the one person on this roster who moves between districts,
+    // so she turns up wherever the player is working. Reactive, because the whole
+    // characterization is that she already knew before you told her. Declining
+    // sets pherrisNextOfferDay and the cooldown paces the re-offer at three days.
+    // The Week Zero clause is explicit for the same reason Tone's is:
+    // character_intro is not a suppressed classification.
+    { id: "pherris_recruit", chain: null, stage: null, classification: "character_intro", trigger: "reactive",
+      requires: (s) => s.run.phase !== "week_zero"
+        && pherrisRecruitmentAvailability(s).available
+        && (!s.flags.pherrisNextOfferDay || s.run.day >= s.flags.pherrisNextOfferDay),
+      area: null, earliest: { day: 4, slot: 0 }, latest: null, once: false, cooldown: 3, weight: 8, exit: null },
     // v1.15: Deshawn's recruitment scene. Fires at the Night Owl once his gate
     // holds; declining sets deshawnNextOfferDay, and the cooldown plus that
     // flag pace the re-offer at three days.
@@ -5333,6 +5359,20 @@
             location: "north_star_lot", day: state.run.day, slot: state.run.slot,
           });
         }
+        if (crewId === "pherris") {
+          // Same reading as Tone. She made the player prove it first, so she
+          // starts level rather than grateful.
+          crew.loyalty = Crew.CREW_LOYALTY_START;
+          state.npc.pherris.met = true;
+          pushPhoneMessage(state, "Pherris", "Sending you three names tonight. Two of them buy. Don't call the third one before I do.");
+          // Neighborhood, same as Tone: the block sees who is working with whom.
+          // Her own channel is the network, but broadcasting a hire onto it would
+          // hand Curtis a free point of attention for making a phone call.
+          broadcastTracked(state, {
+            type: "growth", event: "crew_recruited", channel: "neighborhood",
+            location: state.world.currentNeighborhoodId, day: state.run.day, slot: state.run.slot,
+          });
+        }
         if (crewId === "deshawn") {
           state.flags.extraRentGraceAvailable = true;
           // He came around because the player robbed Goodie and then paid the
@@ -5359,6 +5399,13 @@
       state.npc.tone.offersDeclined += 1;
       state.flags.toneOfferDeclined = true;
       state.flags.toneNextOfferDay = state.run.day + 3;
+    }
+    // v1.19: Pherris the same. She has other people to call in the meantime and
+    // says so, which is why the number does not move either.
+    if (effect.pherrisDeclineOffer) {
+      state.npc.pherris.offersDeclined += 1;
+      state.flags.pherrisOfferDeclined = true;
+      state.flags.pherrisNextOfferDay = state.run.day + 3;
     }
     if (effect.addRumor) state.effects.rumors.push({ id: `contact_${state.run.day}_${state.run.slot}_${effect.addRumor.areaId}`, ...effect.addRumor, reliable: true, expiresAt: slotNumber(state.run.day, state.run.slot) + 3 });
     if (effect.crewLoyalty && state.people.crew[effect.crewLoyalty.id]) { const record = state.people.crew[effect.crewLoyalty.id]; record.loyalty = Crew.clampLoyalty(record.loyalty + effect.crewLoyalty.delta); }
@@ -8267,7 +8314,7 @@
       soldierRecruitAvailability, soldierAssignAvailability, blockClaimAvailability, eliPromotionAvailability,
       weeklyIncomeEstimate,
       dreTrustTier, dreIntroductionEligible, dreMissionAvailability, sharkUnlocked, sharkRiskLabel, sharkLoanAvailability,
-      deshawnRecruitmentAvailability, toneRecruitmentAvailability, crewRecruitmentEligible, crewTierAvailability, crewBailAvailability, arrestRecord,
+      deshawnRecruitmentAvailability, toneRecruitmentAvailability, pherrisRecruitmentAvailability, crewRecruitmentEligible, warmNpcContactCount, crewTierAvailability, crewBailAvailability, arrestRecord,
       districtControlTier, districtHasBlockLayer, unassignedSoldiers,
       homeSituation, homeUnlocks, homePriorities, homeSummary, actionResult,
       juanWorkIntelKnown, jobRankForXp, jobPayRange, discoveredJobs, jobAvailability, quickShift, ambientFlavor, phoneIntel, knownWorkplaceContacts, knownSocialContacts, personalContacts, contactAvailability,

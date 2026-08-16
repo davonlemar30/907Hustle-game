@@ -200,6 +200,17 @@ function intelAdvantageCrewIds(state, eventType, contextId) {
 // resolves the ledger and passes the numbers in.
 const RECRUITMENT_PROOF = {
   tone: { minBand: "WARM", minScore: 6 },
+  // v1.19: Pherris needs a floor for exactly the reason Tone does, and a higher
+  // one. Her financial weight is 4, so a single 907List day scores 4.0 on its
+  // own - past the Warm floor of 3 before the player has done anything twice.
+  //
+  // 8 is measured rather than designed. Across 2,000 seeded runs the floor moves
+  // her recruitment rate 16.1% (at 5) / 14.8% (6) / 10.8% (8) / 7.2% (10), and
+  // the dedicated flipper strategy 83% / 80% / 69% / 44%. Below 8 she is close
+  // to automatic for anyone who touches the market; above it she stops being
+  // reachable by a player who trades as one activity among several. 8 keeps her
+  // an earned hire for a market player and an impossible one for everybody else.
+  pherris: { minBand: "WARM", minScore: 8 },
 };
 
 function recruitmentProofFor(crewId) {

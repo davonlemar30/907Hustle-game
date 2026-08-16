@@ -1,6 +1,6 @@
 # 907Hustle: One Good Run — Story Bible
 
-This is the writer-facing reference for the active **v1.8** runtime (`index.html` → `v05.css`, `game-core.js`, `encounters.js`, `ui.jsx`). Older prototypes and audit files are not canon.
+This is the writer-facing reference for the active **v1.18** runtime (`index.html` → `v05.css`, `game-core.js`, `encounters.js`, `ui.jsx`). Older prototypes and audit files are not canon.
 
 ## Continuity rules
 
@@ -82,6 +82,8 @@ Information-focused and protective of her network. She distinguishes rumor, conf
 
 Direct, restrained, and experienced with physical risk. He speaks in practical assessments, values preparation and stated limits, and dislikes reckless violence that creates exposure. His Jacksonville chain asks whether loyalty means protection, release, or leverage; none should read as a cosmetic branch.
 
+He is not hired. He is earned, and he decides when. He reads one axis — whether the player holds a position — and he is the only person on the block who reads force as a credit and quiet as a debt. Backing down costs more with him than violence earns: paying a tax without argument sets the player back further than a fight moves them forward. Write him as someone who arrives already knowing, with the plate number and the hours it sat there, and who names the work rather than the compliment. He does not lower his number to stay wanted.
+
 ### Deshawn
 
 A mediator and recruiter whose credibility depends on whether the player treated Goodie's relationship as real. An intact relationship opens recruitment; restitution plus clean work can repair damage; calling betrayal “business” closes the door permanently. At high loyalty he can prevent a betrayal because people trust him, not because he is physically stronger.
@@ -128,9 +130,9 @@ Kieran Vale arrives only when Curtis attention is at least 6, cumulative sales r
 - **Pherris Tier 1:** wage, daily rumor, Downtown buyer premium.
 - **Pherris Tier 2:** social management with lower Heat and slower threat response.
 - **Pherris Tier 3:** seeded network income and the Simone/Curtis conflict.
-- **Tone Tier 1:** garage defense and loyalty-spend encounter resolution.
-- **Tone Tier 2:** territory defense from Curtis pressure.
-- **Tone Tier 3:** stronger defense with added Heat on active-management days.
+- **Tone Tier 1:** garage defense (posting him clears a watched base), the loyalty-spend option to end a confrontation on his terms, and one effective level of Combat on any fight he is present for. The edge does not work on Curtis's own people, who knew him when he worked their side of it.
+- **Tone Tier 2:** earned by three fights his backup was actually in, not by time served. Adds crew Power and makes him eligible to run a block.
+- **Tone Tier 3:** needs two controlled blocks. More Power again, and the squad the wage implies.
 - **Deshawn Tier 1:** de-escalation and weekly rent grace.
 - **Deshawn Tier 2:** cheaper soldier recruitment and temporary Curtis truces.
 - **Deshawn Tier 3:** betrayal prevention and lower managed-block Heat.

@@ -862,6 +862,7 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 - [ROADMAP.md](ROADMAP.md) — release history and future work
 - [PROGRESSION_DESIGN.md](PROGRESSION_DESIGN.md) — progression and identity model
 
-The ClickUp v1.8 specification is the release source of truth: [v1.8 Character, Relationship, and Hustle Rework](https://app.clickup.com/90141007990/v/dc/2kyd583p-4054/2kyd583p-15114).
-
-Implementation: [draft PR #65](https://github.com/davonlemar30/907Hustle-game/pull/65).
+Release history lives in [PROJECT_STATUS.md](PROJECT_STATUS.md) and the ClickUp
+[Build Changelog](https://app.clickup.com/90141007990/docs/2kyd583p-4054/2kyd583p-14874). Each
+build is specified as its own ClickUp page and shipped as its own PR; there is no single
+standing spec document.

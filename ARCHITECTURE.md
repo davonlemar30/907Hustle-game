@@ -842,3 +842,4 @@ and ambient lines alike:
 - [Systems & Design Decisions](https://app.clickup.com/90141007990/docs/2kyd583p-4054/2kyd583p-7334)
 - [v1.7 Playtest & v1.8 Future Build Ideas](https://app.clickup.com/90141007990/docs/2kyd583p-4054/2kyd583p-15114)
 - [Bug Tracker / Known Issues](https://app.clickup.com/90141007990/docs/2kyd583p-4054/2kyd583p-7374)
+- [Anton "Tone" Bell (Enforcer / Crew)](https://app.clickup.com/90141007990/docs/2kyd583p-4054/2kyd583p-15174) — the voice and tier intent behind `RECRUITMENT_PROOF.tone`

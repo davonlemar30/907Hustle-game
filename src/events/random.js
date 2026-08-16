@@ -2,17 +2,15 @@
 // lets tests/simulate-runs.js compare two builds by hashing 200 seeded runs,
 // so nothing here may use Math.random.
 const { slotNumber } = require("../selectors.js");
+// stringHash moved to src/hash.js in v1.20 so the selectors can use it without
+// closing a require cycle through this file. Re-exported below: every existing
+// `require("./events/random.js").stringHash` call site is unchanged.
+const { stringHash, HASH_CEILING } = require("../hash.js");
 
 function normalizeSeed(seed) {
   const numeric = Number(seed);
   const fallback = 0x9072026;
   return ((Number.isFinite(numeric) ? numeric : fallback) >>> 0) || fallback;
-}
-
-function stringHash(value) {
-  let hash = 2166136261;
-  for (const char of String(value || "")) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); }
-  return hash >>> 0;
 }
 
 function makeRandom(seed) {
@@ -34,8 +32,6 @@ function seededShuffle(items, seed, salt) {
   }
   return out;
 }
-
-const HASH_CEILING = 4294967296;
 
 // A weighted pick keyed on a string rather than drawn from run.rngState.
 //

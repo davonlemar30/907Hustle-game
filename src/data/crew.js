@@ -180,6 +180,52 @@ function intelAdvantageCrewIds(state, eventType, contextId) {
     .map((effect) => effect.crewId);
 }
 
+// MADE MEN MODIFIER TRIANGLE (v1.20). Presence effects change how an *event*
+// resolves; these change how the *territory* performs. Each lieutenant owns one
+// number on the guard layer, matched to the attribute their domain maps to:
+//
+//   Tone (Combat)        defense strength multiplier on stationed soldiers
+//   Pherris (Intelligence) block intel visibility tier (src/selectors.js)
+//   Deshawn (Charisma)   territory heat trickle reduction
+//
+// The tables live here for the same reason the wage curve does: the numbers are
+// the balance, and the balance belongs in one file that game-core reads rather
+// than in three call sites that drift. Nothing is stored - both reads are
+// computed from the crew record the save already carries, which is why v1.20
+// needs no schema bump.
+
+// What a stationed soldier is worth with Tone standing behind them. Tier 2
+// means one soldier defends as well as 1.3 without him: fewer bodies per block,
+// and the headcount that frees up is the actual reward. He never adds soldiers.
+const TONE_DEFENSE_MULTIPLIER = { 1: 1.15, 2: 1.30, 3: 1.50 };
+
+// What is left of a block's ambient heat with Deshawn working the street. His
+// connectors keep the neighborhood comfortable with the operation, so the same
+// corners cost less attention - the "you can grow bigger" lieutenant against
+// Tone's "you can hold harder".
+const DESHAWN_HEAT_REDUCTION = { 1: 0.80, 2: 0.60, 3: 0.40 };
+
+// 0 when the modifier does not apply at all. Departed, arrested, never
+// recruited, and loyalty-0 (on the roster, not showing up - the same line
+// presenceEffectsFor draws) all read as absent, so an effect disappears the
+// moment the person does.
+function modifierTier(state, crewId) {
+  const record = state.people?.crew?.[crewId];
+  if (!record || !record.recruited || record.status !== "active") return 0;
+  if ((Number(record.loyalty) || 0) <= 0) return 0;
+  return Math.max(1, Math.min(3, Number(record.tier) || 1));
+}
+
+function toneDefenseMultiplier(state) {
+  const tier = modifierTier(state, "tone");
+  return tier ? TONE_DEFENSE_MULTIPLIER[tier] : 1;
+}
+
+function deshawnHeatReduction(state) {
+  const tier = modifierTier(state, "deshawn");
+  return tier ? DESHAWN_HEAT_REDUCTION[tier] : 1;
+}
+
 // RECRUITMENT PROOF (v1.18): some people want proof of standing before they
 // take a wage, and the proof is whatever their own lens decided to count.
 //
@@ -284,14 +330,19 @@ const DESHAWN_VIOLENCE_WINDOW_DAYS = 2;
 //   lost to raids and attrition. They belong to the ORGANIZATION, never to a
 //   leader, which is what keeps their income and losses in one resolution pass.
 //
-// The open work is the seam between them, and it is small:
+// The seam between them is the modifier triangle above, and v1.20 closed the
+// first half of it: a lieutenant is a TYPED MODIFIER on the guard layer, never
+// a parallel roster. Tone raises what a posted soldier is worth on defense,
+// Pherris raises what the player can see about the map, Deshawn lowers what the
+// held corners cost in attention. Guards stay identical to each other on
+// purpose - the moment a guard has a type, it wants a name, and then it is a
+// character with no story.
+//
+// The open work left:
 //   - a Made Man at tier 2+ could become a block's managerId (the field exists
 //     on every territoryBlock record and is currently only cleared, never set
 //     by a tier gate), giving that block a named face and a reason to care.
-//   - domain flavor belongs on the manager, not on a soldier type: Tone's block
-//     resists raids, Pherris's reads the market, Deshawn's cools heat. Guards
-//     stay identical to each other on purpose - the moment a guard has a type,
-//     it wants a name, and then it is a character with no story.
+//     Per-block flavor belongs there, on top of the operation-wide modifiers.
 //
 // Problems escalate, not tasks. Whatever ships here, the player should be
 // intervening on escalations rather than assigning work:
@@ -307,6 +358,11 @@ module.exports = {
   TIER_REQUIREMENTS,
   CURTIS_CREW_ENCOUNTER_IDS,
   COMBAT_ADVANTAGE_CAP,
+  TONE_DEFENSE_MULTIPLIER,
+  DESHAWN_HEAT_REDUCTION,
+  modifierTier,
+  toneDefenseMultiplier,
+  deshawnHeatReduction,
   RECRUITMENT_PROOF,
   TONE_TIER2_COMBAT_WINS,
   PHERRIS_TIER2_FLIPS,

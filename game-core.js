@@ -7,7 +7,7 @@
   "use strict";
   const { normalizeSeed, stringHash, makeRandom, seededShuffle, seededPick, isEligible, getWeight } = require("./src/events/random.js");
   const { effectPreview, event, activeEvent } = require("./src/events/cards.js");
-  const { checkpointDay, controlled, slotNumber } = require("./src/selectors.js");
+  const { checkpointDay, controlled, slotNumber, blockIntelLevel, blockIntelView, curtisBlockDefense, curtisBlockTargets } = require("./src/selectors.js");
   const Exposure = require("./src/exposure/engine.js");
   const { BANDS, bandFor, bandId, bandLabel } = require("./src/data/disposition-bands.js");
   const { EXPOSURE_NPC_IDS } = require("./src/data/npc-lenses.js");
@@ -99,6 +99,46 @@
   const RAID_HEAT_WEIGHT = 0.02;
   const RAID_PATROL_WEIGHT = 0.15;
   const RAID_BLOCK_LOSS_CHANCE = 0.35; // conditional on a raid already hitting
+
+  // --- v1.20 raid defense ---------------------------------------------------
+  // What a raid meets when it arrives. Defense strength is the garrison that
+  // was standing there when it started, times whatever Tone is worth
+  // (Crew.toneDefenseMultiplier - 1.0 when he is not on the crew):
+  //
+  //   defenseStrength = soldiersAssigned.length * RAID_DEFENSE_PER_SOLDIER * tone
+  //
+  // Two rolls read it, and both are written so that a one-soldier block with no
+  // Tone is byte-identical to the pre-v1.20 math:
+  //
+  //   casualty     assigned.length / defenseStrength - the raid getting through
+  //                the people posted. Headcount cancels out on purpose: a
+  //                second body is a second target as much as a second
+  //                defender, so this is Tone's number alone (1.0 without him,
+  //                0.67 at tier 3).
+  //   block loss   RAID_BLOCK_LOSS_CHANCE / defenseStrength - holding the
+  //                corner itself, where headcount does count. This is the
+  //                change a v1.19 player would feel: posting a second soldier
+  //                now halves the chance of losing the block, where before it
+  //                only gave the raid another name to take.
+  //
+  // Rolled in that order, and the block-loss roll only happens on a casualty:
+  // if the garrison turned the raid away, the corner did not change hands.
+  const RAID_DEFENSE_PER_SOLDIER = 1;
+
+  // --- v1.20 territory heat trickle -----------------------------------------
+  // Held corners cost attention whether or not anybody is posted on them, at
+  // heatExposure (1-3) per block per night. Heat is a 0-15 integer, so the
+  // trickle is a nightly chance rather than a fractional accumulator: the sum
+  // of the held blocks' exposure times this weight, rolled once per crossed day
+  // against the tick's seeded RNG. No blocks, no roll - which is also why a
+  // player holding nothing gets nothing out of Deshawn.
+  //
+  // 0.06 puts one held corner at roughly one Heat per twelve nights and the
+  // full six-block map at roughly two per three nights. Deshawn's reduction
+  // multiplies the chance (Crew.deshawnHeatReduction), so tier 3 turns the full
+  // map into something a player can actually carry to Day 14.
+  const TERRITORY_HEAT_CHANCE_PER_EXPOSURE = 0.06;
+  const TERRITORY_HEAT_CHANCE_CAP = 0.9;
 
   const FINANCIAL_HEAT_DIRTY_SPEND_THRESHOLD = 400;
   const FINANCIAL_HEAT_PER_OVER_THRESHOLD = 0.01;
@@ -3921,7 +3961,36 @@
   function activeSoldierCount(state) { return Object.values(state.world.soldiers).filter((item) => item.status === "active").length; }
   function unassignedSoldiers(state) { return Object.values(state.world.soldiers).filter((item) => item.status === "active" && !item.blockId); }
   function blockSoldierCount(state, blockId) { return (state.world.territoryBlocks[blockId]?.soldiersAssigned || []).length; }
-  function blockIntelVisible(state) { return !!state.flags.spenardBlocksRevealed; }
+  // v1.20: the old boolean is now the bottom rung of the intel ladder. Every
+  // caller that only wants "can the player read this map at all" keeps working;
+  // anything that wants a number asks blockIntelView.
+  function blockIntelVisible(state) { return blockIntelLevel(state) >= 1; }
+
+  // v1.20: the one line the crew screen shows for a lieutenant's territory
+  // modifier. Null when the modifier would be information about nothing — the
+  // person is not active, or the player holds no corners for it to act on.
+  function lieutenantTerritoryModifier(state, crewId) {
+    if (controlledBlockCount(state) < 1) return null;
+    if (!Crew.modifierTier(state, crewId)) return null;
+    if (crewId === "tone") {
+      const bonus = Math.round((Crew.toneDefenseMultiplier(state) - 1) * 100);
+      return { crewId, label: "Defense", value: `+${bonus}%`, detail: "Stationed soldiers defend harder against raids." };
+    }
+    if (crewId === "pherris") {
+      const level = blockIntelLevel(state);
+      return { crewId, label: "Intel Level", value: `${level}`, detail: BLOCK_INTEL_LEVEL_COPY[level] || BLOCK_INTEL_LEVEL_COPY[1] };
+    }
+    if (crewId === "deshawn") {
+      const cut = Math.round((1 - Crew.deshawnHeatReduction(state)) * 100);
+      return { crewId, label: "Heat Reduction", value: `${cut}%`, detail: "Less nightly Heat from the corners you hold." };
+    }
+    return null;
+  }
+  const BLOCK_INTEL_LEVEL_COPY = {
+    1: "Ownership across the block map.",
+    2: "Ownership, your posted soldiers, and an estimate of what Curtis has on his.",
+    3: "Exact strength on Curtis's corners, when he last moved, and which of yours he is lining up.",
+  };
   function soldierRecruitAvailability(state) {
     if (state.run.status !== "playing") return { available: false, reason: "The run is not active." };
     if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
@@ -4339,12 +4408,21 @@
     let totalIncome = 0;
     let raidedCount = 0;
     let attritionCount = 0;
+    let heldExposure = 0;
+    let repelledCount = 0;
     const raidedBlockNames = [];
+    // v1.20: what Tone is worth tonight, read once. He is a modifier on the
+    // guard layer, not a soldier — the number multiplies the people already
+    // posted and is 1.0 the moment he is gone.
+    const toneDefense = Crew.toneDefenseMultiplier(state);
     for (const block of SPENARD_BLOCKS) {
       const record = state.world.territoryBlocks[block.id];
       if (record.owner !== "player") continue;
       record.soldiersAssigned = record.soldiersAssigned.filter((id) => state.world.soldiers[id]?.status === "active");
       const assigned = record.soldiersAssigned;
+      // Ownership is what costs attention, not staffing: an empty corner you
+      // hold is still a corner people know is yours.
+      heldExposure += block.heatExposure;
       if (assigned.length > 0) {
         let blockIncome = 0;
         for (let index = 0; index < assigned.length; index += 1) blockIncome += block.earningPotential * Math.pow(SOLDIER_INCOME_BASE_DIMINISH, index);
@@ -4353,28 +4431,38 @@
         record.incomeCollected += blockIncome;
         const raidChance = clamp(RAID_BASE_CHANCE + state.player.heat * RAID_HEAT_WEIGHT + block.patrolFrequency * RAID_PATROL_WEIGHT - effectivenessDiscount, 0, 0.9);
         if (random.next() < raidChance) {
-          const lostId = random.pick(assigned);
-          const soldier = state.world.soldiers[lostId];
-          soldier.status = "lost";
-          soldier.blockId = null;
-          record.soldiersAssigned = record.soldiersAssigned.filter((id) => id !== lostId);
+          // The raid arrives either way — heat, patrols, and the corner's own
+          // traffic decided that. What the garrison decides is how it ends.
+          const defenseStrength = assigned.length * RAID_DEFENSE_PER_SOLDIER * toneDefense;
+          const casualtyChance = clamp(assigned.length / defenseStrength, 0, 1);
           record.lastRaidDay = state.run.day;
           record.raidCount += 1;
           state.player.heat = clamp(state.player.heat + 1, 0, 15);
           Exposure.recordObservation(state, "curtis", { type: "growth", event: "visible_business", source: "network" });
           raidedCount += 1;
           raidedBlockNames.push(block.name);
-          if (random.next() < RAID_BLOCK_LOSS_CHANCE) {
-            record.owner = "curtis";
-            const survivors = record.soldiersAssigned;
-            for (const survivorId of survivors) {
-              const survivor = state.world.soldiers[survivorId];
-              if (survivor) survivor.blockId = null;
+          if (random.next() >= casualtyChance) {
+            // Tone's people saw it coming and everybody walked away from it. A
+            // corner that was held does not change hands, so no loss roll.
+            repelledCount += 1;
+          } else {
+            const lostId = random.pick(assigned);
+            const soldier = state.world.soldiers[lostId];
+            soldier.status = "lost";
+            soldier.blockId = null;
+            record.soldiersAssigned = record.soldiersAssigned.filter((id) => id !== lostId);
+            if (random.next() < RAID_BLOCK_LOSS_CHANCE / defenseStrength) {
+              record.owner = "curtis";
+              const survivors = record.soldiersAssigned;
+              for (const survivorId of survivors) {
+                const survivor = state.world.soldiers[survivorId];
+                if (survivor) survivor.blockId = null;
+              }
+              record.soldiersAssigned = [];
+              logEntry(state, survivors.length
+                ? `Curtis takes ${block.name}. ${survivors.length} of Eli's people make it back to the garage.`
+                : `${block.name} slips back under Curtis's people after the raid.`, "bad");
             }
-            record.soldiersAssigned = [];
-            logEntry(state, survivors.length
-              ? `Curtis takes ${block.name}. ${survivors.length} of Eli's people make it back to the garage.`
-              : `${block.name} slips back under Curtis's people after the raid.`, "bad");
           }
         }
       }
@@ -4391,16 +4479,35 @@
       }
     }
     if (totalIncome > 0) addDirtyCash(state, totalIncome);
-    if (totalIncome > 0 || movedBlocks.length || raidedCount || attritionCount) {
+    // The one territory heat path. Rolled after the blocks resolve so a corner
+    // lost tonight stops costing attention tonight, and only when something is
+    // actually held — a player with no blocks never touches this and so never
+    // gets anything out of Deshawn's reduction.
+    const territoryHeat = heldExposure > 0 && random.next() < territoryHeatChance(state, heldExposure);
+    if (territoryHeat) state.player.heat = clamp(state.player.heat + 1, 0, 15);
+    if (totalIncome > 0 || movedBlocks.length || raidedCount || attritionCount || territoryHeat) {
       const parts = [];
       if (totalIncome > 0) parts.push(`+$${totalIncome} territory income`);
       if (movedBlocks.length === 1) parts.push(`1 soldier moved to ${movedBlocks[0]}`);
       else if (movedBlocks.length > 1) parts.push(`${movedBlocks.length} soldiers moved (${movedBlocks.slice(0, 2).join(", ")}${movedBlocks.length > 2 ? "…" : ""})`);
       if (raidedCount) parts.push(`${raidedBlockNames.slice(0, 2).join(", ")}${raidedCount > 2 ? " and others" : ""} drew police attention`);
+      if (repelledCount) parts.push(`${repelledCount} raid${repelledCount === 1 ? "" : "s"} turned away at the corner`);
       if (attritionCount) parts.push(`${attritionCount} soldier${attritionCount === 1 ? "" : "s"} lost to attrition`);
+      if (territoryHeat) parts.push("the held corners drew a look (+1 Heat)");
       if (!raidedCount && !attritionCount) parts.push("No casualties");
       logEntry(state, `Eli's report: ${parts.join(" · ")}`, raidedCount || attritionCount ? "warn" : "good");
     }
+  }
+
+  // Ambient heat from held territory: every held block's heatExposure, weighted
+  // into a nightly chance, times whatever Deshawn is worth (1.0 without him).
+  // Exposed as a selector so the Territory screen can show the player the same
+  // number the night rolls against.
+  function territoryHeatChance(state, exposureOverride) {
+    const exposure = exposureOverride != null ? exposureOverride : SPENARD_BLOCKS.reduce(
+      (sum, block) => sum + (state.world.territoryBlocks[block.id]?.owner === "player" ? block.heatExposure : 0), 0);
+    if (exposure <= 0) return 0;
+    return clamp(exposure * TERRITORY_HEAT_CHANCE_PER_EXPOSURE * Crew.deshawnHeatReduction(state), 0, TERRITORY_HEAT_CHANCE_CAP);
   }
 
   // v1.15: Deshawn's weekly introduction. Every seven days on the crew he
@@ -8271,6 +8378,8 @@
     NILE: Nile, GAMBLING: Gambling, gamblingEvents: GamblingEvents,
     LISTING_ITEMS, LISTING_CAPACITY, MARKET: Market, marketEvents: MarketEvents, NIGHT_OWL_REGULARS, NIGHT_OWL_BOARD, HOUSEHOLD_NPCS, SOCIAL_CONTACTS, STORY_CONTACTS, PHONE_INTEL, DOWNTOWN_CONTENT_STUBS, DOWNTOWN_AMBIENT,
     SPENARD_BLOCKS, SOLDIER_RECRUIT_COST, SOLDIER_BASE_CAPACITY, SOLDIER_CAPACITY_PER_BLOCK, SOLDIERS_PER_BLOCK_CAP,
+    RAID_BASE_CHANCE, RAID_HEAT_WEIGHT, RAID_PATROL_WEIGHT, RAID_BLOCK_LOSS_CHANCE, RAID_DEFENSE_PER_SOLDIER,
+    TERRITORY_HEAT_CHANCE_PER_EXPOSURE, TERRITORY_HEAT_CHANCE_CAP, BLOCK_INTEL_LEVEL_COPY,
     SHARK_BORROWERS, SHARK_TERMS, DRE_MISSIONS, DRE_COLLECTOR_TIERS, ELI_LIEUTENANT_UNLOCK, RESPECT_STAGE_THRESHOLDS,
     Crew, Arrest, CREW_LOYALTY_MAX: Crew.CREW_LOYALTY_MAX, CREW_LOYALTY_START: Crew.CREW_LOYALTY_START, TIER_REQUIREMENTS: Crew.TIER_REQUIREMENTS,
     DISTRICT_CONTROL_TIERS, DISTRICT_CONTROL_CAPSTONE_BLOCKS, DISTRICT_CONTROL_LABEL, ELI_OPERATION_POLICIES,
@@ -8311,6 +8420,11 @@
       visibleBoostTargets, boostTargetAvailability, boostChance, boostFenceRate, boostTier,
       visibleStickTargets, stickTargetAvailability, stickChance, stickTier, stickCasing, plugSuspicion, districtMods,
       controlledBlockCount, eliLieutenantActive, soldierCapacity, activeSoldierCount, blockSoldierCount, blockIntelVisible,
+      // v1.20 Made Men modifiers. blockIntelLevel/blockIntelView are the pure
+      // reads from src/selectors.js, re-exported here so the UI has one import.
+      blockIntelLevel, blockIntelView, curtisBlockDefense, curtisBlockTargets,
+      toneDefenseMultiplier: Crew.toneDefenseMultiplier, deshawnHeatReduction: Crew.deshawnHeatReduction,
+      territoryHeatChance, lieutenantTerritoryModifier,
       soldierRecruitAvailability, soldierAssignAvailability, blockClaimAvailability, eliPromotionAvailability,
       weeklyIncomeEstimate,
       dreTrustTier, dreIntroductionEligible, dreMissionAvailability, sharkUnlocked, sharkRiskLabel, sharkLoanAvailability,

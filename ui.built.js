@@ -481,6 +481,64 @@
     }
   });
 
+  // src/data/territory.js
+  var require_territory = __commonJS({
+    "src/data/territory.js"(exports, module) {
+      var POLICE_BASE_CHANCE = 0.04;
+      var POLICE_HEAT_WEIGHT = 0.015;
+      var POLICE_PATROL_WEIGHT = 0.03;
+      var POLICE_ELI_DISCOUNT = 0.015;
+      var CURTIS_BASE_CHANCE = 0.12;
+      var CURTIS_VISIBILITY_WEIGHT = 0.4;
+      var CURTIS_PHASE_MULTIPLIER = {
+        invisible: 0,
+        ambient: 0.5,
+        watching: 1,
+        approaching: 1.5
+      };
+      var CURTIS_PHASE_VISIBILITY_GATE = {
+        invisible: 99,
+        ambient: 2,
+        watching: 1,
+        approaching: 0
+      };
+      var CURTIS_TARGET_DEPTH_BY_PHASE = { invisible: 0, ambient: 1, watching: 2, approaching: 3 };
+      var CURTIS_PRESSURE_BUDGET_BY_PHASE = { invisible: 0, ambient: 1, watching: 3, approaching: 5 };
+      var CURTIS_MAX_PRESSURE_PER_BLOCK = 2;
+      var CURTIS_PRESSURE_HARD = 2;
+      var GOSSIP_WARNING_BASE_SCOPE = 1;
+      var GOSSIP_DESHAWN_FULL_SCOPE_TIER = 1;
+      var GOSSIP_DESHAWN_PRESSURE_TEXT_TIER = 2;
+      var GOSSIP_DESHAWN_EARLY_ARRIVAL_TIER = 3;
+      var GOSSIP_WARNING_ARRIVAL = { dayOffset: 1, slot: 0 };
+      var GOSSIP_WARNING_EARLY_ARRIVAL = { dayOffset: 0, slot: 3 };
+      var GOSSIP_RAID_ARRIVAL = { dayOffset: 1, slot: 0 };
+      var RAID_DEFENSE_PER_SOLDIER = 1;
+      module.exports = {
+        POLICE_BASE_CHANCE,
+        POLICE_HEAT_WEIGHT,
+        POLICE_PATROL_WEIGHT,
+        POLICE_ELI_DISCOUNT,
+        CURTIS_BASE_CHANCE,
+        CURTIS_VISIBILITY_WEIGHT,
+        CURTIS_PHASE_MULTIPLIER,
+        CURTIS_PHASE_VISIBILITY_GATE,
+        CURTIS_TARGET_DEPTH_BY_PHASE,
+        CURTIS_PRESSURE_BUDGET_BY_PHASE,
+        CURTIS_MAX_PRESSURE_PER_BLOCK,
+        CURTIS_PRESSURE_HARD,
+        GOSSIP_WARNING_BASE_SCOPE,
+        GOSSIP_DESHAWN_FULL_SCOPE_TIER,
+        GOSSIP_DESHAWN_PRESSURE_TEXT_TIER,
+        GOSSIP_DESHAWN_EARLY_ARRIVAL_TIER,
+        GOSSIP_WARNING_ARRIVAL,
+        GOSSIP_WARNING_EARLY_ARRIVAL,
+        GOSSIP_RAID_ARRIVAL,
+        RAID_DEFENSE_PER_SOLDIER
+      };
+    }
+  });
+
   // src/hash.js
   var require_hash = __commonJS({
     "src/hash.js"(exports, module) {
@@ -502,6 +560,7 @@
     "src/selectors.js"(exports, module) {
       var { SPENARD_BLOCKS, SPENARD_BLOCK_BY_ID } = require_locations();
       var CurtisAwareness = require_curtis_awareness();
+      var Territory = require_territory();
       var { stringHash } = require_hash();
       function checkpointDay(state) {
         return state.run.checkpointDay || Infinity;
@@ -531,16 +590,34 @@
         const jitter = stringHash(`${state.run.seed}:block-intel:${blockId}:${state.run.day}`) % 3 - 1;
         return Math.max(1, exact + jitter);
       }
-      var CURTIS_TARGETS_BY_PHASE = { invisible: 0, ambient: 1, watching: 2, approaching: 3 };
-      function curtisBlockTargets(state) {
+      function compareBlocksByCurtisPriority(aId, bId) {
+        const a = SPENARD_BLOCK_BY_ID[aId];
+        const b = SPENARD_BLOCK_BY_ID[bId];
+        if (!a || !b) return a ? -1 : b ? 1 : 0;
+        return b.curtisVisibility - a.curtisVisibility || b.earningPotential - a.earningPotential || (a.id < b.id ? -1 : 1);
+      }
+      function curtisNightPlan(state) {
         var _a, _b;
         const phase = ((_a = state.curtisAwareness) == null ? void 0 : _a.phase) || CurtisAwareness.phaseForLevel(((_b = state.curtisAwareness) == null ? void 0 : _b.level) || 0);
-        const depth = CURTIS_TARGETS_BY_PHASE[phase] || 0;
-        if (!depth) return [];
-        return SPENARD_BLOCKS.filter((block) => {
+        const depth = Territory.CURTIS_TARGET_DEPTH_BY_PHASE[phase] || 0;
+        if (!depth || !(Territory.CURTIS_PHASE_MULTIPLIER[phase] > 0)) return [];
+        const gate = Territory.CURTIS_PHASE_VISIBILITY_GATE[phase];
+        const ranked = SPENARD_BLOCKS.filter((block) => {
           var _a2, _b2, _c;
           return ((_c = (_b2 = (_a2 = state.world) == null ? void 0 : _a2.territoryBlocks) == null ? void 0 : _b2[block.id]) == null ? void 0 : _c.owner) === "player";
-        }).sort((a, b) => b.curtisVisibility - a.curtisVisibility || b.earningPotential - a.earningPotential || (a.id < b.id ? -1 : 1)).slice(0, depth).map((block) => block.id);
+        }).filter((block) => block.curtisVisibility > 0 && block.curtisVisibility >= (gate == null ? 99 : gate)).sort((a, b) => compareBlocksByCurtisPriority(a.id, b.id)).slice(0, depth);
+        let budget = Territory.CURTIS_PRESSURE_BUDGET_BY_PHASE[phase] || 0;
+        const plan = [];
+        for (const block of ranked) {
+          if (budget <= 0) break;
+          const weight = Math.min(Territory.CURTIS_MAX_PRESSURE_PER_BLOCK, budget);
+          budget -= weight;
+          plan.push({ blockId: block.id, name: block.name, weight });
+        }
+        return plan;
+      }
+      function curtisBlockTargets(state) {
+        return curtisNightPlan(state).map((entry) => entry.blockId);
       }
       function blockIntelView(state, blockId) {
         var _a, _b;
@@ -572,8 +649,9 @@
         blockIntelView,
         curtisBlockDefense,
         curtisBlockDefenseEstimate,
+        curtisNightPlan,
         curtisBlockTargets,
-        CURTIS_TARGETS_BY_PHASE
+        compareBlocksByCurtisPriority
       };
     }
   });
@@ -673,7 +751,12 @@
         "discretion",
         "growth",
         "submission",
-        "defiance"
+        "defiance",
+        // v1.23. The one category that is not about the player at all: it is what the
+        // block knows about the block. "Curtis's people were asking about Motel Row"
+        // is news the neighborhood carries, and carrying it is the whole job - it
+        // routes and it delivers, and every lens scores it zero. See npc-lenses.js.
+        "territory"
       ];
       var OBSERVATION_CATEGORY_SET = new Set(OBSERVATION_CATEGORIES);
       var OBSERVATION_SOURCES = ["witnessed", "told", "household", "neighborhood", "network", "reputation"];
@@ -931,7 +1014,8 @@
         discretion: 1,
         growth: 1,
         submission: 0.5,
-        defiance: -1
+        defiance: -1,
+        territory: 0
       };
       var STREET = {
         presence: 0.6,
@@ -944,7 +1028,8 @@
         discretion: 1.5,
         growth: 1.5,
         submission: -0.5,
-        defiance: 0.5
+        defiance: 0.5,
+        territory: 0
       };
       var ROMANTIC = {
         presence: 1.5,
@@ -957,7 +1042,8 @@
         discretion: 2,
         growth: 1,
         submission: 0,
-        defiance: -0.5
+        defiance: -0.5,
+        territory: 0
       };
       var THREAT = {
         presence: -0.3,
@@ -970,7 +1056,8 @@
         discretion: 1.5,
         growth: -2,
         submission: 2,
-        defiance: -2.5
+        defiance: -2.5,
+        territory: 0
       };
       var ARCHETYPES = { CIVILIAN, STREET, ROMANTIC, THREAT };
       var SHARED_EVENT_WEIGHTS = {
@@ -1318,7 +1405,19 @@
         }
         return reached;
       }
-      function resolveObservationQueue(state) {
+      function queueObservation(state, npcIds, spec, deliverAtSlot) {
+        const channel = channelFor(spec.channel || "neighborhood");
+        const observation = createObservation({ ...spec, day: spec.day || state.run.day, source: channel.source });
+        if (!observation) return [];
+        const reached = [];
+        for (const npcId of npcIds) {
+          if (!state.npc[npcId] || !listensOn(npcId, channel.id)) continue;
+          reached.push(npcId);
+          state.run.pendingObservations.push({ npcId, observation: { ...observation }, deliverAtSlot });
+        }
+        return reached;
+      }
+      function resolveObservationQueue(state, onDeliver) {
         const queue = state.run.pendingObservations;
         if (!Array.isArray(queue) || !queue.length) return 0;
         const now = slotNumber(state.run.day, state.run.slot);
@@ -1332,6 +1431,7 @@
           }
           addObservation(ledgerOf(state, entry.npcId), entry.observation);
           delivered += 1;
+          if (typeof onDeliver === "function") onDeliver(entry);
         }
         state.run.pendingObservations = waiting;
         return delivered;
@@ -1389,6 +1489,7 @@
         getDispositionBand,
         recordObservation,
         broadcastObservation,
+        queueObservation,
         resolveObservationQueue,
         propagateHeat,
         describeDisposition,
@@ -4434,38 +4535,76 @@
     }
   });
 
-  // src/data/territory.js
-  var require_territory = __commonJS({
-    "src/data/territory.js"(exports, module) {
-      var POLICE_BASE_CHANCE = 0.04;
-      var POLICE_HEAT_WEIGHT = 0.015;
-      var POLICE_PATROL_WEIGHT = 0.03;
-      var POLICE_ELI_DISCOUNT = 0.015;
-      var CURTIS_BASE_CHANCE = 0.12;
-      var CURTIS_VISIBILITY_WEIGHT = 0.4;
-      var CURTIS_PHASE_MULTIPLIER = {
-        invisible: 0,
-        ambient: 0.5,
-        watching: 1,
-        approaching: 1.5
+  // src/data/gossip.js
+  var require_gossip = __commonJS({
+    "src/data/gossip.js"(exports, module) {
+      var GOSSIP_WARNING_EVENT = "curtis_move_planned";
+      var GOSSIP_RAID_EVENT = "police_swept_corner";
+      var GOSSIP_VOICES = {
+        mina: {
+          name: "Mina",
+          [GOSSIP_WARNING_EVENT]: (corner) => `Heard talk at the Owl about ${corner}. Might want eyes on it tonight.`,
+          [GOSSIP_RAID_EVENT]: (corner) => `Your spot on ${corner} got swept last night. Heard it from the regulars.`
+        },
+        juan: {
+          name: "Juan",
+          [GOSSIP_WARNING_EVENT]: (corner) => `Word around the building, somebody's people been scouting ${corner}.`,
+          [GOSSIP_RAID_EVENT]: (corner) => `Hey man, ${corner} caught a raid. You good?`
+        },
+        yalonda: {
+          name: "Yalonda",
+          [GOSSIP_WARNING_EVENT]: (corner) => `Baby, be careful tonight. People been asking about ${corner}.`,
+          [GOSSIP_RAID_EVENT]: (corner) => `Baby, I heard ${corner} got raided. Are you okay?`
+        },
+        deshawn: {
+          name: "Deshawn",
+          [GOSSIP_WARNING_EVENT]: (corner) => `Yo, my people say Curtis got eyes on ${corner} tonight. Handle that.`,
+          [GOSSIP_RAID_EVENT]: (corner) => `Block got swept. ${corner}. Wasn't nothing I could do from here.`
+        },
+        tone: {
+          name: "Tone",
+          [GOSSIP_WARNING_EVENT]: (corner) => `Heads up. ${corner}'s getting looked at.`,
+          [GOSSIP_RAID_EVENT]: (corner) => `${corner}. Cops hit it. Your people alright?`
+        },
+        biniam: {
+          name: "Biniam",
+          [GOSSIP_WARNING_EVENT]: (corner) => `Heard something downstairs about ${corner}. Thought you should know.`,
+          [GOSSIP_RAID_EVENT]: (corner) => `Heard about ${corner}. The police.`
+        },
+        pherris: {
+          name: "Pherris",
+          [GOSSIP_WARNING_EVENT]: (corner) => `That corner on ${corner}? His people asking questions. Tonight.`,
+          [GOSSIP_RAID_EVENT]: (corner) => `${corner} caught a sweep last night. FYI.`
+        }
       };
-      var CURTIS_PHASE_VISIBILITY_GATE = {
-        invisible: 99,
-        ambient: 2,
-        watching: 1,
-        approaching: 0
+      var GOSSIP_VOICE_IDS = Object.keys(GOSSIP_VOICES);
+      var GOSSIP_PRESSURE_CLAUSE = {
+        2: "Word is they're coming hard.",
+        1: "Word is they're just looking."
       };
-      var RAID_DEFENSE_PER_SOLDIER = 1;
+      function hasVoice(npcId, event) {
+        var _a;
+        return typeof ((_a = GOSSIP_VOICES[npcId]) == null ? void 0 : _a[event]) === "function";
+      }
+      function gossipSender(npcId) {
+        var _a;
+        return ((_a = GOSSIP_VOICES[npcId]) == null ? void 0 : _a.name) || null;
+      }
+      function gossipText(npcId, event, cornerName, pressure = null) {
+        if (!hasVoice(npcId, event)) return null;
+        const line = GOSSIP_VOICES[npcId][event](cornerName);
+        const rider = pressure == null ? null : GOSSIP_PRESSURE_CLAUSE[pressure];
+        return rider ? `${line} ${rider}` : line;
+      }
       module.exports = {
-        POLICE_BASE_CHANCE,
-        POLICE_HEAT_WEIGHT,
-        POLICE_PATROL_WEIGHT,
-        POLICE_ELI_DISCOUNT,
-        CURTIS_BASE_CHANCE,
-        CURTIS_VISIBILITY_WEIGHT,
-        CURTIS_PHASE_MULTIPLIER,
-        CURTIS_PHASE_VISIBILITY_GATE,
-        RAID_DEFENSE_PER_SOLDIER
+        GOSSIP_WARNING_EVENT,
+        GOSSIP_RAID_EVENT,
+        GOSSIP_VOICES,
+        GOSSIP_VOICE_IDS,
+        GOSSIP_PRESSURE_CLAUSE,
+        hasVoice,
+        gossipSender,
+        gossipText
       };
     }
   });
@@ -4783,11 +4922,11 @@
         "use strict";
         const { normalizeSeed, stringHash, makeRandom, seededShuffle, seededPick, isEligible, getWeight } = require_random();
         const { effectPreview, event, activeEvent } = require_cards();
-        const { checkpointDay, controlled, slotNumber, blockIntelLevel, blockIntelView, curtisBlockDefense, curtisBlockTargets } = require_selectors();
+        const { checkpointDay, controlled, slotNumber, blockIntelLevel, blockIntelView, curtisBlockDefense, curtisBlockTargets, curtisNightPlan, compareBlocksByCurtisPriority } = require_selectors();
         const Exposure = require_engine();
         const { BANDS, bandFor, bandId, bandLabel } = require_disposition_bands();
         const { EXPOSURE_NPC_IDS } = require_npc_lenses();
-        const { NPC_CHANNELS } = require_propagation();
+        const { NPC_CHANNELS, NPC_PRESENCE_AREAS } = require_propagation();
         const Market = require_market();
         const MarketEvents = require_market_events();
         const AttributeData = require_attributes();
@@ -4800,6 +4939,7 @@
         const Arrest = require_arrest();
         const CurtisAwareness = require_curtis_awareness();
         const Territory = require_territory();
+        const Gossip = require_gossip();
         const VERSION = 11;
         const RUN_DAYS = 7;
         const PRESSURE_DAYS = 7;
@@ -6277,6 +6417,10 @@
               consequenceQueue: [],
               pendingObservations: [],
               daySummary: null,
+              // v1.23: which voices have already texted today, so one NPC cannot send
+              // two gossip texts in a day. Session state - nothing here needs to
+              // outlive the run, and it rebuilds itself on the first delivery.
+              gossipVoices: { day: 0, npcIds: [] },
               // v1.16: parts of day a booking still owes, spent once the caught-state
               // encounter is dismissed and advanceRun is allowed to move again.
               pendingArrestSlots: null,
@@ -6664,6 +6808,7 @@
           migrated.jobs.applications = Array.isArray(migrated.jobs.applications) ? migrated.jobs.applications : [];
           migrated.run.consequenceQueue = Array.isArray(migrated.run.consequenceQueue) ? migrated.run.consequenceQueue : [];
           migrated.run.pendingObservations = Array.isArray(migrated.run.pendingObservations) ? migrated.run.pendingObservations : [];
+          migrated.run.gossipVoices = migrated.run.gossipVoices && Array.isArray(migrated.run.gossipVoices.npcIds) ? migrated.run.gossipVoices : { day: 0, npcIds: [] };
           const renameStoryId = (id) => typeof id === "string" ? id.replace(/^mara_/, "mina_").replace(/^rook_/, "curtis_").replace(/^kip_/, "goodie_").replace(/^miri_/, "pherris_") : id;
           const renameFlag = (id) => typeof id === "string" ? id.replace(/^mara/, "mina").replace(/^rook/, "curtis").replace(/^kip/, "goodie").replace(/^miri/, "pherris") : id;
           migrated.flags = Object.fromEntries(Object.entries(migrated.flags || {}).map(([id, flag]) => [renameFlag(id), flag]));
@@ -9166,6 +9311,7 @@
                 policeCount += 1;
                 policeBlockNames.push(block.name);
                 broadcastTracked(state, { type: "heat_exposure", event: "police_raid", channel: "neighborhood", location: HOME_DISTRICT_ID });
+                emitRaidGossip(state, block.id);
                 if (!takeRaidCasualty(state, random, record, toneDefense)) repelledCount += 1;
               }
             }
@@ -9221,6 +9367,101 @@
             if (!policeCount && !curtisCount && !attritionCount) parts.push("No casualties");
             logEntry(state, `Eli's report: ${parts.join(" \xB7 ")}`, policeCount || curtisCount || attritionCount ? "warn" : "good");
           }
+        }
+        function gossipAudience(state, districtId) {
+          return Gossip.GOSSIP_VOICE_IDS.filter((npcId) => {
+            if (!state.npc[npcId]) return false;
+            if (!(NPC_CHANNELS[npcId] || []).includes("neighborhood")) return false;
+            const areas = NPC_PRESENCE_AREAS[npcId];
+            return !areas || !districtId || areas.includes(districtId);
+          });
+        }
+        function gossipDeshawnTier(state) {
+          return Crew.modifierTier(state, "deshawn");
+        }
+        function emitCurtisGossipWarnings(state) {
+          const plan = curtisNightPlan(state);
+          if (!plan.length) return [];
+          const tier = gossipDeshawnTier(state);
+          const scope = tier >= Territory.GOSSIP_DESHAWN_FULL_SCOPE_TIER ? plan.length : Territory.GOSSIP_WARNING_BASE_SCOPE;
+          const arrival = tier >= Territory.GOSSIP_DESHAWN_EARLY_ARRIVAL_TIER ? Territory.GOSSIP_WARNING_EARLY_ARRIVAL : Territory.GOSSIP_WARNING_ARRIVAL;
+          const deliverAtSlot = slotNumber(state.run.day + arrival.dayOffset, arrival.slot);
+          const audience = gossipAudience(state, HOME_DISTRICT_ID);
+          const raised = [];
+          for (const entry of plan.slice(0, scope)) {
+            Exposure.queueObservation(state, audience, {
+              type: "territory",
+              event: Gossip.GOSSIP_WARNING_EVENT,
+              // The corner, not the district. Routing was decided above, so location is
+              // free to be the thing the text has to name.
+              location: entry.blockId,
+              value: entry.weight,
+              channel: "neighborhood",
+              day: state.run.day
+            }, deliverAtSlot);
+            raised.push(entry.blockId);
+          }
+          return raised;
+        }
+        function emitRaidGossip(state, blockId) {
+          const arrival = Territory.GOSSIP_RAID_ARRIVAL;
+          Exposure.queueObservation(state, gossipAudience(state, HOME_DISTRICT_ID), {
+            type: "territory",
+            event: Gossip.GOSSIP_RAID_EVENT,
+            location: blockId,
+            channel: "neighborhood",
+            day: state.run.day
+          }, slotNumber(state.run.day + arrival.dayOffset, arrival.slot));
+        }
+        function gossipVoicesUsed(state) {
+          const record = state.run.gossipVoices;
+          if (!record || record.day !== state.run.day) {
+            state.run.gossipVoices = { day: state.run.day, npcIds: [] };
+          }
+          return state.run.gossipVoices.npcIds;
+        }
+        function pickGossipVoice(state, npcIds, blockId) {
+          const spokenAlready = gossipVoicesUsed(state);
+          const candidates = npcIds.filter((npcId) => !spokenAlready.includes(npcId)).filter((npcId) => Exposure.ledgerOf(state, npcId).length > 0).filter((npcId) => atLeastBand(state, npcId, BANDS.WARM)).map((npcId) => ({
+            npcId,
+            score: dispositionOf(state, npcId),
+            tiebreak: stringHash(`${state.run.seed}:warn-npc:${blockId}:${state.run.day}:${npcId}`)
+          })).sort((a, b) => b.score - a.score || a.tiebreak - b.tiebreak || (a.npcId < b.npcId ? -1 : 1));
+          return candidates.length ? candidates[0].npcId : null;
+        }
+        function deliverGossipTexts(state, landed) {
+          if (!landed.length) return;
+          const tier = gossipDeshawnTier(state);
+          const byCorner = /* @__PURE__ */ new Map();
+          for (const entry of landed) {
+            const key = `${entry.event}:${entry.blockId}`;
+            if (!byCorner.has(key)) byCorner.set(key, { event: entry.event, blockId: entry.blockId, weight: entry.weight, npcIds: [] });
+            const bucket = byCorner.get(key);
+            if (!bucket.npcIds.includes(entry.npcId)) bucket.npcIds.push(entry.npcId);
+          }
+          const buckets = [...byCorner.values()].sort((a, b) => (b.weight || 0) - (a.weight || 0) || compareBlocksByCurtisPriority(a.blockId, b.blockId));
+          for (const bucket of buckets) {
+            const block = SPENARD_BLOCK_BY_ID[bucket.blockId];
+            if (!block) continue;
+            const npcId = pickGossipVoice(state, bucket.npcIds, bucket.blockId);
+            if (!npcId) continue;
+            const pressure = bucket.event === Gossip.GOSSIP_WARNING_EVENT && tier >= Territory.GOSSIP_DESHAWN_PRESSURE_TEXT_TIER ? bucket.weight : null;
+            const text = Gossip.gossipText(npcId, bucket.event, block.name, pressure);
+            if (!text) continue;
+            gossipVoicesUsed(state).push(npcId);
+            pushPhoneMessage(state, Gossip.gossipSender(npcId), text);
+          }
+        }
+        function drainObservations(state) {
+          const landed = [];
+          const delivered = Exposure.resolveObservationQueue(state, (entry) => {
+            const observation = entry.observation;
+            if (observation.type !== "territory") return;
+            if (observation.event !== Gossip.GOSSIP_WARNING_EVENT && observation.event !== Gossip.GOSSIP_RAID_EVENT) return;
+            landed.push({ npcId: entry.npcId, event: observation.event, blockId: observation.location, weight: observation.value });
+          });
+          deliverGossipTexts(state, landed);
+          return delivered;
         }
         function territoryHeatChance(state, exposureOverride) {
           const exposure = exposureOverride != null ? exposureOverride : SPENARD_BLOCKS.reduce(
@@ -11018,7 +11259,7 @@
           resolveMarketSells(state);
           resolveBuyerRequests(state);
           noticeMarketInventory(state);
-          Exposure.resolveObservationQueue(state);
+          drainObservations(state);
           expireEffects(state);
           resolveCrewAssignments(state, random);
           resolveSoldierOperations(state, random, false);
@@ -11158,8 +11399,9 @@
           settleCurtisNight(state);
           resolveSharkLoans(state);
           resolveCrewTracks(state);
+          emitCurtisGossipWarnings(state);
           Exposure.propagateHeat(state);
-          Exposure.resolveObservationQueue(state);
+          drainObservations(state);
           evolveMarkets(state, random);
           if (state.run.phase === "pressure" && oldDay >= checkpointDay(state)) {
             state.run.dailyActions = [];
@@ -11173,7 +11415,7 @@
           restorePhoneIfReady(state, slotNumber(oldDay, 3));
           releaseServedCrew(state);
           resolveJobApplications(state);
-          Exposure.resolveObservationQueue(state);
+          drainObservations(state);
           resolveBleedArrivals(state);
           if (state.stick) {
             state.stick.dailyCount = 0;
@@ -13778,6 +14020,12 @@
           // CONFIRM_END_DAY. Isolating one Heat delta otherwise means fighting rent,
           // pressure, the Curtis settle, and the markets for it.
           resolveSoldierOperationsForTest: resolveSoldierOperations,
+          // v1.23 gossip seams, so a test can drive one half of the pipeline without
+          // running a whole day through the reducer.
+          emitCurtisGossipWarningsForTest: emitCurtisGossipWarnings,
+          emitRaidGossipForTest: emitRaidGossip,
+          drainObservationsForTest: drainObservations,
+          gossipAudienceForTest: gossipAudience,
           blockGateRollForTest: blockGateRoll,
           // Street Read is invisible to the player but has to be reachable by tests.
           // Nothing here is imported by ui.jsx.
@@ -13902,6 +14150,9 @@
             blockIntelView,
             curtisBlockDefense,
             curtisBlockTargets,
+            // v1.23: the plan behind the target list, with the pressure weights the
+            // gossip surface reads. Same list, one level less flattened.
+            curtisNightPlan,
             toneDefenseMultiplier: Crew.toneDefenseMultiplier,
             deshawnHeatReduction: Crew.deshawnHeatReduction,
             territoryHeatChance,
@@ -14137,7 +14388,7 @@
         const showCrew = C.selectors.recruitedCrew(state).length > 0;
         const showCurtis = state.npc.curtis.relationship !== "unaware";
         const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil(value / ceiling * 5))), total: 5 });
-        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.21"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day, state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
+        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.23"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day, state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
       }
       var NAV_ICONS = {
         home: "M12 3 3 10.4V21h6v-6h6v6h6V10.4z",
@@ -15089,7 +15340,7 @@
           ExpandableMoreSection,
           {
             collapsedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-lead" }, "Autosave is on. This run saves to your browser after every action."),
-            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.21 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
+            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.23 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
             moreLabel: "Save detail",
             lessLabel: "Hide detail"
           }

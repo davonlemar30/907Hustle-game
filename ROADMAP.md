@@ -4,10 +4,15 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
-## Shipped — v1.20 Lieutenant Typed Modifiers on Soldiers
+## Shipped — v1.20 Lieutenant Typed Modifiers on Soldiers — **Phase 1 closed**
 
-Branch: `claude/v1-20-lieutenant-modifiers-3lwvkk`, on top of the v1.19 merge
-(PR #81). Save schema stays at v11 (nothing new persisted — every modifier is
+Merged as PR #82 (`1a9a099`). Branch:
+`claude/v1-20-lieutenant-modifiers-3lwvkk`, on top of the v1.19 merge (PR #81).
+This is task **1.4** of the Godfather adaptation phase list, and the last of
+Phase 1: 1.1 Tone (v1.18), 1.2 Pherris and 1.3 Deshawn (v1.19), 1.4 the
+modifiers (v1.20). **4.1 First-claim moment** — the ceremony item the phase list
+wanted shipped alongside Phase 1 — is still open and is the honest asterisk on
+"Phase 1 done". Save schema stays at v11 (nothing new persisted — every modifier is
 derived); both sim hashes moved for telemetry only and hash byte-identical to
 v1.19 with the new keys stripped; zero dead ends across 2,000 runs; 699 tests
 passing.

@@ -25,6 +25,7 @@
   const CurtisAwareness = require("./src/data/curtis-awareness.js");
   const Territory = require("./src/data/territory.js");
   const Gossip = require("./src/data/gossip.js");
+  const Disclosures = require("./src/data/disclosures.js");
 
   const VERSION = 11;
   const RUN_DAYS = 7;
@@ -480,6 +481,13 @@
       status: (s) => s.npc.mina.status, summary: (s) => `Mina remembers the ${s.npc.mina.introChoice || "guarded"} first conversation.`, actions: ["VISIT_MINA"] },
     { id: "dre", name: "Dre Smooth", role: "Lender", visibleWhen: (s) => ["active", "cleared"].includes(s.lender.status),
       status: (s) => s.lender.relationship, summary: (s) => `$${s.lender.balance} remains on the note due Day ${s.lender.dueDay}.`, actions: ["OPEN_FINANCES"] },
+    // v1.27. He is here because the disclosure table needs a door to him: he
+    // sells the block-vulnerability read and there was nowhere on the phone to
+    // ask. Nothing else about Biniam moves - he is still met at The Nile, still
+    // has no call/text/visit verbs, and this card is a place to stand.
+    { id: "biniam", name: "Biniam Tesfaye", role: "The Nile, second floor", visibleWhen: (s) => s.npc.biniam.met,
+      status: (s) => bandLabel(bandOf(s, "biniam")),
+      summary: (s) => `He runs the room upstairs and hears what the table says. ${bandLabel(bandOf(s, "biniam"))} with you.`, actions: [] },
     { id: "curtis", name: "Curtis Foyer", role: "Rival", visibleWhen: (s) => s.npc.curtis.relationship !== "unaware",
       status: (s) => s.npc.curtis.relationship, summary: (s) => `He reads you as ${s.npc.curtis.relationship}.`, actions: [] },
     { id: "simone", name: "Simone Hart", role: "Independent protection organizer", visibleWhen: (s) => s.npc.simone.known,
@@ -1429,6 +1437,12 @@
         // two gossip texts in a day. Session state - nothing here needs to
         // outlive the run, and it rebuilds itself on the first delivery.
         gossipVoices: { day: 0, npcIds: [] },
+        // v1.27: who the player has already asked for intel today, and what
+        // they asked about. One entry per purchase; one purchase per NPC per
+        // day. Session state on `run` for the same reason gossipVoices is:
+        // nothing here outlives the run, and a save that predates the field
+        // hydrates to a day nobody has been called on yet.
+        disclosures: { day: 0, entries: [] },
         // v1.16: parts of day a booking still owes, spent once the caught-state
         // encounter is dismissed and advanceRun is allowed to move again.
         pendingArrestSlots: null,
@@ -1712,6 +1726,11 @@
     migrated.run.gossipVoices = migrated.run.gossipVoices && Array.isArray(migrated.run.gossipVoices.npcIds)
       ? migrated.run.gossipVoices
       : { day: 0, npcIds: [] };
+    // v1.27, same shape and the same reasoning. An old save arrives having
+    // asked nobody anything, which is true of it.
+    migrated.run.disclosures = migrated.run.disclosures && Array.isArray(migrated.run.disclosures.entries)
+      ? migrated.run.disclosures
+      : { day: 0, entries: [] };
     const renameStoryId = (id) => typeof id === "string" ? id.replace(/^mara_/, "mina_").replace(/^rook_/, "curtis_").replace(/^kip_/, "goodie_").replace(/^miri_/, "pherris_") : id;
     const renameFlag = (id) => typeof id === "string" ? id.replace(/^mara/, "mina").replace(/^rook/, "curtis").replace(/^kip/, "goodie").replace(/^miri/, "pherris") : id;
     migrated.flags = Object.fromEntries(Object.entries(migrated.flags || {}).map(([id, flag]) => [renameFlag(id), flag]));
@@ -4819,6 +4838,154 @@
     return delivered;
   }
 
+  // ===========================================================================
+  // v1.27 DISCLOSURE TABLES — the intel economy.
+  //
+  // Gossip is the block calling you unprompted. This is you calling the block.
+  // Same underlying facts, opposite direction, and the differences are the
+  // whole design: gossip is free and arrives on a schedule the player does not
+  // set, disclosure is paid and arrives when they ask. Gossip is gated on
+  // disposition and answers with silence. Disclosure is gated on BAND and
+  // answers with a number whose accuracy is the band.
+  //
+  // Everything below is a pure read plus a debit. No RNG draw anywhere in the
+  // path — the jitter is hashed inside src/data/disclosures.js — so buying
+  // intel cannot change what happens tonight. That matters more than it
+  // sounds: if a purchase moved the stream, the information would become a
+  // cause of the thing it describes, and a player who bought a warning would
+  // be buying a different night rather than a view of this one.
+
+  // Who has already been called today. Lazily reset on read, exactly like
+  // gossipVoicesUsed and for the same reason - a save loaded mid-run must not
+  // arrive carrying yesterday's calls.
+  // How many corners a chance-shaped read names. See disclosurePayload for why
+  // this is a voice constraint rather than a balance one.
+  const DISCLOSURE_CHANCE_DEPTH = 3;
+
+  function disclosuresToday(state) {
+    const record = state.run.disclosures;
+    if (!record || record.day !== state.run.day) {
+      state.run.disclosures = { day: state.run.day, entries: [] };
+    }
+    return state.run.disclosures.entries;
+  }
+
+  function disclosureAskedToday(state, npcId) {
+    return disclosuresToday(state).some((entry) => entry.npcId === npcId);
+  }
+
+  // The corners the player actually holds, in Curtis's own priority order. Both
+  // chance-shaped products read this: a heat map of corners you do not own is
+  // not intel, it is trivia.
+  function heldBlockIds(state) {
+    return SPENARD_BLOCKS
+      .filter((block) => state.world?.territoryBlocks?.[block.id]?.owner === "player")
+      .map((block) => block.id)
+      .sort(compareBlocksByCurtisPriority);
+  }
+
+  // THE ONE PLACE THAT READS LIVE STATE, and it reads it at the moment of
+  // purchase. Nothing is pre-computed and nothing is scheduled. If the player
+  // buys the nightly plan in the Morning they get the plan as it stands in the
+  // Morning; if his awareness phase moves before dark, the message in their
+  // inbox is out of date and stays out of date, because the source is not going
+  // to call back with a correction. That is the staleness rule, and it is
+  // implemented by the absence of code rather than by an expiry stamp.
+  function disclosureTruth(state, intelType) {
+    if (intelType === "curtis_targets" || intelType === "curtis_pressure" || intelType === "curtis_next_move") {
+      return { plan: curtisNightPlan(state) };
+    }
+    const read = intelType === "police_heat_map" ? policeRaidChance : curtisMoveChance;
+    return { chances: heldBlockIds(state).map((blockId) => ({ blockId, name: SPENARD_BLOCK_BY_ID[blockId].name, chance: read(state, blockId) })) };
+  }
+
+  // Truth in, spoken shape out. `accuracy` decides whether the numbers wobble;
+  // the voice module decides how they sound. Returning `{ empty: true }` is a
+  // real answer - "nothing is moving on your corners" is worth $50 to a player
+  // who was about to spend the night defending one.
+  function disclosurePayload(state, npcId, intelType, accuracy) {
+    const truth = disclosureTruth(state, intelType);
+    const key = `${state.run.seed}:disclosure:${npcId}:${intelType}:${state.run.day}`;
+    const exact = accuracy === "exact";
+    if (intelType === "curtis_targets") {
+      const planIds = truth.plan.map((entry) => entry.blockId);
+      if (!planIds.length) return { empty: true };
+      const decoys = heldBlockIds(state).filter((blockId) => !planIds.includes(blockId));
+      const shown = exact ? planIds : Disclosures.jitterList(planIds, decoys, `${key}:shape`);
+      return { names: shown.map((blockId) => SPENARD_BLOCK_BY_ID[blockId].name) };
+    }
+    if (intelType === "curtis_pressure") {
+      if (!truth.plan.length) return { empty: true };
+      return {
+        weights: truth.plan.map((entry) => {
+          const weight = exact ? entry.weight : Disclosures.jitterWeight(entry.weight, `${key}:${entry.blockId}`, Territory.CURTIS_MAX_PRESSURE_PER_BLOCK);
+          return { name: entry.name, weight, label: weight >= Territory.CURTIS_PRESSURE_HARD ? "coming hard" : "just looking" };
+        }),
+      };
+    }
+    if (intelType === "curtis_next_move") {
+      if (!truth.plan.length) return { empty: true };
+      // The top of the plan is the answer. A jittered read slides one down the
+      // list rather than inventing a corner: the source is repeating the wrong
+      // name off a real conversation, not making one up.
+      const index = exact ? 0 : Disclosures.listShape(`${key}:shape`) === "faithful" ? 0 : Math.min(1, truth.plan.length - 1);
+      return { name: truth.plan[index].name };
+    }
+    if (!truth.chances.length) return { empty: true };
+    // Worst first, and only the worst few. This is a presentation cap, not a
+    // second accuracy axis - the numbers that survive it are as true as the
+    // band makes them. It exists because none of these five people talk in
+    // spreadsheets: Yalonda reciting six percentages off the top of her head
+    // is not Yalonda, and a player on a 320px screen cannot read it anyway.
+    // The voices are written to describe rather than enumerate, so a corner
+    // falling off the end reads as somebody mentioning what stood out.
+    const ranked = truth.chances
+      .map((row) => {
+        const chance = exact ? row.chance : Disclosures.jitterChance(row.chance, `${key}:${row.blockId}`);
+        return { name: row.name, chance, text: Disclosures.percent(chance) };
+      })
+      .sort((a, b) => (b.chance - a.chance) || (a.name < b.name ? -1 : 1));
+    return { chances: ranked.slice(0, DISCLOSURE_CHANCE_DEPTH) };
+  }
+
+  // What the phone offers, per NPC. Every row mirrors a reducer guard rather
+  // than inventing a second rule, which is what keeps a button from lying - the
+  // phoneBills discipline, applied to a surface that spends money.
+  function disclosureOffers(state, npcId) {
+    const asked = disclosureAskedToday(state, npcId);
+    const phoneOff = !state.phone?.active;
+    return Disclosures.disclosuresForNpc(npcId)
+      .map((entry) => {
+        const type = Disclosures.INTEL_TYPE_BY_ID[entry.intelType];
+        const accuracy = Disclosures.accuracyFor(bandOf(state, npcId), entry.minBand);
+        const price = type.price;
+        if (accuracy === "unavailable") return null;
+        const available = !phoneOff && !asked && state.player.cash >= price;
+        // The button already renders the price, so the sub-label says the thing
+        // the price does not: this is a phone call, and it does not cost a part
+        // of the day. Printing the amount twice was the first thing that read
+        // wrong on the built screen.
+        const reason = phoneOff ? "Phone service is off"
+          : asked ? "Already talked today"
+          : state.player.cash < price ? `Need ${cashText(price)}`
+          : "No time passes";
+        return { intelType: entry.intelType, label: type.label, price, accuracy, available, reason };
+      })
+      .filter(Boolean);
+  }
+
+  // The "Ask about..." entry point. Hidden entirely when this person has
+  // nothing unlocked - a greyed row for intel the player cannot yet buy would
+  // advertise the table, and the table is meant to be discovered by getting
+  // close to somebody, not read off a menu.
+  function disclosureAvailability(state, npcId) {
+    const offers = disclosureOffers(state, npcId);
+    if (!offers.length) return { visible: false, available: false, reason: "", offers };
+    if (!state.phone?.active) return { visible: true, available: false, reason: "Phone service is off", offers };
+    if (disclosureAskedToday(state, npcId)) return { visible: true, available: false, reason: "Already talked today", offers };
+    return { visible: true, available: true, reason: `${offers.length} thing${offers.length === 1 ? "" : "s"} to ask about`, offers };
+  }
+
   // Ambient heat from held territory: every held block's heatExposure, weighted
   // into a nightly chance, times whatever Deshawn is worth (1.0 without him).
   // Exposed as a selector so the Territory screen can show the player the same
@@ -7287,6 +7454,40 @@
       logEntry(state, `Weekly rent paid in cash: $${WEEKLY_RENT}.`, "good");
       return state;
     }
+    // v1.27. A phone call, so it costs money and nothing else - no slot, no
+    // energy, no location. It is not in TIME_ACTIONS and it does not call
+    // advanceRun, which is the same shape PAY_RENT and PAY_PHONE_BILL have had
+    // for versions and the reason none of the three appears in the day's
+    // action budget.
+    //
+    // Every guard returns inputState unchanged rather than a mutated copy, so a
+    // dispatch the UI should not have offered is a genuine no-op: no debit, no
+    // message, and identity-equal state a test can assert on.
+    if (action.type === "BUY_DISCLOSURE") {
+      const npcId = action.npcId;
+      const intelType = action.intelType;
+      const entry = Disclosures.disclosureFor(npcId, intelType);
+      if (!entry || !state.phone?.active) return inputState;
+      const accuracy = Disclosures.accuracyFor(bandOf(state, npcId), entry.minBand);
+      if (accuracy === "unavailable") return inputState;
+      // One call per person per day. They do not sit by the phone waiting, and
+      // the cooldown is what stops the intel economy becoming a vending
+      // machine for anyone with cash. Note this also covers "bought the same
+      // thing twice": the first purchase is already in the inbox, and the
+      // second ask never reaches a second debit.
+      if (disclosureAskedToday(state, npcId)) return inputState;
+      const price = Disclosures.priceFor(intelType);
+      if (state.player.cash < price) return inputState;
+      const payload = disclosurePayload(state, npcId, intelType, accuracy);
+      const rotation = stringHash(`${state.run.seed}:disclosure-text:${npcId}:${intelType}:${state.run.day}`);
+      const text = Disclosures.disclosureText(npcId, intelType, accuracy, payload, rotation);
+      if (!text) return inputState;
+      spendCash(state, price);
+      disclosuresToday(state).push({ npcId, intelType, day: state.run.day, slot: state.run.slot });
+      pushPhoneMessage(state, Disclosures.senderFor(npcId), text);
+      logEntry(state, `${Disclosures.senderFor(npcId)} shared some intel. Check your texts.`, "good");
+      return state;
+    }
     if (action.type === "PAY_PHONE_BILL") {
       const online = action.surface === "online";
       const due = state.run.day >= state.phone.billDueDay || state.phone.daysPastDue > 0 || !state.phone.active;
@@ -8736,7 +8937,7 @@
     NILE: Nile, GAMBLING: Gambling, gamblingEvents: GamblingEvents,
     LISTING_ITEMS, LISTING_CAPACITY, MARKET: Market, marketEvents: MarketEvents, NIGHT_OWL_REGULARS, NIGHT_OWL_BOARD, HOUSEHOLD_NPCS, SOCIAL_CONTACTS, STORY_CONTACTS, PHONE_INTEL, DOWNTOWN_CONTENT_STUBS, DOWNTOWN_AMBIENT,
     SPENARD_BLOCKS, SOLDIER_RECRUIT_COST, SOLDIER_BASE_CAPACITY, SOLDIER_CAPACITY_PER_BLOCK, SOLDIERS_PER_BLOCK_CAP,
-    RAID_DEFENSE_PER_SOLDIER, TERRITORY: Territory,
+    RAID_DEFENSE_PER_SOLDIER, TERRITORY: Territory, DISCLOSURES: Disclosures,
     TERRITORY_HEAT_CHANCE_PER_EXPOSURE, TERRITORY_HEAT_CHANCE_CAP, BLOCK_INTEL_LEVEL_COPY,
     SHARK_BORROWERS, SHARK_TERMS, DRE_MISSIONS, DRE_COLLECTOR_TIERS, ELI_LIEUTENANT_UNLOCK, RESPECT_STAGE_THRESHOLDS,
     Crew, Arrest, CREW_LOYALTY_MAX: Crew.CREW_LOYALTY_MAX, CREW_LOYALTY_START: Crew.CREW_LOYALTY_START, TIER_REQUIREMENTS: Crew.TIER_REQUIREMENTS,
@@ -8801,6 +9002,10 @@
       // is — so a Territory screen can show the player the same number the
       // night rolls against, for each adversary separately.
       policeRaidChance, curtisMoveChance,
+      // v1.27: what the phone can sell, and what it costs. The offers list
+      // mirrors the BUY_DISCLOSURE guards so a row is never rendered for a
+      // dispatch the reducer would drop.
+      disclosureOffers, disclosureAvailability, disclosureAskedToday, disclosurePayload,
       soldierRecruitAvailability, soldierAssignAvailability, blockClaimAvailability, eliPromotionAvailability,
       weeklyIncomeEstimate,
       dreTrustTier, dreIntroductionEligible, dreMissionAvailability, sharkUnlocked, sharkRiskLabel, sharkLoanAvailability,

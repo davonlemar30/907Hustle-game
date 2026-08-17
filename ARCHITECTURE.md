@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.26**. This file
+How 907Hustle: One Good Run is put together, current as of **v1.27**. This file
 is meant to be the only thing you need to read before changing code; for *why*
 the game is designed the way it is, see the ClickUp docs at the bottom.
 
@@ -84,6 +84,9 @@ src/data/               Static definitions. No logic, no state.
   gossip.js             The voices that carry block news to the player: the two
                         gossip events, seven authored lines each, the Deshawn
                         pressure clause, gossipText() / gossipSender()
+  disclosures.js        What people sell you and at what accuracy: the intel-type
+                        table with prices and staleness, the seven npc/type/band
+                        rows, accuracyFor(), the stringHash jitter, the voices
   arrest.js             Bail, priors, processing slots, heat relief, crew jail, copy
   disposition-bands.js  BANDS, bandFor()
 
@@ -671,7 +674,10 @@ Three rules hold the triangle together:
   effect disappears the same night its owner is arrested, departs, or stops
   showing up. Pherris's level is deliberately a derived selector: later builds
   add intel *sources* on the same ladder, and a cached level would need
-  invalidating by every one of them.
+  invalidating by every one of them. v1.27's disclosure tables are the first of
+  those sources and they landed **beside** her ladder rather than on it — they
+  are on-demand purchases gated by band, hers is a standing feed gated by tier —
+  so `blockIntelLevel()` is unchanged and her cards are untouched.
 - **One seam each.** Defense enters the raid math at one expression, the heat
   trickle at one roll, the intel ladder at one selector.
 
@@ -935,6 +941,72 @@ additively so a save predating it loads). When more corners are warned than ther
 are people willing to call, the corner that gets said out loud is the one he
 wants most, not the first one alphabetically.
 
+### Disclosure tables (v1.27)
+
+Gossip is the block calling you. Disclosure is you calling the block. Same
+underlying facts, opposite direction, and the differences are the design.
+
+| | Pherris (v1.20) | Gossip (v1.23) | Disclosure (v1.27) |
+|---|---|---|---|
+| Costs | crew wage | nothing | cash, per ask |
+| Timing | standing | when the block decides | when the player asks |
+| Gate | her crew tier | disposition ≥ Warm | **band**, per row |
+| Failure mode | lower tier, less detail | silence | not on the menu |
+| Surface | Territory block cards | Phone texts | Phone → Contacts → Ask about… |
+
+**The table is `src/data/disclosures.js`** — `{ npcId, intelType, minBand }`,
+seven rows over five intel types. Like `gossip.js` it is pure: no state read, no
+`game-core.js` import, voices and jitter math only. That boundary is load-bearing
+rather than decorative, because `policeRaidChance` and `curtisMoveChance` are
+closures inside game-core. The caller gathers the truth; this module shapes it
+and speaks it. Each intel type carries a `reads` field naming the selector it
+derives from, which is documentation a test executes — a type cannot claim to
+read something the game does not compute.
+
+**Every row is justified by the seller's own channel**, checked against
+`propagation.js` by test rather than by assertion. The two people who can name
+Curtis's targets (Dre, Mina) are on `network`, the only channel his people's
+movements travel. The three who read the street (Juan, Yalonda, Biniam) are on
+`neighborhood`, because a cruiser going past three times is something you see
+from a window. **Deshawn is absent and stays absent** — his whole value is being
+off Curtis's network, and a man who is not on the wire cannot sell what is on it.
+He shapes what *other* people say (the v1.23 tier ladder) and never becomes a
+source. **Pherris is absent** because her intel is a subscription she already
+sells; a disclosure row would charge the player twice for it.
+
+**Accuracy is the band.** `accuracyFor(band, minBand)` returns `unavailable`
+below the gate, `jittered` at it, and `exact` above it — or at Bonded, which is
+the ceiling. That last clause is the same rule `blockIntelView` has followed
+since v1.20 (jittered below the top level, exact at it); without it
+`curtis_next_move`, whose gate *is* Bonded, would be the most expensive product
+in the game and the only one that always lies a little. Numeric reads jitter
+±15%, list reads are faithful / omit one / add one false positive drawn from
+corners the player actually holds, and a pressure weight moves at most one step
+and stays inside the range Curtis could have assigned — being wrong is fine,
+being impossible is a bug the player can detect.
+
+**All jitter is `stringHash`, never an RNG draw**, keyed
+`seed:disclosure:npcId:intelType:day` on the model of
+`curtisBlockDefenseEstimate`. Two reasons, both load-bearing. A reload must not
+reroll what somebody already told you — the message is sitting in the inbox.
+And a purchase must not move the RNG stream, or intel would become a *cause* of
+the night it describes rather than a view of it.
+
+**Staleness is implemented by the absence of code.** A disclosure is cached as a
+phone message at the moment of purchase and never re-derived. Buy the plan in
+the Morning and you get the Morning's plan; if his awareness phase moves before
+dark, what you were told is out of date and stays out of date, because the
+source is not going to call back with a correction.
+
+**`BUY_DISCLOSURE` is a phone interaction, not a location visit** — absent from
+`TIME_ACTIONS`, no `advanceRun`, no district gate, so it costs money and nothing
+else. Same shape as `PAY_RENT` and `PAY_PHONE_BILL`. **One call per person per
+day**, tracked in `run.disclosures` (`{ day, entries }`, session-only, reset
+lazily on read, hydrated additively) — the same pattern and the same reasoning
+as `run.gossipVoices`, and the reason the save schema stays at v11. The cooldown
+is on the *person*, which is also what makes buying the same intel twice a
+no-op: the first answer is already in the inbox.
+
 ## Territory: two layers
 
 Independent and additive. Conflating them is the easiest mistake to make here.
@@ -1160,7 +1232,7 @@ is unsupported.
 ## Testing
 
 ```bash
-npm test                              # 813 tests
+npm test                              # 844 tests
 node tests/simulate-runs.js --total 200
 node tests/simulate-runs.js --total 2000   # slower, for balance work
 ```
@@ -1183,7 +1255,7 @@ before and after: a matching hash proves you changed nothing the player can see.
 Nothing in the run path may use `Math.random()` — only `makeRandom(seed)`, and
 not even that where a `stringHash` off the seed will do.
 
-**Current baselines, set at v1.25 and re-verified at v1.26** — `--total 200`
+**Current baselines, set at v1.25 and re-verified at v1.26 and v1.27** — `--total 200`
 `25afb74e10487dee6fc62641d944d3cea093873f28c740ba43e10bb0828d6dc1`, `--total 2000`
 `f10432b1f61624cbc8df35e299a2d36ca369e1e822ca0d6578a337562e524665`. They moved
 for the first time since v1.20, and only because v1.25 added a fourteenth

@@ -4609,6 +4609,231 @@
     }
   });
 
+  // src/data/disclosures.js
+  var require_disclosures = __commonJS({
+    "src/data/disclosures.js"(exports, module) {
+      var { stringHash } = require_hash();
+      var { BANDS } = require_disposition_bands();
+      var INTEL_TYPES = [
+        { id: "curtis_targets", label: "What Curtis wants tonight", price: 50, reads: "curtisNightPlan", staleness: "night", shape: "list" },
+        { id: "curtis_pressure", label: "How hard he's coming", price: 75, reads: "curtisNightPlan", staleness: "night", shape: "pressure" },
+        { id: "police_heat_map", label: "Where the police are working", price: 30, reads: "policeRaidChance", staleness: "day", shape: "chances" },
+        { id: "block_vulnerability", label: "Which corner is soft", price: 60, reads: "curtisMoveChance", staleness: "day", shape: "chances" },
+        { id: "curtis_next_move", label: "The corner they keep naming", price: 100, reads: "curtisNightPlan", staleness: "day", shape: "single" }
+      ];
+      var INTEL_TYPE_BY_ID = Object.fromEntries(INTEL_TYPES.map((type) => [type.id, type]));
+      var INTEL_TYPE_IDS = INTEL_TYPES.map((type) => type.id);
+      var DISCLOSURES = [
+        // Dre climbs the whole ladder alone, because he is the only pure network
+        // contact the player builds a real relationship with. What Warm buys is the
+        // list; Trusted buys the weights; Bonded buys the one corner they keep
+        // saying out loud.
+        { npcId: "dre", intelType: "curtis_targets", minBand: BANDS.WARM },
+        { npcId: "dre", intelType: "curtis_pressure", minBand: BANDS.TRUSTED },
+        { npcId: "dre", intelType: "curtis_next_move", minBand: BANDS.BONDED },
+        // Mina hears the same wire across a counter, and she costs a band more for
+        // the same product. She is not a broker and does not want to be one.
+        { npcId: "mina", intelType: "curtis_targets", minBand: BANDS.TRUSTED },
+        // Yalonda watches the street outside her own building all day and will tell
+        // anyone she likes. Juan is out on it and reads it better, which is why his
+        // gate is higher and his numbers are the ones worth buying.
+        { npcId: "yalonda", intelType: "police_heat_map", minBand: BANDS.WARM },
+        { npcId: "juan", intelType: "police_heat_map", minBand: BANDS.TRUSTED },
+        { npcId: "biniam", intelType: "block_vulnerability", minBand: BANDS.TRUSTED }
+      ];
+      var DISCLOSURE_NPC_IDS = [...new Set(DISCLOSURES.map((entry) => entry.npcId))];
+      var DISCLOSURE_SENDERS = {
+        dre: "Dre",
+        mina: "Mina",
+        juan: "Juan",
+        yalonda: "Yalonda",
+        biniam: "Biniam"
+      };
+      function disclosureFor(npcId, intelType) {
+        return DISCLOSURES.find((entry) => entry.npcId === npcId && entry.intelType === intelType) || null;
+      }
+      function disclosuresForNpc(npcId) {
+        return DISCLOSURES.filter((entry) => entry.npcId === npcId);
+      }
+      function priceFor(intelType) {
+        var _a;
+        return ((_a = INTEL_TYPE_BY_ID[intelType]) == null ? void 0 : _a.price) || 0;
+      }
+      function senderFor(npcId) {
+        return DISCLOSURE_SENDERS[npcId] || null;
+      }
+      function accuracyFor(band, minBand) {
+        const value = Number(band);
+        if (!Number.isFinite(value) || value < minBand) return "unavailable";
+        if (value > minBand || value >= BANDS.BONDED) return "exact";
+        return "jittered";
+      }
+      function jitterChance(chance, key) {
+        const offset = stringHash(key) % 31 - 15;
+        return Math.max(0, Math.min(0.9, chance * (1 + offset / 100)));
+      }
+      function jitterWeight(weight, key, maxWeight) {
+        const offset = stringHash(key) % 3 - 1;
+        return Math.max(1, Math.min(maxWeight, weight + offset));
+      }
+      var LIST_SHAPES = ["faithful", "omit", "false_positive"];
+      function listShape(key) {
+        return LIST_SHAPES[stringHash(key) % LIST_SHAPES.length];
+      }
+      function jitterList(truth, decoys, key) {
+        const shape = listShape(key);
+        if (shape === "omit" && truth.length > 1) return truth.slice(0, -1);
+        if (shape === "false_positive" && decoys.length) {
+          const pick = decoys[stringHash(`${key}:decoy`) % decoys.length];
+          return [...truth, pick];
+        }
+        return truth;
+      }
+      function joinNames(names) {
+        if (!names.length) return "";
+        if (names.length === 1) return names[0];
+        if (names.length === 2) return `${names[0]} and ${names[1]}`;
+        return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+      }
+      function percent(chance) {
+        return `${Math.round(chance * 100)}%`;
+      }
+      function list(rows, render) {
+        return joinNames(rows.map(render));
+      }
+      function tail(rows, render, lead = "") {
+        return rows.length > 1 ? `${lead}${list(rows.slice(1), render)}.` : "";
+      }
+      var VOICES = {
+        dre: {
+          curtis_targets: {
+            exact: [
+              (p) => `Curtis is looking at ${joinNames(p.names)} tonight. That's the list.`,
+              (p) => `Straight up: ${joinNames(p.names)}. His people are working those tonight.`,
+              (p) => `You want it plain. ${joinNames(p.names)}. Tonight.`
+            ],
+            jittered: [
+              (p) => `Word is Curtis has people on ${joinNames(p.names)}. That's what came back to me.`,
+              (p) => `${joinNames(p.names)}, near as I can tell. I'd cover those.`,
+              (p) => `Heard ${joinNames(p.names)}. Don't hold me to the whole list.`
+            ]
+          },
+          curtis_pressure: {
+            exact: [
+              (p) => `Pressure reads like this: ${p.weights.map((w) => `${w.name}, ${w.label}`).join(". ")}. Post accordingly.`,
+              (p) => `Here's the weight. ${p.weights.map((w) => `${w.name} \u2014 ${w.label}`).join(". ")}.`
+            ],
+            jittered: [
+              (p) => `What I got is ${p.weights.map((w) => `${w.name} ${w.label}`).join(", ")}. Could be off a notch.`,
+              (p) => `${p.weights.map((w) => `${w.name}, sounds ${w.label}`).join(". ")}. That's secondhand weight, not mine.`
+            ]
+          },
+          curtis_next_move: {
+            exact: [
+              (p) => `One corner keeps coming up when his people talk. ${p.name}. That's the one.`,
+              (p) => `You paid for the name, here's the name: ${p.name}. Everything else is noise.`
+            ],
+            jittered: [
+              (p) => `They keep circling one spot. ${p.name}, I think. Watch it.`,
+              (p) => `Sounds like ${p.name} is the one they keep naming. Sounds like.`
+            ]
+          }
+        },
+        mina: {
+          curtis_targets: {
+            exact: [
+              (p) => `Some people were talking about ${joinNames(p.names)} tonight. It sounded serious.`,
+              (p) => `I don't like passing this on. ${joinNames(p.names)}. Tonight. Please be careful.`
+            ],
+            jittered: [
+              (p) => `I heard something about ${joinNames(p.names)}. I might have the corners wrong.`,
+              (p) => `There was talk at the counter. ${joinNames(p.names)}, maybe. It didn't sound like nothing.`
+            ]
+          }
+        },
+        juan: {
+          police_heat_map: {
+            exact: [
+              (p) => `Counted cruisers all day on my route. ${p.chances[0].name} is the worst of it, ${p.chances[0].text}. ${tail(p.chances, (c) => `${c.name} runs ${c.text}`)}`,
+              (p) => `Here's what the traffic looks like. ${list(p.chances, (c) => `${c.name} at ${c.text}`)}. Straight off the route.`
+            ],
+            jittered: [
+              (p) => `Lot of cruisers on ${p.chances[0].name} today. More than usual \u2014 call it ${p.chances[0].text}. ${tail(p.chances, (c) => `${c.name} maybe ${c.text}`)}`,
+              (p) => `From what I saw walking in: ${list(p.chances, (c) => `${c.name} around ${c.text}`)}. Give or take, man.`
+            ]
+          }
+        },
+        yalonda: {
+          police_heat_map: {
+            exact: [
+              (p) => `There were cops on ${p.chances[0].name} three separate times today. That's ${p.chances[0].text} of a night, and that is not normal. ${tail(p.chances, (c) => `${c.name} sits at ${c.text}`)}`,
+              (p) => `I watch the street from the window and I don't like what I'm seeing. ${list(p.chances, (c) => `${c.name}, ${c.text}`)}.`
+            ],
+            jittered: [
+              (p) => `Baby, they came past ${p.chances[0].name} three times today. Feels like ${p.chances[0].text} to me. ${tail(p.chances, (c) => `${c.name}, maybe ${c.text}`, "Same story on ")}`,
+              (p) => `Something's not right out there. ${list(p.chances, (c) => `${c.name} about ${c.text}`)}. That's just what I saw, don't make me worry.`
+            ]
+          }
+        },
+        biniam: {
+          block_vulnerability: {
+            exact: [
+              (p) => `Someone at the table last night said Curtis's guys were asking about your ${p.chances[0].name} spot. The way they talked, ${p.chances[0].text}. ${tail(p.chances, (c) => `${c.name} at ${c.text}`)}`,
+              (p) => `The room talks after midnight and I listen. ${list(p.chances, (c) => `${c.name} sits at ${c.text}`)}. That's what was said.`
+            ],
+            jittered: [
+              (p) => `I heard something upstairs about ${p.chances[0].name}. Maybe ${p.chances[0].text}, the way it sounded. ${tail(p.chances, (c) => `${c.name}, around ${c.text}`, "They said something about ")}`,
+              (p) => `Don't take this as more than it is. ${list(p.chances, (c) => `${c.name} around ${c.text}`)}. People drink and they talk, so.`
+            ]
+          }
+        }
+      };
+      var EMPTY_LINES = {
+        dre: "Nothing moving on your corners tonight. That's worth knowing too.",
+        mina: "I asked around. Nobody's saying anything about your spots. That's good, right?",
+        juan: "Quiet out there today. Nothing worth calling about.",
+        yalonda: "Nobody's been by today. It's been quiet, thank God.",
+        biniam: "The room was quiet last night. Nobody said anything about you."
+      };
+      function hasVoice(npcId, intelType, accuracy) {
+        var _a, _b;
+        return Array.isArray((_b = (_a = VOICES[npcId]) == null ? void 0 : _a[intelType]) == null ? void 0 : _b[accuracy]);
+      }
+      function disclosureText(npcId, intelType, accuracy, payload, rotation) {
+        if (payload && payload.empty) return EMPTY_LINES[npcId] || null;
+        if (!hasVoice(npcId, intelType, accuracy)) return null;
+        const variants = VOICES[npcId][intelType][accuracy];
+        return variants[Math.abs(Number(rotation) || 0) % variants.length](payload).replace(/\s+/g, " ").trim();
+      }
+      module.exports = {
+        INTEL_TYPES,
+        INTEL_TYPE_BY_ID,
+        INTEL_TYPE_IDS,
+        DISCLOSURES,
+        DISCLOSURE_NPC_IDS,
+        DISCLOSURE_SENDERS,
+        LIST_SHAPES,
+        VOICES,
+        EMPTY_LINES,
+        disclosureFor,
+        disclosuresForNpc,
+        priceFor,
+        senderFor,
+        accuracyFor,
+        jitterChance,
+        jitterWeight,
+        jitterList,
+        listShape,
+        joinNames,
+        percent,
+        list,
+        tail,
+        hasVoice,
+        disclosureText
+      };
+    }
+  });
+
   // src/data/products.js
   var require_products = __commonJS({
     "src/data/products.js"(exports, module) {
@@ -4940,6 +5165,7 @@
         const CurtisAwareness = require_curtis_awareness();
         const Territory = require_territory();
         const Gossip = require_gossip();
+        const Disclosures = require_disclosures();
         const VERSION = 11;
         const RUN_DAYS = 7;
         const PRESSURE_DAYS = 7;
@@ -5484,6 +5710,19 @@
             status: (s) => s.lender.relationship,
             summary: (s) => `$${s.lender.balance} remains on the note due Day ${s.lender.dueDay}.`,
             actions: ["OPEN_FINANCES"]
+          },
+          // v1.27. He is here because the disclosure table needs a door to him: he
+          // sells the block-vulnerability read and there was nowhere on the phone to
+          // ask. Nothing else about Biniam moves - he is still met at The Nile, still
+          // has no call/text/visit verbs, and this card is a place to stand.
+          {
+            id: "biniam",
+            name: "Biniam Tesfaye",
+            role: "The Nile, second floor",
+            visibleWhen: (s) => s.npc.biniam.met,
+            status: (s) => bandLabel(bandOf(s, "biniam")),
+            summary: (s) => `He runs the room upstairs and hears what the table says. ${bandLabel(bandOf(s, "biniam"))} with you.`,
+            actions: []
           },
           {
             id: "curtis",
@@ -6421,6 +6660,12 @@
               // two gossip texts in a day. Session state - nothing here needs to
               // outlive the run, and it rebuilds itself on the first delivery.
               gossipVoices: { day: 0, npcIds: [] },
+              // v1.27: who the player has already asked for intel today, and what
+              // they asked about. One entry per purchase; one purchase per NPC per
+              // day. Session state on `run` for the same reason gossipVoices is:
+              // nothing here outlives the run, and a save that predates the field
+              // hydrates to a day nobody has been called on yet.
+              disclosures: { day: 0, entries: [] },
               // v1.16: parts of day a booking still owes, spent once the caught-state
               // encounter is dismissed and advanceRun is allowed to move again.
               pendingArrestSlots: null,
@@ -6809,6 +7054,7 @@
           migrated.run.consequenceQueue = Array.isArray(migrated.run.consequenceQueue) ? migrated.run.consequenceQueue : [];
           migrated.run.pendingObservations = Array.isArray(migrated.run.pendingObservations) ? migrated.run.pendingObservations : [];
           migrated.run.gossipVoices = migrated.run.gossipVoices && Array.isArray(migrated.run.gossipVoices.npcIds) ? migrated.run.gossipVoices : { day: 0, npcIds: [] };
+          migrated.run.disclosures = migrated.run.disclosures && Array.isArray(migrated.run.disclosures.entries) ? migrated.run.disclosures : { day: 0, entries: [] };
           const renameStoryId = (id) => typeof id === "string" ? id.replace(/^mara_/, "mina_").replace(/^rook_/, "curtis_").replace(/^kip_/, "goodie_").replace(/^miri_/, "pherris_") : id;
           const renameFlag = (id) => typeof id === "string" ? id.replace(/^mara/, "mina").replace(/^rook/, "curtis").replace(/^kip/, "goodie").replace(/^miri/, "pherris") : id;
           migrated.flags = Object.fromEntries(Object.entries(migrated.flags || {}).map(([id, flag]) => [renameFlag(id), flag]));
@@ -9463,6 +9709,84 @@
           deliverGossipTexts(state, landed);
           return delivered;
         }
+        const DISCLOSURE_CHANCE_DEPTH = 3;
+        function disclosuresToday(state) {
+          const record = state.run.disclosures;
+          if (!record || record.day !== state.run.day) {
+            state.run.disclosures = { day: state.run.day, entries: [] };
+          }
+          return state.run.disclosures.entries;
+        }
+        function disclosureAskedToday(state, npcId) {
+          return disclosuresToday(state).some((entry) => entry.npcId === npcId);
+        }
+        function heldBlockIds(state) {
+          return SPENARD_BLOCKS.filter((block) => {
+            var _a, _b, _c;
+            return ((_c = (_b = (_a = state.world) == null ? void 0 : _a.territoryBlocks) == null ? void 0 : _b[block.id]) == null ? void 0 : _c.owner) === "player";
+          }).map((block) => block.id).sort(compareBlocksByCurtisPriority);
+        }
+        function disclosureTruth(state, intelType) {
+          if (intelType === "curtis_targets" || intelType === "curtis_pressure" || intelType === "curtis_next_move") {
+            return { plan: curtisNightPlan(state) };
+          }
+          const read = intelType === "police_heat_map" ? policeRaidChance : curtisMoveChance;
+          return { chances: heldBlockIds(state).map((blockId) => ({ blockId, name: SPENARD_BLOCK_BY_ID[blockId].name, chance: read(state, blockId) })) };
+        }
+        function disclosurePayload(state, npcId, intelType, accuracy) {
+          const truth = disclosureTruth(state, intelType);
+          const key = `${state.run.seed}:disclosure:${npcId}:${intelType}:${state.run.day}`;
+          const exact = accuracy === "exact";
+          if (intelType === "curtis_targets") {
+            const planIds = truth.plan.map((entry) => entry.blockId);
+            if (!planIds.length) return { empty: true };
+            const decoys = heldBlockIds(state).filter((blockId) => !planIds.includes(blockId));
+            const shown = exact ? planIds : Disclosures.jitterList(planIds, decoys, `${key}:shape`);
+            return { names: shown.map((blockId) => SPENARD_BLOCK_BY_ID[blockId].name) };
+          }
+          if (intelType === "curtis_pressure") {
+            if (!truth.plan.length) return { empty: true };
+            return {
+              weights: truth.plan.map((entry) => {
+                const weight = exact ? entry.weight : Disclosures.jitterWeight(entry.weight, `${key}:${entry.blockId}`, Territory.CURTIS_MAX_PRESSURE_PER_BLOCK);
+                return { name: entry.name, weight, label: weight >= Territory.CURTIS_PRESSURE_HARD ? "coming hard" : "just looking" };
+              })
+            };
+          }
+          if (intelType === "curtis_next_move") {
+            if (!truth.plan.length) return { empty: true };
+            const index = exact ? 0 : Disclosures.listShape(`${key}:shape`) === "faithful" ? 0 : Math.min(1, truth.plan.length - 1);
+            return { name: truth.plan[index].name };
+          }
+          if (!truth.chances.length) return { empty: true };
+          const ranked = truth.chances.map((row) => {
+            const chance = exact ? row.chance : Disclosures.jitterChance(row.chance, `${key}:${row.blockId}`);
+            return { name: row.name, chance, text: Disclosures.percent(chance) };
+          }).sort((a, b) => b.chance - a.chance || (a.name < b.name ? -1 : 1));
+          return { chances: ranked.slice(0, DISCLOSURE_CHANCE_DEPTH) };
+        }
+        function disclosureOffers(state, npcId) {
+          var _a;
+          const asked = disclosureAskedToday(state, npcId);
+          const phoneOff = !((_a = state.phone) == null ? void 0 : _a.active);
+          return Disclosures.disclosuresForNpc(npcId).map((entry) => {
+            const type = Disclosures.INTEL_TYPE_BY_ID[entry.intelType];
+            const accuracy = Disclosures.accuracyFor(bandOf(state, npcId), entry.minBand);
+            const price = type.price;
+            if (accuracy === "unavailable") return null;
+            const available = !phoneOff && !asked && state.player.cash >= price;
+            const reason = phoneOff ? "Phone service is off" : asked ? "Already talked today" : state.player.cash < price ? `Need ${cashText(price)}` : "No time passes";
+            return { intelType: entry.intelType, label: type.label, price, accuracy, available, reason };
+          }).filter(Boolean);
+        }
+        function disclosureAvailability(state, npcId) {
+          var _a;
+          const offers = disclosureOffers(state, npcId);
+          if (!offers.length) return { visible: false, available: false, reason: "", offers };
+          if (!((_a = state.phone) == null ? void 0 : _a.active)) return { visible: true, available: false, reason: "Phone service is off", offers };
+          if (disclosureAskedToday(state, npcId)) return { visible: true, available: false, reason: "Already talked today", offers };
+          return { visible: true, available: true, reason: `${offers.length} thing${offers.length === 1 ? "" : "s"} to ask about`, offers };
+        }
         function territoryHeatChance(state, exposureOverride) {
           const exposure = exposureOverride != null ? exposureOverride : SPENARD_BLOCKS.reduce(
             (sum, block) => {
@@ -12083,7 +12407,7 @@
           return advanced;
         }
         function reduceGame(inputState, action) {
-          var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n;
+          var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o;
           if (!inputState || !action || !action.type) return inputState;
           if (action.type === "HYDRATE_RUN") return hydrateRun(action.state) || inputState;
           if (action.type === "NEW_RUN") return createRun({ seed: action.seed });
@@ -12496,6 +12820,26 @@
             recordBehavior(state, "earner", 2, `rent:${state.run.day}`, "rent_payment");
             pushConsequence(state, "Yalonda counts the rent once and closes the envelope.", "good");
             logEntry(state, `Weekly rent paid in cash: $${WEEKLY_RENT}.`, "good");
+            return state;
+          }
+          if (action.type === "BUY_DISCLOSURE") {
+            const npcId = action.npcId;
+            const intelType = action.intelType;
+            const entry = Disclosures.disclosureFor(npcId, intelType);
+            if (!entry || !((_l = state.phone) == null ? void 0 : _l.active)) return inputState;
+            const accuracy = Disclosures.accuracyFor(bandOf(state, npcId), entry.minBand);
+            if (accuracy === "unavailable") return inputState;
+            if (disclosureAskedToday(state, npcId)) return inputState;
+            const price = Disclosures.priceFor(intelType);
+            if (state.player.cash < price) return inputState;
+            const payload = disclosurePayload(state, npcId, intelType, accuracy);
+            const rotation = stringHash(`${state.run.seed}:disclosure-text:${npcId}:${intelType}:${state.run.day}`);
+            const text = Disclosures.disclosureText(npcId, intelType, accuracy, payload, rotation);
+            if (!text) return inputState;
+            spendCash(state, price);
+            disclosuresToday(state).push({ npcId, intelType, day: state.run.day, slot: state.run.slot });
+            pushPhoneMessage(state, Disclosures.senderFor(npcId), text);
+            logEntry(state, `${Disclosures.senderFor(npcId)} shared some intel. Check your texts.`, "good");
             return state;
           }
           if (action.type === "PAY_PHONE_BILL") {
@@ -13061,7 +13405,7 @@
           }
           if (action.type === "ASSIGN_BOOST_CREW") {
             const crew = base.people.crew[action.crewId];
-            if (!base.boost.visible || base.boost.tier < 3 || !(crew == null ? void 0 : crew.recruited) || crew.status !== "active" || !((_l = CREW_BY_ID[action.crewId]) == null ? void 0 : _l.canFieldAssign)) return inputState;
+            if (!base.boost.visible || base.boost.tier < 3 || !(crew == null ? void 0 : crew.recruited) || crew.status !== "active" || !((_m = CREW_BY_ID[action.crewId]) == null ? void 0 : _m.canFieldAssign)) return inputState;
             base.boost.crewAssigned = action.crewId;
             logEntry(base, `${CREW_BY_ID[action.crewId].name} is assigned to boost duty.`, "good");
             return base;
@@ -13087,7 +13431,7 @@
           }
           if (action.type === "CASE_TARGET") {
             const target = STICK_TARGET_BY_ID[action.targetId];
-            if (!((_m = base.rob) == null ? void 0 : _m.visible) || !target || target.tier < 2) return inputState;
+            if (!((_n = base.rob) == null ? void 0 : _n.visible) || !target || target.tier < 2) return inputState;
             if (target.areaId !== base.world.currentNeighborhoodId) return inputState;
             const existing = stickCasing(base, target.id);
             if (existing && existing.timesObserved >= 2) return inputState;
@@ -13132,7 +13476,7 @@
               if (target.tier === 3) {
                 base.stick.organizedHits += 1;
                 if (base.stick.organizedHits >= 2) Exposure.recordObservation(base, "curtis", { type: "violence", event: "organized_hit", count: base.stick.organizedHits, source: "network" });
-                if (target.id === "goodie_stash" && ((_n = base.people.dealers) == null ? void 0 : _n.goodie)) {
+                if (target.id === "goodie_stash" && ((_o = base.people.dealers) == null ? void 0 : _o.goodie)) {
                   base.people.dealers.goodie.supplyChoked = 7;
                   base.people.dealers.goodie.retaliated = true;
                   bumpPlugSuspicion(base, target.areaId, { direct: true, skipStandingFor: null });
@@ -14015,6 +14359,7 @@
           SOLDIERS_PER_BLOCK_CAP,
           RAID_DEFENSE_PER_SOLDIER,
           TERRITORY: Territory,
+          DISCLOSURES: Disclosures,
           TERRITORY_HEAT_CHANCE_PER_EXPOSURE,
           TERRITORY_HEAT_CHANCE_CAP,
           BLOCK_INTEL_LEVEL_COPY,
@@ -14182,6 +14527,13 @@
             // night rolls against, for each adversary separately.
             policeRaidChance,
             curtisMoveChance,
+            // v1.27: what the phone can sell, and what it costs. The offers list
+            // mirrors the BUY_DISCLOSURE guards so a row is never rendered for a
+            // dispatch the reducer would drop.
+            disclosureOffers,
+            disclosureAvailability,
+            disclosureAskedToday,
+            disclosurePayload,
             soldierRecruitAvailability,
             soldierAssignAvailability,
             blockClaimAvailability,
@@ -14408,7 +14760,7 @@
         const showCrew = C.selectors.recruitedCrew(state).length > 0;
         const showCurtis = state.npc.curtis.relationship !== "unaware";
         const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil(value / ceiling * 5))), total: 5 });
-        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.26"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day, state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
+        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.27"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day, state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
       }
       var NAV_ICONS = {
         home: "M12 3 3 10.4V21h6v-6h6v6h6V10.4z",
@@ -14679,14 +15031,20 @@
           return /* @__PURE__ */ React.createElement("div", { className: "card", key: person.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, person.name, /* @__PURE__ */ React.createElement("small", null, C.selectors.relationshipLabel(relationship).toUpperCase())), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Workplace relationship ", relationship, " \xB7 ", record.shifts, " shift", record.shifts === 1 ? "" : "s", " completed."), job.id === "night_owl" && record.rank >= 3 && /* @__PURE__ */ React.createElement("p", { className: "good compact" }, "Deshawn's Spenard vouch is active."));
         }), job.id === "night_owl" && /* @__PURE__ */ React.createElement(NightOwlStash, { state, dispatch })));
       }
-      function SocialContacts({ state, dispatch, navigateMore }) {
+      function DisclosurePanel({ state, dispatch, npcId }) {
+        const [open, setOpen] = useState(false);
+        const access = C.selectors.disclosureAvailability(state, npcId);
+        if (!access.visible) return null;
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("button", { className: "btn secondary", "aria-expanded": open, disabled: !access.available && !open, onClick: () => setOpen(!open) }, "Ask about\u2026", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, access.reason)), open && /* @__PURE__ */ React.createElement("div", { className: "disclosure-list" }, access.offers.map((offer) => /* @__PURE__ */ React.createElement("div", { className: "disclosure-row", key: offer.intelType }, /* @__PURE__ */ React.createElement("span", { className: "disclosure-name" }, offer.label), /* @__PURE__ */ React.createElement("button", { className: "btn disclosure-buy", disabled: !offer.available, onClick: () => dispatch({ type: "BUY_DISCLOSURE", npcId, intelType: offer.intelType }) }, money(offer.price), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, offer.reason))))));
+      }
+      function SocialContacts({ state, dispatch, navigateMore, surface = "people" }) {
         const [openId, setOpenId] = useState(null);
         const personal = C.selectors.personalContacts(state);
         const contacts = C.selectors.knownSocialContacts(state);
         const personalCards = personal.map((person) => {
           const open = openId === `personal:${person.id}`;
           const present = C.selectors.householdPresence(state) === person.id;
-          return /* @__PURE__ */ React.createElement("div", { className: "card contact-card", key: `personal:${person.id}` }, /* @__PURE__ */ React.createElement("button", { className: "contact-toggle", "aria-expanded": open, onClick: () => setOpenId(open ? null : `personal:${person.id}`) }, /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, person.name), /* @__PURE__ */ React.createElement("small", null, person.role)), /* @__PURE__ */ React.createElement("span", null, person.status)), open && /* @__PURE__ */ React.createElement(ExpandableMoreSection, { collapsedContent: /* @__PURE__ */ React.createElement("p", { className: "compact" }, person.summary), expandedContent: /* @__PURE__ */ React.createElement("div", { className: "contact-actions" }, ["yalonda", "juan"].includes(person.id) && /* @__PURE__ */ React.createElement("button", { className: "btn secondary", disabled: !present || state.people.household.lastQuestionDay === state.run.day, onClick: () => dispatch({ type: "TALK_HOUSEHOLD", npcId: person.id }) }, "Talk", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, present ? "Free \xB7 once daily" : "Not home now")), person.id === "mina" && /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: () => dispatch({ type: "VISIT_MINA" }) }, "Talk with Mina", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free at Night Owl during Evening or Night")), person.id === "dre" && navigateMore && /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: navigateMore }, "Open Finances")) }));
+          return /* @__PURE__ */ React.createElement("div", { className: "card contact-card", key: `personal:${person.id}` }, /* @__PURE__ */ React.createElement("button", { className: "contact-toggle", "aria-expanded": open, onClick: () => setOpenId(open ? null : `personal:${person.id}`) }, /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, person.name), /* @__PURE__ */ React.createElement("small", null, person.role)), /* @__PURE__ */ React.createElement("span", null, person.status)), open && /* @__PURE__ */ React.createElement(ExpandableMoreSection, { collapsedContent: /* @__PURE__ */ React.createElement("p", { className: "compact" }, person.summary), expandedContent: /* @__PURE__ */ React.createElement("div", { className: "contact-actions" }, ["yalonda", "juan"].includes(person.id) && /* @__PURE__ */ React.createElement("button", { className: "btn secondary", disabled: !present || state.people.household.lastQuestionDay === state.run.day, onClick: () => dispatch({ type: "TALK_HOUSEHOLD", npcId: person.id }) }, "Talk", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, present ? "Free \xB7 once daily" : "Not home now")), person.id === "mina" && /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: () => dispatch({ type: "VISIT_MINA" }) }, "Talk with Mina", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free at Night Owl during Evening or Night")), person.id === "dre" && navigateMore && /* @__PURE__ */ React.createElement("button", { className: "btn secondary", onClick: navigateMore }, "Open Finances"), surface === "phone" && /* @__PURE__ */ React.createElement(DisclosurePanel, { state, dispatch, npcId: person.id })) }));
         });
         const socialCards = contacts.filter((person) => !["yalonda", "juan"].includes(person.id)).map((person) => {
           const open = openId === person.id;
@@ -15101,7 +15459,7 @@
         const knownContacts = C.selectors.personalContacts(state).length + C.selectors.knownSocialContacts(state).filter((person) => !["yalonda", "juan"].includes(person.id)).length;
         const bills = phoneBills(state);
         const billsDueSoon = bills.filter((row) => row.severity > 0).length;
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: offline ? "No Service" : "Phone", sub: offline ? "The phone stays available even when the network does not" : "Texts, contacts, bills, and word around town", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, offline && /* @__PURE__ */ React.createElement("div", { className: "card locked" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Signal unavailable", /* @__PURE__ */ React.createElement("small", null, state.phone.daysPastDue, " days past due")), /* @__PURE__ */ React.createElement("p", null, "Pay ", money(C.PHONE_BILL), " at Night Owl to start restoration. Online payment requires active service and a laptop."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: state.player.cash < C.PHONE_BILL, onClick: () => dispatch({ type: "PAY_PHONE_BILL", surface: "store" }) }, "Pay at Night Owl \xB7 ", money(C.PHONE_BILL), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free \xB7 service restores after the next action"))), /* @__PURE__ */ React.createElement(AccordionSection, { title: "Texts", meta: offline ? `${state.phone.heldInbox.length} held` : `${state.phone.inbox.length} text${state.phone.inbox.length === 1 ? "" : "s"}`, defaultExpanded: true }, offline ? /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, state.phone.heldInbox.length, " message", state.phone.heldInbox.length === 1 ? " is" : "s are", " waiting for service.") : state.phone.inbox.length ? state.phone.inbox.map((message) => /* @__PURE__ */ React.createElement("div", { className: "card compact", key: message.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, message.from, /* @__PURE__ */ React.createElement("small", null, "DAY ", message.day, " \xB7 ", C.SLOTS[message.slot])), /* @__PURE__ */ React.createElement("p", { className: "compact" }, message.text))) : /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "No messages yet.")), /* @__PURE__ */ React.createElement(AccordionSection, { title: "Contacts", meta: `${knownContacts} known` }, /* @__PURE__ */ React.createElement(SocialContacts, { state, dispatch, navigateMore })), /* @__PURE__ */ React.createElement(AccordionSection, { title: "Bills", badge: billsDueSoon, badgeVariant: bills.some((row) => row.severity === 2) ? "danger" : "warning" }, bills.length ? bills.map((row) => /* @__PURE__ */ React.createElement("div", { className: `bill-row${row.severity === 2 ? " bad" : row.severity === 1 ? " warn" : row.paid ? " paid" : ""}`, key: row.id }, /* @__PURE__ */ React.createElement("span", { className: "bill-name" }, /* @__PURE__ */ React.createElement("b", null, row.name), /* @__PURE__ */ React.createElement("small", null, row.pay && !row.pay.disabled ? "Paid from cash on hand" : row.where)), /* @__PURE__ */ React.createElement("span", { className: "bill-meta" }, /* @__PURE__ */ React.createElement("b", null, money(row.amount)), /* @__PURE__ */ React.createElement("small", { className: "bill-status" }, row.due, " \xB7 ", row.status)), row.pay && /* @__PURE__ */ React.createElement("button", { className: "btn bill-pay", disabled: row.pay.disabled, onClick: () => dispatch(row.pay.action) }, "Pay", row.pay.disabled && row.pay.reason ? /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, row.pay.reason) : null))) : /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "No bills yet."), bills.length > 0 && !billsDueSoon && /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "Paid up. Nothing is due yet.")), /* @__PURE__ */ React.createElement(AccordionSection, { title: "Today's Log", meta: `${dayLog.length} today` }, dayLog.length ? dayLog.map((entry, index) => /* @__PURE__ */ React.createElement("div", { className: `card compact ${entry.tone || ""}`, key: index }, entry.text)) : /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "Nothing logged today.")), /* @__PURE__ */ React.createElement(AccordionSection, { title: "Word Around Town" }, offline ? /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "Word comes back when service does.") : intel.length ? intel.map((line, index) => /* @__PURE__ */ React.createElement("div", { className: "card compact", key: index }, line)) : /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "Nothing on the wire yet.")), state.knowledge.knows907List && /* @__PURE__ */ React.createElement(MenuRow, { title: "907List", status: state.phone.active ? `${C.selectors.marketTierConfig(state).listings} listings` : "No service", description: "Local resale listings.", disabled: !state.phone.active, onClick: openList })));
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: offline ? "No Service" : "Phone", sub: offline ? "The phone stays available even when the network does not" : "Texts, contacts, bills, and word around town", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, offline && /* @__PURE__ */ React.createElement("div", { className: "card locked" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Signal unavailable", /* @__PURE__ */ React.createElement("small", null, state.phone.daysPastDue, " days past due")), /* @__PURE__ */ React.createElement("p", null, "Pay ", money(C.PHONE_BILL), " at Night Owl to start restoration. Online payment requires active service and a laptop."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: state.player.cash < C.PHONE_BILL, onClick: () => dispatch({ type: "PAY_PHONE_BILL", surface: "store" }) }, "Pay at Night Owl \xB7 ", money(C.PHONE_BILL), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free \xB7 service restores after the next action"))), /* @__PURE__ */ React.createElement(AccordionSection, { title: "Texts", meta: offline ? `${state.phone.heldInbox.length} held` : `${state.phone.inbox.length} text${state.phone.inbox.length === 1 ? "" : "s"}`, defaultExpanded: true }, offline ? /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, state.phone.heldInbox.length, " message", state.phone.heldInbox.length === 1 ? " is" : "s are", " waiting for service.") : state.phone.inbox.length ? state.phone.inbox.map((message) => /* @__PURE__ */ React.createElement("div", { className: "card compact", key: message.id }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, message.from, /* @__PURE__ */ React.createElement("small", null, "DAY ", message.day, " \xB7 ", C.SLOTS[message.slot])), /* @__PURE__ */ React.createElement("p", { className: "compact" }, message.text))) : /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "No messages yet.")), /* @__PURE__ */ React.createElement(AccordionSection, { title: "Contacts", meta: `${knownContacts} known` }, /* @__PURE__ */ React.createElement(SocialContacts, { state, dispatch, navigateMore, surface: "phone" })), /* @__PURE__ */ React.createElement(AccordionSection, { title: "Bills", badge: billsDueSoon, badgeVariant: bills.some((row) => row.severity === 2) ? "danger" : "warning" }, bills.length ? bills.map((row) => /* @__PURE__ */ React.createElement("div", { className: `bill-row${row.severity === 2 ? " bad" : row.severity === 1 ? " warn" : row.paid ? " paid" : ""}`, key: row.id }, /* @__PURE__ */ React.createElement("span", { className: "bill-name" }, /* @__PURE__ */ React.createElement("b", null, row.name), /* @__PURE__ */ React.createElement("small", null, row.pay && !row.pay.disabled ? "Paid from cash on hand" : row.where)), /* @__PURE__ */ React.createElement("span", { className: "bill-meta" }, /* @__PURE__ */ React.createElement("b", null, money(row.amount)), /* @__PURE__ */ React.createElement("small", { className: "bill-status" }, row.due, " \xB7 ", row.status)), row.pay && /* @__PURE__ */ React.createElement("button", { className: "btn bill-pay", disabled: row.pay.disabled, onClick: () => dispatch(row.pay.action) }, "Pay", row.pay.disabled && row.pay.reason ? /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, row.pay.reason) : null))) : /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "No bills yet."), bills.length > 0 && !billsDueSoon && /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "Paid up. Nothing is due yet.")), /* @__PURE__ */ React.createElement(AccordionSection, { title: "Today's Log", meta: `${dayLog.length} today` }, dayLog.length ? dayLog.map((entry, index) => /* @__PURE__ */ React.createElement("div", { className: `card compact ${entry.tone || ""}`, key: index }, entry.text)) : /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "Nothing logged today.")), /* @__PURE__ */ React.createElement(AccordionSection, { title: "Word Around Town" }, offline ? /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "Word comes back when service does.") : intel.length ? intel.map((line, index) => /* @__PURE__ */ React.createElement("div", { className: "card compact", key: index }, line)) : /* @__PURE__ */ React.createElement("div", { className: "card compact muted" }, "Nothing on the wire yet.")), state.knowledge.knows907List && /* @__PURE__ */ React.createElement(MenuRow, { title: "907List", status: state.phone.active ? `${C.selectors.marketTierConfig(state).listings} listings` : "No service", description: "Local resale listings.", disabled: !state.phone.active, onClick: openList })));
       }
       function phoneBills(state) {
         const day = state.run.day;
@@ -15366,7 +15724,7 @@
           ExpandableMoreSection,
           {
             collapsedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-lead" }, "Autosave is on. This run saves to your browser after every action."),
-            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.26 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
+            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.27 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
             moreLabel: "Save detail",
             lessLabel: "Hide detail"
           }

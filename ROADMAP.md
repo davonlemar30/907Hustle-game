@@ -19,6 +19,50 @@ still being built out.
 
 ---
 
+## Shipped — v1.27 Disclosure Tables (Phase 3.1)
+
+The intel economy opens. NPCs sell what the engine already knows — which corners
+Curtis is working tonight, how hard, and what the police will roll against on
+each one — and how accurate the answer is depends on how well they know you.
+Save schema stays **v11**; the day-scoped purchase cache is session state on
+`run`, same pattern as v1.23's `gossipVoices`. **Both sim hashes unchanged**
+(`25afb74e…` / `f10432b1…`) — no strategy dispatches `BUY_DISCLOSURE` and no
+strategy builds a relationship to Warm on a source. 844 tests.
+
+- **Five intel types, seven table rows, five sources.** Dre climbs the whole
+  ladder alone (targets at Warm, pressure at Trusted, the one corner they keep
+  naming at Bonded); Mina sells the target list a band dearer; Yalonda and Juan
+  read police patterns off their own street; Biniam repeats what the table said
+  upstairs. Prices $30–$100, per ask.
+- **Accuracy is the band.** At the gate the read is jittered — ±15% on numbers,
+  one corner added or dropped on lists, a pressure weight off by one. Above the
+  gate it is exact. Bonded is exact because it is the ceiling, the same rule
+  `blockIntelView` has followed since v1.20.
+- **Deshawn is structurally absent, and a test enforces it.** He is off Curtis's
+  network by design and cannot sell what is on it. Pherris is absent too: her
+  intel is a subscription she already sells.
+- **One call per person per day**, and the cooldown is on the person, not the
+  product — which is also what makes buying the same intel twice a no-op rather
+  than a second debit.
+- **All jitter is `stringHash`, no RNG draw.** A reload cannot reroll what
+  somebody already told you, and buying intel cannot become a cause of the night
+  it describes.
+
+### Next
+
+- **3.2, wiring additional sources.** Tone and Selam are the obvious candidates
+  and neither has a written register for this yet. Tone hears the wire and would
+  sell something Dre already sells; Selam has never been written speaking about
+  the corners, and giving her a line to fill a table would be the wrong Selam.
+  Both need authored voice before a row, not after.
+- **Nothing yet sells intel about the player.** The table runs one way. Curtis
+  buying a read on the player's corners is the symmetric build, and it is a
+  different system: he would act on it rather than display it.
+- The 2.2 balance pass on Curtis's pressure constants is still outstanding and
+  still gated on the simulator reaching the block layer.
+
+---
+
 ## Shipped — v1.26 Hustle Menu Jobs + Bill Payment
 
 UI plus one guard predicate. Save schema stays **v11** — the rent obligation
@@ -254,7 +298,10 @@ passing.
 - A Made Man at tier 2+ becoming a block's `managerId`, with per-block flavor on
   the manager on top of these operation-wide modifiers.
 - Intel *sources* beyond Pherris (disclosure tables, NPC one-shots) on the same
-  ladder — Phase 3.
+  ladder — Phase 3. **Disclosure tables shipped in v1.27**, beside her ladder
+  rather than on it: her feed is standing and tier-gated, disclosures are
+  on-demand and band-gated, and `blockIntelLevel()` did not have to change.
+  NPC one-shots are still open.
 
 ---
 

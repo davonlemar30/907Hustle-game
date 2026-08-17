@@ -109,17 +109,23 @@ test("the territory constants live in one data module at their specified values"
   assert.equal(Territory.POLICE_HEAT_WEIGHT, 0.015);
   assert.equal(Territory.POLICE_PATROL_WEIGHT, 0.03);
   assert.equal(Territory.CURTIS_VISIBILITY_WEIGHT, 0.4);
-  assert.deepEqual(Territory.CURTIS_PHASE_MULTIPLIER, { invisible: 0, ambient: 0.5, watching: 1.0, approaching: 1.5 });
+  // v1.28 measured these. ambient is lifted to compensate for its own tighter
+  // visibility gate (three corners on the board where watching has five) so it
+  // lands at roughly half of watching, and approaching is 2.0 because "roughly
+  // double watching" is what the balance target always meant and 1.5 is not it.
+  assert.deepEqual(Territory.CURTIS_PHASE_MULTIPLIER, { invisible: 0, ambient: 0.6, watching: 1.0, approaching: 2.0 });
   assert.deepEqual(Territory.CURTIS_PHASE_VISIBILITY_GATE, { invisible: 99, ambient: 2, watching: 1, approaching: 0 });
   assert.equal(Territory.RAID_DEFENSE_PER_SOLDIER, 1);
   assert.equal(C.RAID_DEFENSE_PER_SOLDIER, Territory.RAID_DEFENSE_PER_SOLDIER, "game-core reads it from the data module");
   assert.equal(C.TERRITORY, Territory, "and re-exports the module itself rather than copying the numbers");
 });
 
-test("the Curtis base is rebased for the headcount divisor, and Eli's discount is not the old one", () => {
-  // 0.12 over two posted soldiers is the 0.06 a single blended roll used, which
-  // is what keeps v1.20's promise that a second soldier halves the risk.
-  assert.equal(Territory.CURTIS_BASE_CHANCE, 0.12);
+test("the Curtis base is the measured one, and Eli's discount is not the old one", () => {
+  // v1.28 replaced the authored 0.12 with a swept 0.05. The sweep ran 0.04-0.15
+  // in 0.01 steps at all four phases, twice - once on the v1.27 code and again
+  // with this build's heat probe and unstaffed term live - and 0.05 is the only
+  // value that lands ambient, watching and approaching on their targets at once.
+  assert.equal(Territory.CURTIS_BASE_CHANCE, 0.05);
   // 0.05 was a tenth of the old roll and is a third of this one; at Heat 0 on a
   // patrol-1 corner two points of Eli would clamp the police chance to zero.
   assert.equal(Territory.POLICE_ELI_DISCOUNT, 0.015);
@@ -245,12 +251,20 @@ test("the Curtis roll reads visibility and phase, gated per phase, and nothing e
   }
 });
 
-test("Heat and patrol frequency never move the Curtis roll", () => {
+test("patrol frequency and Eli never move the Curtis roll, and Heat only above the probe floor", () => {
   const blockId = "northern_lights_motels";
   const base = C.selectors.curtisMoveChance(holding(2108, { blocks: [blockId], heat: 0 }), blockId);
-  for (const heat of [4, 10, 15]) {
+  // v1.28 gave him a Heat read, and this is the half of the old assertion that
+  // survives it: below the floor he is exactly where he was, so a player who
+  // keeps Heat down never meets the probe. Above it he gets luckier, which the
+  // v1.28 suite pins to the multiplier.
+  for (const heat of [4, 8]) {
     assert.equal(C.selectors.curtisMoveChance(holding(2108, { blocks: [blockId], heat }), blockId), base,
-      "he does not read the player's Heat");
+      "at or below the probe floor he does not read the player's Heat");
+  }
+  for (const heat of [10, 15]) {
+    assert.ok(C.selectors.curtisMoveChance(holding(2108, { blocks: [blockId], heat }), blockId) > base,
+      "above it he does, because a hot player's corners are the understaffed ones");
   }
   for (const eli of [0, 2]) {
     assert.equal(C.selectors.curtisMoveChance(holding(2108, { blocks: [blockId], eli }), blockId), base,
@@ -329,13 +343,20 @@ test("a Curtis move takes the corner, costs no Heat, and tells his network", () 
   assert.equal(state.curtisAwareness.level, awarenessBefore + 1, "and carrying it makes him look harder");
 });
 
-test("he walks onto an empty corner, and at twice the rate of a defended one", () => {
+test("he walks onto an empty corner, and the first body posted on it is the one that matters most", () => {
   const blockId = "northern_lights_motels";
   const empty = holding(2113, { blocks: [blockId], soldiers: 0, phase: "watching" });
+  const one = holding(2113, { blocks: [blockId], soldiers: 1, phase: "watching" });
   const defended = holding(2113, { blocks: [blockId], soldiers: 2, phase: "watching" });
   assert.ok(C.selectors.curtisMoveChance(empty, blockId) > 0, "an empty corner is still a corner he can take");
-  assert.equal(C.selectors.curtisMoveChance(empty, blockId), C.selectors.curtisMoveChance(defended, blockId) * 2,
-    "two posted soldiers halve it, which is v1.20's promise kept");
+  assert.equal(C.selectors.curtisMoveChance(one, blockId), C.selectors.curtisMoveChance(defended, blockId) * 2,
+    "a second posted soldier halves it, which is v1.20's promise kept");
+  // v1.28. Until this build the divisor floored at 1, so an EMPTY corner and a
+  // one-soldier corner were arithmetically identical and posting your first
+  // person on a corner bought nothing at all. Nobody standing on it is now half
+  // a defender, so the first body is worth as much as the second.
+  assert.equal(C.selectors.curtisMoveChance(empty, blockId), C.selectors.curtisMoveChance(one, blockId) * 2,
+    "and the first one halves it too, which is what makes an undefended corner the cheap one");
   const chance = C.selectors.curtisMoveChance(empty, blockId);
   empty.run.day = dayWhere(empty, blockId, "curtis", (roll) => roll < chance);
   C.resolveSoldierOperationsForTest(empty, noCasualty(), true);
@@ -556,16 +577,30 @@ test("the harness reports the two adversaries separately, and they separate clea
     "the old metric name still means police raids, because every raid is one now");
 });
 
-test("the per-block sweep carries the finding: quiet lot safe, motels hunted, chokepoint raided", () => {
+test("the per-block sweep carries the finding: quiet lot safe, chokepoint raided, and the police feed him", () => {
   const blocks = SPENARD_BLOCKS.map((b) => b.id);
   const watched = measure("watching", { runs: 60, nights: 8, curtisPhase: "watching", blocks });
   const byBlock = watched.byBlock;
   assert.equal(byBlock.spenard_rec_lot.curtisFlipsPerBlockNight, 0, "visibility 0 is never his");
-  const mostHunted = Object.entries(byBlock).sort((a, b) => b[1].curtisFlipsPerBlockNight - a[1].curtisFlipsPerBlockNight)[0][0];
-  assert.equal(mostHunted, "northern_lights_motels", "visibility 3 is his first stop");
   const mostRaided = Object.entries(byBlock).sort((a, b) => b[1].policeRaidsPerBlockNight - a[1].policeRaidsPerBlockNight)[0][0];
   assert.equal(mostRaided, "service_road_chokepoint", "patrol 3 is theirs");
-  assert.notEqual(mostHunted, mostRaided, "two adversaries, two corners: the split is doing something");
+
+  // v1.28, and this is a REVERSAL of what v1.21 asserted here. v1.21 checked the
+  // split by proxy - the most-hunted corner and the most-raided corner had to be
+  // different ones - and that proxy no longer holds, by a margin of 0.001 in the
+  // old constants and a real one now. Making an empty corner cheap for him
+  // (CURTIS_UNSTAFFED_DEFENSE) couples the two adversaries through the garrison:
+  // the police empty the chokepoint, and an emptied corner is the one he walks
+  // onto. He still does not read patrol routes - the coupling runs through who
+  // is standing there, not through anything he knows.
+  //
+  // So the split is asserted where it is actually a split, which is what it
+  // always meant: the police never take a corner, and he never touches Heat.
+  // Those two are pinned in their own tests above and cannot drift.
+  const mostHunted = Object.entries(byBlock).sort((a, b) => b[1].curtisFlipsPerBlockNight - a[1].curtisFlipsPerBlockNight)[0][0];
+  assert.equal(mostHunted, "service_road_chokepoint", "the corner the police keep emptying is the one he keeps taking");
+  assert.ok(byBlock.northern_lights_motels.curtisFlipsPerBlockNight > byBlock.minnesota_offramp.curtisFlipsPerBlockNight,
+    "visibility still orders him: the motels outrank the off-ramp with the same police pressure on neither");
 });
 
 test("losing corners is what moves him, and the escalation is bounded by the map", () => {
@@ -590,9 +625,13 @@ test("the split needs no new state: a v11 save carries it, a v3 save migrates in
   assert.equal(C.SAVE_KEY, "907ogr_v11");
   const state = holding(2125, { blocks: ["fourth_ave_strip"], phase: "watching" });
   const record = state.world.territoryBlocks.fourth_ave_strip;
+  // v1.28 added exactly one field, `curtisTookBack`, and it is boolean and
+  // additive - so mergeDefaults hydrates every older save to false and the
+  // schema still does not move. The list is asserted whole rather than by
+  // membership so a future build cannot slip a field in unnoticed.
   assert.deepEqual(Object.keys(record).sort(),
-    ["capturedDay", "incomeCollected", "lastRaidDay", "managerId", "owner", "raidCount", "soldiersAssigned"],
-    "the block record gained no field");
+    ["capturedDay", "curtisTookBack", "incomeCollected", "lastRaidDay", "managerId", "owner", "raidCount", "soldiersAssigned"],
+    "the block record gained one additive boolean and nothing else");
   const reloaded = C.hydrateRun(JSON.parse(C.serializeRun(state)));
   assert.equal(reloaded.version, C.VERSION);
   C.resolveSoldierOperationsForTest(reloaded, noCasualty(), true);

@@ -44,20 +44,74 @@ const POLICE_ELI_DISCOUNT = 0.015;
 // point of the stat: Spenard Rec Center Lot is a corner his network does not
 // carry news about, so he never comes for it.
 //
-// 0.12 rather than 0.06 because the divisor includes headcount. At two posted
-// soldiers and no Tone the two cancel and a block sits where a single 0.06 roll
-// would have put it; the base is doubled so that an UNDEFENDED corner - the one
-// nobody is standing on - is the one that costs double.
-const CURTIS_BASE_CHANCE = 0.12;
+// v1.28 measured this instead of authoring it. 0.12 was a first guess carried
+// since v1.21, and it was too high: at `watching` it took 29% of held corners
+// over a measured window against a target of 20%.
+//
+// Swept 0.04-0.15 in 0.01 steps, 200 runs x 10 nights x all six corners, at all
+// four phases, twice - once on the v1.27 code to get an honest control, and
+// again with this build's heat probe and unstaffed term live, because tuning the
+// base against a control that does not include them would ship a number that is
+// wrong the moment they land. Every value in both sweeps produced a clean
+// monotonic gradient across the phases, which is the finding that says the base
+// was the thing that was wrong and the phase gate was not.
+//
+// 0.05 is the value that lands all three targets at once:
+//
+//   ambient      0.102   target 0.10-0.12, and roughly half of watching
+//   watching     0.193   target 0.20
+//   approaching  0.352   target 0.35-0.40, and roughly double watching
+//
+// The full table is in PROJECT_STATUS.md. Re-derive it with
+// `node tests/measure-lieutenant-modifiers.js 300 10` before moving this.
+const CURTIS_BASE_CHANCE = 0.05;
 const CURTIS_VISIBILITY_WEIGHT = 0.4;
+
+// What an unposted corner is worth as defense. Until v1.28 the divisor was
+// `Math.max(1, soldiers)`, which made an EMPTY corner and a one-soldier corner
+// arithmetically identical - so the claim two comments up, that the base was
+// doubled to make an undefended corner cost double, was never true of anything
+// but the two-soldier case. This is that claim, implemented: nobody standing on
+// it is half a defender, so walking back onto an empty corner is twice as easy
+// as walking through one person. It is also the whole of "probe the weakest" -
+// the resolver already rolls each corner independently, so there is no ordering
+// to tie-break, only a number that has to reward him for reading the gap.
+const CURTIS_UNSTAFFED_DEFENSE = 0.5;
+
+// --- He reads your Heat (v1.28) --------------------------------------------
+// Not coordination. He has no line to the police and no plan that involves
+// them. But a player running hot is a player whose soldiers keep getting
+// arrested, and an understaffed corner is an easier corner - so he gets luckier
+// when you are hot without ever having decided to.
+//
+// Below the floor this is exactly 1.0 and the build is invisible. At Heat 12 he
+// is 20% more likely to move, at 15 35%. It multiplies into the existing
+// `curtisMoveChance`, which is already compared against a hashed gate, so no new
+// draw and no new hash: the same roll is measured against a higher bar.
+//
+// Deliberately NOT in the plan. `curtisNightPlan` is his intent and the gossip
+// surface reports it; this is what the night does with the intent, and a warning
+// that got quieter because the player's Heat dropped would be reporting the
+// odds rather than the man.
+const CURTIS_HEAT_PROBE_FLOOR = 8;
+const CURTIS_HEAT_PROBE_PER_POINT = 0.05;
 
 // How hard he is looking, by awareness phase. Read through
 // CurtisAwareness.phaseForLevel - never re-derive the thresholds here.
+//
+// v1.28 moved two of these, and the reason is in the measurement rather than in
+// anybody's taste. The targets are ambient at roughly half of watching and
+// approaching at roughly double it. With 0.5/1.0/1.5 the measured ratios came
+// out 0.43 and 1.46: ambient sat UNDER half because its visibility gate of 2
+// only lets three of the six corners onto the board where watching's gate of 1
+// lets five, and approaching could not reach double because 1.5 is not 2.
+// So ambient is lifted to compensate for its own gate, and approaching is the
+// number the target always implied.
 const CURTIS_PHASE_MULTIPLIER = {
   invisible: 0,
-  ambient: 0.5,
+  ambient: 0.6,
   watching: 1.0,
-  approaching: 1.5,
+  approaching: 2.0,
 };
 
 // The minimum curtisVisibility a block must have to be targetable at all in a
@@ -101,6 +155,31 @@ const CURTIS_PRESSURE_BUDGET_BY_PHASE = { invisible: 0, ambient: 1, watching: 3,
 const CURTIS_MAX_PRESSURE_PER_BLOCK = 2;
 const CURTIS_PRESSURE_HARD = 2;
 
+// --- What he remembers, and what he saves up (v1.28) -----------------------
+//
+// RECAPTURE. A corner he has taken back off the player at least once outranks
+// one he has not, ahead of visibility, because he wants his shit back.
+//
+// Note what this is NOT keyed on. The spec asked for "a corner the player
+// claimed from owner: curtis", and every corner on the map starts owner:
+// "curtis" - so that condition is true of all six and would rank nothing. The
+// signal that actually separates corners is whether he has already come and
+// taken one back, which the resolver stamps on the record when it happens. A
+// corner that has changed hands twice is a corner with a history.
+const CURTIS_RECAPTURE_PRIORITY = 1;
+
+// BANK. Pressure points the plan could not spend - which only happens when he
+// holds more budget than there are corners on his board - carry to tomorrow,
+// capped. He accumulates intent.
+//
+// What this can and cannot do is worth stating plainly, because it is easy to
+// read it as a difficulty knob and it is not one: the budget feeds the pressure
+// WEIGHT, and the weight is not an input to curtisMoveChance. So the bank moves
+// what the gossip surface and Pherris report - a tail corner reading "coming
+// hard" instead of "just looking" - and cannot move a single loss rate. It is a
+// telegraph, and v1.28 measured that it is a telegraph.
+const CURTIS_PRESSURE_BANK_CAP = 2;
+
 // --- Gossip warnings (v1.23) -----------------------------------------------
 // The neighborhood notices his people moving before they move. How much of that
 // reaches the player is a relationship question (Warm+ delivers, below Warm is
@@ -141,12 +220,17 @@ module.exports = {
   POLICE_ELI_DISCOUNT,
   CURTIS_BASE_CHANCE,
   CURTIS_VISIBILITY_WEIGHT,
+  CURTIS_UNSTAFFED_DEFENSE,
+  CURTIS_HEAT_PROBE_FLOOR,
+  CURTIS_HEAT_PROBE_PER_POINT,
   CURTIS_PHASE_MULTIPLIER,
   CURTIS_PHASE_VISIBILITY_GATE,
   CURTIS_TARGET_DEPTH_BY_PHASE,
   CURTIS_PRESSURE_BUDGET_BY_PHASE,
   CURTIS_MAX_PRESSURE_PER_BLOCK,
   CURTIS_PRESSURE_HARD,
+  CURTIS_RECAPTURE_PRIORITY,
+  CURTIS_PRESSURE_BANK_CAP,
   GOSSIP_WARNING_BASE_SCOPE,
   GOSSIP_DESHAWN_FULL_SCOPE_TIER,
   GOSSIP_DESHAWN_PRESSURE_TEXT_TIER,

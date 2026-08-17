@@ -19,6 +19,63 @@ still being built out.
 
 ---
 
+## Shipped — v1.28 Curtis Pressure Balance Pass (Phase 2.2)
+
+**Phase 2.2 closes.** Curtis stops being a first-authored guess and becomes a
+measured adversary. His base chance was swept 0.04–0.15 at every phase (twice —
+once against the old code as a control, once with this build's new terms live)
+and shipped at **0.05**; two phase multipliers moved because the measurement said
+which and why. He reads the player's Heat above 8 and gets luckier, an empty
+corner is finally worth less than a corner with one person on it, and he holds a
+grudge about corners he has already taken back once. Save schema stays **v11**.
+**Both sim hashes unchanged** (`25afb74e…` / `f10432b1…`) — which was *not* the
+expected result and is a finding in its own right. 868 tests.
+
+- **The blocker was never real.** 2.2 sat open on the simulator's 10-day cap.
+  That cap is an instrument boundary for hash comparability;
+  `tests/measure-lieutenant-modifiers.js` starts from a corner-holding state and
+  resolves nights through the real reducer, and has since v1.20.
+- **The gradient, at 300 runs × 10 nights × six corners:** `invisible` 0.000,
+  `ambient` 0.093, `watching` 0.181, `approaching` 0.341. Strictly monotonic;
+  ambient is 0.51 of watching and approaching is 1.88×. All three sit 3–10% under
+  target, which is the closest the spec's mandated 0.01 sweep increment reaches —
+  0.06 overshoots watching by 18% where 0.05 undershoots by 10%.
+- **Police pressure was already flat across phases** (0.171–0.174) and needed no
+  work. The v1.21 split had delivered it; v1.28 verified and left it alone.
+- **The unchanged hashes mean the simulator does not cover this layer.** The
+  `territory` strategy claims zero blocks in 200 runs, so no strategy ever owns a
+  corner and nothing the build changed is reachable from that harness. It does
+  prove the thirteen original strategies behavior-identical for free — but an
+  unchanged hash must never be read as coverage of the block layer.
+- **Two spec items were deliberately not built as written**, both documented in
+  PROJECT_STATUS.md: "probe the weakest" stayed out of `curtisNightPlan` (a
+  garrison-reading planner would make every warning falsify itself), and the
+  recapture key is "a corner he has taken back once" rather than "a corner taken
+  from Curtis" (every corner starts his, so the spec's condition ranks nothing).
+- **One target was missed and filed rather than faked.** An acted-on warning
+  saves the corner 0.406 of the time at watching against a 0.60 target. The
+  ceiling is arithmetic — risk is linear in headcount, the block cap is 3, and
+  Eli's balanced placement converges corners toward equal staffing, so a player
+  at two soldiers a corner tops out at a 33% reduction. The levers are the block
+  cap, a non-linear defense curve, or Eli's placement policy; all three are
+  outside 2.2.
+
+### Next
+
+**3.2 is the only sequenced item left before Phase 5.** The Godfather critical
+path is now done through 3.1, and 2.2's closure removes the last open item behind
+it. Two things this build surfaced and deliberately left:
+
+- **The escalation loop has no counter-pressure.** Losing a corner raises his
+  awareness, and `awareness.floor` ratchets and never falls, so a player who slips
+  once is pushed toward slipping again. Retaking a corner lowering awareness is a
+  design change rather than a balance pass.
+- **The warning's tactical ceiling is a defense-model question**, not a Curtis
+  question. Whoever picks it up should start at `SOLDIERS_PER_BLOCK_CAP` and Eli's
+  `operationPolicy`, not at `src/data/territory.js`.
+
+---
+
 ## Shipped — v1.27 Disclosure Tables (Phase 3.1)
 
 The intel economy opens. NPCs sell what the engine already knows — which corners
@@ -58,8 +115,10 @@ strategy builds a relationship to Warm on a source. 844 tests.
 - **Nothing yet sells intel about the player.** The table runs one way. Curtis
   buying a read on the player's corners is the symmetric build, and it is a
   different system: he would act on it rather than display it.
-- The 2.2 balance pass on Curtis's pressure constants is still outstanding and
-  still gated on the simulator reaching the block layer.
+- ~~The 2.2 balance pass on Curtis's pressure constants is still outstanding and
+  still gated on the simulator reaching the block layer.~~ **Shipped in v1.28,
+  and the gate was never real** — the territory harness had been the right
+  instrument since v1.20.
 
 ---
 

@@ -4,6 +4,41 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
+## Shipped — v1.24 First-Claim Ceremony — **Phase 4.1, and the Phase 1 asterisk is closed**
+
+Built on `claude/v1-24-first-claim-uc4fdx`, on top of the v1.23 merge (PR #85,
+`59b8865`). Save schema stays at v11 (nothing persisted — the check is a derived
+read over the board); **both sim hashes byte-identical to v1.20, v1.21 and
+v1.23**; zero dead ends across 2,000 runs; 798 tests passing.
+
+The first corner the player claims stops reading like the sixth. One branch in
+`CLAIM_BLOCK`, read before the ownership write, gates four things that fire once
+per run: a titled consequence card ("Your Corner"), a same-day text from Deshawn
+— "Word Around Town" when he is not on the roster — its own feed line, and a
+`growth / first_territory` observation on the neighborhood channel so the people
+who live there register it. Claims 2-6 are untouched.
+
+**This ran six builds late, and the sequencing cost was visible in the copy.**
+v1.21 wrote the lines for losing a corner and v1.23 wrote seven voices warning
+about one, so the game could say a corner was threatened or gone and had nothing
+to say about winning the first.
+
+- **`pushConsequence` takes an optional fourth argument, `title`.** Additive:
+  three-argument callers and cards queued in older saves are unchanged. Reserve
+  it for ceremony — 4.2 and 4.3 are the same shape of moment.
+- **A neighborhood broadcast cannot be located at a block id.** The channel
+  checks presence and `NPC_PRESENCE_AREAS` holds district ids only, so a block id
+  filters out every listener and lands in zero ledgers. The spec asked for one;
+  it ships at `HOME_DISTRICT_ID` with the corner named in the copy instead.
+  v1.23 hit the same wall from the other side — **this has now cost two builds**,
+  and the suite asserts against it so it does not cost a third.
+- **The simulator's territory blindness is worse and more specific than
+  recorded.** All **thirteen** strategies claim zero blocks across 2,000 runs,
+  not only `operator`. And `operator` does not fail at the claim gate: over 200
+  runs it never buys the garage and never recruits anybody, so it dies at the
+  *first* prerequisite. **Getting a strategy to buy North Star Garage is the
+  blocker**, and it is upstream of everything the 2.2 balance pass needs to see.
+
 ## Shipped — v1.23 Attack Telegraphing Through Gossip Channels — **Phase 2.3**
 
 Friendly NPCs warn the player through the gossip system before Curtis's nightly
@@ -81,8 +116,8 @@ Merged as PR #82 (`1a9a099`). Branch:
 This is task **1.4** of the Godfather adaptation phase list, and the last of
 Phase 1: 1.1 Tone (v1.18), 1.2 Pherris and 1.3 Deshawn (v1.19), 1.4 the
 modifiers (v1.20). **4.1 First-claim moment** — the ceremony item the phase list
-wanted shipped alongside Phase 1 — is still open and is the honest asterisk on
-"Phase 1 done". Save schema stays at v11 (nothing new persisted — every modifier is
+wanted shipped alongside Phase 1 — was the honest asterisk on "Phase 1 done"
+until it shipped in v1.24, six builds later. Save schema stays at v11 (nothing new persisted — every modifier is
 derived); both sim hashes moved for telemetry only and hash byte-identical to
 v1.19 with the new keys stripped; zero dead ends across 2,000 runs; 699 tests
 passing.

@@ -5681,9 +5681,9 @@
           state.log.unshift({ text, tone: tone || "", stamp: `Day ${state.run.day} \xB7 ${SLOTS[state.run.slot]}` });
           state.log = state.log.slice(0, 80);
         }
-        function pushConsequence(state, text, tone) {
+        function pushConsequence(state, text, tone, title) {
           state.run.consequenceQueue = state.run.consequenceQueue || [];
-          state.run.consequenceQueue.push({ id: `${state.run.day}:${state.run.slot}:${state.run.consequenceQueue.length}:${stringHash(text)}`, text, tone: tone || "" });
+          state.run.consequenceQueue.push({ id: `${state.run.day}:${state.run.slot}:${state.run.consequenceQueue.length}:${stringHash(text)}`, text, tone: tone || "", title: title || "" });
           state.run.consequenceQueue = state.run.consequenceQueue.slice(-6);
         }
         function pushPhoneMessage(state, from, text) {
@@ -13561,6 +13561,7 @@
             const definition = SPENARD_BLOCK_BY_ID[action.blockId];
             const occupier = unassignedSoldiers(base)[0];
             if (!occupier) return inputState;
+            const isFirstClaim = controlledBlockCount(base) === 0;
             base.player.cash -= definition.claimCost;
             base.stats.moneySpent.base += definition.claimCost;
             const block = base.world.territoryBlocks[action.blockId];
@@ -13573,7 +13574,26 @@
             refreshCurtisAttention(base);
             recordBehavior(base, "stickup", 2, `block:${action.blockId}`, "territory_expansion");
             addStreetReadEntry(base, "risk", `block_claim:${base.world.currentNeighborhoodId}`);
-            logEntry(base, `${definition.name} answers to your operation now. One soldier posts up immediately. Curtis's people will hear about it.`, "good");
+            if (isFirstClaim) {
+              broadcastTracked(base, {
+                type: "growth",
+                event: "first_territory",
+                channel: "neighborhood",
+                location: HOME_DISTRICT_ID,
+                value: 1,
+                day: base.run.day,
+                slot: base.run.slot
+              });
+              const deshawn = base.people.crew.deshawn;
+              const deshawnHere = Boolean((deshawn == null ? void 0 : deshawn.recruited) && deshawn.status === "active");
+              pushPhoneMessage(
+                base,
+                deshawnHere ? "Deshawn" : "Word Around Town",
+                deshawnHere ? `You got one. ${definition.name}. That's not nothing. Now keep it.` : `${definition.name} is yours. Word travels fast around here.`
+              );
+              pushConsequence(base, `First one's yours. ${definition.name}. A soldier stands on it and the block knows. This is what the money was building toward.`, "good", "Your Corner");
+            }
+            logEntry(base, isFirstClaim ? `First corner claimed: ${definition.name}. Soldier posted. The neighborhood sees it. Curtis's people will too.` : `${definition.name} answers to your operation now. One soldier posts up immediately. Curtis's people will hear about it.`, "good");
             return advanceRun(base, { reason: "CLAIM_BLOCK" });
           }
           if (action.type === "VISIT_MINA") {
@@ -15383,7 +15403,7 @@
           return () => timers.forEach(clearTimeout);
         }, [items.map((item) => item.id).join("|")]);
         if (!items.length) return null;
-        return /* @__PURE__ */ React.createElement("div", { className: "consequence-stack", role: "status", "aria-live": "polite" }, items.map((item, index) => /* @__PURE__ */ React.createElement("button", { type: "button", className: `consequence-card ${item.tone || ""}`, style: { animationDelay: `${index * 200}ms` }, key: item.id, onClick: () => onDismiss(item.id) }, item.text)));
+        return /* @__PURE__ */ React.createElement("div", { className: "consequence-stack", role: "status", "aria-live": "polite" }, items.map((item, index) => /* @__PURE__ */ React.createElement("button", { type: "button", className: `consequence-card ${item.tone || ""}`, style: { animationDelay: `${index * 200}ms` }, key: item.id, onClick: () => onDismiss(item.id) }, item.title ? /* @__PURE__ */ React.createElement("strong", { className: "consequence-title" }, item.title) : null, item.text)));
       }
       function AmbientTicker({ state }) {
         const lines = C.selectors.ambientFlavor(state);

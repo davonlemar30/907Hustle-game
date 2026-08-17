@@ -17,7 +17,12 @@ const PROJECT_STATUS = path.join(ROOT, "PROJECT_STATUS.md");
 
 // "current as of **v1.17**" - the bold markers are optional so a plain
 // "current as of v1.17" keeps working if the heading is ever restyled.
-const ARCHITECTURE_VERSION = /current as of\s+\**v(\d+)\.(\d+)([a-z]?)\**/i;
+//
+// Global, and the highest match wins (v1.24). Reading only the first occurrence
+// meant a historical note further down the file - "this section is current as of
+// v1.9" - would silently become the version under test, and the check would
+// start reporting a lag that the header does not have, or miss one it does.
+const ARCHITECTURE_VERSION = /current as of\s+\**v(\d+)\.(\d+)([a-z]?)\**/gi;
 
 // Section headers in PROJECT_STATUS.md read "## v1.17 Voice & Copy Polish ...".
 // Only ## headers count: prose elsewhere mentions old versions constantly and
@@ -54,12 +59,15 @@ function read(file) {
 const architectureText = read(ARCHITECTURE);
 const statusText = read(PROJECT_STATUS);
 
-const architectureMatch = architectureText.match(ARCHITECTURE_VERSION);
-if (!architectureMatch) {
+let architectureKey = null;
+for (const match of architectureText.matchAll(ARCHITECTURE_VERSION)) {
+  const key = toKey(match[1], match[2], match[3]);
+  if (!architectureKey || compare(key, architectureKey) > 0) architectureKey = key;
+}
+if (!architectureKey) {
   console.error('check-docs: ARCHITECTURE.md has no "current as of vX.XX" line to read.');
   process.exit(1);
 }
-const architectureKey = toKey(architectureMatch[1], architectureMatch[2], architectureMatch[3]);
 
 let latestKey = null;
 for (const match of statusText.matchAll(STATUS_HEADER)) {

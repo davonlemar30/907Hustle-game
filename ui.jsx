@@ -147,7 +147,7 @@ function Header({ state, onMenu }) {
   // them as five segments; the exact number stays the accessible name.
   const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil((value / ceiling) * 5))), total: 5 });
   return <header className="top">
-    <h1 className="sr-only">907Hustle: One Good Run · v1.23</h1>
+    <h1 className="sr-only">907Hustle: One Good Run · v1.26</h1>
     <div className="hud primary-hud">
       <Hud label="Day / Time" bare value={<><b className="hud-day">Day {state.run.day}{state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""}</b><span className="hud-slot">{C.SLOTS[state.run.slot]}</span><SlotPips slot={state.run.slot} /></>} />
       <Hud label="District" bare accent="muted" value={<><span className="hud-diamond" aria-hidden="true">◆</span>{area.name}</>} />
@@ -195,15 +195,13 @@ function NavIcon({ id }) { return <svg className="nav-icon" viewBox="0 0 24 24" 
 // phone without looking. The order either side of it runs outward from what the
 // player does most.
 const NAV = [["street", "Street"], ["hustle", "Hustle"], ["home", "Home"], ["phone", "Phone"], ["more", "More"]];
-function Navigation({ tab, setTab, hustleVisible, phoneBadge }) {
-  const items = NAV.filter(([id]) => id !== "hustle" || hustleVisible);
-  const shown = new Set(items.map(([id]) => id));
+// v1.26: every tab is always present. Hustle used to stay hidden until dirty
+// income landed, with its column held open so Home never moved. Jobs lives on
+// Hustle now, and legal work exists from the first morning, so the tab has a
+// reason to be there on Day 1. `hustle.visible` still gates the illegal
+// sections inside the screen — it just no longer gates the rail.
+function Navigation({ tab, setTab, phoneBadge }) {
   return <nav className="nav" style={{ gridTemplateColumns: `repeat(${NAV.length}, minmax(44px, 1fr))` }} aria-label="Primary game navigation">{NAV.map(([id, label]) => {
-    // Hustle stays hidden until the run gives the player a reason for it, but
-    // its column is held open. Home is the anchor of this bar; letting it slide
-    // left on Day 1 and jump back when Hustle unlocks would move the one
-    // control the thumb is meant to find without looking.
-    if (!shown.has(id)) return <span key={id} className="nav-gap" aria-hidden="true" />;
     const badge = id === "phone" && phoneBadge > 0 ? <span className="nav-badge" aria-hidden="true">{phoneBadge > 9 ? "9+" : phoneBadge}</span> : null;
     return <button key={id} className={`${id === "home" ? "home-tab " : ""}${tab === id ? "active" : ""}`.trim() || undefined} onClick={() => setTab(id)}><span className="nav-glyph"><NavIcon id={id} />{badge}</span>{label}</button>;
   })}</nav>;
@@ -747,33 +745,27 @@ function GymCard({ state, dispatch }) {
   return <div className="card"><div className="card-title">Spenard Community Gym<small>{money(gym.cost)}</small></div><p className="compact">{state.memberships.gym ? "Membership active." : "$30 first membership plus today's session."} Training uses one part of day.</p><div className="btn-row">{gym.activities.map((activity) => <button className="btn secondary" key={activity.id} disabled={!gym.available || !activity.unlocked} onClick={() => dispatch({ type: "TRAIN_ATTRIBUTE", activity: activity.id })}>{activity.label}</button>)}</div><p className="muted compact">{gym.activities.find((activity) => !activity.unlocked)?.reason || "Sparring moves fastest and can leave a mark."}</p><p className="muted compact">Session {gym.sessionsToday + 1} today · cost {money(gym.cost)} · one part of day{gym.streak >= 3 ? " · the routine is showing" : ""}</p></div>;
 }
 
+// v1.26: Jobs moved to the Hustle tab and the duplicate Contacts list is gone —
+// contacts live in the Phone and under Street → People, and did not need a third
+// door. That emptied the Activities page down to Wander alone, so Wander is a
+// root row now rather than a one-item submenu.
 function ExploreSpenard({ state, dispatch, page, setPage, onBack }) {
-  const jobs = C.selectors.discoveredJobs(state);
-  const contacts = C.selectors.knownSocialContacts(state);
   const nightOwl = C.selectors.districtActionAvailability(state, "night_owl");
   const nile = C.selectors.nileAvailability(state);
   const closedNightOwlPage = page === "nightowl" && !nightOwl.available;
   const effectivePage = closedNightOwlPage ? "places" : page;
   useEffect(() => { if (closedNightOwlPage) setPage("places"); }, [closedNightOwlPage]);
-  if (page.startsWith("job:")) { const job = C.SPENARD_JOBS.find((item) => item.id === page.split(":")[1]); return <JobDetail state={state} dispatch={dispatch} job={job} onBack={() => setPage("jobs")} />; }
   if (effectivePage === "nightowl") return <NightOwlHub state={state} dispatch={dispatch} onBack={() => setPage("places")} />;
   if (effectivePage === "nile") return <TheNileHub state={state} dispatch={dispatch} onBack={() => setPage("places")} />;
-  if (effectivePage === "jobs") return <><PageHead title="Spenard Jobs" sub="Found work still requires an application and callback" onBack={() => setPage("activities")} /><div className="scroll">{jobs.map((job) => { const record = state.jobs.records[job.id]; const pay = C.selectors.jobPayRange(state, job.id); const availability = C.selectors.jobAvailability(state, job.id); const slots = job.id === "night_owl" && record.rank >= 1 ? [2, 3] : job.slots; return <MenuRow key={job.id} title={job.name} status={`${money(pay.min)}–${money(pay.max)}`} description={`${slots.map((slot) => C.SLOTS[slot]).join(" / ")} · Risk: ${job.risk} · Rank ${record.rank} · ${availability.available ? "Available" : availability.reason}`} tone={availability.available ? "" : "muted"} onClick={() => setPage(`job:${job.id}`)} />; })}</div></>;
-  if (effectivePage === "contacts") return <><PageHead title="Contacts" sub="Personal and social contacts in one place" onBack={() => setPage("activities")} /><div className="scroll"><SocialContacts state={state} dispatch={dispatch} /></div></>;
   if (effectivePage === "places") return <><PageHead title="Places" sub="Specific doors in Spenard" onBack={() => setPage("root")} /><div className="scroll">
     <MenuRow title="Night Owl" status={nightOwl.available ? "Open" : nightOwl.reason} description="Coffee, community board, Mina, regulars, and a counter job." disabled={!nightOwl.available} onClick={() => setPage("nightowl")} />
     {state.discovered.spenardGym && <GymCard state={state} dispatch={dispatch} />}
     {nile.discovered && <MenuRow title="The Nile" status={nile.wellness.available ? "Open" : nile.secondFloorAccess && nile.coffee.available ? "Upstairs open" : nile.wellness.reason} description={nile.secondFloorAccess ? "Blue Nile Wellness, and the room above it." : "Blue Nile Wellness. Steam, stones, and the woman who runs the building."} onClick={() => setPage("nile")} />}
     <div className="card"><div className="card-title">Phone Store<small>WALK-IN</small></div><p className="compact">Pay in person even after service shuts off.</p><button className="btn full primary" disabled={state.run.day < state.phone.billDueDay || state.player.cash < C.PHONE_BILL} onClick={() => dispatch({ type: "PAY_PHONE_BILL", surface: "store" })}>Pay phone bill · {money(C.PHONE_BILL)}<span className="action-copy">Free · no time passes</span></button></div>
   </div></>;
-  if (effectivePage === "activities") return <><PageHead title="Activities" sub="Work, wandering, and people" onBack={() => setPage("root")} /><div className="scroll">
-    <MenuRow title="Wander" status={`${state.world.locations.explorationCount} walks`} description="Walk around, discover work, and see what happens." onClick={() => dispatch({ type: "WANDER_SPENARD" })} />
-    <MenuRow title="Jobs" status={`${jobs.length} found`} description="Applications, callbacks, and available shifts." onClick={() => setPage("jobs")} />
-    <MenuRow title="Contacts" status={`${C.selectors.personalContacts(state).length + contacts.length} known`} description="Personal and social contacts." onClick={() => setPage("contacts")} />
-  </div></>;
   return <><PageHead title="Explore Spenard" sub="Learn what the neighborhood has to offer" onBack={onBack} /><div className="scroll">
     <MenuRow title="Places" status={`${2 + (state.discovered.spenardGym ? 1 : 0) + (nile.discovered ? 1 : 0)} known`} description={nile.discovered ? "Night Owl, The Nile, community gym, and phone store." : "Night Owl, community gym, and phone store."} onClick={() => setPage("places")} />
-    <MenuRow title="Activities" status={`${jobs.length} jobs`} description="Wander, Jobs, and Contacts." onClick={() => setPage("activities")} />
+    <MenuRow title="Wander" status={`${state.world.locations.explorationCount} walks`} description="Walk around, discover work, and see what happens." onClick={() => dispatch({ type: "WANDER_SPENARD" })} />
   </div></>;
 }
 
@@ -828,7 +820,7 @@ function AroundHere({ state, dispatch, onBack, initialPage = "root" }) {
   const localActions = actions.filter((entry) => !["return_spenard", "walk_spenard"].includes(entry.id));
   return <><PageHead title={area.name} sub="Places, activities, and people without leaving the neighborhood" onBack={onBack} /><div className="scroll">
     <ReturnToSpenardActions state={state} dispatch={dispatch} />
-    {actionOf("explore_spenard") && <MenuRow title="Explore Spenard" status={state.world.locations.explorationCount ? `${state.world.locations.explorationCount} walks` : "New arrival"} description="Jobs, wandering, and people you meet through work." onClick={() => setPage("explore")} />}
+    {actionOf("explore_spenard") && <MenuRow title="Explore Spenard" status={state.world.locations.explorationCount ? `${state.world.locations.explorationCount} walks` : "New arrival"} description="Wandering, and the doors the neighborhood opens." onClick={() => setPage("explore")} />}
     {actionOf("local_intel") && <LearnedInSpenard state={state} />}
     {area.id === "downtown" && <div className="card"><div className="card-title">Downtown<small>EARLY SCAFFOLD</small></div><p className="compact muted">No local jobs, people, or activities are available here yet.</p></div>}
     {!localActions.length && area.id !== "downtown" && <div className="card locked"><div className="card-title">No local actions</div><p className="compact muted">Only the route back to Spenard is available here.</p></div>}
@@ -968,7 +960,7 @@ function NineOhSevenList({ state, dispatch, onBack, surface = "phone" }) {
   </div></>;
 }
 
-function Travel({ state, dispatch, page, setPage }) {
+function Travel({ state, dispatch, page, setPage, navigate }) {
   if (page === "destinations") return <Destinations state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   if (page === "around" || page.startsWith("around:")) return <AroundHere state={state} dispatch={dispatch} onBack={() => setPage("root")} initialPage={page.startsWith("around:") ? page.slice("around:".length) : "root"} />;
   if (page === "household") return <Household state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
@@ -981,20 +973,20 @@ function Travel({ state, dispatch, page, setPage }) {
   // down inside whichever of those three actually owns it.
   const atHome = state.world.currentNeighborhoodId === C.HOME_DISTRICT_ID;
   return <><PageHead title="Travel" sub="Where to go, how to get there, and what is around you" /><div className="scroll">
-    {shift && <button className={`quick-shift${shift.available ? "" : " locked"}`} disabled={!shift.available} onClick={() => setPage(`around:job:${shift.jobId}`)}>
+    {shift && <button className={`quick-shift${shift.available ? "" : " locked"}`} disabled={!shift.available} onClick={() => navigate("hustle", "root", null, `job:${shift.jobId}`)}>
       <span className="quick-shift-main"><b>{shift.name} shift</b><small>{shift.available ? `${money(shift.pay.min)}–${money(shift.pay.max)} · one part of day` : shift.reason}</small></span>
       <span className="quick-shift-go" aria-hidden="true">›</span>
     </button>}
-    <MenuRow title={area.name} status={atHome ? "You are here" : "Return route ready"} description={atHome ? "Jobs, wandering, contacts, and every door you have found." : "Local actions and the route back to Spenard."} onClick={() => setPage("around")} />
+    <MenuRow title={area.name} status={atHome ? "You are here" : "Return route ready"} description={atHome ? "Wandering, local business, and every door you have found." : "Local actions and the route back to Spenard."} onClick={() => setPage("around")} />
     <MenuRow title="Home" status={atHome ? `${state.people.household.warnings}/3 warnings` : covered ? "Pass covers return" : "$5 return"} description="Storage, Yalonda, Juan, and sleep." disabled={state.people.household.evicted} onClick={() => setPage("household")} />
     <MenuRow title="Leave Spenard" status={state.world.transport.weekPass ? "7-day pass" : covered ? "Day pass" : "$5 a ride"} description={covered ? "Known destinations. Your pass covers the fare." : "Known destinations. The People Mover is $5 a ride unless a pass covers it."} onClick={() => setPage("destinations")} />
   </div></>;
 }
 
-function StreetScreen({ state, dispatch, page, setPage, onTrade }) {
+function StreetScreen({ state, dispatch, page, setPage, onTrade, navigate }) {
   if (page === "people") return <People state={state} dispatch={dispatch} navigateMore={() => setPage("root")} />;
   if (page === "market") return <Market state={state} onTrade={onTrade} />;
-  if (page.startsWith("travel:")) return <Travel state={state} dispatch={dispatch} page={page.slice(7)} setPage={(next) => setPage(`travel:${next}`)} />;
+  if (page.startsWith("travel:")) return <Travel state={state} dispatch={dispatch} page={page.slice(7)} setPage={(next) => setPage(`travel:${next}`)} navigate={navigate} />;
   const area = areaOf(state);
   return <><PageHead title="Street" sub="Destinations, local places, activities, and people" /><div className="scroll">
     <MenuRow title="Travel" status={`In ${area.name}`} description="Travel, explore, work, train, and handle local business." onClick={() => setPage("travel:root")} />
@@ -1019,13 +1011,27 @@ function SharkPanel({ state, dispatch }) {
   </div>;
 }
 
+// v1.26: Jobs moved here from Street → Travel → Around Here → Explore Spenard →
+// Activities → Jobs. The tab is the one income surface, legal work first, so the
+// player's own job is one tap from the rail instead of five screens down. The
+// Jobs row is the only section that renders before `hustle.visible` — legal work
+// exists on Day 1, and the illegal half keeps its own locked card below it.
 function HustleScreen({ state, dispatch, page, setPage, onTrade }) {
-  if (!state.hustle.visible && page !== "market") return <><PageHead title="Hustle" sub="Illegal-income work stays off the rail until it exists" /><div className="scroll"><div className="card locked"><div className="card-title">No hustle yet<small>LOCKED</small></div><p>Complete the first dirty-income action. A discovered street market remains available through Street.</p></div></div></>;
   if (page === "market") return <Market state={state} onTrade={onTrade} />;
   if (page === "boost") return <Boost state={state} dispatch={dispatch} />;
   if (page === "stickup") return <Rob state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   if (page === "shark") return <><PageHead title="Shark" sub="Borrower profiles, qualitative risk, and open notes" onBack={() => setPage("root")} /><SharkPanel state={state} dispatch={dispatch} /></>;
-  return <><PageHead title="Hustle" sub="Illegal-income work in one place" /><div className="scroll">
+  if (page.startsWith("job:")) { const job = C.SPENARD_JOBS.find((item) => item.id === page.split(":")[1]); return <JobDetail state={state} dispatch={dispatch} job={job} onBack={() => setPage("jobs")} />; }
+  const jobs = C.selectors.discoveredJobs(state);
+  if (page === "jobs") return <><PageHead title="Jobs" sub="Found work still requires an application and callback" onBack={() => setPage("root")} /><div className="scroll">{jobs.map((job) => { const record = state.jobs.records[job.id]; const pay = C.selectors.jobPayRange(state, job.id); const availability = C.selectors.jobAvailability(state, job.id); const slots = job.id === "night_owl" && record.rank >= 1 ? [2, 3] : job.slots; return <MenuRow key={job.id} title={job.name} status={`${money(pay.min)}–${money(pay.max)}`} description={`${slots.map((slot) => C.SLOTS[slot]).join(" / ")} · Risk: ${job.risk} · Rank ${record.rank} · ${availability.available ? "Available" : availability.reason}`} tone={availability.available ? "" : "muted"} onClick={() => setPage(`job:${job.id}`)} />; })}</div></>;
+  // The active employer reads from the hub itself. Whether tonight's shift is
+  // still open is the one thing worth knowing without opening the list.
+  const activeJob = C.SPENARD_JOBS.find((item) => item.id === state.jobs.activeJobId);
+  const activeShift = activeJob ? C.selectors.jobAvailability(state, activeJob.id) : null;
+  return <><PageHead title="Hustle" sub="All your money, one place" /><div className="scroll">
+    <MenuRow title="Jobs" status={activeJob ? `Rank ${state.jobs.records[activeJob.id].rank}` : `${jobs.length} found`} description={activeJob ? `${activeJob.name} · ${activeShift.available ? "Shift available" : activeShift.reason}` : "Applications, callbacks, and available shifts."} onClick={() => setPage("jobs")} />
+    {!state.hustle.visible && <div className="card locked"><div className="card-title">No hustle yet<small>LOCKED</small></div><p>Complete the first dirty-income action. A discovered street market remains available through Street.</p></div>}
+    {state.hustle.visible && <>
     {state.market.visible && <MenuRow title="Market" status={`${state.hustle.soldUnits} units sold`} description="Buy, sell, and finish a market session." onClick={() => setPage("market")} />}
     {state.boost.visible && <MenuRow title="Boost" status={`Tier ${state.boost.tier}`} description="Store work, targets, and the fence." onClick={() => setPage("boost")} />}
     {state.rob.visible && <MenuRow title="Stickup" status={`Tier ${Math.max(state.stick.tier, 1)} · ${state.stats.robbery.successes} successes`} description="Street robbery, registers, and organized work." onClick={() => setPage("stickup")} />}
@@ -1035,6 +1041,7 @@ function HustleScreen({ state, dispatch, page, setPage, onTrade }) {
         exists — a fresh run's income overview carries no rival NPC data. When
         his attention forces a decision, this card is the pressure surface. */}
     {(state.npc.curtis.relationship !== "unaware" || state.npc.curtis.attention >= 4) && <div className="card"><div className="card-title">Rival pressure<small>ATTENTION {state.npc.curtis.attention}/8</small></div><p>Curtis Foyer reads this operation at Respect {state.npc.curtis.respect} · {state.npc.curtis.relationship}. Attention comes from visible sales, rolling illegal revenue, reports, and network escalation.</p>{state.npc.curtis.attention >= 4 && !state.npc.curtis.friendship && !state.npc.curtis.taxActive && <div className="btn-row"><button className="btn secondary" onClick={() => dispatch({ type: "CURTIS_DECISION", choice: "pay_tax" })}>Pay tax</button><button className="btn secondary" onClick={() => dispatch({ type: "CURTIS_DECISION", choice: "friendship" })}>Friendship</button><button className="btn secondary" onClick={() => dispatch({ type: "CURTIS_DECISION", choice: "guarded" })}>Stay guarded</button><button className="btn primary" onClick={() => dispatch({ type: "CURTIS_DECISION", choice: "reject" })}>Reject</button></div>}</div>}
+    </>}
   </div></>;
 }
 
@@ -1454,9 +1461,11 @@ function PhoneScreen({ state, dispatch, onBack, openList, navigateMore }) {
     </AccordionSection>
     <AccordionSection title="Bills" badge={billsDueSoon} badgeVariant={bills.some((row) => row.severity === 2) ? "danger" : "warning"}>
       {bills.length ? bills.map((row) => <div className={`bill-row${row.severity === 2 ? " bad" : row.severity === 1 ? " warn" : row.paid ? " paid" : ""}`} key={row.id}>
-        <span className="bill-name"><b>{row.name}</b><small>{row.where}</small></span>
+        <span className="bill-name"><b>{row.name}</b><small>{row.pay && !row.pay.disabled ? "Paid from cash on hand" : row.where}</small></span>
         <span className="bill-meta"><b>{money(row.amount)}</b><small className="bill-status">{row.due} · {row.status}</small></span>
+        {row.pay && <button className="btn bill-pay" disabled={row.pay.disabled} onClick={() => dispatch(row.pay.action)}>Pay{row.pay.disabled && row.pay.reason ? <span className="action-copy">{row.pay.reason}</span> : null}</button>}
       </div>) : <div className="card compact muted">No bills yet.</div>}
+      {bills.length > 0 && !billsDueSoon && <div className="card compact muted">Paid up. Nothing is due yet.</div>}
     </AccordionSection>
     <AccordionSection title="Today's Log" meta={`${dayLog.length} today`}>
       {dayLog.length ? dayLog.map((entry, index) => <div className={`card compact ${entry.tone || ""}`} key={index}>{entry.text}</div>) : <div className="card compact muted">Nothing logged today.</div>}
@@ -1470,22 +1479,40 @@ function PhoneScreen({ state, dispatch, onBack, openList, navigateMore }) {
 }
 
 // v1.9c — assembles the Bills rows from existing state only. Severity 2 needs
-// action now (red), 1 is due within two days (amber), 0 is routine. Rows are
-// display-only; each names its canonical pay surface instead of duplicating
-// the pay dispatch and its gating here.
+// action now (red), 1 is due within two days (amber), 0 is routine.
+//
+// v1.26 — the two bills the player can settle from their own pocket now carry a
+// `pay` descriptor and the row renders a button for it. Rent and the phone bill
+// are what the lose condition is actually made of, and reading "Pay at Home" on
+// a screen that would not let you pay was the whole problem. The descriptor
+// mirrors each reducer's own guard rather than inventing a second rule, so a
+// button is never offered for a dispatch the reducer would drop on the floor:
+// rent cannot be pre-paid (PAY_RENT no-ops before the due day), and a dead phone
+// still has to be settled in person. Crew wages and Dre's note keep naming their
+// surface instead — both have real screens of their own, and neither is a
+// one-tap amount.
 function phoneBills(state) {
   const day = state.run.day;
   const rows = [];
   const upcoming = (dueDay) => (dueDay - day <= 2 ? { status: "Due soon", severity: 1 } : { status: "Upcoming", severity: 0 });
   const phoneDue = state.phone.billDueDay;
+  const phonePayable = day >= phoneDue || state.phone.daysPastDue > 0 || !state.phone.active;
   rows.push({ id: "phone", name: "Phone service", amount: C.PHONE_BILL, where: "Pay at Night Owl or the Phone Store", due: `Day ${phoneDue}`,
+    pay: { action: { type: "PAY_PHONE_BILL", surface: "phone" },
+      disabled: !phonePayable || !state.phone.active || state.player.cash < C.PHONE_BILL,
+      reason: !state.phone.active ? "Pay at the Phone Store"
+        : !phonePayable ? `Due Day ${phoneDue}`
+        : state.player.cash < C.PHONE_BILL ? `Need ${money(C.PHONE_BILL)}` : "" },
     ...(!state.phone.active ? { status: "Service off", severity: 2 }
       : state.phone.daysPastDue > 0 ? { status: "Past due", severity: 2 }
       : day >= phoneDue ? { status: "Due today", severity: 1 }
       : upcoming(phoneDue)) });
   if (!state.people.household.evicted) {
     const rentDue = state.obligations.rentDueDay;
-    rows.push({ id: "rent", name: "Rent", amount: C.WEEKLY_RENT, where: "Pay at Home", due: `Day ${rentDue}`,
+    rows.push({ id: "rent", name: "Rent", amount: C.WEEKLY_RENT, where: "Pay Yalonda", due: `Day ${rentDue}`,
+      pay: { action: { type: "PAY_RENT" },
+        disabled: day < rentDue || state.player.cash < C.WEEKLY_RENT,
+        reason: day < rentDue ? `Due Day ${rentDue}` : state.player.cash < C.WEEKLY_RENT ? `Need ${money(C.WEEKLY_RENT)}` : "" },
       ...(day > rentDue ? { status: "Past due", severity: 2 }
         : day === rentDue ? { status: "Due now", severity: 2 }
         : upcoming(rentDue)) });
@@ -1765,7 +1792,7 @@ function MenuModal({ state, dispatch, onClose, onTitle }) {
   return <><Modal title="Run menu" onClose={onClose}>
     <ExpandableMoreSection
       collapsedContent={<p className="popup-lead">Autosave is on. This run saves to your browser after every action.</p>}
-      expandedContent={<p className="popup-flavor">907Hustle v1.23 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
+      expandedContent={<p className="popup-flavor">907Hustle v1.26 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
       moreLabel="Save detail" lessLabel="Hide detail" />
     <button className="btn full primary" onClick={onTitle}>Return to Title</button>
     <button className="btn full secondary choice" onClick={() => setConfirmRestart(true)}>Restart Run<span>Creates a new seed and returns to Street Name entry.</span></button>
@@ -1942,7 +1969,7 @@ function GameShell({ state, dispatch, onTitle }) {
   const navigateMore = () => navigate("more", "finances", "debt");
   const screens = {
     home: <Home state={state} dispatch={act} navigate={navigate} />,
-    street: <StreetScreen state={state} dispatch={act} page={streetPage} setPage={setStreetPageSafe} onTrade={setTrade} />,
+    street: <StreetScreen state={state} dispatch={act} page={streetPage} setPage={setStreetPageSafe} onTrade={setTrade} navigate={navigate} />,
     hustle: <HustleScreen state={state} dispatch={act} page={hustlePage} setPage={setHustlePageSafe} onTrade={setTrade} />,
     phone: <PhoneScreen state={state} dispatch={act} openList={() => navigate("more", "907list")} navigateMore={navigateMore} />,
     more: <More state={state} dispatch={act} features={features} page={nav.more} setPage={setMorePage} sub={nav.sub} subToken={nav.token} />,
@@ -1957,7 +1984,7 @@ function GameShell({ state, dispatch, onTitle }) {
       <Feed entries={state.log} />
       {tonkLive && !tonkFullscreen && <div className="action-bar one"><button className="btn secondary" onClick={() => setTonkFullscreen(true)}>Back to the table<small>Your hand is still live upstairs at The Nile</small></button></div>}
       {state.run.overtimeArmed && <div className="action-bar one"><button className="btn secondary" onClick={() => act({ type: "CONFIRM_END_DAY" })}>End Day Now<small>Cancel the armed extension and process tonight</small></button></div>}
-      <Navigation tab={tab} setTab={setTab} hustleVisible={state.hustle.visible} phoneBadge={state.phone.active ? state.phone.inbox.length : 0} />
+      <Navigation tab={tab} setTab={setTab} phoneBadge={state.phone.active ? state.phone.inbox.length : 0} />
     </div>
     {/* Grain and scanlines, painted once over the whole shell. z-index 5 keeps
         it under every modal layer (backdrop 50, encounter 58, result 60). */}

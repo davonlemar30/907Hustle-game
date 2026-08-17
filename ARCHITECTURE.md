@@ -1,8 +1,25 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.25**. This file
+How 907Hustle: One Good Run is put together, current as of **v1.26**. This file
 is meant to be the only thing you need to read before changing code; for *why*
 the game is designed the way it is, see the ClickUp docs at the bottom.
+
+## The run has no fixed length
+
+**There is no day cap, no timed ending, and no "day 7 fork."** The player hustles
+indefinitely. The only way a run ends is a lose condition — eviction, and the
+other `endRun` paths. `RUN_DAYS = 7` (`game-core.js:30`) is a *debt deadline and
+checkpoint* constant: it seeds `lender.dueDay`, `run.checkpointDay`, and the
+income projection in `collectedPerRun`. It has never terminated a run, and a
+v1.26 test walks an unpaid run to **day 29** before eviction ends it.
+
+The 10-day cap inside `tests/simulate-runs.js` is an **instrument boundary** — it
+bounds the harness so hashes are comparable, nothing more. Do not read it as a
+design position, and do not evaluate balance, pacing, or reachability against a
+day count. Territory is deliberately mid-to-late-game content funded by early
+economy systems (weed, booze, robbery tiers) that are still being built out; that
+it is not reachable inside the simulator's ten days is a statement about the
+instrument, not about the game.
 
 ## The shape of it
 
@@ -1100,6 +1117,32 @@ name will not find them. Before deleting a rule, check for
 `.encounter-modal-backdrop`, and `` `entity-${entityId}` ``,
 `` `priority-row ${item.tone}` ``, `` `card ${entry.tone}` ``.
 
+## The rail, and where income lives
+
+Five tabs, fixed from the first morning: **Street · Hustle · Home · Phone ·
+More**. None of them is conditional. Hustle used to appear only once
+`hustle.visible` flipped on the first dirty income; v1.26 retired that gate when
+Jobs moved onto the tab, because legal work exists on Day 1 and a hidden tab
+would have made the player's own job unreachable. `hustle.visible` still gates
+the illegal sections *inside* `HustleScreen` — it no longer gates the rail.
+
+**Hustle is the one income surface**, legal work first: Jobs → Market → Boost →
+Stickup → Shark. Jobs is the only row that renders before `hustle.visible`, and
+the row itself carries the active employer, rank, and whether tonight's shift is
+still open, so employment is readable without opening the list. Job discovery is
+unchanged and still happens through `WANDER_SPENARD` out on the Street — finding
+work is a thing you do in the neighborhood; managing it is a thing you do here.
+
+**Bills are payable from the Phone.** The Bills accordion's rent and phone rows
+dispatch the long-standing `PAY_RENT` / `PAY_PHONE_BILL` cases, which spend
+through `spendCash` (dirty pool first), reset the obligation, write a feed line,
+and cost no slot and no energy. The row's disabled state mirrors each reducer's
+own guard rather than inventing a second rule, so a button is never offered for a
+dispatch that would be dropped: rent cannot be pre-paid, and a dead phone must
+still be settled in person. `PAY_PHONE_BILL` takes a `surface` — `store` answers
+to the Spenard storefront's district gate, while `online` and `phone` do not,
+because those two are surfaces the player carries with them.
+
 ## Protected APIs
 
 `tests/ui-contract.test.js` asserts against `ui.jsx` **as source text**, so
@@ -1117,7 +1160,7 @@ is unsupported.
 ## Testing
 
 ```bash
-npm test                              # 799 tests
+npm test                              # 813 tests
 node tests/simulate-runs.js --total 200
 node tests/simulate-runs.js --total 2000   # slower, for balance work
 ```
@@ -1140,11 +1183,19 @@ before and after: a matching hash proves you changed nothing the player can see.
 Nothing in the run path may use `Math.random()` — only `makeRandom(seed)`, and
 not even that where a `stringHash` off the seed will do.
 
-**Current baselines, set at v1.25** — `--total 200`
+**Current baselines, set at v1.25 and re-verified at v1.26** — `--total 200`
 `25afb74e10487dee6fc62641d944d3cea093873f28c740ba43e10bb0828d6dc1`, `--total 2000`
 `f10432b1f61624cbc8df35e299a2d36ca369e1e822ca0d6578a337562e524665`. They moved
 for the first time since v1.20, and only because v1.25 added a fourteenth
 strategy plus six territory telemetry keys; `game-core.js` was untouched.
+
+**A UI-only build cannot move these hashes.** The simulator `require`s
+`game-core.js` and nothing else — it never reads `ui.jsx`, `v05.css`, or
+`index.html` — so a screen can be rebuilt from scratch without the harness
+noticing. v1.26 moved Jobs to another tab, deleted two pages, and added bill
+payment buttons, and both hashes came back byte-identical. That is the expected
+result for a build of that shape, not a lucky one: if a UI move *does* move a
+hash, the diff touched `game-core.js` in a way you did not intend.
 
 **Adding or removing a strategy invalidates a raw before/after diff.** `--total N`
 splits a fixed run budget across the strategy table, so a fourteenth entry
@@ -1174,6 +1225,8 @@ simulation never lands an arrest on him and a de-escalatable encounter in the
 same run. A hash cannot prove a case it never reaches, so that one is pinned by a
 unit test in `tests/v1-15.test.js`.
 
+The v1.20-through-v1.24 baselines, superseded by the v1.25 pair above:
+
 | Run | SHA-256 |
 |---|---|
 | `--total 200` | `c8b3bf0745871555c326f4861b0a8d576ce149c9fa7bd871e9215b51236092d8` |
@@ -1181,11 +1234,12 @@ unit test in `tests/v1-15.test.js`.
 
 When a hash moves, read the per-strategy metric blocks — the simulator reports
 `arrests` and `crewJailedAtEnd` for exactly that. The two argument forms differ:
-`--total 200` splits 200 runs across the thirteen strategies, a bare `200` runs
+`--total 200` splits 200 runs across the fourteen strategies, a bare `200` runs
 200 *per strategy*.
 
-The thirteen are cautious, balanced, aggressive, stickup, legal_worker, trader,
-thief, gambler, trainer, mixed_freedom, operator, flipper, and broker; the report
+The fourteen are cautious, balanced, aggressive, stickup, legal_worker, trader,
+thief, gambler, trainer, mixed_freedom, operator, flipper, broker, and
+territory; the report
 covers endings, economy, story beat counts, identity assignment, and dead ends.
 The two 907List strategies also report a `market` block with per-tier daily income
 against the design targets — the only way to tell a tuned tier ladder from

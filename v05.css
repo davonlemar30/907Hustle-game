@@ -662,9 +662,17 @@ body{background:
 .accordion-section.open .accordion-body-inner{padding-bottom:10px}
 @media(prefers-reduced-motion:reduce){.accordion-body,.accordion-chevron{transition:none}}
 
-/* v1.9c: Bills rows are display-only readouts, not buttons. */
-.bill-row{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid #262626}
+/* v1.9c: Bills rows were display-only readouts, not buttons.
+   v1.26: the two bills the player can settle from cash on hand carry a Pay
+   button, so the row is now a tap target and needs the 44px floor. The button
+   is the last flex child and never shrinks; the name column is what gives way
+   on a narrow phone, so 320px wraps the label instead of overflowing the row. */
+.bill-row{display:flex;align-items:center;gap:10px;min-height:44px;padding:9px 2px;border-bottom:1px solid #262626}
 .bill-row:last-of-type{border-bottom:0}
+.bill-pay{flex:none;min-height:44px;min-width:64px;padding:6px 10px;font-size:.68rem;background:linear-gradient(#292929,#161616)}
+.bill-pay .action-copy{font-size:.58rem;margin-top:1px}
+.bill-row.bad .bill-pay:not(:disabled){background:linear-gradient(#d63a30,#8f1711);border-color:#ef5146}
+@media(max-width:360px){.bill-row{flex-wrap:wrap}.bill-name{flex:1 1 100%}.bill-meta{flex:1;align-items:flex-start;text-align:left}}
 .bill-name{flex:1;min-width:0;display:flex;flex-direction:column}
 .bill-name b{font-size:.82rem}
 .bill-name small{margin-top:1px;font-size:.6rem;color:var(--muted)}

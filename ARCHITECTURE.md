@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.27**. This file
+How 907Hustle: One Good Run is put together, current as of **v1.28**. This file
 is meant to be the only thing you need to read before changing code; for *why*
 the game is designed the way it is, see the ClickUp docs at the bottom.
 
@@ -761,10 +761,10 @@ no second nightly function.
 
 | | Police raid | Curtis move |
 |---|---|---|
-| Reads | player Heat, `patrolFrequency`, Eli | `curtisVisibility`, awareness phase |
-| Ignores | `curtisVisibility` | Heat, `patrolFrequency`, Eli |
+| Reads | player Heat, `patrolFrequency`, Eli | `curtisVisibility`, awareness phase, **player Heat above 8** (v1.28) |
+| Ignores | `curtisVisibility` | `patrolFrequency`, Eli |
 | Runs on | **staffed** corners only | **every** corner the player holds |
-| Chance | `POLICE_BASE_CHANCE + heat * POLICE_HEAT_WEIGHT + patrol * POLICE_PATROL_WEIGHT - eli * POLICE_ELI_DISCOUNT`, capped 0.9 | `CURTIS_BASE_CHANCE * (visibility * CURTIS_VISIBILITY_WEIGHT) * CURTIS_PHASE_MULTIPLIER[phase] / defense` |
+| Chance | `POLICE_BASE_CHANCE + heat * POLICE_HEAT_WEIGHT + patrol * POLICE_PATROL_WEIGHT - eli * POLICE_ELI_DISCOUNT`, capped 0.9 | `CURTIS_BASE_CHANCE * (visibility * CURTIS_VISIBILITY_WEIGHT) * CURTIS_PHASE_MULTIPLIER[phase] * heatFactor / defense` |
 | Heat | **+1** | **none** — he is not the police |
 | Ownership | **never changes** | **flips to `curtis`** |
 | Observation | `heat_exposure / police_raid` on `neighborhood` | `defiance / block_lost_to_curtis` on `network` |
@@ -802,12 +802,42 @@ neither directly; his heat reduction keeps Heat lower, which lowers the police
 chance, and that interaction is emergent and correct.
 
 **Headcount still protects the corner.** Curtis's divisor is
-`max(1, soldiersAssigned.length) * RAID_DEFENSE_PER_SOLDIER * tone`, which keeps
-v1.20's promise that a second posted soldier halves the chance of losing the
-block. `CURTIS_BASE_CHANCE` is 0.12 rather than 0.06 precisely so that two
-posted soldiers land where a single blended roll used to — and so an
-**undefended** corner is the one that costs double. Claiming without defending
-is no longer free.
+`(posted > 0 ? posted * RAID_DEFENSE_PER_SOLDIER : CURTIS_UNSTAFFED_DEFENSE) * tone`,
+which keeps v1.20's promise that a second posted soldier halves the chance of
+losing the block. Claiming without defending is not free.
+
+**v1.28 fixed the floor, and it mattered more than it looks.** The divisor used
+to be `max(1, soldiersAssigned.length)`, which made an **empty** corner and a
+**one-soldier** corner arithmetically identical — so posting your first person on
+a corner bought nothing at all, and this file's own claim that an undefended
+corner "costs double" was only ever true against the two-soldier case.
+`CURTIS_UNSTAFFED_DEFENSE` is 0.5: nobody standing there is half a defender, so
+the first body halves the chance exactly like the second does. **This is where
+"probe the weakest" lives** — the resolver already rolls every corner
+independently, so there is no ordering to tie-break, only a number that has to
+reward him for reading the gap.
+
+**It also couples the two adversaries, and that is a real consequence rather than
+a side effect.** The police empty a corner; an emptied corner is the cheap one to
+walk onto. Measured at `watching`, the most-flipped corner is now Service Road
+Chokepoint (patrol 3) rather than Northern Lights Motel Row (visibility 3) —
+0.053 against 0.055 per block-night, with the chokepoint ahead on total loss
+rate. He still does not read patrol routes; the coupling runs entirely through
+who is standing on the corner. v1.21 asserted the split by proxy ("the
+most-hunted and most-raided corners are different ones") and that proxy is gone.
+The split is still real where it was always defined: **the police never change
+ownership, and Curtis never touches Heat.** Those two are pinned directly.
+
+**He reads Heat above 8 (v1.28).** `curtisHeatFactor(state)` is
+`1 + max(0, heat - CURTIS_HEAT_PROBE_FLOOR) * CURTIS_HEAT_PROBE_PER_POINT` — 1.0
+at or below Heat 8, 1.20 at 12, 1.35 at 15 — and it multiplies into
+`curtisMoveChance`. **This is not coordination.** He has no line to the police
+and no plan that involves them; a hot player is one whose soldiers keep getting
+arrested, and a thin corner is an easy corner. He gets luckier when you are hot
+without ever having decided to. It multiplies a threshold that is already
+compared against a hashed gate, so there is **no new draw and no new hash**. It
+is deliberately not in `curtisNightPlan`: a warning that got quieter because the
+player's Heat dropped would be reporting the odds rather than the man.
 
 **`curtisVisibility` now has two readers**: `eliPolicyBlockScore`'s `hold_ground`
 weight (defensive placement) and `curtisMoveChance` (his targeting). Both are
@@ -844,9 +874,9 @@ and re-derived when the day arrives.
 [{ blockId, name, weight }]   weight 2 = coming hard, 1 = just looking
 ```
 
-Ranked by `curtisVisibility`, then `earningPotential`, then id
-(`compareBlocksByCurtisPriority`, exported because the gossip surface has to
-reproduce the order without holding the plan). Cut to
+Ranked by **the grudge** (v1.28), then `curtisVisibility`, then
+`earningPotential`, then id (`compareBlocksByCurtisPriority`, exported because
+the gossip surface has to reproduce the order without holding the plan). Cut to
 `CURTIS_TARGET_DEPTH_BY_PHASE`, then `CURTIS_PRESSURE_BUDGET_BY_PHASE` is spent
 greedily down the list, capped at `CURTIS_MAX_PRESSURE_PER_BLOCK`:
 
@@ -861,6 +891,43 @@ greedily down the list, capped at `CURTIS_MAX_PRESSURE_PER_BLOCK`:
 in response is the thing a warning exists to let them change. And it **does not**
 feed `curtisMoveChance` — what he intends and what the night rolls are separate
 on purpose, so a warning is information rather than a promise.
+
+**v1.28 was asked to put "probe the weakest" in here and deliberately did not.**
+A planner that read soldier counts would change the instant a warned player moved
+somebody onto the warned corner, so the warning would falsify itself and the
+re-derivability above would go with it. He probes the weakest at resolution,
+through the defense divisor, where the odds already live.
+
+**The grudge (v1.28).** `record.curtisTookBack` is stamped by the resolver the
+first time he takes a corner back off the player, never cleared, and boolean and
+additive so `mergeDefaults` hydrates every older save to `false`. A corner
+carrying it outranks everything else — he wants his shit back. Note what it is
+**not** keyed on: every corner on the map starts `owner: "curtis"`, so "a corner
+the player took from him" describes all six and would rank nothing. A corner he
+has already come back for is the one with a history.
+
+**The bank (v1.28).** Pressure the plan could not spend — which only happens when
+he holds more budget than there are corners on his board — carries to tomorrow in
+`run.curtisPressureBank = { phase, points }`, capped at
+`CURTIS_PRESSURE_BANK_CAP` (2) and dropped when the phase moves. Session state on
+`run`, object-shaped, hydrated free: **the schema stays v11.**
+
+Two rules about it, both load-bearing:
+
+- **The plan reads it; the resolver writes it.** `curtisPressureLeftover` is the
+  read the resolver settles with, so the planner stays pure.
+- **It is settled BEFORE the warnings are raised**, in the day-end pass. That
+  ordering is the whole correctness argument: a warning raised tonight has to
+  name the plan the player re-derives tomorrow, so nothing feeding the plan may
+  move between the two. Writing the carry afterwards would telegraph one plan and
+  resolve a different one — exactly the v1.23 bug the plan exists to prevent.
+
+**The bank cannot change a loss rate, and that was measured rather than assumed.**
+The budget feeds the pressure *weight*; the weight is not an input to
+`curtisMoveChance`; and the resolver never consults the plan at all — it rolls
+every held corner independently. So the bank and the grudge move what the gossip
+surface, Pherris's level-3 read and the paid disclosures **say**, and nothing
+else. At `watching` the loss rate with them and without them is identical.
 
 **`curtisBlockTargets` is now the plan, flattened**, which closes the v1.21
 disagreement filed against it. The old list only *ranked*: it applied no phase
@@ -1232,7 +1299,7 @@ is unsupported.
 ## Testing
 
 ```bash
-npm test                              # 844 tests
+npm test                              # 868 tests
 node tests/simulate-runs.js --total 200
 node tests/simulate-runs.js --total 2000   # slower, for balance work
 ```
@@ -1255,11 +1322,22 @@ before and after: a matching hash proves you changed nothing the player can see.
 Nothing in the run path may use `Math.random()` — only `makeRandom(seed)`, and
 not even that where a `stringHash` off the seed will do.
 
-**Current baselines, set at v1.25 and re-verified at v1.26 and v1.27** — `--total 200`
+**Current baselines, set at v1.25 and re-verified at v1.26, v1.27 and v1.28** — `--total 200`
 `25afb74e10487dee6fc62641d944d3cea093873f28c740ba43e10bb0828d6dc1`, `--total 2000`
 `f10432b1f61624cbc8df35e299a2d36ca369e1e822ca0d6578a337562e524665`. They moved
 for the first time since v1.20, and only because v1.25 added a fourteenth
 strategy plus six territory telemetry keys; `game-core.js` was untouched.
+
+**v1.28 rewrote the nightly Curtis resolution and both hashes came back
+byte-identical — which is a finding about the simulator, not a lucky escape.**
+The build was expected to move them. It did not, because the `territory` strategy
+claims **zero blocks in 200 runs** (`territoryAttempts: 0`), so no strategy ever
+owns a corner, `curtisMoveChance` is never called on a player-owned block, and
+every constant this build tuned is unreachable from the harness. The fourteen
+strategies are therefore provably behavior-identical by the hash itself, and the
+block layer's only real instrument remains
+`tests/measure-lieutenant-modifiers.js`. **Do not read an unchanged hash as
+coverage of the territory layer.**
 
 **A UI-only build cannot move these hashes.** The simulator `require`s
 `game-core.js` and nothing else — it never reads `ui.jsx`, `v05.css`, or

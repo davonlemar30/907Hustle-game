@@ -2,39 +2,56 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-## Current Build (v1.27)
+## Current Build (v1.28)
 
-**v1.27: Disclosure Tables** — the intel economy opens. The engine has always
-known which of your corners Curtis is working tonight, how hard he is coming for
-each one, and what the police will roll against on every block you hold. Until
-now the only way to see any of it was hiring Pherris, so a player without her met
-a fully determined system blind. **Now people sell it to you.** Ask Dre what
-Curtis wants tonight and he names the corners; ask him again at Trusted and he
-tells you which one is coming hard. Juan counts cruisers on his route. Yalonda
-watches the street from the window. Biniam repeats what the table said upstairs.
-**How accurate the answer is depends on how well they know you** — at the gate
-they are approximately right, a band above it they are exact. Deshawn sells
-nothing about Curtis and never will: being off that network is the whole point of
-him.
+**v1.28: Curtis Pressure Balance Pass** — Phase 2.2 closes. Everything about
+Curtis on the block layer had been *authored*: a base chance somebody picked in
+v1.21, a phase multiplier ladder nobody had run, a pressure budget that was a
+first position. The balance pass was parked for months on the simulator's 10-day
+cap, and that cap was never the blocker — the territory harness starts from a
+corner-holding state and resolves nights through the real reducer, and has since
+v1.20. **So the constants got swept instead of argued about.** His base chance
+went 0.12 → 0.05 on a sweep run twice over, two phase multipliers moved because
+the measurement said which and why, and three things are new behavior: he reads
+your Heat above 8 and gets luckier — not because he talks to the police, but
+because a hot player's soldiers keep getting arrested and a thin corner is an
+easy corner; an empty corner is finally worth less than a corner with one person
+standing on it; and he holds a grudge about corners he has already taken back
+once.
 
 | | |
 |---|---|
 | Save schema | **v11** (`907ogr_v11`), loads v3 and up |
-| Tests | **844** passing (`npm test`) |
+| Tests | **868** passing (`npm test`) |
 | Simulation, 200 runs | `25afb74e10487dee6fc62641d944d3cea093873f28c740ba43e10bb0828d6dc1` |
 | Simulation, 2,000 runs | `f10432b1f61624cbc8df35e299a2d36ca369e1e822ca0d6578a337562e524665` |
 
-**Both hashes are unchanged since v1.25, and that is structural rather than
-lucky.** The simulator requires `game-core.js` and never reads `ui.jsx`;
-`selectRunSummary` picks explicit keys and never serializes `run`, so the new
-day-scoped cache cannot reach the harness output; and no strategy dispatches
-`BUY_DISCLOSURE` or builds a relationship far enough to reach a gate. 2,000 runs,
-zero dead ends.
+**Both hashes are unchanged, and that was not the expected result.** This build
+rewrote how the nightly Curtis pass resolves. The hashes held because the
+`territory` strategy claims **zero blocks in 200 runs** — no strategy in the
+simulator ever owns a corner, so nothing the build changed is reachable from that
+harness. It proves the thirteen original strategies behavior-identical for free.
+It also means the simulator does not cover the block layer, and an unchanged hash
+there must never be read as though it does. 2,000 runs, zero dead ends.
 
 **The run has no fixed length.** There is no day cap and no timed ending — the
 player hustles indefinitely, and a run ends only on a lose condition.
 `RUN_DAYS = 7` is a debt-deadline constant, and the 10-day cap in the simulator
 is an instrument boundary for hash comparability, not a design position.
+
+<details>
+<summary>Previously — v1.27: Disclosure Tables</summary>
+
+**v1.27: Disclosure Tables** — the intel economy opens. The engine has always
+known which of your corners Curtis is working tonight, how hard he is coming for
+each one, and what the police will roll against on every block you hold. Until
+v1.27 the only way to see any of it was hiring Pherris, so a player without her
+met a fully determined system blind. **Now people sell it to you**, and how
+accurate the answer is depends on how well they know you — at the gate they are
+approximately right, a band above it they are exact. Deshawn sells nothing about
+Curtis and never will: being off that network is the whole point of him.
+
+</details>
 
 <details>
 <summary>Previously — v1.21: Police Raids and Curtis Moves, Split</summary>

@@ -261,6 +261,13 @@ function measure(label, { runs, nights, ...config }) {
       const heldBefore = new Set(held.filter((id) => s.world.territoryBlocks[id].owner === "player"));
       s.run.dayEndPending = true;
       s = settle(C.reduceGame(s, { type: "CONFIRM_END_DAY" }));
+      // pinHeat holds the player at a fixed temperature for the whole
+      // measurement. Without it a Heat sweep measures the wrong thing entirely:
+      // Heat climbs on its own, a hot run gets the player arrested, an arrested
+      // run stops early, and the column ends up reporting how many nights the
+      // run survived rather than what the probe is worth. Cash is already
+      // reset on the same line and for the same kind of reason.
+      if (config.pinHeat) s.player.heat = config.heat;
       // Did he come back for one he had already taken once, or take a new one?
       for (const id of held) {
         if (!heldBefore.has(id) || s.world.territoryBlocks[id].owner === "player") continue;
@@ -381,12 +388,26 @@ if (require.main === module) {
     };
   });
 
-  // The probe on its own, at a fixed Heat, with the run held at that Heat so the
-  // column reads the multiplier rather than a run's Heat history. `watching` is
-  // the reference phase for the same reason the modifier ladder uses it.
-  const heatLevels = [0, 5, 8, 10, 12, 15].map((heat) =>
-    ({ heat, ...measure(`heat: ${heat}`, { runs, nights, curtisPhase: "watching", heat, blocks: ALL_BLOCK_IDS }) }))
-    .map(({ byBlock, ...row }) => row);
+  // The probe on its own, read directly off the gate rather than sampled from
+  // runs - and that choice is the measurement, not a shortcut.
+  //
+  // A full-run Heat sweep cannot answer this question honestly. Heat climbs on
+  // its own, a hot player gets arrested, an arrested run stops early, and a run
+  // that stops on night two only ever sampled nights where the garrisons were
+  // still full. Measured that way the loss rate FALLS from Heat 12 to Heat 15,
+  // which is survivorship reporting itself as safety. `curtisMoveChance` is a
+  // pure function of the state, so the multiplier can be read exactly at a fixed
+  // staffing with nothing to survive.
+  const heatProbeBlock = "northern_lights_motels";
+  const heatLevels = [0, 5, 8, 9, 10, 12, 15].map((heat) => {
+    const row = { heat, factor: null, chanceByStaffing: {} };
+    for (const posted of [0, 1, 2]) {
+      const state = territoryRun(2000, { curtisPhase: "watching", blocks: [heatProbeBlock], soldiersPerBlock: posted, heat });
+      row.factor = Number(C.selectors.curtisHeatFactor(state).toFixed(3));
+      row.chanceByStaffing[posted] = Number(C.selectors.curtisMoveChance(state, heatProbeBlock).toFixed(4));
+    }
+    return row;
+  });
 
   // Corner survival by how many people are standing on it. The v1.28 unstaffed
   // term is the difference between the 0 row and the 1 row: before this build

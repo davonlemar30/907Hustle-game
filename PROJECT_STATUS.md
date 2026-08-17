@@ -2,15 +2,26 @@
 
 Last updated: 2026-08-17 (America/Anchorage)
 
-**v1.27 is built on `claude/disclosure-tables-phase-3-1-46zp26`, on top of the
-v1.26 merge (PR #88, `e329ff3`).** Verified on the branch: `npm test`
-**844 passing**, `npm run build` clean, `npm run check-docs` clean, 2,000-run
+**v1.28 is built on `claude/curtis-balance-pass-s3bacr`, on top of the v1.27
+merge (PR #89, `483627c`).** Verified on the branch: `npm test`
+**868 passing**, `npm run build` clean, `npm run check-docs` clean, 2,000-run
 simulation with zero dead ends across **fourteen** strategies. **Both hashes are
 unchanged** — `--total 200`
 `25afb74e10487dee6fc62641d944d3cea093873f28c740ba43e10bb0828d6dc1`,
 `--total 2000`
 `f10432b1f61624cbc8df35e299a2d36ca369e1e822ca0d6578a337562e524665`. Save schema
 stays **v11**.
+
+**The unchanged hashes were not the expected result and are worth reading
+carefully.** v1.28 rewrote how the nightly Curtis pass resolves, and the build
+spec assumed both hashes would move. They did not, because the `territory`
+strategy claims **zero blocks in 200 runs** — no strategy in the simulator ever
+owns a corner, so `curtisMoveChance` is never called on a player-owned block and
+nothing this build changed is reachable from that harness. The upside is that the
+thirteen original strategies are provably behavior-identical by the hash itself,
+with no per-strategy diff needed. The downside is the standing one: **the
+simulator does not cover the block layer, and an unchanged hash must never be
+read as though it does.**
 
 ## Standing design correction — the run has no fixed length
 
@@ -28,6 +39,190 @@ simulator's ten days do not fund the ladder*, not as a claim about the game.
 Territory is deliberately mid-to-late-game content funded by early economy
 systems (weed, booze, robbery tiers) that are still being fleshed out. The full
 statement is in ARCHITECTURE.md under "The run has no fixed length."
+
+## v1.28 Curtis Pressure Balance Pass (Phase 2.2) — built (branch `claude/curtis-balance-pass-s3bacr`)
+
+- **The blocker was never real, and that is the first finding.** 2.2 sat open for
+  months on the simulator's 10-day cap. The cap is an instrument boundary for
+  hash comparability and has nothing to do with the block layer;
+  `tests/measure-lieutenant-modifiers.js` starts from a corner-holding state and
+  resolves nights through the real reducer, and has done since v1.20. Every
+  number below came out of it in an afternoon.
+
+- **`CURTIS_BASE_CHANCE` went 0.12 → 0.05, and it was swept twice on purpose.**
+  0.04–0.15 in 0.01 steps, all four phases, 200 runs × 10 nights × six corners —
+  once against the v1.27 code for an honest control, and again with this build's
+  heat probe and unstaffed term live, because a base tuned against a control that
+  excludes them is wrong the moment they land. Every value in both sweeps
+  produced a clean monotonic gradient across the phases, which is the finding
+  that says **the base was wrong and the phase gate was not.**
+
+- **Two phase multipliers moved, and the measurement said which.** The targets
+  are ambient at roughly half of watching and approaching at roughly double it.
+  At `{0, 0.5, 1.0, 1.5}` the measured ratios were 0.43 and 1.46. Ambient sat
+  *under* half because its visibility gate of 2 puts three corners on his board
+  where watching's gate of 1 puts five — the gate, not the multiplier, was
+  suppressing it — so ambient is lifted to **0.6** to compensate for its own
+  gate. Approaching is **2.0** because 1.5 is not double.
+
+- **Where it landed, at 300 runs × 10 nights × six corners, two soldiers each:**
+
+  | phase | blockLossRate | target | flips/block-night | police/block-night | soldiers lost/run |
+  |---|---|---|---|---|---|
+  | `invisible` | 0.000 | 0 | 0.000 | 0.171 | 8.76 |
+  | `ambient` | 0.093 | 0.10–0.12 | 0.014 | 0.172 | 8.97 |
+  | `watching` | 0.181 | 0.20 | 0.028 | 0.174 | 9.16 |
+  | `approaching` | 0.341 | 0.35–0.40 | 0.055 | 0.173 | 9.52 |
+
+  Strictly monotonic, ambient/watching = 0.51, approaching/watching = 1.88. **All
+  three land slightly under target — between 3% and 10% low — and that is a
+  deliberate choice rather than a miss.** The spec mandated 0.01 sweep
+  increments; 0.06 overshoots watching to 0.237 (+18%) where 0.05 undershoots it
+  to 0.181 (−10%), so 0.05 is the closer of the two available values. If Davon
+  wants the targets hit dead on, the lever is a 0.005 step, not a redesign.
+
+- **Police pressure is flat across every phase (0.171–0.174) and was already
+  flat.** The "constant background noise, independent of Curtis's aggression"
+  target needed no work — the v1.21 split had already delivered it. Verified and
+  left alone. They still cost soldiers and Heat and still never take a corner.
+
+- **He reads Heat above 8 now, and it is a read rather than a plan.**
+  `curtisHeatFactor` is `1 + max(0, heat − 8) × 0.05`: exactly 1.0 at or below 8,
+  1.20 at 12, 1.35 at 15. It multiplies a threshold that is already compared
+  against a hashed gate, so **no new draw and no new hash**. Read exactly off the
+  gate at `watching` on Northern Lights Motel Row:
+
+  | Heat | factor | 0 soldiers | 1 | 2 |
+  |---|---|---|---|---|
+  | 0 / 5 / 8 | 1.00 | 0.1200 | 0.0600 | 0.0300 |
+  | 9 | 1.05 | 0.1260 | 0.0630 | 0.0315 |
+  | 10 | 1.10 | 0.1320 | 0.0660 | 0.0330 |
+  | 12 | 1.20 | 0.1440 | 0.0720 | 0.0360 |
+  | 15 | 1.35 | 0.1620 | 0.0810 | 0.0405 |
+
+  Invisible below the floor, and at 15 a defended corner goes from 3.0% to 4.05%
+  a night — meaningful, not catastrophic. As a share of the loss rate, measured
+  as a paired control with the probe zeroed: **10.8% at ambient, 11.6% at
+  watching, 8.8% at approaching.**
+
+- **The Heat sweep had to stop being a run measurement, and the reason is worth
+  keeping.** Sampled across full runs it reported the loss rate *falling* from
+  Heat 12 to Heat 15. That is not safety, it is survivorship: Heat climbs on its
+  own, a hot player gets arrested, an arrested run stops early, and a run that
+  stops on night two only ever sampled nights where the garrisons were still
+  full. `curtisMoveChance` is a pure function of state, so the harness now reads
+  the multiplier exactly at fixed staffing instead. **The first instrument was
+  measuring how long the run survived and calling it danger.**
+
+- **An empty corner is finally worth less than a corner with one person on it.**
+  The divisor floored at `max(1, soldiers)`, which made an unstaffed corner and a
+  one-soldier corner arithmetically identical — posting your *first* soldier
+  bought nothing, and territory.js's own claim that an undefended corner "costs
+  double" was only ever true against the two-soldier case.
+  `CURTIS_UNSTAFFED_DEFENSE = 0.5` makes the first body worth exactly what the
+  second is. **This is where "probe the weakest" went**, rather than into the
+  planner — see the next bullet.
+
+  | soldiers per corner | blockLossRate | flips/block-night | income/run |
+  |---|---|---|---|
+  | 0 | 0.395 | 0.050 | 0 |
+  | 1 | 0.353 | 0.043 | 1,620 |
+  | 2 | 0.181 | 0.028 | 3,487 |
+
+- **It couples the two adversaries, and Davon took that call knowingly.** The
+  police empty a corner; an emptied corner is the cheap one to walk onto. At
+  `watching` the most-flipped corner is now **Service Road Chokepoint** (patrol 3)
+  rather than **Northern Lights Motel Row** (visibility 3) — 0.317 against 0.323
+  on total loss rate, and ahead on flips per block-night. He still does not read
+  patrol routes; the coupling runs entirely through who is standing there. v1.21
+  asserted the split by proxy — "the most-hunted and the most-raided corner are
+  different ones" — and that proxy is gone, so the test now asserts the split
+  where it was always actually defined: **the police never change ownership, and
+  Curtis never touches Heat.** The alternatives were measured: 0.75 still flips
+  the ordering (0.052 vs 0.050) and only 1.0 preserves it, at the cost of
+  shipping "probe the weakest" as nothing at all.
+
+- **"Probe the weakest" is deliberately NOT in `curtisNightPlan`, and this is the
+  build's most important structural call.** The spec asked for it there. A
+  planner that read soldier counts would change the instant a warned player moved
+  somebody onto the warned corner — so the warning would falsify itself, and
+  v1.23's contract (warn tonight, re-derive the identical plan tomorrow) would go
+  with it. `tests/v1-23.test.js` pins that contract and it still passes untouched.
+  He probes the weakest in the odds, where the odds already live.
+
+- **The grudge, and why the spec's version of it would have ranked nothing.** The
+  spec keyed recapture on "a corner the player claimed from `owner: "curtis"`".
+  Every corner on the map *starts* his, so that condition is true of all six and
+  orders nothing. `record.curtisTookBack` is stamped by the resolver the first
+  time he takes a corner back off the player instead — a corner with a history —
+  and it outranks even a two-point visibility advantage.
+
+- **The bank exists, is capped at +2, drops on a phase change, and cannot move a
+  loss rate.** That last part was measured, not assumed. The budget feeds the
+  pressure *weight*; the weight is not an input to `curtisMoveChance`; and the
+  resolver never consults the plan at all, rolling every held corner
+  independently. So the grudge and the bank move what the gossip surface,
+  Pherris's level-3 read and the paid disclosures **say**, and nothing else. Loss
+  rate at `watching` with them and without them is **identical** — the spec's
+  "no more than 15% above the base-tuned rate" ceiling is met at 0%.
+
+- **The bank is settled before the warnings are raised, and the order is the
+  correctness argument.** A warning raised tonight must name the plan the player
+  re-derives tomorrow, so nothing feeding the plan may move between the two.
+  Writing the carry afterwards would telegraph one plan and resolve another.
+
+- **The warning targets are the one thing this build could not hit, and the
+  reason is structural.** The spec wants an acted-on warning to save the corner
+  >60% at watching and ~40% at approaching. Measured on the operation the targets
+  describe — three corners, one soldier each, three in reserve:
+
+  | phase | loss | warned corner-nights | under threat | save rate | top-target save | coverage |
+  |---|---|---|---|---|---|---|
+  | `ambient` | 0.269 | 2,956 | 106 | 0.264 | 0.264 | 0.73 |
+  | `watching` | 0.424 | 5,609 | 279 | 0.262 | 0.406 | 0.44 |
+  | `approaching` | 0.660 | 6,369 | 582 | 0.247 | 0.376 | 0.32 |
+
+  Approaching lands on its 40% target; watching reaches 0.406 against 0.60. **The
+  ceiling is arithmetic, not tuning.** A corner's chance is linear in headcount,
+  so moving from *n* soldiers to *m* reduces risk by exactly `1 − n/m`. The block
+  cap is 3, and Eli's balanced auto-assignment converges corners toward equal
+  staffing — so a player at two soldiers a corner can reach at best `1 − 2/3` =
+  **33%**, and >60% requires the warned corner to start at 1 or 0 and be tripled
+  before Eli spreads them again. No value of any Curtis constant changes this;
+  the levers are `SOLDIERS_PER_BLOCK_CAP`, a non-linear defense curve, or Eli's
+  placement policy, and all three are outside 2.2. **Filed rather than faked.**
+
+- **`warningCoverage` is the column that shows the budget working**: 0.73 → 0.44
+  → 0.32 as the phase deepens. That is the plan naming more corners than the
+  player has people for, which is exactly the triage decision the budget table
+  exists to force. The save rate is capped by the defense curve; the *coverage*
+  gradient is the pressure budget doing its job, and it is the honest regression
+  surface for future budget changes.
+
+- **The Made Men ladder is unchanged and still pays.** At `watching`, three
+  corners: Tone takes the loss rate 0.424 → 0.358 → 0.300 → 0.246 across his
+  tiers, and Deshawn moves it barely at all (0.424 → 0.409) while taking peak
+  Heat 10.31 → 8.10. That is the modifier triangle behaving exactly as v1.20
+  designed it — Tone is defense, Deshawn is temperature — and neither was touched.
+
+- **The escalation loop was measured and deliberately left alone.** Losing a
+  corner broadcasts `defiance` on the network channel, which raises his awareness
+  by one, and `awareness.floor` ratchets and never falls — so a player who slips
+  once is pushed structurally toward slipping again. Adding counter-pressure
+  (retaking a corner lowering awareness) is a design change, not a balance pass,
+  and is out of scope for 2.2. It is recorded here so the next person does not
+  rediscover it.
+
+- **Save schema stays v11.** One additive boolean on the block record
+  (`curtisTookBack`) and one object-shaped session field on `run`
+  (`curtisPressureBank`), both hydrated free by `mergeDefaults`. A test strips
+  both, rehydrates, and asserts the same plan comes back.
+
+- **Test count 844 → 868.** Twenty-four in `tests/v1-28.test.js`. Six existing
+  assertions in `tests/v1-21.test.js` were updated: five pinned constants that
+  this build measured and moved, and one — the most-hunted-corner proxy — that is
+  a genuine reversal, rewritten with the reason in the test body rather than
+  quietly relaxed.
 
 ## v1.27 Disclosure Tables (Phase 3.1) — built (branch `claude/disclosure-tables-phase-3-1-46zp26`)
 

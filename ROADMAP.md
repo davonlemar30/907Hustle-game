@@ -4,6 +4,23 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
+## Shipped — v1.23 Attack Telegraphing Through Gossip Channels — **Phase 2.3**
+
+Friendly NPCs warn the player through the gossip system before Curtis's nightly
+moves resolve. `curtisNightPlan` (the Phase 2.2 planner, built here because v1.22
+never shipped) names the corners and how hard; a `territory / curtis_move_planned`
+observation carries it on the neighborhood channel; the closest NPC at **Warm** or
+above texts on the morning of. Below Warm is silence, and the silence is the
+mechanic. Deshawn widens the scope, adds the pressure read, and pulls delivery to
+the evening before. Police raids get reactive morning-after gossip from the same
+surface. `curtisBlockTargets` and `curtisMoveChance` are reconciled onto the one
+list, closing the v1.21 note that at ambient Pherris could warn about a corner
+Curtis cannot take.
+
+**Still open from Phase 2.2:** the balance pass on Curtis's pressure budget. The
+allocation (`ambient [1]`, `watching [2, 1]`, `approaching [2, 2, 1]`) is a first
+authored position, not a measured one.
+
 ## Shipped — v1.21 Police Raids and Curtis Moves Split — **Phase 2.1**
 
 Built on `claude/v1-21-raid-split-w86iuj`, on top of the v1.20 merge (PR #83,
@@ -91,7 +108,7 @@ passing.
 ### Next
 
 - ~~Splitting police raids from Curtis moves (Phase 2.1)~~ — **shipped in
-  v1.21**, above. The Curtis planner (Phase 2.2) is next and can reference both
+  v1.21**, above. The Curtis planner (Phase 2.2) landed inside **v1.23** and references both
   Tone's multiplier and the new `curtisMoveChance` targeting as the things to
   work against.
 - **The `operator` strategy never reaches territory.** Until a sim strategy

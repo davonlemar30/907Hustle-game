@@ -2,7 +2,35 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-## Current Build (v1.21)
+## Current Build (v1.23)
+
+**v1.23: Attack Telegraphing Through Gossip Channels** — the neighborhood knows
+who is about to get hit, and whether that reaches you depends on who likes you.
+Before Curtis's people move on a corner, a friendly NPC texts you naming it, the
+morning of. At **Warm** and above somebody picks up the phone; below Warm nobody
+does, and you meet him cold. It is the first place in the game where the social
+layer pays a **tactical** dividend instead of a content one — the warning is the
+receipt for a week of showing up. Deshawn on the payroll widens it: tier 1 warns
+about every corner instead of the loudest one, tier 2 tells you how hard they are
+coming, tier 3 gets the word to you the evening before. Police raids get the
+reactive half of the same surface, a morning-after "your spot got swept". Nothing
+new is stored.
+
+| | |
+|---|---|
+| Save schema | **v11** (`907ogr_v11`), loads v3 and up |
+| Tests | **767** passing (`npm test`) |
+| Simulation, 200 runs | `c8b3bf0745871555c326f4861b0a8d576ce149c9fa7bd871e9215b51236092d8` |
+| Simulation, 2,000 runs | `d9d0fbf1d24c1c7cca8db9db7897f044811a46c4d41ff6a23ca678a0dc3dfb39` |
+
+**Both hashes are still byte-identical to v1.20 and v1.21.** A build that adds a
+whole new delivery surface and moves neither hash has proven it changed nothing
+in nightly resolution: the new observation category is weighted 0 in every lens,
+the queue additions draw nothing off the tick's RNG, and every timing and
+messenger roll is `stringHash` off the seed.
+
+<details>
+<summary>Previously — v1.21: Police Raids and Curtis Moves, Split</summary>
 
 **v1.21: Police Raids and Curtis Moves, Split** — territory stops being random
 attrition from one source and becomes a war on two fronts. The police care about
@@ -30,6 +58,8 @@ that leaves both hashes untouched has proven it changed nothing outside the
 corners. The behavior itself is measured by the A/B harness
 (`tests/measure-lieutenant-modifiers.js`, numbers in Verification).
 
+</details>
+
 **The systems underneath:**
 
 - **Exposure System** — ten NPCs, each with a ledger of what they saw and a
@@ -46,6 +76,10 @@ corners. The behavior itself is measured by the A/B harness
   Eli, layered over the older district-wide takeover system, and since v1.20
   shaped by the **Made Men modifier triangle**: Tone's defense multiplier,
   Pherris's intel ladder, Deshawn's heat reduction.
+- **The nightly plan** — which corners Curtis's people are working and how hard,
+  ranked and gated by exactly what the night rolls against, so Pherris's standing
+  intel and his actual targets cannot drift. It is what v1.23's warnings
+  telegraph.
 - **907List Broker** — a tiered resale track where the listing title is the
   appraisal skill and the flip is a judgment call.
 - **Arrest & Jail** — bail and clock traded for heat relief and a permanent
@@ -56,6 +90,35 @@ corners. The behavior itself is measured by the A/B harness
 Full structural reference: **[ARCHITECTURE.md](ARCHITECTURE.md)** (file map,
 state shape, event-card schema, and the rules a change has to hold to).
 Build-by-build history: **[PROJECT_STATUS.md](PROJECT_STATUS.md)**.
+
+## What changed in v1.23
+
+**Warnings, and the silence where they are not.** `curtisNightPlan` names the
+corners his people are working tonight and how hard (weight 2 "coming hard",
+weight 1 "just looking"). At the day-end pass each targeted corner raises a
+`territory / curtis_move_planned` observation on the **neighborhood** channel,
+queued to land at Morning of the attack day. Whoever heard it and is closest to
+you — highest disposition at **Warm** or above, ties broken on a hash — sends one
+phone text naming the corner in their own voice. There is no negative branch: an
+NPC below Warm is not in the candidate set, so nothing is sent.
+
+**Curtis never hears it**, by two independent rules: he is not on the
+neighborhood channel, and `territory` does not clear his network filter.
+
+**Deshawn is reach and timing, never the plan.** Without him you hear the loudest
+signal only. Tier 1 warns about every targeted corner, tier 2 adds the pressure
+read, tier 3 delivers the evening before — a whole extra day-part to post or
+reposition. Departed or on the bench, it reverts with no extra branch.
+
+**Pherris and the gossip stopped disagreeing.** `curtisBlockTargets` is now the
+plan flattened, so a corner she reports as next is a corner he can actually take.
+At `ambient` the old list named the Minnesota Off-Ramp while `curtisMoveChance`
+returned zero for it; at `approaching` it named the Spenard Rec Center Lot, which
+is nobody's target at any phase.
+
+**Police raids get the reactive half.** A morning-after "your spot on [corner]
+got swept" from the same Warm+ surface. No predictive version — the police answer
+Heat, which can move at any time.
 
 ## What changed in v1.21
 
@@ -879,13 +942,13 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 ## Verification
 
-- Node tests: **733 passing** (699 through v1.20, 34 new in `tests/v1-21.test.js`)
+- Node tests: **767 passing** (733 through v1.21, 34 new in `tests/v1-23.test.js`)
 - Deterministic simulations: **2,000 runs, zero crashes or dead ends**
 - Simulation SHA-256: `d9d0fbf1d24c1c7cca8db9db7897f044811a46c4d41ff6a23ca678a0dc3dfb39`
   (`--total 2000`) and
   `c8b3bf0745871555c326f4861b0a8d576ce149c9fa7bd871e9215b51236092d8`
-  (`--total 200`). **Both are byte-identical to v1.20**, which for a change this
-  deep in nightly resolution is the proof rather than a footnote. No sim strategy
+  (`--total 200`). **Both are byte-identical to v1.20 and v1.21**, which for a
+  change this deep in nightly resolution is the proof rather than a footnote. No sim strategy
   reaches the block layer — `operator` claims **zero** blocks in 2,000 runs — so
   the territory pass draws nothing from the tick's RNG before or after. Hashing
   the two new gates off the seed (rather than drawing them) is what guarantees

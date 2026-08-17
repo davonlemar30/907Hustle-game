@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.21**. This file
+How 907Hustle: One Good Run is put together, current as of **v1.23**. This file
 is meant to be the only thing you need to read before changing code; for *why*
 the game is designed the way it is, see the ClickUp docs at the bottom.
 
@@ -61,7 +61,12 @@ src/data/               Static definitions. No logic, no state.
   curtis-awareness.js   Phases and floors, watcher pools, phase texts, chance formula
   territory.js          Police-raid and Curtis-move constants, the phase visibility
                         gate, RAID_DEFENSE_PER_SOLDIER — the whole nightly balance
-                        surface for the block layer, in one place
+                        surface for the block layer, in one place — plus the
+                        nightly plan's target depth and pressure budget, and the
+                        gossip-warning scope/timing constants and Deshawn tiers
+  gossip.js             The voices that carry block news to the player: the two
+                        gossip events, seven authored lines each, the Deshawn
+                        pressure clause, gossipText() / gossipSender()
   arrest.js             Bail, priors, processing slots, heat relief, crew jail, copy
   disposition-bands.js  BANDS, bandFor()
 
@@ -263,9 +268,10 @@ later gossip see.
 
 ### Observations
 
-`{ type, event, location, value, day, count, source }`. `type` is one of eleven
+`{ type, event, location, value, day, count, source }`. `type` is one of twelve
 categories: `presence`, `honesty`, `violence`, `financial`, `heat_exposure`,
-`loyalty`, `betrayal`, `discretion`, `growth`, `submission`, `defiance`. Rows
+`loyalty`, `betrayal`, `discretion`, `growth`, `submission`, `defiance`,
+`territory`. Rows
 merge on category + event + location + source, incrementing `count`; source is
 part of the key on purpose, because watching a robbery and hearing about one are
 different facts. A ledger caps at 120 distinct rows.
@@ -290,6 +296,17 @@ Hostile as the tax and the confrontation. Use `curtisNoticed()` /
 **Category sign is not reliable downward.** STREET scores `defiance` positively
 on purpose — Dre respects nerve. Anything meaning "you cost me something" is
 priced explicitly in `SHARED_EVENT_WEIGHTS` instead of inheriting its category.
+
+**`territory` is zero in all four archetypes, deliberately.** Every other
+category is evidence *about the player*, and a lens turns evidence into a
+disposition. A `territory` row is evidence about **Curtis** — his people are
+working Motel Row, the police swept it last night. It rides the neighborhood
+channel because that is genuinely how the player would hear it, and it lands in a
+ledger because a ledger is what "this person knows this" means here, but it must
+never move a number: otherwise a bad week for the player's corners would quietly
+make Mina like them, and the ledger would be measuring Curtis's week instead of
+the player's. Willingness to pass it on is gated on the disposition that already
+exists (see Gossip warnings); the news itself is worth nothing either way.
 
 **The cast.** `NPC_LENSES` and `NPC_CHANNELS` must stay in step — every id in one
 belongs in the other, and `EXPOSURE_NPC_IDS` derives from `NPC_LENSES`:
@@ -791,6 +808,115 @@ callers that only ask whether the map is readable at all.
 **`src/hash.js`** — a leaf module that requires nothing. `random.js` re-exports
 it, so every existing `require("./events/random.js").stringHash` call site is
 unchanged.
+
+### The nightly plan (v1.23)
+
+`curtisNightPlan(state)` in `src/selectors.js` is **the** answer to "which of
+your corners are his people working, and how hard". It is a pure read — nothing
+stored, no draw off the RNG stream — so the same day, phase and holdings return
+the same plan every time, which is what lets a warning be raised the night before
+and re-derived when the day arrives.
+
+```
+[{ blockId, name, weight }]   weight 2 = coming hard, 1 = just looking
+```
+
+Ranked by `curtisVisibility`, then `earningPotential`, then id
+(`compareBlocksByCurtisPriority`, exported because the gossip surface has to
+reproduce the order without holding the plan). Cut to
+`CURTIS_TARGET_DEPTH_BY_PHASE`, then `CURTIS_PRESSURE_BUDGET_BY_PHASE` is spent
+greedily down the list, capped at `CURTIS_MAX_PRESSURE_PER_BLOCK`:
+
+| Phase | Depth | Budget | Allocation |
+|---|---|---|---|
+| `invisible` | 0 | 0 | — |
+| `ambient` | 1 | 1 | `[1]` |
+| `watching` | 2 | 3 | `[2, 1]` |
+| `approaching` | 3 | 5 | `[2, 2, 1]` |
+
+**It does not read the garrison.** The plan is his intent; what the player posts
+in response is the thing a warning exists to let them change. And it **does not**
+feed `curtisMoveChance` — what he intends and what the night rolls are separate
+on purpose, so a warning is information rather than a promise.
+
+**`curtisBlockTargets` is now the plan, flattened**, which closes the v1.21
+disagreement filed against it. The old list only *ranked*: it applied no phase
+visibility gate and did not exclude visibility-0 corners, so at `ambient` Pherris
+would name the Minnesota Off-Ramp as next while `curtisMoveChance` returned a
+flat zero for it, and at `approaching` she named the Spenard Rec Center Lot — a
+corner he never comes for at any phase. One list, gated by exactly what the night
+is gated by, so what she reports and what he does cannot drift.
+
+### Gossip warnings (v1.23)
+
+The Exposure system's **return path**. Observations have always flowed from the
+player into ledgers; here the block knows something the player wants, and whether
+it reaches them is a relationship question.
+
+1. The day-end pass calls `emitCurtisGossipWarnings` after
+   `resolveSoldierOperations` (ownership settled), `settleCurtisNight` (phase
+   settled) and `resolveCrewTracks` (payroll settled) — the first point where
+   every input to **tomorrow night's** plan is final. A warning that lands after
+   the corner changed hands is not a warning, which is why it is raised for the
+   next night rather than the one just resolved.
+2. One `territory / curtis_move_planned` observation per targeted corner, with
+   `location` set to the **block id** and `value` to the pressure weight, queued
+   straight onto `run.pendingObservations` at a slot this pass computed.
+   `Exposure.queueObservation` exists for exactly this: `broadcastObservation` is
+   right when the question is "who could have picked this up" and wrong when the
+   caller already knows, and the neighborhood channel's one-to-two-day jitter
+   would deliver a third of these after the corner was gone.
+3. The queue drains at Morning of the attack day (`drainObservations`, the single
+   call site — every former `Exposure.resolveObservationQueue` caller now goes
+   through it), and its `onDeliver` hook hands game-core the rows that landed.
+   The engine learns nothing about phones.
+4. Among the NPCs who heard it, the **highest disposition at Warm or above**
+   sends one phone text naming the corner. Ties break on
+   `stringHash(seed:warn-npc:blockId:day:npcId)`.
+
+**Curtis never sees it, by two independent rules**: he is not on the
+`neighborhood` channel, and `territory` does not clear his network filter either.
+
+**The silence is the mechanic.** There is no negative branch anywhere in the
+delivery path — an NPC below Warm is simply not in the candidate set. A player
+with no warm neighborhood relationships meets him cold, which is the first place
+in the game where the social layer pays a tactical dividend. An **empty ledger
+can never speak**, asserted explicitly so no future default can grant a voice to
+someone nobody has ever observed.
+
+**Deshawn is reach and timing, never the plan.** Read through
+`Crew.modifierTier` (departed, arrested, never recruited and loyalty-0 all read
+0, so the bonus disappears the moment he does):
+
+| Tier | What changes |
+|---|---|
+| none | the plan's **top target only**, morning of |
+| 1 | **every** corner on the plan |
+| 2 | + the pressure weight in the text ("coming hard" / "just looking") |
+| 3 | + it arrives the **evening before** rather than the morning of |
+
+He does not deliver it himself unless he happens to be the closest person. His
+network hears earlier and wider; whoever the player is closest to says it.
+
+**Police raids get the reactive half only.** A raid raises a second,
+corner-scoped `territory / police_swept_corner` observation beside v1.21's
+district-scoped `heat_exposure / police_raid` (which is untouched, and still
+carries the disposition consequence). It cannot be one row: `location` has to be
+a district for `couldObserve` to route it, and has to be a block for the text to
+name a corner. There is deliberately **no predictive police warning** — the
+police answer Heat, which can move at any time.
+
+**Two surfaces, not one.** Pherris's level-3 block card is the standing strategic
+read ("these corners are at risk", Territory page, always visible); the gossip
+text is the event-driven complement ("they're coming tonight", Phone, morning
+of). They can overlap — if Pherris is the closest person she sends the text *and*
+her intel stays on the card — and the Territory page renders no gossip copy.
+
+**One voice, one text a day**, tracked in `run.gossipVoices` (`{ day, npcIds }`,
+session-only, reset lazily on the first delivery of a new day, hydrated
+additively so a save predating it loads). When more corners are warned than there
+are people willing to call, the corner that gets said out loud is the one he
+wants most, not the first one alphabetically.
 
 ## Territory: two layers
 

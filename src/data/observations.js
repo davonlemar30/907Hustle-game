@@ -21,6 +21,11 @@ const OBSERVATION_CATEGORIES = [
   "growth",
   "submission",
   "defiance",
+  // v1.23. The one category that is not about the player at all: it is what the
+  // block knows about the block. "Curtis's people were asking about Motel Row"
+  // is news the neighborhood carries, and carrying it is the whole job - it
+  // routes and it delivers, and every lens scores it zero. See npc-lenses.js.
+  "territory",
 ];
 
 const OBSERVATION_CATEGORY_SET = new Set(OBSERVATION_CATEGORIES);

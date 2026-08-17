@@ -2,22 +2,132 @@
 
 Last updated: 2026-08-17 (America/Anchorage)
 
-**v1.21 is built on `claude/v1-21-raid-split-w86iuj`, on top of the v1.20 merge
-(PR #83, `43652c3`).** Verified on the branch: `npm test` 733 passing,
-`npm run build` clean, 2,000-run simulation with zero dead ends, `--total 200`
+**v1.23 is built on `claude/v1-23-gossip-warnings-dd18a0`, on top of the v1.21
+merge (PR #84, `8d27ec3`).** Verified on the branch: `npm test` **767 passing**
+(733 through v1.21, 34 new in `tests/v1-23.test.js`), `npm run build` clean,
+2,000-run simulation with zero dead ends, `--total 200`
 `c8b3bf0745871555c326f4861b0a8d576ce149c9fa7bd871e9215b51236092d8`,
 `--total 2000` `d9d0fbf1d24c1c7cca8db9db7897f044811a46c4d41ff6a23ca678a0dc3dfb39`
-— both **byte-identical to v1.20**, which is the check that matters for a change
-this deep in nightly resolution.
+— **both still byte-identical to v1.20 and v1.21**, which is the proof that a
+build adding a whole new delivery surface changed nothing in nightly resolution.
+
+**Note on numbering: v1.22 was never built.** The v1.23 spec was written against
+a Curtis planner "shipped in v1.22", and no such branch or merge exists — `main`
+was at the v1.21 merge when this started. Rather than block, v1.23 builds the
+planner it needs (`curtisNightPlan`, the pressure budget, the
+`curtisBlockTargets` / `curtisMoveChance` reconciliation the v1.23 spec asked for
+under task 6) and telegraphs it. Phase 2.2's remaining scope — a *balance* pass
+on Curtis's pressure budget, which v1.23 explicitly held out of scope — is still
+open and should be picked up as its own tuning task. See the v1.23 section for
+what was assumed.
+
+## v1.23 Attack Telegraphing Through Gossip Channels — built (branch `claude/v1-23-gossip-warnings-dd18a0`)
+
+- Built from the "v1.23: Attack Telegraphing Through Gossip Channels" spec, on
+  top of the v1.21 merge. **Save schema stays v11** — the warnings are transient
+  phone texts derived from existing planner output and existing disposition
+  state, so there is nothing to persist and nothing to migrate.
+- **The idea.** Before Curtis's people move, the block knows. Whether that
+  reaches the player is a relationship question: at Warm and above somebody texts
+  naming the corner, below Warm nobody does, and a player with no warm
+  neighborhood relationships meets him cold. It is the first place in the game
+  where the social layer pays a **tactical** dividend rather than a content one.
+- **The silence is the mechanic.** There is no negative branch anywhere in the
+  delivery path — an NPC below Warm is simply not in the candidate set. The one
+  extra gate is that an **empty ledger can never speak**, asserted explicitly so
+  no future default can hand a voice to someone nobody has ever observed.
+- **The nightly plan.** `curtisNightPlan(state)` in `src/selectors.js`: which of
+  the player's corners his people are working and how hard, as
+  `[{ blockId, name, weight }]`. Ranked by `curtisVisibility` then
+  `earningPotential` then id, cut to the phase's depth, then the phase's pressure
+  budget spent greedily and capped at 2 a corner — `ambient [1]`,
+  `watching [2, 1]`, `approaching [2, 2, 1]`. Weight 2 is "coming hard", 1 is
+  "just looking", and the distinction is the player deciding between two soldiers
+  and one. A pure read: nothing stored, no draw off the RNG stream, so the plan
+  raised the night before re-derives identically when the day arrives.
+- **Task 6 resolved here, because v1.22 did not.** `curtisBlockTargets` is now
+  the plan flattened. The old list only *ranked* — no phase visibility gate, no
+  exclusion of visibility-0 corners — so at `ambient` Pherris named the Minnesota
+  Off-Ramp as next while `curtisMoveChance` returned a flat zero for it, and at
+  `approaching` she named the Spenard Rec Center Lot, a corner he never comes for
+  at any phase. One list, gated by exactly what the night is gated by.
+- **Timing: the warning is raised for TOMORROW night, not tonight.** The spec
+  said to emit during the day-end pass before `resolveSoldierOperations`, and
+  also that the warning must arrive the morning of the attack. Those cannot both
+  hold — a neighborhood carry on tonight's plan lands the morning *after* the
+  corner changed hands. The pass therefore runs after
+  `resolveSoldierOperations` (ownership settled), `settleCurtisNight` (phase
+  settled) and `resolveCrewTracks` (payroll settled), which is the first point
+  where every input to the next night's plan is final, and the standard one-day
+  carry puts it in the player's hand on the morning of the night it describes.
+- **`Exposure.queueObservation`.** `broadcastObservation` is right when the
+  question is "who could have picked this up" and wrong when the caller already
+  knows. The neighborhood channel's one-to-two-day jitter would deliver a third
+  of these after the corner was gone, so the emitter picks the audience and the
+  slot. Rows whose slot has already passed are still **queued** rather than
+  written inline — that is what makes Deshawn's tier-3 "evening before" a slot
+  number instead of a special case, since everything leaves the queue through the
+  same door and that door is where the phone text is made.
+- **`resolveObservationQueue(state, onDeliver)`.** One optional hook, called per
+  row that lands. `drainObservations` in game-core is now the single call site
+  for the drain, so a gossip row cannot land without the text that is the point
+  of it — and the engine still knows nothing about phones, which is the
+  dependency rule that module opens with.
+- **A twelfth observation category, `territory`, weighted 0 in all four
+  archetypes.** Every other category is evidence *about the player*; this is
+  evidence about **Curtis**. It routes and it lands in ledgers, and it must never
+  move a number — otherwise a bad week for the player's corners would quietly
+  make Mina like them. Deliberate, authored, and asserted in the suite.
+- **Deshawn is reach and timing, never the plan.** Read through
+  `Crew.modifierTier` rather than a bare `getActiveCrew` check, so departed,
+  arrested, never-recruited and loyalty-0 all revert the player to the
+  no-Deshawn behavior with no extra branch. No Deshawn: the plan's **top target
+  only**. Tier 1: **every** targeted corner. Tier 2: + the pressure weight in the
+  text. Tier 3: + it arrives the **evening before**. He does not deliver it
+  himself unless he happens to be the closest person — his network hears earlier
+  and wider, and whoever the player is closest to says it.
+- **Seven authored voices, not a template.** Mina, Juan, Yalonda, Deshawn, Tone,
+  Biniam and Pherris, in `src/data/gossip.js`, each with a warning line and a
+  morning-after raid line. Selam is deliberately absent: she has never been
+  written speaking about the corners. Membership in that table is only the
+  authored half of eligibility — the routing half (on the `neighborhood` channel,
+  reachable in the corner's district) is checked against `propagation.js` at
+  emission, so nobody can be given a line they had no way to have heard.
+- **Curtis never sees it, by two independent rules**: he is not on the
+  `neighborhood` channel, and `territory` does not clear his network filter.
+- **Police raids get the reactive half only.** A raid raises a second,
+  corner-scoped `territory / police_swept_corner` observation beside v1.21's
+  district-scoped `heat_exposure / police_raid`, which is untouched and still
+  carries the disposition consequence. It cannot be one row: `location` has to be
+  a **district** for `couldObserve` to route it and a **block** for the text to
+  name a corner. No predictive police warning exists or should — they answer
+  Heat, which can move at any time.
+- **One voice, one text a day** (`run.gossipVoices`, session-only, hydrated
+  additively). When more corners are warned than there are people willing to
+  call, the corner that gets said out loud is the one he wants most — the
+  planner's comparator is exported and shared rather than restated, so the two
+  orderings cannot drift.
+- **Two surfaces, not one.** Pherris's level-3 block card keeps the standing
+  strategic read on the Territory page; the gossip text is the event-driven
+  complement on the Phone. They can overlap without conflict, and the suite
+  asserts the Territory page renders no gossip copy.
+- **Open / deliberately not done.** No balance pass on the pressure budget (the
+  numbers are a first authored position, not a measured one); no predictive
+  police warning; no new NPC; no UI changes; Downtown blocks still unauthored —
+  when they arrive the gossip pass iterates the same block list the planner does.
+
+**v1.21 merged as PR #84 (`8d27ec3`)**, on top of the v1.20 merge (PR #83,
+`43652c3`): `npm test` 733 passing, 2,000-run simulation with zero dead ends,
+both hashes byte-identical to v1.20.
 
 **Phase 1 of the Godfather adaptation is closed** — 1.1 Tone recruitment
 (v1.18), 1.2 Pherris recruitment and 1.3 Deshawn tier retro-gate (v1.19), 1.4
 lieutenant typed modifiers (v1.20). The one Phase 1 companion item still open is
 **4.1 First-claim moment**, the ceremony pass the phase list wanted alongside the
-mechanic. **Phase 2.1 (splitting police raids from Curtis moves) ships in
-v1.21.** Next is 2.2, the Curtis planner, which now has a targeting system to
-plug into: `curtisMoveChance` already decides which corners are on his map, so
-the planner's job is choosing among them rather than inventing the notion.
+mechanic. **Phase 2.1 (splitting police raids from Curtis moves) shipped in
+v1.21**, and **Phase 2.3 (attack telegraphing) ships in v1.23**, which also
+builds the Phase 2.2 planner it depends on. What is left of 2.2 is the balance
+pass on Curtis's pressure budget.
 
 ## v1.21 Police Raids and Curtis Moves Split — built (branch `claude/v1-21-raid-split-w86iuj`)
 

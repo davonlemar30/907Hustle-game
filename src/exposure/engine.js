@@ -148,9 +148,48 @@ function broadcastObservation(state, spec) {
   return reached;
 }
 
+// Sends one observation to a named set of NPCs on a named channel, landing at a
+// slot the caller computed (v1.23).
+//
+// broadcastObservation is the right tool when the question is "who could have
+// picked this up", and the wrong one when the caller already knows. The gossip
+// warning is planned news with a deadline: it has to land the morning of the
+// night it describes, and the neighborhood channel's one-or-two-day jitter would
+// deliver a third of them after the corner was already gone. So the caller picks
+// the audience and the slot, and this puts the rows on the queue.
+//
+// The observation still carries the channel's source, so a lens reads it as
+// neighborhood gossip and not as something witnessed.
+//
+// Unlike broadcastObservation, a row whose slot has already passed is queued
+// rather than written straight to the ledger. That is what makes the Deshawn
+// tier-3 "evening before" arrival a slot number instead of a special case: it is
+// raised at Night for Night, so it would land inline and never pass through the
+// drain - and the drain is where the caller's delivery hook turns a row into
+// something the player actually sees. Everything on this queue leaves it through
+// the same door.
+function queueObservation(state, npcIds, spec, deliverAtSlot) {
+  const channel = channelFor(spec.channel || "neighborhood");
+  const observation = createObservation({ ...spec, day: spec.day || state.run.day, source: channel.source });
+  if (!observation) return [];
+  const reached = [];
+  for (const npcId of npcIds) {
+    if (!state.npc[npcId] || !listensOn(npcId, channel.id)) continue;
+    reached.push(npcId);
+    state.run.pendingObservations.push({ npcId, observation: { ...observation }, deliverAtSlot });
+  }
+  return reached;
+}
+
 // Drains everything whose delivery time has arrived. Rebuilds the survivor list
 // rather than splicing in place, matching resolveJobApplications.
-function resolveObservationQueue(state) {
+//
+// `onDeliver` is how game-core turns a delivery into something the player sees
+// without the engine learning what a phone is. It is called once per row that
+// lands, with the recipient and the observation, and the caller decides whether
+// that is worth a text. The engine stays free of game-core, which is the whole
+// dependency rule this module opens with.
+function resolveObservationQueue(state, onDeliver) {
   const queue = state.run.pendingObservations;
   if (!Array.isArray(queue) || !queue.length) return 0;
   const now = slotNumber(state.run.day, state.run.slot);
@@ -161,6 +200,7 @@ function resolveObservationQueue(state) {
     if (now < entry.deliverAtSlot) { waiting.push(entry); continue; }
     addObservation(ledgerOf(state, entry.npcId), entry.observation);
     delivered += 1;
+    if (typeof onDeliver === "function") onDeliver(entry);
   }
   state.run.pendingObservations = waiting;
   return delivered;
@@ -225,6 +265,7 @@ module.exports = {
   getDispositionBand,
   recordObservation,
   broadcastObservation,
+  queueObservation,
   resolveObservationQueue,
   propagateHeat,
   describeDisposition,

@@ -26,6 +26,7 @@ const CIVILIAN = {
   growth: 1.0,
   submission: 0.5,
   defiance: -1.0,
+  territory: 0,
 };
 
 // STREET reads earning and follow-through. Heat is a cost of doing business, so
@@ -42,6 +43,7 @@ const STREET = {
   growth: 1.5,
   submission: -0.5,
   defiance: 0.5,
+  territory: 0,
 };
 
 // ROMANTIC reads who you are when nothing is being traded. Time and honesty
@@ -58,6 +60,7 @@ const ROMANTIC = {
   growth: 1.0,
   submission: 0.0,
   defiance: -0.5,
+  territory: 0,
 };
 
 // THREAT is inverted, and deliberately so. For a rival, a high score is not
@@ -76,8 +79,19 @@ const THREAT = {
   growth: -2.0,
   submission: 2.0,
   defiance: -2.5,
+  territory: 0,
 };
 
+// `territory` is zero in all four tables and that is a design position, not an
+// oversight. Every other category is evidence ABOUT THE PLAYER, and a lens turns
+// evidence into a disposition. A warning that Curtis's people are working Motel
+// Row is evidence about Curtis. It rides the neighborhood channel because that
+// is genuinely how the player would hear it, it lands in a ledger because the
+// ledger is what "this person knows this" means in this codebase, and it must
+// never move a number - otherwise being warned a lot would quietly make Mina
+// like you, and the warnings would be measuring Curtis's week rather than the
+// player's. An NPC's willingness to pass it on is gated on the disposition they
+// already have; the news itself is worth nothing either way.
 const ARCHETYPES = { CIVILIAN, STREET, ROMANTIC, THREAT };
 
 // Event weights every lens inherits unless it names its own.

@@ -3,6 +3,7 @@
 // requiring game-core back and creating a cycle.
 const { SPENARD_BLOCKS, SPENARD_BLOCK_BY_ID } = require("./data/locations.js");
 const CurtisAwareness = require("./data/curtis-awareness.js");
+const Territory = require("./data/territory.js");
 const { stringHash } = require("./hash.js");
 
 function checkpointDay(state) { return state.run.checkpointDay || Infinity; }
@@ -62,21 +63,69 @@ function curtisBlockDefenseEstimate(state, blockId) {
   return Math.max(1, exact + jitter);
 }
 
-// Level 3: which of the player's corners Curtis's people are lining up next.
-// Ranked by how visible the block is to him, then by what taking it back would
-// be worth. How far down that list he is actually working is his ambient
-// awareness - invisible means nobody is looking at anything yet.
-const CURTIS_TARGETS_BY_PHASE = { invisible: 0, ambient: 1, watching: 2, approaching: 3 };
+// How he ranks two corners: how much his network carries about it, then what
+// taking it back is worth, then the id so the order is total. Exported because
+// the gossip surface has to reproduce this order without holding the plan - when
+// there are more warned corners than people willing to call, the corner he wants
+// most is the one that has to get said out loud.
+function compareBlocksByCurtisPriority(aId, bId) {
+  const a = SPENARD_BLOCK_BY_ID[aId];
+  const b = SPENARD_BLOCK_BY_ID[bId];
+  if (!a || !b) return a ? -1 : b ? 1 : 0;
+  return (b.curtisVisibility - a.curtisVisibility) || (b.earningPotential - a.earningPotential) || (a.id < b.id ? -1 : 1);
+}
+
+// THE NIGHTLY PLAN (v1.23), and the one list two surfaces read.
+//
+// Which of the player's corners Curtis's people are working, ranked by how
+// visible the block is to him and then by what taking it back would be worth,
+// cut to the depth his awareness phase supports - invisible means nobody is
+// looking at anything yet. Each entry carries a pressure weight: the phase's
+// budget spent greedily down the list, capped per block, so the top corner
+// reads "coming hard" and the tail reads "just looking".
+//
+// Two things about it are load-bearing.
+//
+// FIRST, it is gated by exactly what curtisMoveChance is gated by. Before
+// v1.23 the target list only ranked - it did not apply the phase visibility
+// gate and did not exclude visibility-0 corners, so at ambient it would name
+// the Minnesota Off-Ramp as next while `curtisMoveChance` returned a flat zero
+// for it, and at approaching it named the Spenard Rec Center Lot, a corner the
+// multiplier means he never comes for at any phase. Pherris was reporting
+// corners Curtis could not take. The list now answers the same question the
+// night rolls against: is this corner on his map tonight.
+//
+// SECOND, it is a pure read with nothing stored and nothing drawn. Given the
+// same day, phase and holdings it returns the same plan every time, which is
+// what lets the day-end pass raise a warning about tomorrow night and the
+// player re-derive the identical plan when tomorrow arrives. It deliberately
+// does NOT read the garrison: the plan is his intent, and what the player posts
+// in response is the thing the warning exists to let them change.
+function curtisNightPlan(state) {
+  const phase = state.curtisAwareness?.phase || CurtisAwareness.phaseForLevel(state.curtisAwareness?.level || 0);
+  const depth = Territory.CURTIS_TARGET_DEPTH_BY_PHASE[phase] || 0;
+  if (!depth || !(Territory.CURTIS_PHASE_MULTIPLIER[phase] > 0)) return [];
+  const gate = Territory.CURTIS_PHASE_VISIBILITY_GATE[phase];
+  const ranked = SPENARD_BLOCKS
+    .filter((block) => state.world?.territoryBlocks?.[block.id]?.owner === "player")
+    // A corner his network carries no news about is not on the board at any
+    // phase, and one below the phase's floor is not on it tonight.
+    .filter((block) => block.curtisVisibility > 0 && block.curtisVisibility >= (gate == null ? 99 : gate))
+    .sort((a, b) => compareBlocksByCurtisPriority(a.id, b.id))
+    .slice(0, depth);
+  let budget = Territory.CURTIS_PRESSURE_BUDGET_BY_PHASE[phase] || 0;
+  const plan = [];
+  for (const block of ranked) {
+    if (budget <= 0) break;
+    const weight = Math.min(Territory.CURTIS_MAX_PRESSURE_PER_BLOCK, budget);
+    budget -= weight;
+    plan.push({ blockId: block.id, name: block.name, weight });
+  }
+  return plan;
+}
 
 function curtisBlockTargets(state) {
-  const phase = state.curtisAwareness?.phase || CurtisAwareness.phaseForLevel(state.curtisAwareness?.level || 0);
-  const depth = CURTIS_TARGETS_BY_PHASE[phase] || 0;
-  if (!depth) return [];
-  return SPENARD_BLOCKS
-    .filter((block) => state.world?.territoryBlocks?.[block.id]?.owner === "player")
-    .sort((a, b) => (b.curtisVisibility - a.curtisVisibility) || (b.earningPotential - a.earningPotential) || (a.id < b.id ? -1 : 1))
-    .slice(0, depth)
-    .map((block) => block.id);
+  return curtisNightPlan(state).map((entry) => entry.blockId);
 }
 
 // One read per block for the UI, so no screen has to remember which level owns
@@ -112,6 +161,7 @@ module.exports = {
   blockIntelView,
   curtisBlockDefense,
   curtisBlockDefenseEstimate,
+  curtisNightPlan,
   curtisBlockTargets,
-  CURTIS_TARGETS_BY_PHASE,
+  compareBlocksByCurtisPriority,
 };

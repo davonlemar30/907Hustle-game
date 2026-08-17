@@ -618,5 +618,10 @@ test("ARCHITECTURE documents the split and the phase gate", () => {
   for (const token of ["POLICE_BASE_CHANCE", "CURTIS_PHASE_VISIBILITY_GATE", "curtisVisibility", "src/data/territory.js"]) {
     assert.ok(architecture.includes(token), `ARCHITECTURE.md must name ${token}`);
   }
-  assert.match(architecture, /current as of\s+\**v1\.21\**/i);
+  // Pinned to the package version rather than to v1.21 literally: the header has
+  // to keep up with the build, and hard-coding one release here means every later
+  // build trips a v1.21 test for a reason that has nothing to do with the split.
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+  const [major, minor] = pkg.version.split(".");
+  assert.match(architecture, new RegExp(`current as of\\s+\\**v${major}\\.${minor}\\**`, "i"));
 });

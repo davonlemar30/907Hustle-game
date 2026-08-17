@@ -1,20 +1,124 @@
 # 907Hustle: One Good Run — Project Status
 
-Last updated: 2026-08-16 (America/Anchorage)
+Last updated: 2026-08-17 (America/Anchorage)
 
-**HEAD of `main` is `1a9a099`, the v1.20 merge (PR #82).** Verified on the
-branch before merge: `npm test` 699 passing, `npm run build` clean, 2,000-run
-simulation with zero dead ends, `--total 200`
+**v1.21 is built on `claude/v1-21-raid-split-w86iuj`, on top of the v1.20 merge
+(PR #83, `43652c3`).** Verified on the branch: `npm test` 733 passing,
+`npm run build` clean, 2,000-run simulation with zero dead ends, `--total 200`
 `c8b3bf0745871555c326f4861b0a8d576ce149c9fa7bd871e9215b51236092d8`,
-`--total 2000` `d9d0fbf1d24c1c7cca8db9db7897f044811a46c4d41ff6a23ca678a0dc3dfb39`.
+`--total 2000` `d9d0fbf1d24c1c7cca8db9db7897f044811a46c4d41ff6a23ca678a0dc3dfb39`
+— both **byte-identical to v1.20**, which is the check that matters for a change
+this deep in nightly resolution.
 
-**Phase 1 of the Godfather adaptation is closed.** 1.1 Tone recruitment
-(v1.18), 1.2 Pherris recruitment and 1.3 Deshawn tier retro-gate (v1.19), and
-1.4 lieutenant typed modifiers (v1.20) are all shipped. The one Phase 1
-companion item still open is **4.1 First-claim moment** — the ceremony pass the
-phase list wanted to ship alongside the mechanic. Phase 2 (splitting police
-raids from Curtis moves, then the Curtis planner) is next, and it can now treat
-Tone's multiplier as the defense layer the planner has to overcome.
+**Phase 1 of the Godfather adaptation is closed** — 1.1 Tone recruitment
+(v1.18), 1.2 Pherris recruitment and 1.3 Deshawn tier retro-gate (v1.19), 1.4
+lieutenant typed modifiers (v1.20). The one Phase 1 companion item still open is
+**4.1 First-claim moment**, the ceremony pass the phase list wanted alongside the
+mechanic. **Phase 2.1 (splitting police raids from Curtis moves) ships in
+v1.21.** Next is 2.2, the Curtis planner, which now has a targeting system to
+plug into: `curtisMoveChance` already decides which corners are on his map, so
+the planner's job is choosing among them rather than inventing the notion.
+
+## v1.21 Police Raids and Curtis Moves Split — built (branch `claude/v1-21-raid-split-w86iuj`)
+
+- Built from the "v1.21 Build Prompt: Split Police Raids from Curtis Moves"
+  spec, on top of the v1.20 merge (PR #83, `43652c3`). **Save schema stays v11**
+  — the split changes nightly resolution, not state shape, so there is nothing
+  new to persist and nothing to migrate.
+- **The problem.** One blended roll decided both "the police busted your corner"
+  and "Curtis took your corner". Heat therefore governed how much territory the
+  player kept, a player who went quiet still lost corners at the same rate, and
+  `curtisVisibility` — the stat describing exposure to Curtis's network — had no
+  offense-side reader at all. The player could not reason about either threat
+  separately because they were not separate.
+- **Two passes, one function.** `resolveSoldierOperations` is still the single
+  integration point. Per block, in order: income, then a **police** roll on
+  staffed corners, then a **Curtis** roll on every corner the player holds.
+  - **Police** read Heat and `patrolFrequency`, discounted by Eli. They cost a
+    soldier and +1 Heat, write `heat_exposure / police_raid` on the
+    `neighborhood` channel, and **never change who owns the corner**.
+  - **Curtis** reads `curtisVisibility` and his awareness phase, divided by the
+    garrison. He takes the corner, costs **no Heat**, and writes
+    `defiance / block_lost_to_curtis` on `network`.
+- **Constants** live in the new `src/data/territory.js`, a leaf that requires
+  nothing. Two deviations from the spec, both measured before being taken:
+  `POLICE_ELI_DISCOUNT` is **0.015**, not the old 0.05 — against a 0.04 base and
+  0.03 patrol weight, 0.05 per point clamps a quiet patrol-1 corner to exactly
+  zero, so Eli would make a block literally un-raidable; and
+  `CURTIS_BASE_CHANCE` is **0.12**, not 0.06, because the divisor includes
+  headcount. At two posted soldiers the two cancel and the block sits where a
+  single 0.06 roll put it, which keeps v1.20's promise that a second soldier
+  halves the risk — and makes an *undefended* corner the one that costs double.
+- **Phase-gated visibility.** `CURTIS_PHASE_VISIBILITY_GATE` is a floor on
+  `curtisVisibility`, not a scale: `invisible` 99, `ambient` 2, `watching` 1,
+  `approaching` 0. Spenard Rec Center Lot (visibility 0) is **never his at any
+  phase** — the multiplier zeroes it even where the gate lets it through. The
+  police still raid it. Stated as a design position, not left emergent: the
+  quiet lot is the safe, low-earning corner.
+- **Both gates are hashed, not drawn**:
+  `stringHash(seed:raid:blockId:day:police|curtis)`. Different salts, so a
+  corner can take a raid and lose the block the same night. Hashing is what lets
+  a second pass exist without shifting the tick's RNG stream, and what makes a
+  reloaded save replay the night instead of rerolling it.
+- **Curtis now escalates off territory.** A lost corner is a `defiance` row on
+  `network`, which clears his filter, so it routes through `broadcastTracked` and
+  raises `curtisAwareness` by 1. Losing corners makes him hunt harder — bounded
+  at +6 (the map is six corners) and still bleeding back down on quiet days.
+  This is the fuel the 2.2 planner burns.
+- **Modifier mapping.** Tone divides both passes (police through the shared
+  `takeRaidCasualty`, Curtis as a divisor on whether he comes). Eli discounts
+  the police roll only. Deshawn touches neither directly — his heat reduction
+  lowers Heat, which lowers the police chance, emergent and correct.
+- **UI**: the report card's `severe` check was dead code — it read
+  `state.log[0]`, which is whatever `applyPressure` logged after this pass, so
+  `.report-card.severe` had never rendered. It now reads the report line itself.
+  One phone text per adversary per night and one consequence card, so a
+  six-corner disaster is 2 texts and 1 card, not 12 and 6.
+- **Both simulation hashes are byte-identical to v1.20**, which is a stronger
+  claim than v1.20 could make. No sim strategy reaches the block layer, so this
+  pass draws nothing from the tick's RNG before or after. The behavior is
+  measured by `tests/measure-lieutenant-modifiers.js` instead, which now reports
+  police and Curtis rates separately and sweeps all four phases.
+- **Measured, 200 runs x 10 nights, same three corners as v1.20's A/B**
+  (v1.20 baseline block-loss rate: **0.435**):
+
+  | Phase | Block loss | Police raids/block-night | Curtis flips/block-night | Peak Heat | vs v1.20 |
+  |---|---|---|---|---|---|
+  | `invisible` | 0.000 | 0.136 | 0.000 | 11.32 | −100% |
+  | `ambient` | 0.348 | 0.145 | 0.042 | 10.23 | −20% |
+  | `watching` | 0.598 | 0.154 | 0.085 | 9.45 | +37% |
+  | `approaching` | 0.715 | 0.157 | 0.116 | 8.71 | +64% |
+
+  **The 15% parity criterion is not met at a single phase, and that is the
+  honest result.** Parity lands nearest `ambient` (−20%), not `watching` as the
+  build prompt projected. The projection assumed corners stay staffed; they do
+  not — 5.4 of 6 soldiers are lost per run, and an empty corner is twice as easy
+  for Curtis to take, so the undefended rate dominates the average. The gradient
+  itself is clean and monotonic and is what the build exists to create: quiet
+  players keep corners, watched players lose them. Whether the whole curve should
+  shift one phase cooler is a one-constant tuning call
+  (`CURTIS_BASE_CHANCE` 0.12 → ~0.09) deliberately left for a balance pass.
+- **Per corner at `watching`, six blocks held** — the split doing its job is
+  that the two columns name *different* corners:
+
+  | Block | vis | patrol | Police/bn | Curtis/bn |
+  |---|---|---|---|---|
+  | Wash & Go Lot | 1 | 1 | 0.155 | 0.020 |
+  | Fourth Avenue Strip | 2 | 2 | 0.188 | 0.069 |
+  | Minnesota Off-Ramp | 1 | 1 | 0.148 | 0.037 |
+  | Spenard Rec Center Lot | 0 | 1 | 0.153 | **0.000** |
+  | Northern Lights Motel Row | 3 | 2 | 0.174 | **0.097** |
+  | Service Road Chokepoint | 2 | 3 | **0.202** | 0.089 |
+
+- **Tests**: `tests/v1-21.test.js`, 34 new tests — the two chance formulas
+  across every input, both gates' independence, phase gating at all four phases,
+  outcome separation (police adds Heat and keeps the corner, Curtis takes it and
+  adds none), the escalation bound, message volume, and the v11 round trip.
+  Total **733 passing**. Four v1.20 tests moved onto `curtisPhase: "watching"`
+  (below it every Curtis number is structurally zero, so the tier comparisons
+  would have passed on nothing), and `game-core.test.js`'s block-loss invariant
+  now forces the loss with awareness rather than Heat, because Heat no longer
+  causes one.
 
 ## v1.20 Lieutenant Typed Modifiers on Soldiers — merged (PR #82, `1a9a099`)
 

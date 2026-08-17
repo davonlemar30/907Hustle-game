@@ -4434,6 +4434,42 @@
     }
   });
 
+  // src/data/territory.js
+  var require_territory = __commonJS({
+    "src/data/territory.js"(exports, module) {
+      var POLICE_BASE_CHANCE = 0.04;
+      var POLICE_HEAT_WEIGHT = 0.015;
+      var POLICE_PATROL_WEIGHT = 0.03;
+      var POLICE_ELI_DISCOUNT = 0.015;
+      var CURTIS_BASE_CHANCE = 0.12;
+      var CURTIS_VISIBILITY_WEIGHT = 0.4;
+      var CURTIS_PHASE_MULTIPLIER = {
+        invisible: 0,
+        ambient: 0.5,
+        watching: 1,
+        approaching: 1.5
+      };
+      var CURTIS_PHASE_VISIBILITY_GATE = {
+        invisible: 99,
+        ambient: 2,
+        watching: 1,
+        approaching: 0
+      };
+      var RAID_DEFENSE_PER_SOLDIER = 1;
+      module.exports = {
+        POLICE_BASE_CHANCE,
+        POLICE_HEAT_WEIGHT,
+        POLICE_PATROL_WEIGHT,
+        POLICE_ELI_DISCOUNT,
+        CURTIS_BASE_CHANCE,
+        CURTIS_VISIBILITY_WEIGHT,
+        CURTIS_PHASE_MULTIPLIER,
+        CURTIS_PHASE_VISIBILITY_GATE,
+        RAID_DEFENSE_PER_SOLDIER
+      };
+    }
+  });
+
   // src/data/products.js
   var require_products = __commonJS({
     "src/data/products.js"(exports, module) {
@@ -4763,6 +4799,7 @@
         const Crew = require_crew();
         const Arrest = require_arrest();
         const CurtisAwareness = require_curtis_awareness();
+        const Territory = require_territory();
         const VERSION = 11;
         const RUN_DAYS = 7;
         const PRESSURE_DAYS = 7;
@@ -4813,11 +4850,7 @@
         const SOLDIERS_PER_BLOCK_CAP = 3;
         const SOLDIER_INCOME_BASE_DIMINISH = 0.85;
         const SOLDIER_ATTRITION_BASE_CHANCE = 0.05;
-        const RAID_BASE_CHANCE = 0.1;
-        const RAID_HEAT_WEIGHT = 0.02;
-        const RAID_PATROL_WEIGHT = 0.15;
-        const RAID_BLOCK_LOSS_CHANCE = 0.35;
-        const RAID_DEFENSE_PER_SOLDIER = 1;
+        const RAID_DEFENSE_PER_SOLDIER = Territory.RAID_DEFENSE_PER_SOLDIER;
         const TERRITORY_HEAT_CHANCE_PER_EXPOSURE = 0.06;
         const TERRITORY_HEAT_CHANCE_CAP = 0.9;
         const FINANCIAL_HEAT_DIRTY_SPEND_THRESHOLD = 400;
@@ -9062,17 +9095,54 @@
           }
           return moved;
         }
+        function blockGateRoll(state, blockId, kind) {
+          return stringHash(`${state.run.seed}:raid:${blockId}:${state.run.day}:${kind}`) % 1e4 / 1e4;
+        }
+        function policeRaidChance(state, blockId) {
+          var _a;
+          const block = SPENARD_BLOCK_BY_ID[blockId];
+          const record = (_a = state.world.territoryBlocks) == null ? void 0 : _a[blockId];
+          if (!block || !record || record.owner !== "player" || !record.soldiersAssigned.length) return 0;
+          const eli = state.people.crew.eli;
+          const discount = eli.lieutenantStage === "operations_lieutenant" ? eli.lieutenantEffectiveness * Territory.POLICE_ELI_DISCOUNT : 0;
+          return clamp(Territory.POLICE_BASE_CHANCE + state.player.heat * Territory.POLICE_HEAT_WEIGHT + block.patrolFrequency * Territory.POLICE_PATROL_WEIGHT - discount, 0, 0.9);
+        }
+        function curtisMoveChance(state, blockId) {
+          var _a;
+          const block = SPENARD_BLOCK_BY_ID[blockId];
+          const record = (_a = state.world.territoryBlocks) == null ? void 0 : _a[blockId];
+          if (!block || !record || record.owner !== "player") return 0;
+          const phase = CurtisAwareness.phaseForLevel(curtisAwarenessOf(state).level);
+          const gate = Territory.CURTIS_PHASE_VISIBILITY_GATE[phase];
+          if (block.curtisVisibility < (gate == null ? 99 : gate)) return 0;
+          const defense = Math.max(1, record.soldiersAssigned.length) * RAID_DEFENSE_PER_SOLDIER * Crew.toneDefenseMultiplier(state);
+          return clamp(Territory.CURTIS_BASE_CHANCE * (block.curtisVisibility * Territory.CURTIS_VISIBILITY_WEIGHT) * (Territory.CURTIS_PHASE_MULTIPLIER[phase] || 0) / defense, 0, 0.9);
+        }
+        function takeRaidCasualty(state, random, record, toneDefense) {
+          const assigned = record.soldiersAssigned;
+          if (!assigned.length) return false;
+          const defenseStrength = assigned.length * RAID_DEFENSE_PER_SOLDIER * toneDefense;
+          const casualtyChance = clamp(assigned.length / defenseStrength, 0, 1);
+          if (random.next() >= casualtyChance) return false;
+          const lostId = random.pick(assigned);
+          const soldier = state.world.soldiers[lostId];
+          soldier.status = "lost";
+          soldier.blockId = null;
+          record.soldiersAssigned = assigned.filter((id) => id !== lostId);
+          return true;
+        }
         function resolveSoldierOperations(state, random, crossedDay) {
           if (!crossedDay) return;
           const movedBlocks = resolveEliAutoAssignment(state);
           const eli = state.people.crew.eli;
-          const effectivenessDiscount = eli.lieutenantStage === "operations_lieutenant" ? eli.lieutenantEffectiveness * 0.05 : 0;
           let totalIncome = 0;
-          let raidedCount = 0;
+          let policeCount = 0;
+          let curtisCount = 0;
           let attritionCount = 0;
           let heldExposure = 0;
           let repelledCount = 0;
-          const raidedBlockNames = [];
+          const policeBlockNames = [];
+          const lostBlockNames = [];
           const toneDefense = Crew.toneDefenseMultiplier(state);
           for (const block of SPENARD_BLOCKS) {
             const record = state.world.territoryBlocks[block.id];
@@ -9081,44 +9151,40 @@
               var _a;
               return ((_a = state.world.soldiers[id]) == null ? void 0 : _a.status) === "active";
             });
-            const assigned = record.soldiersAssigned;
             heldExposure += block.heatExposure;
-            if (assigned.length > 0) {
+            if (record.soldiersAssigned.length > 0) {
+              const assigned = record.soldiersAssigned;
               let blockIncome = 0;
               for (let index = 0; index < assigned.length; index += 1) blockIncome += block.earningPotential * Math.pow(SOLDIER_INCOME_BASE_DIMINISH, index);
               blockIncome = Math.round(blockIncome);
               totalIncome += blockIncome;
               record.incomeCollected += blockIncome;
-              const raidChance = clamp(RAID_BASE_CHANCE + state.player.heat * RAID_HEAT_WEIGHT + block.patrolFrequency * RAID_PATROL_WEIGHT - effectivenessDiscount, 0, 0.9);
-              if (random.next() < raidChance) {
-                const defenseStrength = assigned.length * RAID_DEFENSE_PER_SOLDIER * toneDefense;
-                const casualtyChance = clamp(assigned.length / defenseStrength, 0, 1);
+              if (blockGateRoll(state, block.id, "police") < policeRaidChance(state, block.id)) {
                 record.lastRaidDay = state.run.day;
                 record.raidCount += 1;
                 state.player.heat = clamp(state.player.heat + 1, 0, 15);
-                Exposure.recordObservation(state, "curtis", { type: "growth", event: "visible_business", source: "network" });
-                raidedCount += 1;
-                raidedBlockNames.push(block.name);
-                if (random.next() >= casualtyChance) {
-                  repelledCount += 1;
-                } else {
-                  const lostId = random.pick(assigned);
-                  const soldier = state.world.soldiers[lostId];
-                  soldier.status = "lost";
-                  soldier.blockId = null;
-                  record.soldiersAssigned = record.soldiersAssigned.filter((id) => id !== lostId);
-                  if (random.next() < RAID_BLOCK_LOSS_CHANCE / defenseStrength) {
-                    record.owner = "curtis";
-                    const survivors = record.soldiersAssigned;
-                    for (const survivorId of survivors) {
-                      const survivor = state.world.soldiers[survivorId];
-                      if (survivor) survivor.blockId = null;
-                    }
-                    record.soldiersAssigned = [];
-                    logEntry(state, survivors.length ? `Curtis takes ${block.name}. ${survivors.length} of Eli's people make it back to the garage.` : `${block.name} slips back under Curtis's people after the raid.`, "bad");
-                  }
-                }
+                policeCount += 1;
+                policeBlockNames.push(block.name);
+                broadcastTracked(state, { type: "heat_exposure", event: "police_raid", channel: "neighborhood", location: HOME_DISTRICT_ID });
+                if (!takeRaidCasualty(state, random, record, toneDefense)) repelledCount += 1;
               }
+            }
+            const curtisChance = curtisMoveChance(state, block.id);
+            if (curtisChance > 0 && blockGateRoll(state, block.id, "curtis") < curtisChance) {
+              const staffed = record.soldiersAssigned.length > 0;
+              takeRaidCasualty(state, random, record, toneDefense);
+              const survivors = record.soldiersAssigned;
+              for (const survivorId of survivors) {
+                const survivor = state.world.soldiers[survivorId];
+                if (survivor) survivor.blockId = null;
+              }
+              record.soldiersAssigned = [];
+              record.owner = "curtis";
+              curtisCount += 1;
+              lostBlockNames.push(block.name);
+              broadcastTracked(state, { type: "defiance", event: "block_lost_to_curtis", channel: "network", location: HOME_DISTRICT_ID });
+              logEntry(state, staffed ? `Curtis takes ${block.name}. ${survivors.length} of Eli's people make it back to the garage.` : `${block.name} slips back under Curtis's people. Nobody was posted on it.`, "bad");
+              continue;
             }
             const attritionChance = Math.max(0, SOLDIER_ATTRITION_BASE_CHANCE - eli.lieutenantEffectiveness * ELI_EFFECTIVENESS_ATTRITION_DISCOUNT);
             for (const id of [...record.soldiersAssigned]) {
@@ -9135,17 +9201,25 @@
           if (totalIncome > 0) addDirtyCash(state, totalIncome);
           const territoryHeat = heldExposure > 0 && random.next() < territoryHeatChance(state, heldExposure);
           if (territoryHeat) state.player.heat = clamp(state.player.heat + 1, 0, 15);
-          if (totalIncome > 0 || movedBlocks.length || raidedCount || attritionCount || territoryHeat) {
+          if (policeCount) {
+            pushPhoneMessage(state, "Eli", policeCount === 1 ? `Police came through ${policeBlockNames[0]} tonight. Corner's still ours.` : `Police worked ${policeBlockNames.slice(0, 2).join(" and ")} tonight. Corners are still ours.`);
+          }
+          if (curtisCount) {
+            pushPhoneMessage(state, "Eli", curtisCount === 1 ? `Curtis's people are standing on ${lostBlockNames[0]}. That corner isn't ours anymore.` : `We lost ${curtisCount} corners to Curtis tonight. Everybody who walked away is at the garage.`);
+            pushConsequence(state, curtisCount === 1 ? `Curtis has ${lostBlockNames[0]}.` : `Curtis has ${lostBlockNames.slice(0, 2).join(" and ")}${curtisCount > 2 ? " and more" : ""}.`, "bad");
+          }
+          if (totalIncome > 0 || movedBlocks.length || policeCount || curtisCount || attritionCount || territoryHeat) {
             const parts = [];
             if (totalIncome > 0) parts.push(`+$${totalIncome} territory income`);
             if (movedBlocks.length === 1) parts.push(`1 soldier moved to ${movedBlocks[0]}`);
             else if (movedBlocks.length > 1) parts.push(`${movedBlocks.length} soldiers moved (${movedBlocks.slice(0, 2).join(", ")}${movedBlocks.length > 2 ? "\u2026" : ""})`);
-            if (raidedCount) parts.push(`${raidedBlockNames.slice(0, 2).join(", ")}${raidedCount > 2 ? " and others" : ""} drew police attention`);
+            if (policeCount) parts.push(`${policeBlockNames.slice(0, 2).join(", ")}${policeCount > 2 ? " and others" : ""} took a police raid`);
             if (repelledCount) parts.push(`${repelledCount} raid${repelledCount === 1 ? "" : "s"} turned away at the corner`);
+            if (curtisCount) parts.push(`${curtisCount === 1 ? lostBlockNames[0] : `${curtisCount} corners`} lost to Curtis`);
             if (attritionCount) parts.push(`${attritionCount} soldier${attritionCount === 1 ? "" : "s"} lost to attrition`);
             if (territoryHeat) parts.push("the held corners drew a look (+1 Heat)");
-            if (!raidedCount && !attritionCount) parts.push("No casualties");
-            logEntry(state, `Eli's report: ${parts.join(" \xB7 ")}`, raidedCount || attritionCount ? "warn" : "good");
+            if (!policeCount && !curtisCount && !attritionCount) parts.push("No casualties");
+            logEntry(state, `Eli's report: ${parts.join(" \xB7 ")}`, policeCount || curtisCount || attritionCount ? "warn" : "good");
           }
         }
         function territoryHeatChance(state, exposureOverride) {
@@ -13677,11 +13751,8 @@
           SOLDIER_BASE_CAPACITY,
           SOLDIER_CAPACITY_PER_BLOCK,
           SOLDIERS_PER_BLOCK_CAP,
-          RAID_BASE_CHANCE,
-          RAID_HEAT_WEIGHT,
-          RAID_PATROL_WEIGHT,
-          RAID_BLOCK_LOSS_CHANCE,
           RAID_DEFENSE_PER_SOLDIER,
+          TERRITORY: Territory,
           TERRITORY_HEAT_CHANCE_PER_EXPOSURE,
           TERRITORY_HEAT_CHANCE_CAP,
           BLOCK_INTEL_LEVEL_COPY,
@@ -13703,6 +13774,11 @@
           buildEventForTest: activeEvent,
           storyCandidatesForTest: storyCandidates,
           recordBehaviorForTest: recordBehavior,
+          // v1.21: the nightly territory pass, reachable without driving a whole
+          // CONFIRM_END_DAY. Isolating one Heat delta otherwise means fighting rent,
+          // pressure, the Curtis settle, and the markets for it.
+          resolveSoldierOperationsForTest: resolveSoldierOperations,
+          blockGateRollForTest: blockGateRoll,
           // Street Read is invisible to the player but has to be reachable by tests.
           // Nothing here is imported by ui.jsx.
           streetRead: {
@@ -13830,6 +13906,11 @@
             deshawnHeatReduction: Crew.deshawnHeatReduction,
             territoryHeatChance,
             lieutenantTerritoryModifier,
+            // v1.21: the two nightly gates, exposed the same way territoryHeatChance
+            // is — so a Territory screen can show the player the same number the
+            // night rolls against, for each adversary separately.
+            policeRaidChance,
+            curtisMoveChance,
             soldierRecruitAvailability,
             soldierAssignAvailability,
             blockClaimAvailability,
@@ -13974,10 +14055,9 @@
       var areaOf = (state) => C.NEIGHBORHOODS.find((area) => area.id === state.world.currentNeighborhoodId) || C.NEIGHBORHOODS[0];
       var findEliReport = (state) => state.log.slice(0, 6).find((entry) => entry.text.startsWith("Eli's report:")) || null;
       function EliReportCard({ state }) {
-        var _a;
         const report = findEliReport(state);
         if (!report) return null;
-        const severe = /Curtis takes|slips back under Curtis/.test(((_a = state.log[0]) == null ? void 0 : _a.text) || "");
+        const severe = /lost to Curtis/.test(report.text);
         return /* @__PURE__ */ React.createElement("div", { className: `report-card ${report.tone === "warn" ? severe ? "severe" : "warn" : "good"}` }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Eli's Report"), /* @__PURE__ */ React.createElement("p", null, report.text.replace("Eli's report: ", "")));
       }
       function readSave() {
@@ -14057,7 +14137,7 @@
         const showCrew = C.selectors.recruitedCrew(state).length > 0;
         const showCurtis = state.npc.curtis.relationship !== "unaware";
         const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil(value / ceiling * 5))), total: 5 });
-        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.20"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day, state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
+        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.21"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day, state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
       }
       var NAV_ICONS = {
         home: "M12 3 3 10.4V21h6v-6h6v6h6V10.4z",
@@ -15009,7 +15089,7 @@
           ExpandableMoreSection,
           {
             collapsedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-lead" }, "Autosave is on. This run saves to your browser after every action."),
-            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.20 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
+            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.21 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
             moreLabel: "Save detail",
             lessLabel: "Hide detail"
           }

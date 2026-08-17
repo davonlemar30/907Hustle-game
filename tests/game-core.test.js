@@ -1168,13 +1168,18 @@ test("cash equals dirty plus clean after purchases, debt payments, recruitment, 
 });
 
 test("losing a block clears every surviving soldier's assignment, not just the casualty", () => {
-  // Force a raid-and-loss deterministically: three soldiers on one block,
-  // then invoke advanceRun repeatedly across seeds until a block-loss occurs,
-  // and confirm every remaining soldier that was on that block is detached.
+  // Force a loss deterministically: soldiers on the most visible corner, then
+  // invoke advanceRun repeatedly across seeds until it changes hands, and
+  // confirm every remaining soldier that was on it is detached.
+  //
+  // v1.21: the lever is Curtis's awareness, not Heat. Only he takes corners
+  // now, and he does not come at all below `ambient` — Heat buys police raids,
+  // and a police raid never changes who owns anything.
   function setup(seed) {
-    let state = promotedEliSetup(seed); state.player.cash = 5000; state.player.heat = 10; // raise raid odds
+    let state = promotedEliSetup(seed); state.player.cash = 5000; state.player.heat = 10;
+    Object.assign(state.curtisAwareness, { level: 11, floor: 11, phase: "approaching" });
     state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state);
-    state = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "northern_lights_motels" }); clearModals(state); // highest patrol/heat exposure
+    state = C.reduceGame(state, { type: "CLAIM_BLOCK", blockId: "northern_lights_motels" }); clearModals(state); // visibility 3, his first stop
     state = C.reduceGame(state, { type: "RECRUIT_SOLDIER" }); clearModals(state);
     const spare = Object.values(state.world.soldiers).find((item) => item.status === "active" && !item.blockId);
     if (spare) state = C.reduceGame(state, { type: "ASSIGN_SOLDIER", soldierId: spare.id, blockId: "northern_lights_motels" });
@@ -1195,7 +1200,7 @@ test("losing a block clears every surviving soldier's assignment, not just the c
       }
     }
   }
-  assert.ok(found, "expected at least one seed in range to produce a block loss with heat=10");
+  assert.ok(found, "expected at least one seed in range to lose the corner to Curtis at approaching");
 });
 
 test("no active soldier ever references a block the player does not currently control", () => {

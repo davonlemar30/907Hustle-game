@@ -15,7 +15,11 @@ const findEliReport = (state) => state.log.slice(0, 6).find((entry) => entry.tex
 function EliReportCard({ state }) {
   const report = findEliReport(state);
   if (!report) return null;
-  const severe = /Curtis takes|slips back under Curtis/.test(state.log[0]?.text || "");
+  // v1.21: the report names its own worst outcome, so severity is a read on
+  // the line the card is already showing. The old check read state.log[0],
+  // which is whatever the rest of the day end logged after this pass — it
+  // never matched, and the severe style never rendered.
+  const severe = /lost to Curtis/.test(report.text);
   return <div className={`report-card ${report.tone === "warn" ? (severe ? "severe" : "warn") : "good"}`}><div className="card-title">Eli's Report</div><p>{report.text.replace("Eli's report: ", "")}</p></div>;
 }
 
@@ -143,7 +147,7 @@ function Header({ state, onMenu }) {
   // them as five segments; the exact number stays the accessible name.
   const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil((value / ceiling) * 5))), total: 5 });
   return <header className="top">
-    <h1 className="sr-only">907Hustle: One Good Run · v1.20</h1>
+    <h1 className="sr-only">907Hustle: One Good Run · v1.21</h1>
     <div className="hud primary-hud">
       <Hud label="Day / Time" bare value={<><b className="hud-day">Day {state.run.day}{state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""}</b><span className="hud-slot">{C.SLOTS[state.run.slot]}</span><SlotPips slot={state.run.slot} /></>} />
       <Hud label="District" bare accent="muted" value={<><span className="hud-diamond" aria-hidden="true">◆</span>{area.name}</>} />
@@ -1761,7 +1765,7 @@ function MenuModal({ state, dispatch, onClose, onTitle }) {
   return <><Modal title="Run menu" onClose={onClose}>
     <ExpandableMoreSection
       collapsedContent={<p className="popup-lead">Autosave is on. This run saves to your browser after every action.</p>}
-      expandedContent={<p className="popup-flavor">907Hustle v1.20 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
+      expandedContent={<p className="popup-flavor">907Hustle v1.21 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
       moreLabel="Save detail" lessLabel="Hide detail" />
     <button className="btn full primary" onClick={onTitle}>Return to Title</button>
     <button className="btn full secondary choice" onClick={() => setConfirmRestart(true)}>Restart Run<span>Creates a new seed and returns to Street Name entry.</span></button>

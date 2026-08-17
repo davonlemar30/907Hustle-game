@@ -63,16 +63,37 @@ function curtisBlockDefenseEstimate(state, blockId) {
   return Math.max(1, exact + jitter);
 }
 
-// How he ranks two corners: how much his network carries about it, then what
-// taking it back is worth, then the id so the order is total. Exported because
-// the gossip surface has to reproduce this order without holding the plan - when
-// there are more warned corners than people willing to call, the corner he wants
-// most is the one that has to get said out loud.
-function compareBlocksByCurtisPriority(aId, bId) {
+// Whether he has already taken this corner back off the player once. Stamped by
+// the resolver, never cleared, and false on every save that predates v1.28.
+//
+// Note what it is not keyed on. Every corner on the map starts `owner: "curtis"`
+// - so "a corner the player took from him" describes all six and ranks nothing.
+// A corner he has come back for is the one with a history.
+function curtisRetookBlock(state, blockId) {
+  return Boolean(state?.world?.territoryBlocks?.[blockId]?.curtisTookBack);
+}
+
+// How he ranks two corners: what he has already come back for once, then how
+// much his network carries about it, then what taking it back is worth, then the
+// id so the order is total. Exported because the gossip surface has to reproduce
+// this order without holding the plan - when there are more warned corners than
+// people willing to call, the corner he wants most is the one that has to get
+// said out loud.
+//
+// `state` is optional and third on purpose: without it the comparator is exactly
+// the v1.23 ordering, so a caller that has no state to hand (or a test pinning
+// the static order) is unaffected. Every caller inside the game passes it, which
+// is what keeps the plan, the gossip queue and the paid disclosures naming
+// corners in the same order.
+function compareBlocksByCurtisPriority(aId, bId, state) {
   const a = SPENARD_BLOCK_BY_ID[aId];
   const b = SPENARD_BLOCK_BY_ID[bId];
   if (!a || !b) return a ? -1 : b ? 1 : 0;
-  return (b.curtisVisibility - a.curtisVisibility) || (b.earningPotential - a.earningPotential) || (a.id < b.id ? -1 : 1);
+  const grudge = state
+    ? (curtisRetookBlock(state, bId) ? Territory.CURTIS_RECAPTURE_PRIORITY : 0)
+      - (curtisRetookBlock(state, aId) ? Territory.CURTIS_RECAPTURE_PRIORITY : 0)
+    : 0;
+  return grudge || (b.curtisVisibility - a.curtisVisibility) || (b.earningPotential - a.earningPotential) || (a.id < b.id ? -1 : 1);
 }
 
 // THE NIGHTLY PLAN (v1.23), and the one list two surfaces read.
@@ -100,7 +121,22 @@ function compareBlocksByCurtisPriority(aId, bId) {
 // what lets the day-end pass raise a warning about tomorrow night and the
 // player re-derive the identical plan when tomorrow arrives. It deliberately
 // does NOT read the garrison: the plan is his intent, and what the player posts
-// in response is the thing the warning exists to let them change.
+// in response is the thing the warning exists to let them change. v1.28 was
+// asked to give him a "probe the weakest" preference here and deliberately did
+// not: a plan that read soldier counts would change the moment a warned player
+// moved somebody, so the warning would falsify itself and the whole v1.23
+// contract would go with it. He probes the weakest at resolution time instead,
+// through the defense divisor in curtisMoveChance, where the odds already live.
+//
+// v1.28 adds two things that ARE his intent: a grudge (the comparator, above)
+// and a bank. The bank is read here and written by the resolver, so this stays
+// a pure read of state rather than a thing that accumulates by being called.
+function curtisPressureBank(state, phase) {
+  const bank = state.run?.curtisPressureBank;
+  if (!bank || bank.phase !== phase) return 0;
+  return Math.min(Territory.CURTIS_PRESSURE_BANK_CAP, Math.max(0, Number(bank.points) || 0));
+}
+
 function curtisNightPlan(state) {
   const phase = state.curtisAwareness?.phase || CurtisAwareness.phaseForLevel(state.curtisAwareness?.level || 0);
   const depth = Territory.CURTIS_TARGET_DEPTH_BY_PHASE[phase] || 0;
@@ -111,9 +147,9 @@ function curtisNightPlan(state) {
     // A corner his network carries no news about is not on the board at any
     // phase, and one below the phase's floor is not on it tonight.
     .filter((block) => block.curtisVisibility > 0 && block.curtisVisibility >= (gate == null ? 99 : gate))
-    .sort((a, b) => compareBlocksByCurtisPriority(a.id, b.id))
+    .sort((a, b) => compareBlocksByCurtisPriority(a.id, b.id, state))
     .slice(0, depth);
-  let budget = Territory.CURTIS_PRESSURE_BUDGET_BY_PHASE[phase] || 0;
+  let budget = (Territory.CURTIS_PRESSURE_BUDGET_BY_PHASE[phase] || 0) + curtisPressureBank(state, phase);
   const plan = [];
   for (const block of ranked) {
     if (budget <= 0) break;
@@ -122,6 +158,19 @@ function curtisNightPlan(state) {
     plan.push({ blockId: block.id, name: block.name, weight });
   }
   return plan;
+}
+
+// What tonight's plan could not spend, which is what tomorrow's budget carries.
+// Separate from the plan itself because the plan is the thing four surfaces
+// read and none of them wants a leftover count in it; the resolver is the only
+// caller. Capped here rather than at the write so the cap holds however the
+// resolver is called.
+function curtisPressureLeftover(state) {
+  const phase = state.curtisAwareness?.phase || CurtisAwareness.phaseForLevel(state.curtisAwareness?.level || 0);
+  const budget = (Territory.CURTIS_PRESSURE_BUDGET_BY_PHASE[phase] || 0) + curtisPressureBank(state, phase);
+  if (!budget) return { phase, points: 0 };
+  const spent = curtisNightPlan(state).reduce((sum, entry) => sum + entry.weight, 0);
+  return { phase, points: Math.min(Territory.CURTIS_PRESSURE_BANK_CAP, Math.max(0, budget - spent)) };
 }
 
 function curtisBlockTargets(state) {
@@ -163,5 +212,8 @@ module.exports = {
   curtisBlockDefenseEstimate,
   curtisNightPlan,
   curtisBlockTargets,
+  curtisPressureBank,
+  curtisPressureLeftover,
+  curtisRetookBlock,
   compareBlocksByCurtisPriority,
 };

@@ -7,7 +7,7 @@
   "use strict";
   const { normalizeSeed, stringHash, makeRandom, seededShuffle, seededPick, isEligible, getWeight } = require("./src/events/random.js");
   const { effectPreview, event, activeEvent } = require("./src/events/cards.js");
-  const { checkpointDay, controlled, slotNumber, blockIntelLevel, blockIntelView, curtisBlockDefense, curtisBlockTargets, curtisNightPlan, compareBlocksByCurtisPriority } = require("./src/selectors.js");
+  const { checkpointDay, controlled, slotNumber, blockIntelLevel, blockIntelView, curtisBlockDefense, curtisBlockTargets, curtisNightPlan, curtisPressureBank, curtisPressureLeftover, curtisRetookBlock, compareBlocksByCurtisPriority } = require("./src/selectors.js");
   const Exposure = require("./src/exposure/engine.js");
   const { BANDS, bandFor, bandId, bandLabel } = require("./src/data/disposition-bands.js");
   const { EXPOSURE_NPC_IDS } = require("./src/data/npc-lenses.js");
@@ -1443,6 +1443,14 @@
         // nothing here outlives the run, and a save that predates the field
         // hydrates to a day nobody has been called on yet.
         disclosures: { day: 0, entries: [] },
+        // v1.28: pressure points last night's plan could not spend, carried to
+        // tonight's budget and capped. `phase` travels with the points because
+        // the carry does not survive him changing how hard he is looking - an
+        // operation that drops out of approaching does not get to keep the
+        // interest. Session state on `run` for the same reason the two above
+        // are, object-shaped so mergeDefaults hydrates an older save to an
+        // empty bank and the schema stays v11.
+        curtisPressureBank: { phase: null, points: 0 },
         // v1.16: parts of day a booking still owes, spent once the caught-state
         // encounter is dismissed and advanceRun is allowed to move again.
         pendingArrestSlots: null,
@@ -1511,6 +1519,10 @@
         // can be added later with no schema change.
         territoryBlocks: Object.fromEntries(SPENARD_BLOCKS.map((block) => [block.id, {
           owner: "curtis", soldiersAssigned: [], managerId: null, capturedDay: null, incomeCollected: 0, lastRaidDay: null, raidCount: 0,
+          // v1.28. Set the first time he takes this corner back off the player,
+          // and never cleared. Additive and boolean, so mergeDefaults hydrates
+          // every save that predates it to false and the schema stays v11.
+          curtisTookBack: false,
         }])),
         soldiers: {}, nextSoldierId: 1,
       },
@@ -4455,10 +4467,25 @@
       + block.patrolFrequency * Territory.POLICE_PATROL_WEIGHT
       - discount, 0, 0.9);
   }
+  // How much easier a hot player's corners are, and the honest reason why
+  // (v1.28). patrolFrequency is still not in here and never will be: he does not
+  // read patrol routes. Heat is different - it is the player's own number, and
+  // what it buys him is not information but arithmetic. Hot means arrests,
+  // arrests mean thinner corners, thinner corners are cheaper to walk onto. He
+  // is an opportunist, not a strategist, so this is a multiplier on a roll he was
+  // already making and not a branch in a plan.
+  //
+  // Exactly 1.0 at or below the floor, so a player who keeps Heat down never
+  // meets this build at all.
+  function curtisHeatFactor(state) {
+    const heat = Number(state.player?.heat) || 0;
+    return 1 + Math.max(0, heat - Territory.CURTIS_HEAT_PROBE_FLOOR) * Territory.CURTIS_HEAT_PROBE_PER_POINT;
+  }
   // What Curtis rolls against on any corner the player holds, posted or empty.
   // Visibility and phase decide whether he comes; the garrison decides how hard
-  // it is when he does. Heat and patrolFrequency are deliberately not in here:
-  // he is not the police and does not read their patrol routes.
+  // it is when he does, and since v1.28 the player's Heat decides how lucky he
+  // gets. patrolFrequency is deliberately not in here: he is not the police and
+  // does not read their patrol routes.
   function curtisMoveChance(state, blockId) {
     const block = SPENARD_BLOCK_BY_ID[blockId];
     const record = state.world.territoryBlocks?.[blockId];
@@ -4466,10 +4493,16 @@
     const phase = CurtisAwareness.phaseForLevel(curtisAwarenessOf(state).level);
     const gate = Territory.CURTIS_PHASE_VISIBILITY_GATE[phase];
     if (block.curtisVisibility < (gate == null ? 99 : gate)) return 0;
-    const defense = Math.max(1, record.soldiersAssigned.length) * RAID_DEFENSE_PER_SOLDIER * Crew.toneDefenseMultiplier(state);
+    // v1.28: an empty corner is half a defender rather than a whole one, so it
+    // is finally cheaper than a corner with one person standing on it. Tone
+    // still multiplies whatever is there, which is what he did before.
+    const posted = record.soldiersAssigned.length;
+    const defense = (posted > 0 ? posted * RAID_DEFENSE_PER_SOLDIER : Territory.CURTIS_UNSTAFFED_DEFENSE)
+      * Crew.toneDefenseMultiplier(state);
     return clamp(Territory.CURTIS_BASE_CHANCE
       * (block.curtisVisibility * Territory.CURTIS_VISIBILITY_WEIGHT)
       * (Territory.CURTIS_PHASE_MULTIPLIER[phase] || 0)
+      * curtisHeatFactor(state)
       / defense, 0, 0.9);
   }
   // The casualty half of a raid, shared by both adversaries: whether the
@@ -4573,6 +4606,11 @@
         }
         record.soldiersAssigned = [];
         record.owner = "curtis";
+        // v1.28: the corner now has a history, and he remembers it. Every block
+        // on the map starts out his, so "he used to own this" separates nothing
+        // - what separates a corner is that he has already come and taken it
+        // back once. If the player claims it again, the planner ranks it first.
+        record.curtisTookBack = true;
         curtisCount += 1;
         lostBlockNames.push(block.name);
         // The network carries this, and broadcastTracked is the seam that turns
@@ -4693,6 +4731,20 @@
     return Crew.modifierTier(state, "deshawn");
   }
 
+  // v1.28: carry what the plan could not spend into tomorrow's budget, capped,
+  // and drop it entirely when the phase moves. The planner is a pure read and
+  // stays one - it reads this field, it never writes it - so the write lives
+  // here, on the resolver's side of the line, exactly once per crossed day.
+  //
+  // Zeroing on a phase change is the interesting rule rather than housekeeping.
+  // The bank is intent he has accumulated at a given level of attention; an
+  // operation that goes quiet enough to drop out of approaching has actually
+  // bought itself something, and letting the carry survive that would mean
+  // going quiet was worth nothing.
+  function settleCurtisPressureBank(state) {
+    state.run.curtisPressureBank = curtisPressureLeftover(state);
+  }
+
   // Raises tomorrow night's warnings. Scope and timing are the Deshawn ladder;
   // the plan itself is never changed by him, because he does not change what
   // Curtis intends, only how much of it the player gets to hear.
@@ -4805,7 +4857,7 @@
     // corners - the one that gets said out loud is the one he wants most. The
     // comparator is the planner's, imported rather than restated: the plan is not
     // in hand here, and a second copy of the ranking would drift from it.
-    const buckets = [...byCorner.values()].sort((a, b) => (b.weight || 0) - (a.weight || 0) || compareBlocksByCurtisPriority(a.blockId, b.blockId));
+    const buckets = [...byCorner.values()].sort((a, b) => (b.weight || 0) - (a.weight || 0) || compareBlocksByCurtisPriority(a.blockId, b.blockId, state));
     for (const bucket of buckets) {
       const block = SPENARD_BLOCK_BY_ID[bucket.blockId];
       if (!block) continue;
@@ -4881,7 +4933,7 @@
     return SPENARD_BLOCKS
       .filter((block) => state.world?.territoryBlocks?.[block.id]?.owner === "player")
       .map((block) => block.id)
-      .sort(compareBlocksByCurtisPriority);
+      .sort((a, b) => compareBlocksByCurtisPriority(a, b, state));
   }
 
   // THE ONE PLACE THAT READS LIVE STATE, and it reads it at the moment of
@@ -6318,6 +6370,15 @@
     // decided whether Deshawn is still on the payroll. Before the drain below, so
     // his tier-3 "evening before" arrival lands tonight rather than waiting a
     // whole day for the next pass.
+    //
+    // v1.28: the bank is settled BEFORE the warnings, and the order is the whole
+    // correctness argument. A warning raised tonight has to name the same plan
+    // the player re-derives tomorrow, so nothing that feeds the plan may move
+    // between the two. Writing the carry first means the warning already
+    // reflects it and tomorrow's board reproduces it exactly; writing it after
+    // would telegraph one plan and resolve a different one, which is precisely
+    // the v1.23 bug the plan exists to prevent.
+    settleCurtisPressureBank(state);
     emitCurtisGossipWarnings(state);
     // Heat is public past a point, so it spreads on its own with no card
     // tagging it. This is the connection the v1.8.1 audit filed as absent:
@@ -8996,12 +9057,19 @@
       // v1.23: the plan behind the target list, with the pressure weights the
       // gossip surface reads. Same list, one level less flattened.
       curtisNightPlan,
+      // v1.28: what the plan could not spend and is carrying, and whether he has
+      // already taken a corner back once. Exposed for the harness and the tests
+      // rather than for a screen — nothing in the UI reads either yet.
+      curtisPressureBank, curtisPressureLeftover, curtisRetookBlock,
       toneDefenseMultiplier: Crew.toneDefenseMultiplier, deshawnHeatReduction: Crew.deshawnHeatReduction,
       territoryHeatChance, lieutenantTerritoryModifier,
       // v1.21: the two nightly gates, exposed the same way territoryHeatChance
       // is — so a Territory screen can show the player the same number the
       // night rolls against, for each adversary separately.
       policeRaidChance, curtisMoveChance,
+      // v1.28: the Heat multiplier on the Curtis gate, separately readable so a
+      // measurement can attribute loss rate to it rather than infer it.
+      curtisHeatFactor,
       // v1.27: what the phone can sell, and what it costs. The offers list
       // mirrors the BUY_DISCLOSURE guards so a row is never rendered for a
       // dispatch the reducer would drop.

@@ -488,13 +488,16 @@
       var POLICE_HEAT_WEIGHT = 0.015;
       var POLICE_PATROL_WEIGHT = 0.03;
       var POLICE_ELI_DISCOUNT = 0.015;
-      var CURTIS_BASE_CHANCE = 0.12;
+      var CURTIS_BASE_CHANCE = 0.05;
       var CURTIS_VISIBILITY_WEIGHT = 0.4;
+      var CURTIS_UNSTAFFED_DEFENSE = 0.5;
+      var CURTIS_HEAT_PROBE_FLOOR = 8;
+      var CURTIS_HEAT_PROBE_PER_POINT = 0.05;
       var CURTIS_PHASE_MULTIPLIER = {
         invisible: 0,
-        ambient: 0.5,
+        ambient: 0.6,
         watching: 1,
-        approaching: 1.5
+        approaching: 2
       };
       var CURTIS_PHASE_VISIBILITY_GATE = {
         invisible: 99,
@@ -506,6 +509,8 @@
       var CURTIS_PRESSURE_BUDGET_BY_PHASE = { invisible: 0, ambient: 1, watching: 3, approaching: 5 };
       var CURTIS_MAX_PRESSURE_PER_BLOCK = 2;
       var CURTIS_PRESSURE_HARD = 2;
+      var CURTIS_RECAPTURE_PRIORITY = 1;
+      var CURTIS_PRESSURE_BANK_CAP = 2;
       var GOSSIP_WARNING_BASE_SCOPE = 1;
       var GOSSIP_DESHAWN_FULL_SCOPE_TIER = 1;
       var GOSSIP_DESHAWN_PRESSURE_TEXT_TIER = 2;
@@ -521,12 +526,17 @@
         POLICE_ELI_DISCOUNT,
         CURTIS_BASE_CHANCE,
         CURTIS_VISIBILITY_WEIGHT,
+        CURTIS_UNSTAFFED_DEFENSE,
+        CURTIS_HEAT_PROBE_FLOOR,
+        CURTIS_HEAT_PROBE_PER_POINT,
         CURTIS_PHASE_MULTIPLIER,
         CURTIS_PHASE_VISIBILITY_GATE,
         CURTIS_TARGET_DEPTH_BY_PHASE,
         CURTIS_PRESSURE_BUDGET_BY_PHASE,
         CURTIS_MAX_PRESSURE_PER_BLOCK,
         CURTIS_PRESSURE_HARD,
+        CURTIS_RECAPTURE_PRIORITY,
+        CURTIS_PRESSURE_BANK_CAP,
         GOSSIP_WARNING_BASE_SCOPE,
         GOSSIP_DESHAWN_FULL_SCOPE_TIER,
         GOSSIP_DESHAWN_PRESSURE_TEXT_TIER,
@@ -590,11 +600,22 @@
         const jitter = stringHash(`${state.run.seed}:block-intel:${blockId}:${state.run.day}`) % 3 - 1;
         return Math.max(1, exact + jitter);
       }
-      function compareBlocksByCurtisPriority(aId, bId) {
+      function curtisRetookBlock(state, blockId) {
+        var _a, _b, _c;
+        return Boolean((_c = (_b = (_a = state == null ? void 0 : state.world) == null ? void 0 : _a.territoryBlocks) == null ? void 0 : _b[blockId]) == null ? void 0 : _c.curtisTookBack);
+      }
+      function compareBlocksByCurtisPriority(aId, bId, state) {
         const a = SPENARD_BLOCK_BY_ID[aId];
         const b = SPENARD_BLOCK_BY_ID[bId];
         if (!a || !b) return a ? -1 : b ? 1 : 0;
-        return b.curtisVisibility - a.curtisVisibility || b.earningPotential - a.earningPotential || (a.id < b.id ? -1 : 1);
+        const grudge = state ? (curtisRetookBlock(state, bId) ? Territory.CURTIS_RECAPTURE_PRIORITY : 0) - (curtisRetookBlock(state, aId) ? Territory.CURTIS_RECAPTURE_PRIORITY : 0) : 0;
+        return grudge || b.curtisVisibility - a.curtisVisibility || b.earningPotential - a.earningPotential || (a.id < b.id ? -1 : 1);
+      }
+      function curtisPressureBank(state, phase) {
+        var _a;
+        const bank = (_a = state.run) == null ? void 0 : _a.curtisPressureBank;
+        if (!bank || bank.phase !== phase) return 0;
+        return Math.min(Territory.CURTIS_PRESSURE_BANK_CAP, Math.max(0, Number(bank.points) || 0));
       }
       function curtisNightPlan(state) {
         var _a, _b;
@@ -605,8 +626,8 @@
         const ranked = SPENARD_BLOCKS.filter((block) => {
           var _a2, _b2, _c;
           return ((_c = (_b2 = (_a2 = state.world) == null ? void 0 : _a2.territoryBlocks) == null ? void 0 : _b2[block.id]) == null ? void 0 : _c.owner) === "player";
-        }).filter((block) => block.curtisVisibility > 0 && block.curtisVisibility >= (gate == null ? 99 : gate)).sort((a, b) => compareBlocksByCurtisPriority(a.id, b.id)).slice(0, depth);
-        let budget = Territory.CURTIS_PRESSURE_BUDGET_BY_PHASE[phase] || 0;
+        }).filter((block) => block.curtisVisibility > 0 && block.curtisVisibility >= (gate == null ? 99 : gate)).sort((a, b) => compareBlocksByCurtisPriority(a.id, b.id, state)).slice(0, depth);
+        let budget = (Territory.CURTIS_PRESSURE_BUDGET_BY_PHASE[phase] || 0) + curtisPressureBank(state, phase);
         const plan = [];
         for (const block of ranked) {
           if (budget <= 0) break;
@@ -615,6 +636,14 @@
           plan.push({ blockId: block.id, name: block.name, weight });
         }
         return plan;
+      }
+      function curtisPressureLeftover(state) {
+        var _a, _b;
+        const phase = ((_a = state.curtisAwareness) == null ? void 0 : _a.phase) || CurtisAwareness.phaseForLevel(((_b = state.curtisAwareness) == null ? void 0 : _b.level) || 0);
+        const budget = (Territory.CURTIS_PRESSURE_BUDGET_BY_PHASE[phase] || 0) + curtisPressureBank(state, phase);
+        if (!budget) return { phase, points: 0 };
+        const spent = curtisNightPlan(state).reduce((sum, entry) => sum + entry.weight, 0);
+        return { phase, points: Math.min(Territory.CURTIS_PRESSURE_BANK_CAP, Math.max(0, budget - spent)) };
       }
       function curtisBlockTargets(state) {
         return curtisNightPlan(state).map((entry) => entry.blockId);
@@ -651,6 +680,9 @@
         curtisBlockDefenseEstimate,
         curtisNightPlan,
         curtisBlockTargets,
+        curtisPressureBank,
+        curtisPressureLeftover,
+        curtisRetookBlock,
         compareBlocksByCurtisPriority
       };
     }
@@ -5147,7 +5179,7 @@
         "use strict";
         const { normalizeSeed, stringHash, makeRandom, seededShuffle, seededPick, isEligible, getWeight } = require_random();
         const { effectPreview, event, activeEvent } = require_cards();
-        const { checkpointDay, controlled, slotNumber, blockIntelLevel, blockIntelView, curtisBlockDefense, curtisBlockTargets, curtisNightPlan, compareBlocksByCurtisPriority } = require_selectors();
+        const { checkpointDay, controlled, slotNumber, blockIntelLevel, blockIntelView, curtisBlockDefense, curtisBlockTargets, curtisNightPlan, curtisPressureBank, curtisPressureLeftover, curtisRetookBlock, compareBlocksByCurtisPriority } = require_selectors();
         const Exposure = require_engine();
         const { BANDS, bandFor, bandId, bandLabel } = require_disposition_bands();
         const { EXPOSURE_NPC_IDS } = require_npc_lenses();
@@ -6666,6 +6698,14 @@
               // nothing here outlives the run, and a save that predates the field
               // hydrates to a day nobody has been called on yet.
               disclosures: { day: 0, entries: [] },
+              // v1.28: pressure points last night's plan could not spend, carried to
+              // tonight's budget and capped. `phase` travels with the points because
+              // the carry does not survive him changing how hard he is looking - an
+              // operation that drops out of approaching does not get to keep the
+              // interest. Session state on `run` for the same reason the two above
+              // are, object-shaped so mergeDefaults hydrates an older save to an
+              // empty bank and the schema stays v11.
+              curtisPressureBank: { phase: null, points: 0 },
               // v1.16: parts of day a booking still owes, spent once the caught-state
               // encounter is dismissed and advanceRun is allowed to move again.
               pendingArrestSlots: null,
@@ -6779,7 +6819,11 @@
                 capturedDay: null,
                 incomeCollected: 0,
                 lastRaidDay: null,
-                raidCount: 0
+                raidCount: 0,
+                // v1.28. Set the first time he takes this corner back off the player,
+                // and never cleared. Additive and boolean, so mergeDefaults hydrates
+                // every save that predates it to false and the schema stays v11.
+                curtisTookBack: false
               }])),
               soldiers: {},
               nextSoldierId: 1
@@ -9498,6 +9542,11 @@
           const discount = eli.lieutenantStage === "operations_lieutenant" ? eli.lieutenantEffectiveness * Territory.POLICE_ELI_DISCOUNT : 0;
           return clamp(Territory.POLICE_BASE_CHANCE + state.player.heat * Territory.POLICE_HEAT_WEIGHT + block.patrolFrequency * Territory.POLICE_PATROL_WEIGHT - discount, 0, 0.9);
         }
+        function curtisHeatFactor(state) {
+          var _a;
+          const heat = Number((_a = state.player) == null ? void 0 : _a.heat) || 0;
+          return 1 + Math.max(0, heat - Territory.CURTIS_HEAT_PROBE_FLOOR) * Territory.CURTIS_HEAT_PROBE_PER_POINT;
+        }
         function curtisMoveChance(state, blockId) {
           var _a;
           const block = SPENARD_BLOCK_BY_ID[blockId];
@@ -9506,8 +9555,9 @@
           const phase = CurtisAwareness.phaseForLevel(curtisAwarenessOf(state).level);
           const gate = Territory.CURTIS_PHASE_VISIBILITY_GATE[phase];
           if (block.curtisVisibility < (gate == null ? 99 : gate)) return 0;
-          const defense = Math.max(1, record.soldiersAssigned.length) * RAID_DEFENSE_PER_SOLDIER * Crew.toneDefenseMultiplier(state);
-          return clamp(Territory.CURTIS_BASE_CHANCE * (block.curtisVisibility * Territory.CURTIS_VISIBILITY_WEIGHT) * (Territory.CURTIS_PHASE_MULTIPLIER[phase] || 0) / defense, 0, 0.9);
+          const posted = record.soldiersAssigned.length;
+          const defense = (posted > 0 ? posted * RAID_DEFENSE_PER_SOLDIER : Territory.CURTIS_UNSTAFFED_DEFENSE) * Crew.toneDefenseMultiplier(state);
+          return clamp(Territory.CURTIS_BASE_CHANCE * (block.curtisVisibility * Territory.CURTIS_VISIBILITY_WEIGHT) * (Territory.CURTIS_PHASE_MULTIPLIER[phase] || 0) * curtisHeatFactor(state) / defense, 0, 0.9);
         }
         function takeRaidCasualty(state, random, record, toneDefense) {
           const assigned = record.soldiersAssigned;
@@ -9572,6 +9622,7 @@
               }
               record.soldiersAssigned = [];
               record.owner = "curtis";
+              record.curtisTookBack = true;
               curtisCount += 1;
               lostBlockNames.push(block.name);
               broadcastTracked(state, { type: "defiance", event: "block_lost_to_curtis", channel: "network", location: HOME_DISTRICT_ID });
@@ -9624,6 +9675,9 @@
         }
         function gossipDeshawnTier(state) {
           return Crew.modifierTier(state, "deshawn");
+        }
+        function settleCurtisPressureBank(state) {
+          state.run.curtisPressureBank = curtisPressureLeftover(state);
         }
         function emitCurtisGossipWarnings(state) {
           const plan = curtisNightPlan(state);
@@ -9685,7 +9739,7 @@
             const bucket = byCorner.get(key);
             if (!bucket.npcIds.includes(entry.npcId)) bucket.npcIds.push(entry.npcId);
           }
-          const buckets = [...byCorner.values()].sort((a, b) => (b.weight || 0) - (a.weight || 0) || compareBlocksByCurtisPriority(a.blockId, b.blockId));
+          const buckets = [...byCorner.values()].sort((a, b) => (b.weight || 0) - (a.weight || 0) || compareBlocksByCurtisPriority(a.blockId, b.blockId, state));
           for (const bucket of buckets) {
             const block = SPENARD_BLOCK_BY_ID[bucket.blockId];
             if (!block) continue;
@@ -9724,7 +9778,7 @@
           return SPENARD_BLOCKS.filter((block) => {
             var _a, _b, _c;
             return ((_c = (_b = (_a = state.world) == null ? void 0 : _a.territoryBlocks) == null ? void 0 : _b[block.id]) == null ? void 0 : _c.owner) === "player";
-          }).map((block) => block.id).sort(compareBlocksByCurtisPriority);
+          }).map((block) => block.id).sort((a, b) => compareBlocksByCurtisPriority(a, b, state));
         }
         function disclosureTruth(state, intelType) {
           if (intelType === "curtis_targets" || intelType === "curtis_pressure" || intelType === "curtis_next_move") {
@@ -11723,6 +11777,7 @@
           settleCurtisNight(state);
           resolveSharkLoans(state);
           resolveCrewTracks(state);
+          settleCurtisPressureBank(state);
           emitCurtisGossipWarnings(state);
           Exposure.propagateHeat(state);
           drainObservations(state);
@@ -14518,6 +14573,12 @@
             // v1.23: the plan behind the target list, with the pressure weights the
             // gossip surface reads. Same list, one level less flattened.
             curtisNightPlan,
+            // v1.28: what the plan could not spend and is carrying, and whether he has
+            // already taken a corner back once. Exposed for the harness and the tests
+            // rather than for a screen — nothing in the UI reads either yet.
+            curtisPressureBank,
+            curtisPressureLeftover,
+            curtisRetookBlock,
             toneDefenseMultiplier: Crew.toneDefenseMultiplier,
             deshawnHeatReduction: Crew.deshawnHeatReduction,
             territoryHeatChance,
@@ -14527,6 +14588,9 @@
             // night rolls against, for each adversary separately.
             policeRaidChance,
             curtisMoveChance,
+            // v1.28: the Heat multiplier on the Curtis gate, separately readable so a
+            // measurement can attribute loss rate to it rather than infer it.
+            curtisHeatFactor,
             // v1.27: what the phone can sell, and what it costs. The offers list
             // mirrors the BUY_DISCLOSURE guards so a row is never rendered for a
             // dispatch the reducer would drop.

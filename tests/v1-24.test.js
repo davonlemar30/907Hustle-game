@@ -7,6 +7,7 @@ const Exposure = require("../src/exposure/engine.js");
 const { NPC_CHANNELS, NPC_PRESENCE_AREAS, CHANNELS } = require("../src/data/propagation.js");
 const { resolveLens } = require("../src/data/npc-lenses.js");
 const { SPENARD_BLOCKS, SPENARD_BLOCK_BY_ID, HOME_DISTRICT_ID } = require("../src/data/locations.js");
+const { stringHash } = require("../src/hash.js");
 
 // v1.24 - The first-claim ceremony.
 //
@@ -41,7 +42,17 @@ const CARD_TITLE = "Your Corner";
 // Cheapest first, so a single cash float covers a whole run of claims.
 const CLAIM_ORDER = [...SPENARD_BLOCKS].sort((a, b) => a.claimCost - b.claimCost).map((block) => block.id);
 
-function fresh(seed) {
+// Seeds must be NUMERIC. `normalizeSeed` (src/events/random.js) falls back to a
+// single constant whenever `Number(seed)` is not finite, so every string seed in
+// the suite is silently the SAME run - which makes a "checked across four seeds"
+// loop four copies of one seed, passing for the wrong reason. Labels stay
+// readable and the seed still varies by hashing the label.
+function seedFor(label) {
+  return stringHash(`v1.24:${label}`);
+}
+
+function fresh(label) {
+  const seed = seedFor(label);
   let state = C.reduceGame(C.createRun({ seed }), { type: "START_RUN", streetName: "TwentyFour" });
   if (state.run.openingPending) state = C.reduceGame(state, { type: "DISMISS_OPENING" });
   let guard = 0;
@@ -56,8 +67,8 @@ function fresh(seed) {
 // A state that can actually claim: garage controlled, Eli standing as the
 // operations lieutenant, cash on hand, and `soldiers` unassigned bodies waiting.
 // Everything blockClaimAvailability gates on, and nothing else.
-function claimReady(seed, { soldiers = 6, cash = 5000, deshawn = null } = {}) {
-  const state = fresh(seed);
+function claimReady(label, { soldiers = 6, cash = 5000, deshawn = null } = {}) {
+  const state = fresh(label);
   state.base.controlled = true;
   state.player.cash = cash;
   Object.assign(state.people.crew.eli, {
@@ -354,7 +365,8 @@ test("the first claim emits growth/first_territory and later claims do not", () 
 test("the observation reaches neighborhood NPCs and never Curtis", () => {
   // Curtis is not on the neighborhood channel at all, so this is structural
   // rather than a coincidence of one seed - but check both, because a future
-  // channel edit should fail here loudly.
+  // channel edit should fail here loudly. The four labels below really are four
+  // different runs; see `seedFor`.
   assert.equal(NPC_CHANNELS.curtis.includes("neighborhood"), false, "Curtis does not listen on the block");
   for (const seed of ["curtis-a", "curtis-b", "curtis-c", "curtis-d"]) {
     const state = claim(claimReady(seed), CLAIM_ORDER[0]);
@@ -523,6 +535,23 @@ test("the title has a style rule and the card keeps its tap target", () => {
 test("ui.built.js was rebuilt with the title", () => {
   const built = fs.readFileSync(path.join(root, "ui.built.js"), "utf8");
   assert.ok(built.includes("consequence-title"), "run `npm run build` and commit ui.built.js");
+});
+
+test("this suite's seeds are numeric, because string seeds silently collapse", () => {
+  // The trap this guards: normalizeSeed falls back to one constant whenever
+  // Number(seed) is not finite, so `createRun({ seed: "curtis-a" })` and
+  // `createRun({ seed: "curtis-b" })` are the SAME run. Any test that loops over
+  // string seeds to prove something holds "across seeds" proves nothing.
+  const a = C.createRun({ seed: "curtis-a" });
+  const b = C.createRun({ seed: "curtis-b" });
+  assert.equal(a.run.seed, b.run.seed, "two different strings really do collapse to one seed");
+
+  // seedFor is the fix: distinct labels, distinct numeric seeds.
+  const labels = ["curtis-a", "curtis-b", "curtis-c", "curtis-d", "lens-a", "lens-f"];
+  const seeds = labels.map(seedFor);
+  for (const seed of seeds) assert.equal(Number.isFinite(seed), true, "numeric");
+  assert.equal(new Set(seeds).size, labels.length, "every label gets its own seed");
+  assert.equal(new Set(labels.map((l) => fresh(l).run.seed)).size, labels.length, "and its own run");
 });
 
 test("the copy follows the naming rules", () => {

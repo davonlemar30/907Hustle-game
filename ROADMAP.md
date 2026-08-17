@@ -4,12 +4,57 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
+## Shipped — v1.25 A Simulator Strategy That Reaches Territory
+
+Harness only — `game-core.js` is untouched, so the save schema stays at **v11**
+and nothing player-visible moved. **Both sim hashes moved, deliberately and for
+the first time since v1.20**: `--total 200`
+`25afb74e10487dee6fc62641d944d3cea093873f28c740ba43e10bb0828d6dc1`, `--total 2000`
+`f10432b1f61624cbc8df35e299a2d36ca369e1e822ca0d6578a337562e524665`. Zero dead
+ends across fourteen strategies; 799 tests passing.
+
+Since v1.20 the roadmap has carried "no sim strategy reaches the block layer" as
+the highest-value simulator work outstanding, without knowing **which rung** they
+fell off — `territoryMetrics` reported only `blocksClaimed`, a flat zero for
+everyone. It now reports the rungs beneath a claim, and a fourteenth strategy,
+`territory`, is built to climb them: it banks rather than restocking while the
+ladder is unfunded, leases at the reducer's real $650 gate instead of the
+self-imposed $850, and drops the day-5 recruitment cap because Eli's
+introduction is a story beat no strategy can force.
+
+| rung, over 200 runs | `operator` | `territory` |
+|---|---|---|
+| leases the garage | 1 | **178** (median day 8) |
+| recruits Eli | — | **109** |
+| promotes him to lieutenant | 0 | **81** |
+| hires a soldier | 0 | **24** |
+| **claims a block** | 0 | **0** |
+
+**The answer is still no, and now there is a reason.** The ladder costs
+**$1,125** — $650 garage, $35 test route, $120 Eli, $140 soldier, $180 for the
+cheapest corner — and the first $650 arrives at **median day 8 of a run that ends
+on day 10**. Four rungs and ~$475 remain with two days left. **Territory is not
+reachable inside a run's length by any play pattern the simulator can express.**
+That reframes the 2.2 balance pass blocker from a harness problem into an
+**economy-and-pacing** question, which is a design call rather than a tuning one.
+
+- **Banking beats trading, and the opposite was tried.** A $140 trading float so
+  the strategy could restock while saving measures *worse* — garage 178 → 116,
+  lieutenant 81 → 9. The losing variant is recorded in the source so it is not
+  re-tried.
+- **The thirteen existing strategies are behaviorally identical**, verified at a
+  fixed 15 runs each with the new telemetry keys stripped. A raw before/after
+  diff would have been meaningless: `--total N` splits a fixed budget, so a
+  fourteenth strategy re-partitions it. That check caught a real bug — the first
+  cut read the buy budget before the SELL loop instead of after, changing
+  behavior for all seven product-carrying strategies.
+
 ## Shipped — v1.24 First-Claim Ceremony — **Phase 4.1, and the Phase 1 asterisk is closed**
 
 Built on `claude/v1-24-first-claim-uc4fdx`, on top of the v1.23 merge (PR #85,
 `59b8865`). Save schema stays at v11 (nothing persisted — the check is a derived
 read over the board); **both sim hashes byte-identical to v1.20, v1.21 and
-v1.23**; zero dead ends across 2,000 runs; 798 tests passing.
+v1.23**; zero dead ends across 2,000 runs; 799 tests passing.
 
 The first corner the player claims stops reading like the sixth. One branch in
 `CLAIM_BLOCK`, read before the ownership write, gates four things that fire once
@@ -32,12 +77,19 @@ to say about winning the first.
   it ships at `HOME_DISTRICT_ID` with the corner named in the copy instead.
   v1.23 hit the same wall from the other side — **this has now cost two builds**,
   and the suite asserts against it so it does not cost a third.
-- **The simulator's territory blindness is worse and more specific than
-  recorded.** All **thirteen** strategies claim zero blocks across 2,000 runs,
-  not only `operator`. And `operator` does not fail at the claim gate: over 200
-  runs it never buys the garage and never recruits anybody, so it dies at the
-  *first* prerequisite. **Getting a strategy to buy North Star Garage is the
-  blocker**, and it is upstream of everything the 2.2 balance pass needs to see.
+- **The simulator's territory blindness is broader than recorded.** All
+  **thirteen** strategies claim zero blocks across 2,000 runs, not only
+  `operator`, which is why neither hash moved.
+- **A correction, and a trap.** This section first claimed `operator` never buys
+  the garage and never recruits anybody. That probe was invalid — `normalizeSeed`
+  falls back to one constant for any non-numeric seed, so the 200 string-seeded
+  "runs" were one run repeated. With numeric seeds `operator` leases the garage
+  in **1/200** runs (day ~9) and recruits somebody in **76/200** — but **0/200
+  ever have both at once**, and `stickup` is the mirror image at 18/200 and
+  1/200. Territory needs garage → Eli → promotion → soldier, and the trade loop
+  spends 58% of cash on inventory every iteration, so the lease and the
+  recruitment never clear together. **The blocker is holding both at once, not
+  reaching either** — a narrower and more tractable target than before.
 
 ## Shipped — v1.23 Attack Telegraphing Through Gossip Channels — **Phase 2.3**
 

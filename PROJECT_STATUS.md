@@ -2,16 +2,141 @@
 
 Last updated: 2026-08-17 (America/Anchorage)
 
-**v1.25 is built on `claude/v1-24-first-claim-uc4fdx`, on top of the v1.24 merge
-(PR #86, `45dbe72`).** Verified on the branch: `npm test` **799 passing**,
+**v1.26 is built on `claude/v1-26-hustle-qol-ym7le8`, on top of the v1.25 merge
+(PR #87, `a0fd0c8`).** Verified on the branch: `npm test` **813 passing**,
 `npm run build` clean, `npm run check-docs` clean, 2,000-run simulation with zero
-dead ends across **fourteen** strategies. **Both hashes moved, on purpose and for
-the first time since v1.20** — `--total 200`
+dead ends across **fourteen** strategies. **Both hashes are unchanged** —
+`--total 200`
 `25afb74e10487dee6fc62641d944d3cea093873f28c740ba43e10bb0828d6dc1`,
 `--total 2000`
-`f10432b1f61624cbc8df35e299a2d36ca369e1e822ca0d6578a337562e524665`.
-See the v1.25 section for the invariance proof that the thirteen pre-existing
-strategies did not change behavior.
+`f10432b1f61624cbc8df35e299a2d36ca369e1e822ca0d6578a337562e524665` — which is the
+expected result for a build that is a UI move plus a deterministic debit.
+
+## Standing design correction — the run has no fixed length
+
+**This applies to every future build, not just this one.** There is no day cap,
+no "day 7 fork," no timed ending. The player hustles indefinitely, and the only
+way a run ends is a lose condition. `RUN_DAYS = 7` is a debt-deadline and
+checkpoint constant; it has never terminated a run. A v1.26 test walks an unpaid
+run to **day 29** before eviction ends it.
+
+The 10-day cap inside `tests/simulate-runs.js` is an **instrument boundary** that
+keeps hashes comparable. It is not a design position. Do not evaluate balance,
+pacing, or reachability against a day count — including the v1.25 finding that
+territory is unreachable "inside a run's length," which should be read as *the
+simulator's ten days do not fund the ladder*, not as a claim about the game.
+Territory is deliberately mid-to-late-game content funded by early economy
+systems (weed, booze, robbery tiers) that are still being fleshed out. The full
+statement is in ARCHITECTURE.md under "The run has no fixed length."
+
+## v1.26 Hustle Menu Jobs + Bill Payment — built (branch `claude/v1-26-hustle-qol-ym7le8`)
+
+- **Save schema stays v11**, and this one is worth being precise about: the spec
+  allowed a bump to v12 if the rent obligation needed a "paid this period" field.
+  It does not have one and does not need one. `obligations.rentDueDay > run.day`
+  **is** the paid-through signal — `PAY_RENT` walks it forward in 7-day steps —
+  and `obligations.lastMissedDueDay` is the negative latch that stops one unpaid
+  period from accruing a miss every night. Nothing to persist, nothing to
+  migrate. A test round-trips a paid save through `inspectSave` to pin it.
+- **Two reducer cases already existed, and that is the headline.** The spec was
+  written expecting to add `PAY_BILL`. `PAY_RENT` (`game-core.js:7274`) and
+  `PAY_PHONE_BILL` (`:7287`) have been there for versions: both spend through
+  `spendCash` (dirty pool first, then clean), both reset their obligation, both
+  write a feed line, and neither is in `TIME_ACTIONS` or calls `advanceRun`, so
+  neither costs a slot or energy. **The missing piece was never the money path.
+  It was a button.** No new reducer case shipped, and no second money path.
+- **The premise "there is no interactive way to pay rent" was not quite right,
+  and the real bug was worse than the stated one.** Rent already had Pay buttons
+  in two places — the Household screen and Home's obligations block. What it did
+  not have was a button anywhere a player looks when they are told rent is due.
+  The Bills accordion, which is the screen that *names* the obligation, was
+  display-only by explicit v1.9c design: each row printed the prose "Pay at
+  Home" instead of acting. So the game was losable-by-navigation for anyone who
+  read the bill and never found the room. v1.26 reverses that decision for the
+  two bills the player can settle from cash on hand, and the old comment saying
+  rows are deliberately display-only is rewritten rather than deleted.
+- **The disabled state mirrors each reducer's guard rather than inventing a
+  second rule.** This is the part that keeps a button from lying: `PAY_RENT`
+  no-ops before the due day, so the row reads `Due Day 7` rather than offering a
+  pre-payment the reducer would drop; short on cash reads `Need $150`. The phone
+  row reads `Pay at the Phone Store` while service is off, which preserves the
+  existing rule that a dead phone is settled in person and points at the walk-in
+  card already on the same screen.
+- **The phone bill is $75, not $55.** The spec's example copy said `"Phone bill
+  paid. $55."`. `PHONE_BILL` is 75 (`game-core.js:36`) and `WEEKLY_RENT` is 150.
+  Both amounts render from the constants and are never hardcoded in the UI, and
+  the existing reducer feed lines — `Weekly rent paid in cash: $150.` and
+  `Phone bill paid: $75.` — were kept as authored rather than rewritten to the
+  spec's phrasing, since changing shipped log copy buys nothing and moves text
+  three test files assert on.
+- **One `game-core.js` line, and why it was unavoidable.** `PAY_PHONE_BILL` with
+  `surface: "store"` is mapped to the `spenard_phone_store` district action, so
+  it passes through `districtActionPreflight` and silently no-ops off-district.
+  A Pay button on a *phone* that works only in Spenard is a button that lies, so
+  the existing exemption — which already excused `surface: "online"` — now also
+  excuses a new `surface: "phone"`. It is a guard predicate, not a new case: no
+  RNG, no slot, no new state, same `spendCash` path. A test pins that `store`
+  still refuses from Downtown while `phone` succeeds.
+- **Jobs moved to Hustle, and the tab gate had to go with it.** Jobs was five
+  levels deep — Street → Travel → Around Here → Explore Spenard → Activities →
+  Jobs. The move itself is presentational, but the Hustle tab was *hidden from
+  the nav bar entirely* until `hustle.visible` flipped on the first dirty
+  income. Moving Jobs there without touching that would have made legal work
+  unreachable on Day 1 — a worse regression than the one being fixed, and the
+  one genuine trap in this build. The rail is now fixed at five tabs;
+  `hustle.visible` still gates the illegal sections inside `HustleScreen`, where
+  the existing locked card explains itself. The market/boost/rob unlock overlays
+  name sections rather than the tab, so nothing else moved.
+- **Active job status without navigating.** The Jobs row carries the active
+  employer, rank, and whether tonight's shift is open (`Shift available`, or the
+  selector's own blocked reason), from the same `jobAvailability` selector
+  `HomeJobCard` uses. No new selector, and the Home Work Shift shortcut is
+  untouched — it dispatches `WORK_JOB` directly and never routes.
+- **One dead deep link, caught and repointed.** Travel's quick-shift button
+  navigated to `around:job:<id>`, a route that ceased to exist with the move. It
+  now crosses tabs through the shell's one `navigate()` funnel
+  (`navigate("hustle", "root", null, job:<id>)`), and a contract test asserts
+  the string `around:job:` appears nowhere in `ui.jsx`.
+- **Contacts and the Activities page.** The duplicate Contacts list under
+  Spenard Explore is gone; contacts live in the Phone and under Street → People,
+  and did not need a third door. That left Activities holding Wander alone, so
+  Wander was promoted to the Explore Spenard root and the one-row submenu was
+  deleted rather than left as an extra tap.
+- **Both sim hashes are unchanged, and the reason is structural rather than
+  lucky.** `tests/simulate-runs.js` requires `game-core.js` and nothing else —
+  it never reads `ui.jsx` — so the entire UI half of this build is invisible to
+  it by construction. The one core change is reachable only through a
+  `surface: "phone"` dispatch, and no strategy dispatches `PAY_RENT` or
+  `PAY_PHONE_BILL` at all. 2,000 runs, 0 dead ends, both hashes byte-identical
+  to v1.25. This is now written into ARCHITECTURE.md as the general rule: a
+  UI-only build that *does* move a hash has touched core by accident.
+- **Test count 799 → 813.** Thirteen new tests in `tests/v1-26.test.js` plus the
+  contract updates. The new ones pin the pay path (pool order, determinism, no
+  slot, no energy, refusals as true no-ops, cross-district rent), the surfaces,
+  the 44px bill row, and both halves of the lose condition.
+- **The lose condition still fires, and is now measured.** Paying at the last
+  moment before the night tick settles the period and accrues no miss. Never
+  paying still evicts: misses land on days **8, 15, 22, 29** — one per weekly
+  period, not one per night — and the third household warning ends the run with
+  `nowhere_to_go`. Adding the button did not make the ending unreachable, which
+  was the risk worth testing rather than asserting.
+- **Five test files needed contract updates**, all of them pinning the old
+  navigation as source text: `plug-market` (the `hustleVisible` prop and the
+  Explore Spenard copy), `v1-8` (the conditional-tab rule, now inverted to
+  assert *no* tab is conditional), and `ui-contract` (the Spenard page shape,
+  the quick-shift target, and a new test for the Hustle income surface).
+- **Verified at 320 / 375 / 414 / 768 / 1440px.** The bill row was never a tap
+  target — it had no `min-height` at all — so it gains the 44px floor, and the
+  Pay button is the one child that never shrinks. Below 360px the row wraps the
+  name onto its own line rather than overflowing. Zero horizontal overflow, zero
+  console errors.
+- **Open / deliberately not done.** Crew wages and Dre's note keep naming their
+  own screens instead of gaining Pay buttons — both have real screens, and
+  neither is a single fixed amount. Spenard navigation flattening, the
+  simulated-web-app bill UI, and any balance change stayed out of scope. The
+  Street → People Contacts route is untouched: the spec targeted the Spenard
+  Explore duplicate, and People is where Street navigation legitimately keeps
+  contacts.
 
 ## v1.25 A Simulator Strategy That Reaches Territory — built (branch `claude/v1-24-first-claim-uc4fdx`)
 

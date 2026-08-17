@@ -39,7 +39,11 @@ test("Market tab and market actions stay hidden until a plug is unlocked", () =>
 test("v1.8 shell keeps market in Hustle while Street preserves the first-sale route", () => {
   const ui = fs.readFileSync(path.join(root, "ui.jsx"), "utf8");
   const css = fs.readFileSync(path.join(root, "v05.css"), "utf8");
-  assert.match(ui, /<Navigation tab=\{tab\} setTab=\{setTab\} hustleVisible=\{state\.hustle\.visible\}/);
+  // v1.26: the rail no longer takes hustleVisible — Jobs lives on Hustle, so the
+  // tab is always present and `hustle.visible` gates only the illegal sections
+  // inside HustleScreen. Street keeps its own first-sale route until then.
+  assert.match(ui, /<Navigation tab=\{tab\} setTab=\{setTab\} phoneBadge=/);
+  assert.doesNotMatch(ui, /hustleVisible/);
   assert.match(ui, /title="Street Market"/);
   assert.match(css, /\.nav/);
 });
@@ -49,7 +53,7 @@ test("pre-market v1.1 copy does not teach or advertise the hidden drug market", 
   assert.doesNotMatch(ui, /market trading remains the stronger long-term plan/);
   assert.doesNotMatch(ui, /Trading inside an open market visit costs no time/);
   assert.match(ui, /legal work remains the safer long-term plan/);
-  assert.match(ui, /Jobs, wandering, and people you meet through work/);
+  assert.match(ui, /Wandering, and the doors the neighborhood opens/);
   assert.match(ui, /\{marketVisible && <div className="card"><h2>Market visits<\/h2>/);
 });
 

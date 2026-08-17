@@ -384,14 +384,17 @@ test("Mina's aftermath resolves all three authoritative relationship outcomes", 
   }
 });
 
-test("the v1.8 shell is five-destination, Phone is unconditional, and Hustle is conditional", () => {
+test("the v1.8 shell is five-destination and every tab is unconditional", () => {
   const ui = fs.readFileSync(path.join(__dirname, "..", "ui.jsx"), "utf8");
   // v1.12a moved Home from the left edge to the centre slot. The destination
   // set and the visibility rules are what this test is about; the order is
   // pinned alongside them so a reshuffle stays a deliberate edit.
+  // v1.26 retired the last conditional tab: Jobs lives on Hustle, so the rail is
+  // fixed from Day 1 and hustle.visible gates only the sections inside it.
   assert.match(ui, /const NAV = \[\["street", "Street"\], \["hustle", "Hustle"\], \["home", "Home"\], \["phone", "Phone"\], \["more", "More"\]\]/);
-  assert.match(ui, /id !== "hustle" \|\| hustleVisible/);
+  assert.doesNotMatch(ui, /id !== "hustle"/);
   assert.doesNotMatch(ui, /id !== "phone"/);
+  assert.doesNotMatch(ui, /nav-gap/);
   assert.match(ui, /No Service/);
   assert.match(ui, /title="Street Market"/);
 });

@@ -2,6 +2,55 @@
 
 Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
+## Standing correction — do not plan against a day count
+
+**The run has no fixed length.** No day cap, no "day 7 fork," no timed ending.
+The player hustles indefinitely and a run ends only on a lose condition.
+`RUN_DAYS = 7` is a debt-deadline and checkpoint constant, not a terminator — an
+unpaid run reaches day 29 before eviction ends it.
+
+The 10-day cap in `tests/simulate-runs.js` is an **instrument boundary** for hash
+comparability. Nothing on this roadmap should be scoped, deferred, or judged
+unreachable on the strength of it. In particular, the v1.25 note below that
+territory "is not reachable inside a run's length" means *the simulator's ten
+days do not fund the ladder* — territory is intentionally mid-to-late-game
+content, funded by early economy systems (weed, booze, robbery tiers) that are
+still being built out.
+
+---
+
+## Shipped — v1.26 Hustle Menu Jobs + Bill Payment
+
+UI plus one guard predicate. Save schema stays **v11** — the rent obligation
+already tracks paid-through in `rentDueDay`, so there was nothing to add and
+nothing to migrate. **Both sim hashes unchanged** (`25afb74e…` / `f10432b1…`),
+which is structural: the simulator never reads `ui.jsx`, and no strategy
+dispatches either pay action. 813 tests.
+
+- **Jobs moved to the Hustle tab**, legal work first: Jobs → Market → Boost →
+  Stickup → Shark. It had been five levels down under Street. The tab is no
+  longer hidden until dirty income lands — legal work exists on Day 1, so a
+  conditional tab would have stranded it. `hustle.visible` now gates only the
+  illegal sections inside the screen.
+- **Rent and the phone bill are payable from the Phone's Bills list**, through
+  the pay actions that already existed. No new reducer case, no second money
+  path, no slot cost. The lose condition now fires on an empty wallet rather
+  than on failing to find the right room.
+- **The Spenard Explore duplicates are gone** — Jobs, Contacts, and the
+  Activities page that was left holding one row.
+
+### Next
+
+- Crew wages and Dre's note are the two Bills rows still without a Pay button.
+  Wages are the better candidate: `wageDue` is already a single accrued number,
+  and `PAY_CREW` is the one obligation handler that still subtracts from
+  `player.cash` directly instead of going through `spendCash`, which means it is
+  also the one that charges dirty-spend financial heat by side effect. Worth
+  reconciling before it gains a second surface.
+- The phone row's `Pay at the Phone Store` state is correct but terse. A dead
+  phone is the one bill you cannot settle from the couch, and that could read as
+  a consequence rather than a disabled reason.
+
 ---
 
 ## Shipped — v1.25 A Simulator Strategy That Reaches Territory
@@ -441,10 +490,16 @@ simulation hashes byte-identical, save schema v9 unchanged.
 - Mark texts read: the inbox stores `read: false` but nothing flips it, so the
   Texts badge is a message count, not an unread count. A `MARK_TEXTS_READ`
   reducer case (schema-safe) would make the badge honest.
-- Bills rows could deep-link to their pay surfaces once `navigate()` grows a
-  Phone-section target (the shell already deep-links Home → Finances → Debt).
-- The standalone Contacts screens are now redundant with the Phone section —
-  removing them is a Place Shell decision, deliberately out of v1.9c scope.
+- ~~Bills rows could deep-link to their pay surfaces once `navigate()` grows a
+  Phone-section target~~ — **delivered in v1.26, and better than proposed.** The
+  rent and phone rows do not deep-link anywhere; they dispatch `PAY_RENT` and
+  `PAY_PHONE_BILL` in place. A bill you can settle from cash on hand did not
+  need a trip to another screen, only a button. Crew wages and Dre's note still
+  name their surfaces, which is the right answer for those two.
+- ~~The standalone Contacts screens are now redundant with the Phone section~~ —
+  **half delivered in v1.26.** The Spenard Explore duplicate is gone. Street →
+  People keeps its Contacts route: Street navigation legitimately owns people,
+  and that was never the redundant one.
 
 ## Shipped — v1.12a Home Screen Visual Overhaul
 

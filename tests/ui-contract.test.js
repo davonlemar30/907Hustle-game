@@ -28,16 +28,42 @@ test("new games are classless and expose one Start confirmation", () => {
 // placeholders and the live one — the North Star Garage lease — is offered by
 // 907List, so the garage tokens moved there rather than disappearing.
 test("Travel exposes the fresh-arrival activity and access model", () => {
-  for (const token of ["Yalonda's Home", "Explore Spenard", "Spenard Jobs", "Spenard Community Gym", "Phone Store", "Blue Nile Wellness", "Tonk", "Cee-lo", "People Mover", "North Star Garage"]) assert.ok(ui.includes(token), token);
+  // v1.26 dropped "Spenard Jobs": the jobs list is a Hustle page titled "Jobs".
+  for (const token of ["Yalonda's Home", "Explore Spenard", "Spenard Community Gym", "Phone Store", "Blue Nile Wellness", "Tonk", "Cee-lo", "People Mover", "North Star Garage"]) assert.ok(ui.includes(token), token);
   assert.doesNotMatch(ui, /function Listings\(/);
   assert.doesNotMatch(ui, /Travel → Listings/);
 });
 
-test("Spenard exploration separates Places from Activities", () => {
-  for (const token of ["Places", "Activities", 'type: "WANDER_SPENARD"', "Found work still requires an application", "Choose a shift approach", "Personal and social contacts"]) assert.ok(ui.includes(token), token);
-  assert.match(ui, /<MenuRow title="Contacts"/);
+// v1.26: Explore Spenard is Places plus Wander. Jobs moved to the Hustle tab and
+// the duplicate Contacts list is gone — Phone and Street → People still own it —
+// which left Activities holding one row, so that page went with them.
+test("Spenard exploration is Places and Wander, with Jobs and Contacts gone", () => {
+  const explore = ui.slice(ui.indexOf("function ExploreSpenard("), ui.indexOf("function NightOwlHub"));
+  for (const token of ["Places", 'type: "WANDER_SPENARD"', "Specific doors in Spenard"]) assert.ok(explore.includes(token), token);
+  assert.doesNotMatch(explore, /<MenuRow title="Contacts"/);
+  assert.doesNotMatch(explore, /<MenuRow title="Jobs"/);
+  assert.doesNotMatch(explore, /<SocialContacts/);
+  assert.doesNotMatch(explore, /"activities"/);
+  assert.doesNotMatch(ui, /title="Activities"/);
+  // The surfaces that kept the work still carry their copy.
+  for (const token of ["Found work still requires an application", "Choose a shift approach", "Personal and social contacts"]) assert.ok(ui.includes(token), token);
   assert.doesNotMatch(ui, /onClick=\{\(\) => dispatch\(\{ type: "EXPLORE_SPENARD" \}\)\}/);
   assert.doesNotMatch(ui, /PlaceAction title="Ship Creek Freight"/);
+});
+
+// v1.26: the unified income surface. Legal work sits above the illegal sections
+// and is the one row that renders before hustle.visible.
+test("Hustle is the one income surface, legal work first", () => {
+  const hustle = ui.slice(ui.indexOf("function HustleScreen("), ui.indexOf("// v1.20: what this card can say"));
+  assert.match(hustle, /sub="All your money, one place"/);
+  assert.doesNotMatch(hustle, /Illegal-income/);
+  assert.ok(hustle.indexOf('title="Jobs"') < hustle.indexOf('title="Market"'), "Jobs precedes Market");
+  assert.match(hustle, /setPage\("jobs"\)/);
+  assert.match(hustle, /page\.startsWith\("job:"\)/);
+  assert.match(hustle, /<JobDetail/);
+  // Active employer readable from the hub itself, without opening the list.
+  assert.match(hustle, /state\.jobs\.activeJobId/);
+  assert.match(hustle, /Shift available/);
 });
 test("HUD shows three primary values and a one-tap status drawer", () => {
   for (const token of ['label="Day / Time"', 'label="Cash"', 'label="Heat"', "status-toggle", 'Chip label="Debt"', "Crew Power"]) assert.ok(ui.includes(token), token);
@@ -392,7 +418,10 @@ test("a sparse market renders cards and a dense one keeps the table", () => {
 test("the travel root offers a quick shift once the player has worked one", () => {
   const travel = ui.slice(ui.indexOf("function Travel("), ui.indexOf("function SpenardBlockCard"));
   assert.match(travel, /C\.selectors\.quickShift\(state\)/);
-  assert.match(travel, /setPage\(`around:job:\$\{shift\.jobId\}`\)/);
+  // v1.26: the shift lives on the Hustle tab now, so the shortcut crosses tabs
+  // through the shell's navigate() instead of a Street-local setPage.
+  assert.match(travel, /navigate\("hustle", "root", null, `job:\$\{shift\.jobId\}`\)/);
+  assert.doesNotMatch(ui, /around:job:/);
   assert.match(ui, /initialPage = "root"/);
   assert.match(css, /\.quick-shift\{/);
 });

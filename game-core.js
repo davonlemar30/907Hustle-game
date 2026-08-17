@@ -2819,7 +2819,10 @@
       .sort((a, b) => a.order - b.order);
   }
   function districtActionIdFor(action) {
-    if (action.type === "PAY_PHONE_BILL" && action.surface === "online") return null;
+    // Only the walk-in counter is a place. Paying online, or from the Bills list
+    // on the phone itself (v1.26), is a surface the player carries with them, so
+    // neither answers to the Spenard storefront's district gate.
+    if (action.type === "PAY_PHONE_BILL" && (action.surface === "online" || action.surface === "phone")) return null;
     if (action.type === "WORK_JOB") return `job:${action.jobId}`;
     if (action.type === "WORK_SHIFT") return "job:ship_creek";
     if (action.type === "TRAVEL" && action.neighborhoodId === HOME_DISTRICT_ID) return "return_spenard";

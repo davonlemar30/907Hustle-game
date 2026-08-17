@@ -1836,7 +1836,7 @@ function ConsequencePopup({ items, onDismiss }) {
     return () => timers.forEach(clearTimeout);
   }, [items.map((item) => item.id).join("|")]);
   if (!items.length) return null;
-  return <div className="consequence-stack" role="status" aria-live="polite">{items.map((item, index) => <button type="button" className={`consequence-card ${item.tone || ""}`} style={{ animationDelay: `${index * 200}ms` }} key={item.id} onClick={() => onDismiss(item.id)}>{item.text}</button>)}</div>;
+  return <div className="consequence-stack" role="status" aria-live="polite">{items.map((item, index) => <button type="button" className={`consequence-card ${item.tone || ""}`} style={{ animationDelay: `${index * 200}ms` }} key={item.id} onClick={() => onDismiss(item.id)}>{item.title ? <strong className="consequence-title">{item.title}</strong> : null}{item.text}</button>)}</div>;
 }
 
 // Between actions the world was frozen. One line of weather for the block the

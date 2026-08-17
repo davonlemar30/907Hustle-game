@@ -2,14 +2,23 @@
 
 Last updated: 2026-08-17 (America/Anchorage)
 
-**v1.23 is built on `claude/v1-23-gossip-warnings-dd18a0`, on top of the v1.21
-merge (PR #84, `8d27ec3`).** Verified on the branch: `npm test` **767 passing**
-(733 through v1.21, 34 new in `tests/v1-23.test.js`), `npm run build` clean,
-2,000-run simulation with zero dead ends, `--total 200`
+**v1.24 is built on `claude/v1-24-first-claim-uc4fdx`, on top of the v1.23 merge
+(PR #85, `59b8865`).** Verified on the branch: `npm test` **798 passing** (767
+through v1.23, 31 new in `tests/v1-24.test.js`), `npm run build` clean,
+`npm run check-docs` clean, 2,000-run simulation with zero dead ends,
+`--total 200`
 `c8b3bf0745871555c326f4861b0a8d576ce149c9fa7bd871e9215b51236092d8`,
 `--total 2000` `d9d0fbf1d24c1c7cca8db9db7897f044811a46c4d41ff6a23ca678a0dc3dfb39`
-— **both still byte-identical to v1.20 and v1.21**, which is the proof that a
-build adding a whole new delivery surface changed nothing in nightly resolution.
+— **both still byte-identical to v1.20, v1.21 and v1.23.** See the v1.24 section
+for why that is expected here and what was measured to prove it rather than
+assume it.
+
+**v1.23 was built on `claude/v1-23-gossip-warnings-dd18a0`, on top of the v1.21
+merge (PR #84, `8d27ec3`).** Verified on the branch: `npm test` **767 passing**
+(733 through v1.21, 34 new in `tests/v1-23.test.js`), `npm run build` clean,
+2,000-run simulation with zero dead ends, same two hashes — **byte-identical to
+v1.20 and v1.21**, which is the proof that a build adding a whole new delivery
+surface changed nothing in nightly resolution.
 
 **Note on numbering: v1.22 was never built.** The v1.23 spec was written against
 a Curtis planner "shipped in v1.22", and no such branch or merge exists — `main`
@@ -20,6 +29,88 @@ under task 6) and telegraphs it. Phase 2.2's remaining scope — a *balance* pas
 on Curtis's pressure budget, which v1.23 explicitly held out of scope — is still
 open and should be picked up as its own tuning task. See the v1.23 section for
 what was assumed.
+
+## v1.24 First-Claim Ceremony — built (branch `claude/v1-24-first-claim-uc4fdx`)
+
+- Built from the "v1.24: First-Claim Ceremony (Phase 4.1)" spec, on top of the
+  v1.23 merge. **Save schema stays v11** — `controlledBlockCount(state) === 0` is
+  a derived read over the board, so there is nothing to persist and nothing to
+  migrate.
+- **The idea, and why it was overdue.** Until now the first corner the player
+  ever put their name on read exactly like the sixth. Phase 2 got to both of the
+  other outcomes first: v1.21 wrote the copy for *losing* a corner and v1.23
+  wrote seven voices *warning* about one. So the game could tell you a corner was
+  threatened and tell you it was gone, and had nothing to say about winning the
+  first one. Claims 2-6 are untouched by design — the generic line is correct for
+  an increment, and only the first claim is a beginning.
+- **Four surfaces, one branch.** `isFirstClaim` is read in the `CLAIM_BLOCK`
+  case **before** the ownership write, and gates: a titled consequence card
+  ("Your Corner"), a same-day phone text, its own feed line, and one
+  neighborhood-channel observation. Everything the case already did — cash,
+  `capturedDay`, the soldier posting, Curtis's `submission / claimed_block` row,
+  `networkEscalation`, the table-driven `defiance / territory_claim` broadcast in
+  `advanceRun` — is untouched on every claim including the first.
+- **`pushConsequence` gains an optional fourth argument, `title`.** The first
+  titled card in the game. Purely additive: every existing three-argument caller
+  gets `title: ""`, and an old save's queued card has no field at all, which the
+  renderer reads as falsy and draws exactly as before. This is deliberate
+  groundwork for 4.2 and 4.3, which are the same shape of moment.
+- **The spec's observation could not ship as written, and this is the finding
+  worth carrying forward.** It asked for `location: blockId` on the
+  `neighborhood` channel. That combination reaches **nobody**:
+  `CHANNELS.neighborhood` sets `presence: true`, so `couldObserve` compares
+  `location` against `NPC_PRESENCE_AREAS`, which holds **district** ids only. A
+  block id matches no NPC's area list and the row lands in zero ledgers. This is
+  the identical trap v1.23 hit from the other direction and filed as its finding
+  #4 — **it has now cost two builds, and it is a property of the channel, not of
+  either build.** Shipped as `location: HOME_DISTRICT_ID`, which is what both
+  neighbouring territory observations already do (`heat_exposure / police_raid`,
+  `defiance / block_lost_to_curtis`). Nothing in the lens math reads `location`;
+  the block is named in the card, the text and the feed, where a player can
+  actually read it. The suite asserts no NPC has a block-level presence area, so
+  the next author to reach for a block id fails loudly instead of silently.
+- **The spec's `source: "direct"` was also dropped**, for the same structural
+  reason: `broadcastObservation` derives `source` from the channel, so a
+  neighborhood carry is `source: "neighborhood"` and a caller-supplied `source`
+  alongside a `channel` is ignored by design. The rows are neighborhood gossip,
+  which is what they are.
+- **Curtis cannot hear it, by construction.** He is not on the `neighborhood`
+  channel at all (`NPC_CHANNELS`), so the new row is structurally unreachable to
+  him; his copy of this event is the `submission / claimed_block` row that has
+  always fired and still fires on every claim, first or sixth. Asserted both
+  structurally and across four seeds. `broadcastTracked` only raises awareness on
+  the `network` channel, so the ceremony adds no second awareness bump — measured
+  as a delta against the second claim.
+- **Deshawn or nobody.** `recruited && status === "active"` sends the text under
+  his name; departed, arrested and never-recruited all fall back to "Word Around
+  Town" with no sender. The text is same-day by construction —
+  `pushPhoneMessage` stamps the current day and slot — and a player whose phone
+  is off gets it in `heldInbox` rather than losing it, which is the existing
+  behavior for every message in the game.
+- **Both sim hashes are unchanged, and that was measured rather than inferred.**
+  The Phase List has recorded since v1.20 that the `operator` strategy claims
+  zero blocks across 2,000 runs. Two things were checked here rather than
+  assumed. First, **it is not just `operator`** — all **thirteen** strategies
+  report `claimed: 0` over 2,000 runs. Second, and more useful for whoever picks
+  up the simulator work: `operator` does not fail at the claim gate at all. Over
+  200 runs it **never controls North Star Garage and never recruits a single crew
+  member** (`garage: 0, anyCrew: 0`), so it dies at the *first* territory
+  prerequisite, three steps before Eli, the promotion, or a soldier. **Getting a
+  strategy to buy the garage is the actual blocker**, and it is upstream of
+  everything Phase 2's balance pass needs to measure.
+- **Viewports verified in a real browser**, not by inspection: 320 / 375 / 414 /
+  768 / 1440px, zero horizontal overflow at every width, the untitled card
+  measuring exactly 44px so the tap-target minimum holds, and zero console
+  errors. The titled card grows to fit its heading and nothing else moves.
+- **`scripts/check-docs-version.js` hardened.** It read ARCHITECTURE.md's version
+  with a non-global `String.match`, so it took the *first* "current as of"
+  anywhere in the file — a historical note further down would silently become the
+  version under test. It now takes the highest match.
+- **Open / deliberately not done.** No tier-transition scenes (4.2), no capstone
+  sit-down (4.3), no balance pass on Curtis's pressure constants (2.2), no
+  changes to the copy for claims 2-6, no new `STORY_REGISTRY` card — this is a
+  consequence of an action, not a drawn beat — and no changes to the Territory
+  page.
 
 ## v1.23 Attack Telegraphing Through Gossip Channels — built (branch `claude/v1-23-gossip-warnings-dd18a0`)
 
@@ -120,14 +211,16 @@ what was assumed.
 `43652c3`): `npm test` 733 passing, 2,000-run simulation with zero dead ends,
 both hashes byte-identical to v1.20.
 
-**Phase 1 of the Godfather adaptation is closed** — 1.1 Tone recruitment
-(v1.18), 1.2 Pherris recruitment and 1.3 Deshawn tier retro-gate (v1.19), 1.4
-lieutenant typed modifiers (v1.20). The one Phase 1 companion item still open is
-**4.1 First-claim moment**, the ceremony pass the phase list wanted alongside the
-mechanic. **Phase 2.1 (splitting police raids from Curtis moves) shipped in
-v1.21**, and **Phase 2.3 (attack telegraphing) ships in v1.23**, which also
-builds the Phase 2.2 planner it depends on. What is left of 2.2 is the balance
-pass on Curtis's pressure budget.
+**Phase 1 of the Godfather adaptation is closed, and its asterisk is now closed
+too** — 1.1 Tone recruitment (v1.18), 1.2 Pherris recruitment and 1.3 Deshawn
+tier retro-gate (v1.19), 1.4 lieutenant typed modifiers (v1.20), and **4.1
+First-claim moment in v1.24**, the ceremony pass the phase list wanted alongside
+the mechanic and which ran six builds late. **Phase 2.1 (splitting police raids
+from Curtis moves) shipped in v1.21**, and **Phase 2.3 (attack telegraphing)
+shipped in v1.23**, which also built the Phase 2.2 planner it depends on. What is
+left of 2.2 is the balance pass on Curtis's pressure budget — still gated on the
+simulator reaching the block layer, which v1.24 measured and localized to the
+garage purchase.
 
 ## v1.21 Police Raids and Curtis Moves Split — built (branch `claude/v1-21-raid-split-w86iuj`)
 

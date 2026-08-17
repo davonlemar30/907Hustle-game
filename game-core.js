@@ -679,9 +679,15 @@
     state.log.unshift({ text, tone: tone || "", stamp: `Day ${state.run.day} · ${SLOTS[state.run.slot]}` });
     state.log = state.log.slice(0, 80);
   }
-  function pushConsequence(state, text, tone) {
+  // `title` is optional and almost always absent (v1.24). A consequence is
+  // usually one line about what just happened, and a heading on top of one line
+  // is noise. Ceremony beats are the exception: the first corner claimed reads
+  // as a moment, not as feedback, and the heading is what makes it land. Cards
+  // written before this field existed - including ones sitting in an old save's
+  // queue - come through with `title: ""` and render exactly as they did.
+  function pushConsequence(state, text, tone, title) {
     state.run.consequenceQueue = state.run.consequenceQueue || [];
-    state.run.consequenceQueue.push({ id: `${state.run.day}:${state.run.slot}:${state.run.consequenceQueue.length}:${stringHash(text)}`, text, tone: tone || "" });
+    state.run.consequenceQueue.push({ id: `${state.run.day}:${state.run.slot}:${state.run.consequenceQueue.length}:${stringHash(text)}`, text, tone: tone || "", title: title || "" });
     state.run.consequenceQueue = state.run.consequenceQueue.slice(-6);
   }
   function pushPhoneMessage(state, from, text) {
@@ -8351,6 +8357,10 @@
       const definition = SPENARD_BLOCK_BY_ID[action.blockId];
       const occupier = unassignedSoldiers(base)[0];
       if (!occupier) return inputState;
+      // Read before the ownership write below, or this is never true (v1.24).
+      // Nothing is stored for it: the sixth claim and the first differ only in
+      // what the player already holds, which the board already knows.
+      const isFirstClaim = controlledBlockCount(base) === 0;
       base.player.cash -= definition.claimCost;
       base.stats.moneySpent.base += definition.claimCost;
       const block = base.world.territoryBlocks[action.blockId];
@@ -8363,7 +8373,34 @@
       refreshCurtisAttention(base);
       recordBehavior(base, "stickup", 2, `block:${action.blockId}`, "territory_expansion");
       addStreetReadEntry(base, "risk", `block_claim:${base.world.currentNeighborhoodId}`);
-      logEntry(base, `${definition.name} answers to your operation now. One soldier posts up immediately. Curtis's people will hear about it.`, "good");
+      if (isFirstClaim) {
+        // The block hears that the player is in the territory game at all -
+        // once, on the first corner, and never again. `location` is the
+        // district and not the block: the neighborhood channel checks presence,
+        // and NPC_PRESENCE_AREAS holds district ids, so a block id here would
+        // filter every listener out and land in nobody's ledger. The block is
+        // named where a player can read it - the card, the text, the feed.
+        //
+        // Curtis is not on this channel at all (NPC_CHANNELS), so this cannot
+        // reach him; his copy is the `submission / claimed_block` row above.
+        broadcastTracked(base, {
+          type: "growth", event: "first_territory", channel: "neighborhood",
+          location: HOME_DISTRICT_ID, value: 1, day: base.run.day, slot: base.run.slot,
+        });
+        // Deshawn is the one who would notice. When he is gone the block still
+        // talks, it just has no name attached to it.
+        const deshawn = base.people.crew.deshawn;
+        const deshawnHere = Boolean(deshawn?.recruited && deshawn.status === "active");
+        pushPhoneMessage(base,
+          deshawnHere ? "Deshawn" : "Word Around Town",
+          deshawnHere
+            ? `You got one. ${definition.name}. That's not nothing. Now keep it.`
+            : `${definition.name} is yours. Word travels fast around here.`);
+        pushConsequence(base, `First one's yours. ${definition.name}. A soldier stands on it and the block knows. This is what the money was building toward.`, "good", "Your Corner");
+      }
+      logEntry(base, isFirstClaim
+        ? `First corner claimed: ${definition.name}. Soldier posted. The neighborhood sees it. Curtis's people will too.`
+        : `${definition.name} answers to your operation now. One soldier posts up immediately. Curtis's people will hear about it.`, "good");
       return advanceRun(base, { reason: "CLAIM_BLOCK" });
     }
     if (action.type === "VISIT_MINA") {

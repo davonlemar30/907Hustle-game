@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.23**. This file
+How 907Hustle: One Good Run is put together, current as of **v1.24**. This file
 is meant to be the only thing you need to read before changing code; for *why*
 the game is designed the way it is, see the ClickUp docs at the bottom.
 
@@ -938,6 +938,24 @@ cash, and at least one **unassigned soldier** — who posts up immediately — t
 writes a `submission / claimed_block` row to Curtis, flags
 `hustle.exposure.networkEscalation`, and spends one part of day.
 
+**The first claim branches (v1.24).** `controlledBlockCount(state) === 0`, read
+*before* the ownership write, gates four things that fire once per run and never
+again: a titled consequence card, a same-day phone text from Deshawn (or "Word
+Around Town" when he is not on the roster), its own feed line, and one
+`growth / first_territory` observation on the **neighborhood** channel. Nothing
+is stored for it — the board already knows how many corners the player holds, so
+the save schema did not move. Claims 2-6 keep the generic line, which is correct:
+only the first one is a beginning.
+
+That observation is located at `HOME_DISTRICT_ID` and **not** at the block id,
+and the reason generalises to every neighborhood broadcast: the channel sets
+`presence: true`, so `couldObserve` compares `location` against
+`NPC_PRESENCE_AREAS`, which holds **district** ids only. A block id there matches
+no NPC and the row lands in zero ledgers. v1.23 hit the same wall from the other
+side and had to split one row into two. **If a corner needs naming, name it in
+the copy, not in the `location`.** `tests/v1-24.test.js` asserts no NPC has a
+block-level presence area, so this fails loudly next time.
+
 **Double-pay guard.** The crossed-day territory income in `applyPressure` skips
 any district that has a block layer, because soldier income already pays per
 block there. Removing that guard pays Spenard twice.
@@ -1049,7 +1067,7 @@ Line numbers are `game-core.js` unless noted, and they drift.
 | Phone off → missed events | **Wired** | `pushPhoneMessage` only delivers when `phone.active` (:463); job callbacks stall (:472); story cards gate on it (:3003, :3011, :3013); unpaid bill cuts service (:2706) |
 | Yalonda trust → housing | **Wired** | rent due (:4463); `householdWarning` accumulates (:3333); 3 warnings ⇒ `evicted` + `endRun` (:3336) ⇒ `nowhere_to_go` ending (:3303) |
 | Juan trust → lead quality | **Wired** | `juanWorkIntelKnown` (:1752) unlocks the `ship_creek` job (:1913); trust gates the Dre route (:2418) and two story cards (:3003, :3011) |
-| Consequence cards → phone / day log | **Wired** | `logEntry` (:452), `pushConsequence` (:456), `pushPhoneMessage` (:461) |
+| Consequence cards → phone / day log | **Wired** | `logEntry` (:452), `pushConsequence` (:456), `pushPhoneMessage` (:461). `pushConsequence(state, text, tone, title)` — the fourth argument is optional and additive (v1.24); untitled cards, including ones queued in an older save, render exactly as before. Reserve the heading for ceremony beats: a heading on a one-line card is noise |
 | Heat → encounter frequency | **Wired, not via weightedPick** | ambient chance carries `+ heat * 0.01` (:3156); police/rival cards gate on heat (:3033 `heat >= 5`, :2933 `heat >= 10`); block raids scale with `RAID_HEAT_WEIGHT` (:2607). Heat is **not** a term in `getWeight` |
 | Reputation → vendor pricing | **Closed as a design decision** | see *Reputation is not a stat* below. `tradeUnitPrices` reads five things on the sell side — charisma above 1 (+1.5% each), district `influence` (+0.5% each, capped 2%), Curtis friendship while protection holds (+10%), Pherris recruited at tier 1+ in Downtown (+10%), and territory control (+4%) — and on the buy side district difficulty plus market awareness (4% a step), the plug's own modifier and standing discount, and plug suspicion (+10% at 3). The Goodie discount also reads Mina's band; Intelligence narrows the 907List sell swing, and since v1.19 an active Pherris is worth one effective level of it |
 | Heat → the people around you | **Wired** | heat above 8 reaches the household, above 10 the neighborhood, above 12 the network (`propagateHeat`). There is still no job-*loss* mechanic; heat has social consequences instead of only police ones. The spec's ">60" remains unreachable: **heat is clamped 0–15** (`heatBand`: warm 4, high 8, critical 12, run ends at 15) |

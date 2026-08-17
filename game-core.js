@@ -7,11 +7,11 @@
   "use strict";
   const { normalizeSeed, stringHash, makeRandom, seededShuffle, seededPick, isEligible, getWeight } = require("./src/events/random.js");
   const { effectPreview, event, activeEvent } = require("./src/events/cards.js");
-  const { checkpointDay, controlled, slotNumber, blockIntelLevel, blockIntelView, curtisBlockDefense, curtisBlockTargets } = require("./src/selectors.js");
+  const { checkpointDay, controlled, slotNumber, blockIntelLevel, blockIntelView, curtisBlockDefense, curtisBlockTargets, curtisNightPlan, compareBlocksByCurtisPriority } = require("./src/selectors.js");
   const Exposure = require("./src/exposure/engine.js");
   const { BANDS, bandFor, bandId, bandLabel } = require("./src/data/disposition-bands.js");
   const { EXPOSURE_NPC_IDS } = require("./src/data/npc-lenses.js");
-  const { NPC_CHANNELS } = require("./src/data/propagation.js");
+  const { NPC_CHANNELS, NPC_PRESENCE_AREAS } = require("./src/data/propagation.js");
   const Market = require("./src/data/market.js");
   const MarketEvents = require("./src/events/market-events.js");
   const AttributeData = require("./src/data/attributes.js");
@@ -24,6 +24,7 @@
   const Arrest = require("./src/data/arrest.js");
   const CurtisAwareness = require("./src/data/curtis-awareness.js");
   const Territory = require("./src/data/territory.js");
+  const Gossip = require("./src/data/gossip.js");
 
   const VERSION = 11;
   const RUN_DAYS = 7;
@@ -1418,6 +1419,10 @@
         status: "creating_character", day: 1, slot: 0, seed, rngState: random.state,
         premise: "fresh_arrival", openingPending: false, phase: "week_zero", pressureStartedDay: null, checkpointDay: null,
         ending: null, pendingEvent: null, pendingEncounter: null, pendingOperationResult: null, pendingUnlocks: [], consequenceQueue: [], pendingObservations: [], daySummary: null,
+        // v1.23: which voices have already texted today, so one NPC cannot send
+        // two gossip texts in a day. Session state - nothing here needs to
+        // outlive the run, and it rebuilds itself on the first delivery.
+        gossipVoices: { day: 0, npcIds: [] },
         // v1.16: parts of day a booking still owes, spent once the caught-state
         // encounter is dismissed and advanceRun is allowed to move again.
         pendingArrestSlots: null,
@@ -1696,6 +1701,11 @@
     migrated.jobs.applications = Array.isArray(migrated.jobs.applications) ? migrated.jobs.applications : [];
     migrated.run.consequenceQueue = Array.isArray(migrated.run.consequenceQueue) ? migrated.run.consequenceQueue : [];
     migrated.run.pendingObservations = Array.isArray(migrated.run.pendingObservations) ? migrated.run.pendingObservations : [];
+    // v1.23. Additive: a save from any earlier schema hydrates to "nobody has
+    // spoken yet", which is exactly right - the day's first delivery resets it.
+    migrated.run.gossipVoices = migrated.run.gossipVoices && Array.isArray(migrated.run.gossipVoices.npcIds)
+      ? migrated.run.gossipVoices
+      : { day: 0, npcIds: [] };
     const renameStoryId = (id) => typeof id === "string" ? id.replace(/^mara_/, "mina_").replace(/^rook_/, "curtis_").replace(/^kip_/, "goodie_").replace(/^miri_/, "pherris_") : id;
     const renameFlag = (id) => typeof id === "string" ? id.replace(/^mara/, "mina").replace(/^rook/, "curtis").replace(/^kip/, "goodie").replace(/^miri/, "pherris") : id;
     migrated.flags = Object.fromEntries(Object.entries(migrated.flags || {}).map(([id, flag]) => [renameFlag(id), flag]));
@@ -4513,6 +4523,10 @@
           // and he is not on the neighborhood channel at all. The location is
           // the block, not wherever the player happens to be standing.
           broadcastTracked(state, { type: "heat_exposure", event: "police_raid", channel: "neighborhood", location: HOME_DISTRICT_ID });
+          // v1.23: and the morning-after read, which carries the corner so a
+          // Warm+ neighbor can name it. One per raided corner per night, which
+          // is already one per corner - a corner takes at most one police roll.
+          emitRaidGossip(state, block.id);
           if (!takeRaidCasualty(state, random, record, toneDefense)) repelledCount += 1;
         }
       }
@@ -4592,6 +4606,208 @@
       // would render the good class.
       logEntry(state, `Eli's report: ${parts.join(" · ")}`, policeCount || curtisCount || attritionCount ? "warn" : "good");
     }
+  }
+
+  // --- ATTACK TELEGRAPHING THROUGH GOSSIP (v1.23) --------------------------
+  //
+  // Before Curtis's people move, the block knows. Whether that reaches the
+  // player depends on who likes them: at Warm and above somebody texts, below
+  // Warm nobody does, and a player with no warm neighborhood relationships meets
+  // him cold. That silence is the whole feature - there is no negative branch
+  // anywhere in here, only a candidate set that a Neutral NPC is not in.
+  //
+  // The shape, end to end:
+  //
+  //   1. The day-end pass reads curtisNightPlan for TOMORROW's night, once the
+  //      night that just resolved has settled ownership and the crew tracks have
+  //      settled who is still on the payroll.
+  //   2. Each targeted corner raises one `territory / curtis_move_planned`
+  //      observation on the neighborhood channel, queued straight onto
+  //      run.pendingObservations at a slot this file computed. Curtis never sees
+  //      it: he is not on the neighborhood channel, and `territory` does not
+  //      clear his network filter either. This is the block reacting to his
+  //      people moving, not a report to him.
+  //   3. The queue drains at the top of the attack day (or the evening before,
+  //      with Deshawn at tier 3), and whoever the player is closest to among the
+  //      NPCs who heard it sends a phone text naming the corner.
+  //
+  // Why the plan is read for tomorrow rather than tonight: a warning that lands
+  // after the corner changed hands is not a warning. The day-end pass is the only
+  // place the next night's inputs are all final, so that is where it is raised,
+  // and the neighborhood's standard one-day carry puts it in the player's hand on
+  // the morning of the night it describes.
+  //
+  // Phone only, deliberately. Pherris's level-3 block card already carries the
+  // standing strategic read ("his people are asking about this corner"); this is
+  // the event-driven complement ("tonight"), and it is a private tip rather than
+  // public news. The two surfaces do not overlap and the Territory page is
+  // untouched.
+
+  // Who could carry a piece of block news to the player, for a corner in a given
+  // district. Authored voice AND routing: an NPC needs a line in gossip.js, has
+  // to listen on the neighborhood channel, and has to be reachable where the
+  // corner is. Nobody can be handed a line they had no way to have heard.
+  function gossipAudience(state, districtId) {
+    return Gossip.GOSSIP_VOICE_IDS.filter((npcId) => {
+      if (!state.npc[npcId]) return false;
+      if (!(NPC_CHANNELS[npcId] || []).includes("neighborhood")) return false;
+      const areas = NPC_PRESENCE_AREAS[npcId];
+      return !areas || !districtId || areas.includes(districtId);
+    });
+  }
+
+  // What Deshawn is worth to the warning surface. modifierTier rather than a
+  // bare getActiveCrew check because it is the established reading of "is this
+  // lieutenant actually working" - departed, arrested, never recruited and
+  // loyalty-0 all come back 0, so the bonus disappears the moment he does and
+  // the player reverts to the no-Deshawn behavior with no extra branch.
+  function gossipDeshawnTier(state) {
+    return Crew.modifierTier(state, "deshawn");
+  }
+
+  // Raises tomorrow night's warnings. Scope and timing are the Deshawn ladder;
+  // the plan itself is never changed by him, because he does not change what
+  // Curtis intends, only how much of it the player gets to hear.
+  function emitCurtisGossipWarnings(state) {
+    const plan = curtisNightPlan(state);
+    if (!plan.length) return [];
+    const tier = gossipDeshawnTier(state);
+    const scope = tier >= Territory.GOSSIP_DESHAWN_FULL_SCOPE_TIER ? plan.length : Territory.GOSSIP_WARNING_BASE_SCOPE;
+    const arrival = tier >= Territory.GOSSIP_DESHAWN_EARLY_ARRIVAL_TIER
+      ? Territory.GOSSIP_WARNING_EARLY_ARRIVAL
+      : Territory.GOSSIP_WARNING_ARRIVAL;
+    const deliverAtSlot = slotNumber(state.run.day + arrival.dayOffset, arrival.slot);
+    const audience = gossipAudience(state, HOME_DISTRICT_ID);
+    const raised = [];
+    for (const entry of plan.slice(0, scope)) {
+      Exposure.queueObservation(state, audience, {
+        type: "territory",
+        event: Gossip.GOSSIP_WARNING_EVENT,
+        // The corner, not the district. Routing was decided above, so location is
+        // free to be the thing the text has to name.
+        location: entry.blockId,
+        value: entry.weight,
+        channel: "neighborhood",
+        day: state.run.day,
+      }, deliverAtSlot);
+      raised.push(entry.blockId);
+    }
+    return raised;
+  }
+
+  // The morning-after read on a police raid. Reactive by design: the police
+  // answer Heat, which can move at any time, so there is nothing to telegraph and
+  // no predictive version of this is coming. What it is worth is that the world
+  // noticed - and that the person who noticed cared enough to ask.
+  //
+  // The v1.21 `heat_exposure / police_raid` broadcast is untouched and still
+  // carries the disposition consequence on the district. This rides alongside it
+  // carrying the corner, because a district-scoped row cannot name a corner and
+  // rescoping the existing one to the block would break its own routing - no
+  // NPC's presence areas contain a block id.
+  function emitRaidGossip(state, blockId) {
+    const arrival = Territory.GOSSIP_RAID_ARRIVAL;
+    Exposure.queueObservation(state, gossipAudience(state, HOME_DISTRICT_ID), {
+      type: "territory",
+      event: Gossip.GOSSIP_RAID_EVENT,
+      location: blockId,
+      channel: "neighborhood",
+      day: state.run.day,
+    }, slotNumber(state.run.day + arrival.dayOffset, arrival.slot));
+  }
+
+  // One voice speaks once a day. Reset lazily on the first delivery of a new day
+  // rather than in the day-end pass, so a text that lands in the evening and one
+  // that lands the next morning are correctly on different days. Session state on
+  // `run`: nothing here needs to outlive a run, and a save that predates the
+  // field hydrates to an empty day.
+  function gossipVoicesUsed(state) {
+    const record = state.run.gossipVoices;
+    if (!record || record.day !== state.run.day) {
+      state.run.gossipVoices = { day: state.run.day, npcIds: [] };
+    }
+    return state.run.gossipVoices.npcIds;
+  }
+
+  // Who tells the player, out of everyone who heard it.
+  //
+  // Highest disposition wins, because the point of the surface is that closeness
+  // is what buys information. Ties break on a hash of the seed, the corner and
+  // the day, so two people who are equally close to the player do not resolve on
+  // object key order and a reloaded save picks the same messenger.
+  //
+  // Three gates, and the middle one is the feature:
+  //   - they have to have heard it (the caller passes only recipients)
+  //   - they have to be Warm or better
+  //   - their ledger cannot be empty. An NPC nobody has ever observed scores 0,
+  //     which is Neutral, so this is belt and braces - but the acceptance
+  //     criterion is explicitly that an uncomputed disposition can never speak,
+  //     and asserting it here means no future default can quietly grant a voice.
+  function pickGossipVoice(state, npcIds, blockId) {
+    const spokenAlready = gossipVoicesUsed(state);
+    const candidates = npcIds
+      .filter((npcId) => !spokenAlready.includes(npcId))
+      .filter((npcId) => Exposure.ledgerOf(state, npcId).length > 0)
+      .filter((npcId) => atLeastBand(state, npcId, BANDS.WARM))
+      .map((npcId) => ({
+        npcId,
+        score: dispositionOf(state, npcId),
+        tiebreak: stringHash(`${state.run.seed}:warn-npc:${blockId}:${state.run.day}:${npcId}`),
+      }))
+      .sort((a, b) => (b.score - a.score) || (a.tiebreak - b.tiebreak) || (a.npcId < b.npcId ? -1 : 1));
+    return candidates.length ? candidates[0].npcId : null;
+  }
+
+  // Turns a drained batch of gossip observations into at most one text per
+  // corner. Resolved after the drain rather than inside it on purpose: picking
+  // the messenger reads dispositions, and rows landing mid-drain would make the
+  // choice depend on queue order.
+  function deliverGossipTexts(state, landed) {
+    if (!landed.length) return;
+    const tier = gossipDeshawnTier(state);
+    const byCorner = new Map();
+    for (const entry of landed) {
+      const key = `${entry.event}:${entry.blockId}`;
+      if (!byCorner.has(key)) byCorner.set(key, { event: entry.event, blockId: entry.blockId, weight: entry.weight, npcIds: [] });
+      const bucket = byCorner.get(key);
+      if (!bucket.npcIds.includes(entry.npcId)) bucket.npcIds.push(entry.npcId);
+    }
+    // Heaviest pressure first, then his own ranking of the corners, so when the
+    // roster of available voices runs short - one warm neighbor, three warned
+    // corners - the one that gets said out loud is the one he wants most. The
+    // comparator is the planner's, imported rather than restated: the plan is not
+    // in hand here, and a second copy of the ranking would drift from it.
+    const buckets = [...byCorner.values()].sort((a, b) => (b.weight || 0) - (a.weight || 0) || compareBlocksByCurtisPriority(a.blockId, b.blockId));
+    for (const bucket of buckets) {
+      const block = SPENARD_BLOCK_BY_ID[bucket.blockId];
+      if (!block) continue;
+      const npcId = pickGossipVoice(state, bucket.npcIds, bucket.blockId);
+      if (!npcId) continue;
+      // The pressure rider is Deshawn tier 2. Everyone else gets the plain line -
+      // they know something is coming, not how hard.
+      const pressure = bucket.event === Gossip.GOSSIP_WARNING_EVENT && tier >= Territory.GOSSIP_DESHAWN_PRESSURE_TEXT_TIER
+        ? bucket.weight
+        : null;
+      const text = Gossip.gossipText(npcId, bucket.event, block.name, pressure);
+      if (!text) continue;
+      gossipVoicesUsed(state).push(npcId);
+      pushPhoneMessage(state, Gossip.gossipSender(npcId), text);
+    }
+  }
+
+  // The one call site for draining the observation queue. Everything that used to
+  // call Exposure.resolveObservationQueue directly goes through here so a gossip
+  // row can never land without the text that is the point of it.
+  function drainObservations(state) {
+    const landed = [];
+    const delivered = Exposure.resolveObservationQueue(state, (entry) => {
+      const observation = entry.observation;
+      if (observation.type !== "territory") return;
+      if (observation.event !== Gossip.GOSSIP_WARNING_EVENT && observation.event !== Gossip.GOSSIP_RAID_EVENT) return;
+      landed.push({ npcId: entry.npcId, event: observation.event, blockId: observation.location, weight: observation.value });
+    });
+    deliverGossipTexts(state, landed);
+    return delivered;
   }
 
   // Ambient heat from held territory: every held block's heatExposure, weighted
@@ -5777,7 +5993,7 @@
     resolveMarketSells(state);
     resolveBuyerRequests(state);
     noticeMarketInventory(state);
-    Exposure.resolveObservationQueue(state);
+    drainObservations(state);
     expireEffects(state);
     resolveCrewAssignments(state, random);
     resolveSoldierOperations(state, random, false);
@@ -5920,12 +6136,19 @@
     settleCurtisNight(state);
     resolveSharkLoans(state);
     resolveCrewTracks(state);
+    // v1.23: tomorrow night's warnings. Raised here because this is the first
+    // point where every input is final - the night just resolved so ownership is
+    // settled, settleCurtisNight moved the awareness phase, and resolveCrewTracks
+    // decided whether Deshawn is still on the payroll. Before the drain below, so
+    // his tier-3 "evening before" arrival lands tonight rather than waiting a
+    // whole day for the next pass.
+    emitCurtisGossipWarnings(state);
     // Heat is public past a point, so it spreads on its own with no card
     // tagging it. This is the connection the v1.8.1 audit filed as absent:
     // heat now reaches the people around the player instead of only the police
     // roll. Raised before the queue drains so a hot night lands the same night.
     Exposure.propagateHeat(state);
-    Exposure.resolveObservationQueue(state);
+    drainObservations(state);
     evolveMarkets(state, random);
     if (state.run.phase === "pressure" && oldDay >= checkpointDay(state)) {
       state.run.dailyActions = [];
@@ -5944,7 +6167,7 @@
     // Drained again after the clock rolls: the network and neighborhood channels
     // deliver at Morning of a later day, and a player who takes no action that
     // morning should still have the news land on the right day.
-    Exposure.resolveObservationQueue(state);
+    drainObservations(state);
     // v1.13: yesterday's word lands in the neighboring districts, the stick
     // ledger rolls over, and anyone owed a visit gets their morning.
     resolveBleedArrivals(state);
@@ -8484,6 +8707,12 @@
     // CONFIRM_END_DAY. Isolating one Heat delta otherwise means fighting rent,
     // pressure, the Curtis settle, and the markets for it.
     resolveSoldierOperationsForTest: resolveSoldierOperations,
+    // v1.23 gossip seams, so a test can drive one half of the pipeline without
+    // running a whole day through the reducer.
+    emitCurtisGossipWarningsForTest: emitCurtisGossipWarnings,
+    emitRaidGossipForTest: emitRaidGossip,
+    drainObservationsForTest: drainObservations,
+    gossipAudienceForTest: gossipAudience,
     blockGateRollForTest: blockGateRoll,
     // Street Read is invisible to the player but has to be reachable by tests.
     // Nothing here is imported by ui.jsx.
@@ -8523,6 +8752,9 @@
       // v1.20 Made Men modifiers. blockIntelLevel/blockIntelView are the pure
       // reads from src/selectors.js, re-exported here so the UI has one import.
       blockIntelLevel, blockIntelView, curtisBlockDefense, curtisBlockTargets,
+      // v1.23: the plan behind the target list, with the pressure weights the
+      // gossip surface reads. Same list, one level less flattened.
+      curtisNightPlan,
       toneDefenseMultiplier: Crew.toneDefenseMultiplier, deshawnHeatReduction: Crew.deshawnHeatReduction,
       territoryHeatChance, lieutenantTerritoryModifier,
       // v1.21: the two nightly gates, exposed the same way territoryHeatChance

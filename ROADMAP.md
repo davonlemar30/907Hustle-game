@@ -4,6 +4,51 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
+## Shipped — v1.25 A Simulator Strategy That Reaches Territory
+
+Harness only — `game-core.js` is untouched, so the save schema stays at **v11**
+and nothing player-visible moved. **Both sim hashes moved, deliberately and for
+the first time since v1.20**: `--total 200`
+`25afb74e10487dee6fc62641d944d3cea093873f28c740ba43e10bb0828d6dc1`, `--total 2000`
+`f10432b1f61624cbc8df35e299a2d36ca369e1e822ca0d6578a337562e524665`. Zero dead
+ends across fourteen strategies; 799 tests passing.
+
+Since v1.20 the roadmap has carried "no sim strategy reaches the block layer" as
+the highest-value simulator work outstanding, without knowing **which rung** they
+fell off — `territoryMetrics` reported only `blocksClaimed`, a flat zero for
+everyone. It now reports the rungs beneath a claim, and a fourteenth strategy,
+`territory`, is built to climb them: it banks rather than restocking while the
+ladder is unfunded, leases at the reducer's real $650 gate instead of the
+self-imposed $850, and drops the day-5 recruitment cap because Eli's
+introduction is a story beat no strategy can force.
+
+| rung, over 200 runs | `operator` | `territory` |
+|---|---|---|
+| leases the garage | 1 | **178** (median day 8) |
+| recruits Eli | — | **109** |
+| promotes him to lieutenant | 0 | **81** |
+| hires a soldier | 0 | **24** |
+| **claims a block** | 0 | **0** |
+
+**The answer is still no, and now there is a reason.** The ladder costs
+**$1,125** — $650 garage, $35 test route, $120 Eli, $140 soldier, $180 for the
+cheapest corner — and the first $650 arrives at **median day 8 of a run that ends
+on day 10**. Four rungs and ~$475 remain with two days left. **Territory is not
+reachable inside a run's length by any play pattern the simulator can express.**
+That reframes the 2.2 balance pass blocker from a harness problem into an
+**economy-and-pacing** question, which is a design call rather than a tuning one.
+
+- **Banking beats trading, and the opposite was tried.** A $140 trading float so
+  the strategy could restock while saving measures *worse* — garage 178 → 116,
+  lieutenant 81 → 9. The losing variant is recorded in the source so it is not
+  re-tried.
+- **The thirteen existing strategies are behaviorally identical**, verified at a
+  fixed 15 runs each with the new telemetry keys stripped. A raw before/after
+  diff would have been meaningless: `--total N` splits a fixed budget, so a
+  fourteenth strategy re-partitions it. That check caught a real bug — the first
+  cut read the buy budget before the SELL loop instead of after, changing
+  behavior for all seven product-carrying strategies.
+
 ## Shipped — v1.24 First-Claim Ceremony — **Phase 4.1, and the Phase 1 asterisk is closed**
 
 Built on `claude/v1-24-first-claim-uc4fdx`, on top of the v1.23 merge (PR #85,

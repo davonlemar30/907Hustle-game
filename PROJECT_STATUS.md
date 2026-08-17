@@ -2,16 +2,82 @@
 
 Last updated: 2026-08-17 (America/Anchorage)
 
-**v1.24 is built on `claude/v1-24-first-claim-uc4fdx`, on top of the v1.23 merge
-(PR #85, `59b8865`).** Verified on the branch: `npm test` **799 passing** (767
+**v1.25 is built on `claude/v1-24-first-claim-uc4fdx`, on top of the v1.24 merge
+(PR #86, `45dbe72`).** Verified on the branch: `npm test` **799 passing**,
+`npm run build` clean, `npm run check-docs` clean, 2,000-run simulation with zero
+dead ends across **fourteen** strategies. **Both hashes moved, on purpose and for
+the first time since v1.20** — `--total 200`
+`25afb74e10487dee6fc62641d944d3cea093873f28c740ba43e10bb0828d6dc1`,
+`--total 2000`
+`f10432b1f61624cbc8df35e299a2d36ca369e1e822ca0d6578a337562e524665`.
+See the v1.25 section for the invariance proof that the thirteen pre-existing
+strategies did not change behavior.
+
+## v1.25 A Simulator Strategy That Reaches Territory — built (branch `claude/v1-24-first-claim-uc4fdx`)
+
+- **The instrument problem, finally diagnosed.** Since v1.20 the phase list has
+  said "no sim strategy reaches the block layer" without knowing where they fell
+  off. `territoryMetrics` reported only `blocksClaimed`, which was a flat zero
+  for every strategy and every rung. It now reports the rungs **below** a claim —
+  Eli introduced, recruitable, recruited, his loyalty, the lieutenant stage, and
+  soldiers hired — which turns "the sim never claims" into a diagnosis.
+- **A fourteenth strategy, `territory`,** rather than retuning `operator`. It
+  banks instead of restocking while the ladder is unfunded (`bankForTerritory`),
+  leases at the reducer's real gate — `LEASE_GARAGE` needs only
+  `!controlled && cash >= 650`, and the sim had imposed `850` on itself — from
+  day 2 rather than day 3, and lifts the day-5 recruitment cap, because Eli's
+  introduction is a story beat a strategy cannot force.
+- **What it unblocked, over 200 runs, against `operator`'s 1 / 76 / 0:**
+
+  | rung | `operator` | `territory` |
+  |---|---|---|
+  | leases the garage | 1 | **178** (median day 8) |
+  | recruits Eli | — | **109** |
+  | promotes him to lieutenant | 0 | **81** |
+  | hires a soldier | 0 | **24** |
+  | **claims a block** | 0 | **0** |
+
+- **And the answer to the original question is no, with a reason.** The ladder
+  costs **$1,125** — $650 garage, $35 test route, $120 Eli, $140 soldier, $180
+  for the cheapest corner — and this profile reaches the first $650 at **median
+  day 8 of a run that ends on day 10**. Four rungs and roughly $475 remain with
+  two days left. **Territory is not reachable inside a run's length by any play
+  pattern the simulator can express**, which makes it an economy-and-pacing
+  question rather than a strategy-tuning one. That is a design finding for
+  whoever owns the 2.2 balance pass, and it is the first time the blocker has
+  been stated as a number instead of a shrug.
+- **Banking beats trading here, and the opposite was tried first.** Keeping a
+  $140 trading float so the strategy could still restock while saving sounds
+  obviously right and measures worse: garage drops 178 → 116 and lieutenant
+  81 → 9, because this profile's trade loop returns less than it ties up on a
+  bankroll that thin. The losing variant is recorded in the source comment so it
+  is not re-tried.
+- **The thirteen pre-existing strategies are behaviorally untouched**, verified
+  rather than asserted. `--total N` splits a fixed run budget across strategies,
+  so a fourteenth entry re-partitions it (16/15 runs each → 15/14) and makes a
+  raw before/after diff meaningless. The check therefore calls
+  `summarize(name, 15)` per strategy at a **fixed** count on both sides and
+  compares with the new telemetry keys stripped — the same technique v1.20 used.
+  All thirteen are byte-identical.
+- **One real bug caught by that check.** The first cut computed the buy budget
+  *before* the SELL loop; the original read `s.player.cash` *after* it. That
+  silently changed the buy budget for all seven strategies that carry product.
+  The invariance check found it, which is the argument for running it.
+- **Nothing in `game-core.js` changed** — this is entirely a harness build, so
+  the save schema is untouched at **v11** and no player-visible behavior moved.
+  The hashes moved because the output now contains a fourteenth strategy and six
+  new telemetry keys.
+
+**v1.24 was built on `claude/v1-24-first-claim-uc4fdx`, on top of the v1.23 merge
+(PR #85, `59b8865`), and merged as PR #86 (`45dbe72`).** Verified: `npm test` **799 passing** (767
 through v1.23, 32 new in `tests/v1-24.test.js`), `npm run build` clean,
 `npm run check-docs` clean, 2,000-run simulation with zero dead ends,
 `--total 200`
 `c8b3bf0745871555c326f4861b0a8d576ce149c9fa7bd871e9215b51236092d8`,
 `--total 2000` `d9d0fbf1d24c1c7cca8db9db7897f044811a46c4d41ff6a23ca678a0dc3dfb39`
-— **both still byte-identical to v1.20, v1.21 and v1.23.** See the v1.24 section
-for why that is expected here and what was measured to prove it rather than
-assume it.
+— byte-identical to v1.20, v1.21 and v1.23 at the time. **These are the last
+build to hold those hashes**; v1.25 moves both by adding a fourteenth sim
+strategy. See the v1.24 section for why they were expected to hold here.
 
 **v1.23 was built on `claude/v1-23-gossip-warnings-dd18a0`, on top of the v1.21
 merge (PR #84, `8d27ec3`).** Verified on the branch: `npm test` **767 passing**

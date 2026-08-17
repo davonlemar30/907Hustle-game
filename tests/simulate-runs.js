@@ -39,13 +39,23 @@ function exposureMetrics(state){
 // measurable in a real run rather than only in a unit test. blocksLost is the
 // number that moves: a block with capturedDay set and a Curtis owner is one the
 // player claimed and then had taken back.
+// v1.25 adds the four rungs BELOW a claim. Reporting only `blocksClaimed` meant
+// a flat zero for every strategy with no way to see which rung it fell off, and
+// the v1.24 audit guessed wrong about which one it was. These are cheap reads and
+// they turn "the sim never claims" into a diagnosis.
 function territoryMetrics(state){
   const blocks=Object.values(state.world.territoryBlocks||{});
   const claimed=blocks.filter(b=>b.capturedDay!=null);
+  const eli=state.people?.crew?.eli||{};
+  const soldiers=Object.values(state.world.soldiers||{});
   return {blocksClaimed:claimed.length,blocksHeld:blocks.filter(b=>b.owner==='player').length,
     blocksLost:claimed.filter(b=>b.owner!=='player').length,
     blockRaids:blocks.reduce((n,b)=>n+(b.raidCount||0),0),
-    blockIncome:blocks.reduce((n,b)=>n+(b.incomeCollected||0),0)};
+    blockIncome:blocks.reduce((n,b)=>n+(b.incomeCollected||0),0),
+    eliIntroduced:eli.introduced?1:0,eliRecruitable:eli.contactStage==='recruitable'?1:0,
+    eliRecruited:eli.recruited?1:0,eliLoyalty:eli.loyalty||0,
+    eliLieutenant:eli.lieutenantStage==='operations_lieutenant'?1:0,
+    soldiersEverHired:soldiers.length};
 }
 // v1.9b: what the 907List broker track actually earned, and at which tier. The
 // per-tier daily income is the only way to tell "the tier ladder is tuned" from
@@ -110,6 +120,42 @@ function marketTurn(s,p){
   return null;
 }
 
+// v1.25. Cash the `territory` strategy refuses to spend on anything except the
+// next rung of the territory ladder.
+//
+// The measurement that motivated this: no strategy had EVER held the garage and
+// a crew member in the same run - `operator` leases in 1 of 200 runs and
+// recruits in 76, but the intersection was 0, and `stickup` is the mirror image
+// at 18 and 1. Territory needs garage, then Eli, then his promotion, then a
+// soldier, and the trade loop below spends 58% of cash on inventory every single
+// pass. The lease branch already sits above the trade block; it loses anyway
+// because the previous iteration already spent the money. So the fix is to stop
+// spending it, not to reorder anything.
+//
+// Every other strategy leaves `bankForTerritory` undefined, gets 0 here, and
+// trades against its full balance exactly as it did before this existed.
+// Measured, both ways round. Keeping a trading float so the strategy can still
+// restock while banking sounds obviously right and is worse: with a $140 float
+// the garage rate drops from 178/200 to 116/200 and the lieutenant from 81 to 9,
+// because this profile's trade loop returns less than it ties up on a bankroll
+// this thin. Banking outright wins, so the reserve is the whole target.
+function territoryTarget(s,p){
+  if(!s.base.controlled)return C.GARAGE_DEPOSIT;
+  const crew=s.people.crew[p.crew];
+  if(crew&&!crew.recruited)return C.selectors.recruitmentCost(s,p.crew)||0;
+  if(!C.selectors.eliLieutenantActive(s))return 0;
+  // A spare soldier is worth nothing standing in the garage, so once one is free
+  // the cheapest corner is what the money is for. Without this the
+  // soldier-recruit branch kept buying bodies and the claim never had $180.
+  const spare=Object.values(s.world.soldiers||{}).some(x=>x.status==='active'&&!x.blockId);
+  if(spare)return Math.min(...C.SPENARD_BLOCKS.map(b=>b.claimCost));
+  return C.SOLDIER_RECRUIT_COST||0;
+}
+function territoryReserve(s,p){
+  if(!p.bankForTerritory)return 0;
+  return territoryTarget(s,p);
+}
+
 const strategies={
   cautious:{caught:['surrender','run','fight'],products:['weed','shrooms'],areas:['north_star_lot','downtown'],profit:1.10,heatCap:4,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['intimidate','talk','run','pay','surrender'],mode:'trader'},
   balanced:{caught:['run','fight','surrender'],products:['weed','shrooms','cocaine'],areas:['north_star_lot','downtown'],profit:1.15,heatCap:7,plan:'defend',track:'security',gear:'utility_knife',crew:'pherris',encounter:['talk','run','fight','pay','surrender'],mode:'mixed',property:true},
@@ -137,6 +183,14 @@ const strategies={
   // Downtown for the +30%, which is slower and needs a float to survive.
   flipper:{caught:['surrender','run','fight'],products:[],areas:['north_star_lot'],profit:2,heatCap:3,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['talk','run','pay','surrender'],mode:'legal',market:true,marketMargin:12,marketFloat:0,marketQuick:true,marketRiskCap:0.14},
   broker:{caught:['surrender','run','fight'],products:[],areas:['north_star_lot','downtown'],profit:2,heatCap:4,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['talk','run','pay','surrender'],mode:'legal',market:true,marketMargin:15,marketFloat:0,marketQuick:true,marketRiskCap:0.18},
+  // v1.25. The instrument for the block layer, which nothing else reaches.
+  // `operator` was supposed to be this and is not: see territoryReserve above
+  // for the measurement. Differences from `operator`, and they are the whole
+  // strategy: it banks rather than restocking while the ladder is unfunded, it
+  // leases at the reducer's real gate ($650) instead of the self-imposed $850,
+  // and it leases as early as day 2. Spenard only - there are no blocks
+  // anywhere else, so Downtown is a wasted slot for this one.
+  territory:{caught:['run','fight','surrender'],products:['weed','shrooms'],areas:['north_star_lot'],profit:1.12,heatCap:8,plan:'defend',track:'operations',gear:'utility_knife',crew:'eli',encounter:['talk','run','fight','pay','surrender'],mode:'mixed',property:true,operator:true,bankForTerritory:true,leaseAt:C.GARAGE_DEPOSIT,leaseDay:2,recruitBy:99},
 };
 function settle(state,profile,beats){let s=state,guard=0;const note=(id)=>{if(beats&&(!beats.length||beats[beats.length-1].id!==id))beats.push({id,slot:(s.run.day-1)*4+s.run.slot})};while(guard++<20){if(s.run.openingPending){s=C.reduceGame(s,{type:'DISMISS_OPENING'});continue}if(s.run.daySummary){s=C.reduceGame(s,{type:'DISMISS_DAY_SUMMARY'});continue}if(s.run.pendingOperationResult){s=C.reduceGame(s,{type:'ACKNOWLEDGE_OPERATION_RESULT'});continue}if(s.run.pendingEncounter){note(s.run.pendingEncounter.id);const available=C.selectors.encounterChoices(s).map(c=>c.id);const posture=s.run.pendingEncounter.type==='boost_caught'?(profile.caught||[]):profile.encounter;const choice=posture.find(id=>available.includes(id))||profile.encounter.find(id=>available.includes(id))||available[0];s=C.reduceGame(s,{type:'RESOLVE_ENCOUNTER',choiceId:choice});continue}if(s.run.pendingEvent){note(s.run.pendingEvent.id);const choices=s.run.pendingEvent.choices;let index=s.run.pendingEvent.id==='dre_terms'?choices.length-1:choices.findIndex(c=>(c.effect?.cash||0)>=0);if(index<0)index=choices.findIndex(c=>Math.abs(c.effect?.cash||0)<=s.player.cash);s=C.reduceGame(s,{type:'RESOLVE_EVENT',choiceIndex:index<0?choices.length-1:index});continue}if(s.run.dayEndPending){s=C.reduceGame(s,{type:'CONFIRM_END_DAY'});continue}break}return s}
 function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun({seed}),{type:'START_RUN',streetName:`Sim ${seed}`}),guard=0;const beats=[];const marketSamples=[];while(s.run.status==='playing'&&guard++<500){s=settle(s,p,beats);if(s.run.status!=='playing')break;
@@ -178,15 +232,24 @@ function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun
       if(n.coffee.available){s=C.reduceGame(s,{type:'NILE_COFFEE'});continue}}
     if(p.mode==='trainer'&&C.selectors.activityAvailability(s).gym.available&&s.player.cash>=100){s=C.reduceGame(s,{type:'TRAIN_ATTRIBUTE',activity:C.selectors.activityAvailability(s).gym.activities.find(a=>a.id==='sparring'&&a.unlocked)?'sparring':'bag_work'});continue}
     if(p.mode==='mixed'&&s.run.slot===0){const job=C.selectors.discoveredJobs(s).find(job=>C.selectors.jobAvailability(s,job.id).available);if(job){s=C.reduceGame(s,{type:'WORK_JOB',jobId:job.id,approach:'socialize'});continue}}
-    if(p.property&&!s.base.controlled&&s.run.day>=3&&s.player.cash>=850){s=C.reduceGame(s,{type:'LEASE_GARAGE'});continue}
-    const area=s.world.currentNeighborhoodId,market=s.world.markets[area];for(const id of p.products){if(!s.world.productAccess[id])continue;const item=s.player.inventory[id],sell=C.selectors.tradeUnitPrices(s,id).sell;if(item.qty&&sell>=item.avgCost*p.profit)s=C.reduceGame(s,{type:'SELL',productId:id,qty:item.qty})}const room=C.selectors.cargoCapacity(s)-C.selectors.cargoUsed(s);if(room>0){const candidates=p.products.filter(id=>s.world.productAccess[id]).map(id=>({id,price:C.selectors.tradeUnitPrices(s,id).buy,available:market.availability[id]})).filter(x=>x.available&&x.price<=s.player.cash).sort((a,b)=>a.price-b.price);if(candidates.length){const x=candidates[0],qty=Math.min(room,x.available,Math.floor(s.player.cash*.58/x.price));if(qty)s=C.reduceGame(s,{type:'BUY',productId:x.id,qty})}}
+    if(p.property&&!s.base.controlled&&s.run.day>=(p.leaseDay??3)&&s.player.cash>=(p.leaseAt??850)){s=C.reduceGame(s,{type:'LEASE_GARAGE'});continue}
+    const area=s.world.currentNeighborhoodId,market=s.world.markets[area];for(const id of p.products){if(!s.world.productAccess[id])continue;const item=s.player.inventory[id],sell=C.selectors.tradeUnitPrices(s,id).sell;if(item.qty&&sell>=item.avgCost*p.profit)s=C.reduceGame(s,{type:'SELL',productId:id,qty:item.qty})}const room=C.selectors.cargoCapacity(s)-C.selectors.cargoUsed(s);if(room>0){
+      // Read AFTER the sells above, which is where the old `s.player.cash` was
+      // read too - snapshotting it any earlier changes the buy budget for every
+      // strategy that carries product, and seven of the thirteen do.
+      const spendable=Math.max(0,s.player.cash-territoryReserve(s,p));
+      const candidates=p.products.filter(id=>s.world.productAccess[id]).map(id=>({id,price:C.selectors.tradeUnitPrices(s,id).buy,available:market.availability[id]})).filter(x=>x.available&&x.price<=spendable).sort((a,b)=>a.price-b.price);if(candidates.length){const x=candidates[0],qty=Math.min(room,x.available,Math.floor(spendable*.58/x.price));if(qty)s=C.reduceGame(s,{type:'BUY',productId:x.id,qty})}}
     const firstUpgrade=C.BASE_UPGRADES.find(u=>u.track===p.track&&u.level===1),gear=C.GEAR.find(g=>g.id===p.gear),crew=C.CREW.find(c=>c.id===p.crew),crewState=s.people.crew[p.crew];
     const operationAction=()=>s.base.visiting?s:C.reduceGame(s,{type:'VISIT_BASE'});
     const eliTest=p.crew==='eli'?C.selectors.eliTestRouteAvailability(s):null;
     if(eliTest?.available){s=C.reduceGame(s,{type:'ELI_TEST_ROUTE'});continue}
     if(s.base.controlled&&s.run.day<=3&&!s.base.tracks[p.track]&&s.player.cash>=firstUpgrade.cost){s=operationAction();s=settle(s,p,beats);if(s.base.visiting)s=C.reduceGame(s,{type:'UPGRADE_BASE',track:p.track});continue}
     if(s.base.controlled&&s.run.day<=4&&!s.player.gear.owned.includes(p.gear)&&s.player.cash>=gear.cost){s=operationAction();s=settle(s,p,beats);if(s.base.visiting)s=C.reduceGame(s,{type:'BUY_GEAR',gearId:p.gear});continue}
-    if(s.base.controlled&&s.run.day<=5&&crewState.introduced&&!crewState.recruited&&(p.crew!=='eli'||crewState.contactStage==='recruitable')&&s.player.cash>=C.selectors.recruitmentCost(s,p.crew)){s=operationAction();s=settle(s,p,beats);if(s.base.visiting)s=C.reduceGame(s,{type:'RECRUIT_CREW',crewId:p.crew});continue}
+    // v1.25: `recruitBy` widens the window. The cap exists so most profiles do
+    // not spend late-run cash on a body they will not use; the territory
+    // strategy needs the opposite, because Eli's introduction is a story beat it
+    // cannot force and the day-5 cap threw the run away whenever it landed late.
+    if(s.base.controlled&&s.run.day<=(p.recruitBy??5)&&crewState.introduced&&!crewState.recruited&&(p.crew!=='eli'||crewState.contactStage==='recruitable')&&s.player.cash>=C.selectors.recruitmentCost(s,p.crew)){s=operationAction();s=settle(s,p,beats);if(s.base.visiting)s=C.reduceGame(s,{type:'RECRUIT_CREW',crewId:p.crew});continue}
     if(p.operator&&s.people.crew.eli.recruited&&C.selectors.eliPromotionAvailability(s).available){s=C.reduceGame(s,{type:'PROMOTE_LIEUTENANT',crewId:'eli'});continue}
     if(p.operator&&C.selectors.soldierRecruitAvailability(s).available){s=C.reduceGame(s,{type:'RECRUIT_SOLDIER'});continue}
     if(p.operator&&C.selectors.eliLieutenantActive(s)){

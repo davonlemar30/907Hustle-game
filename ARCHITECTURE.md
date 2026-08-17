@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.24**. This file
+How 907Hustle: One Good Run is put together, current as of **v1.25**. This file
 is meant to be the only thing you need to read before changing code; for *why*
 the game is designed the way it is, see the ClickUp docs at the bottom.
 
@@ -1140,11 +1140,25 @@ before and after: a matching hash proves you changed nothing the player can see.
 Nothing in the run path may use `Math.random()` — only `makeRandom(seed)`, and
 not even that where a `stringHash` off the seed will do.
 
-**Current baselines, verified at v1.21.** Both are **byte-identical to v1.20**,
-and that is a real check rather than a coincidence: no sim strategy ever reaches
-the block layer (`operator` claims zero blocks across 2,000 seeded runs), so the
-nightly territory pass draws nothing from the tick's RNG either before or after
-the raid split. Moving the two gates onto `stringHash` was chosen partly for
+**Current baselines, set at v1.25** — `--total 200`
+`25afb74e10487dee6fc62641d944d3cea093873f28c740ba43e10bb0828d6dc1`, `--total 2000`
+`f10432b1f61624cbc8df35e299a2d36ca369e1e822ca0d6578a337562e524665`. They moved
+for the first time since v1.20, and only because v1.25 added a fourteenth
+strategy plus six territory telemetry keys; `game-core.js` was untouched.
+
+**Adding or removing a strategy invalidates a raw before/after diff.** `--total N`
+splits a fixed run budget across the strategy table, so a fourteenth entry
+re-partitions it (16/15 runs each becomes 15/14) and *every* existing block
+changes. To prove behavior invariance, call `summarize(name, count)` per strategy
+at a **fixed** count on both sides and compare with new keys stripped — the
+technique v1.20 used for telemetry-only keys. It is worth the trouble: it caught
+v1.25 computing the trade buy budget before the SELL loop instead of after, which
+had silently changed all seven product-carrying strategies.
+
+**The old baselines, and why they held so long.** v1.21 through v1.24 were all
+byte-identical to v1.20, and that was a real check rather than a coincidence: no
+sim strategy ever reached the block layer, so the nightly territory pass drew
+nothing from the tick's RNG either before or after the raid split. Moving the two gates onto `stringHash` was chosen partly for
 that — a change this deep in the nightly resolution that leaves both hashes
 untouched has proven it changed nothing outside the corners. If either hash moves
 on a territory build, something else in the diff touched the stream. The v1.19

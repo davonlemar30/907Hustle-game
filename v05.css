@@ -208,6 +208,20 @@
 .contact-toggle>span:last-child{color:var(--amber);font-family:var(--mono);font-size:.66rem;text-align:right}
 .contact-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:0 10px 10px;border-top:1px solid var(--line)}
 .contact-actions .btn{margin-top:9px;min-width:0}
+/* v1.27 disclosures. The panel is a child of the 3-up .contact-actions grid, so
+   it has to claim the whole row or it would sit in one third of it and wrap the
+   intel labels to shreds. Rows are modelled on .bill-row — same 44px floor,
+   same name-left/price-right split — because they are the same interaction: a
+   named thing with a price and one button that spends it. */
+.disclosure-list{grid-column:1/-1;margin-top:9px;border-top:1px solid var(--line)}
+.disclosure-row{display:flex;align-items:center;gap:10px;min-height:44px;padding:7px 0;border-bottom:1px solid #262626}
+.disclosure-row:last-child{border-bottom:0}
+.disclosure-name{flex:1;min-width:0;font-size:.72rem;line-height:1.25}
+/* Scoped through .contact-actions on purpose: the panel lives inside that grid,
+   and `.contact-actions .btn{min-width:0}` would otherwise win on specificity
+   and squeeze the price button under the 44px tap floor. */
+.contact-actions .disclosure-buy{flex:none;min-height:44px;min-width:76px;margin-top:0;padding:6px 10px;font-size:.68rem;background:linear-gradient(#292929,#161616)}
+.contact-actions .disclosure-buy .action-copy{font-size:.58rem;margin-top:1px}
 .return-actions{display:grid;gap:8px;margin-bottom:8px}
 .unlock-backdrop{position:fixed;inset:0;z-index:75;display:grid;place-items:center;padding:16px;background:radial-gradient(circle,rgba(95,25,20,.36),rgba(0,0,0,.9));cursor:pointer}
 .unlock-card{width:min(390px,100%);padding:26px 18px;border:1px solid #744039;border-top:5px solid var(--red2);background:linear-gradient(180deg,#21110f,#0d0d0d);box-shadow:0 20px 60px rgba(0,0,0,.7);text-align:center}
@@ -230,6 +244,12 @@
   .destination-meta{grid-template-columns:1fr}
   .result-title{font-size:1.3rem}
   .contact-actions{grid-template-columns:1fr}
+  /* At 320px the label and the price cannot share a line without the label
+     losing every useful word, so the button drops below it. Both halves keep
+     their own 44px target. */
+  .disclosure-row{flex-wrap:wrap}
+  .disclosure-name{flex:1 1 100%}
+  .contact-actions .disclosure-buy{width:100%}
 }
 @media(max-height:600px){.feed-list{max-height:70px}.home{padding-top:10px}.home-hero{padding-bottom:9px;margin-bottom:9px}}
 

@@ -2,34 +2,34 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-## Current Build (v1.26)
+## Current Build (v1.27)
 
-**v1.26: Hustle Menu Jobs + Bill Payment** — a quality-of-life build that closes
-two gaps big enough to break a run. **Jobs moved onto the Hustle tab**, where
-every other income source already lived; it had been five levels down under
-Street, and Hustle is now the one income surface, legal work first: Jobs →
-Market → Boost → Stickup → Shark. The tab no longer hides until dirty income
-lands, because legal work exists on Day 1 and a hidden tab would have stranded
-it. **Rent and the phone bill are payable from the Phone's Bills list**, which
-until now named a pay surface in prose without offering one — so a player who
-read the bill and never found the room could lose the game to navigation rather
-than to the economy. No new reducer case was needed: `PAY_RENT` and
-`PAY_PHONE_BILL` already existed, already spent through the dirty-first cash
-pool, and already cost no part of day. What was missing was a button. The
-duplicate Contacts list under Spenard Explore is gone with them.
+**v1.27: Disclosure Tables** — the intel economy opens. The engine has always
+known which of your corners Curtis is working tonight, how hard he is coming for
+each one, and what the police will roll against on every block you hold. Until
+now the only way to see any of it was hiring Pherris, so a player without her met
+a fully determined system blind. **Now people sell it to you.** Ask Dre what
+Curtis wants tonight and he names the corners; ask him again at Trusted and he
+tells you which one is coming hard. Juan counts cruisers on his route. Yalonda
+watches the street from the window. Biniam repeats what the table said upstairs.
+**How accurate the answer is depends on how well they know you** — at the gate
+they are approximately right, a band above it they are exact. Deshawn sells
+nothing about Curtis and never will: being off that network is the whole point of
+him.
 
 | | |
 |---|---|
 | Save schema | **v11** (`907ogr_v11`), loads v3 and up |
-| Tests | **813** passing (`npm test`) |
+| Tests | **844** passing (`npm test`) |
 | Simulation, 200 runs | `25afb74e10487dee6fc62641d944d3cea093873f28c740ba43e10bb0828d6dc1` |
 | Simulation, 2,000 runs | `f10432b1f61624cbc8df35e299a2d36ca369e1e822ca0d6578a337562e524665` |
 
-**Both hashes are unchanged from v1.25, and that is structural rather than
-lucky.** The simulator requires `game-core.js` and never reads `ui.jsx`, so a
-build that rebuilds screens is invisible to it by construction; the one core
-change is reachable only through a dispatch no strategy makes. 2,000 runs, zero
-dead ends.
+**Both hashes are unchanged since v1.25, and that is structural rather than
+lucky.** The simulator requires `game-core.js` and never reads `ui.jsx`;
+`selectRunSummary` picks explicit keys and never serializes `run`, so the new
+day-scoped cache cannot reach the harness output; and no strategy dispatches
+`BUY_DISCLOSURE` or builds a relationship far enough to reach a gate. 2,000 runs,
+zero dead ends.
 
 **The run has no fixed length.** There is no day cap and no timed ending — the
 player hustles indefinitely, and a run ends only on a lose condition.

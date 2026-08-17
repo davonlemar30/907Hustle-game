@@ -2,15 +2,15 @@
 
 Last updated: 2026-08-17 (America/Anchorage)
 
-**v1.26 is built on `claude/v1-26-hustle-qol-ym7le8`, on top of the v1.25 merge
-(PR #87, `a0fd0c8`).** Verified on the branch: `npm test` **813 passing**,
-`npm run build` clean, `npm run check-docs` clean, 2,000-run simulation with zero
-dead ends across **fourteen** strategies. **Both hashes are unchanged** —
-`--total 200`
+**v1.27 is built on `claude/disclosure-tables-phase-3-1-46zp26`, on top of the
+v1.26 merge (PR #88, `e329ff3`).** Verified on the branch: `npm test`
+**844 passing**, `npm run build` clean, `npm run check-docs` clean, 2,000-run
+simulation with zero dead ends across **fourteen** strategies. **Both hashes are
+unchanged** — `--total 200`
 `25afb74e10487dee6fc62641d944d3cea093873f28c740ba43e10bb0828d6dc1`,
 `--total 2000`
-`f10432b1f61624cbc8df35e299a2d36ca369e1e822ca0d6578a337562e524665` — which is the
-expected result for a build that is a UI move plus a deterministic debit.
+`f10432b1f61624cbc8df35e299a2d36ca369e1e822ca0d6578a337562e524665`. Save schema
+stays **v11**.
 
 ## Standing design correction — the run has no fixed length
 
@@ -28,6 +28,91 @@ simulator's ten days do not fund the ladder*, not as a claim about the game.
 Territory is deliberately mid-to-late-game content funded by early economy
 systems (weed, booze, robbery tiers) that are still being fleshed out. The full
 statement is in ARCHITECTURE.md under "The run has no fixed length."
+
+## v1.27 Disclosure Tables (Phase 3.1) — built (branch `claude/disclosure-tables-phase-3-1-46zp26`)
+
+- **Save schema stays v11, and the argument is the one v1.23 already made.** A
+  disclosure persists nothing that outlives a run. What it needs is a day-scoped
+  record of who has been called, and that is session state on `run` —
+  `run.disclosures = { day, entries }`, reset lazily on read rather than in the
+  day-end pass, so a save loaded mid-run cannot arrive carrying yesterday's
+  calls. Object-shaped, so `mergeDefaults` hydrates an old save for free; a test
+  strips the field, rehydrates, and asserts the player can still make a call.
+- **The module boundary is the interesting constraint, and it shaped the API.**
+  `src/data/disclosures.js` may not require `game-core.js`, but two of the five
+  intel types read `policeRaidChance` and `curtisMoveChance`, which are closures
+  *inside* game-core. So the file is pure the way `gossip.js` is pure: the caller
+  gathers the truth, and this module shapes it and speaks it. Each intel type
+  carries a `reads` field naming its selector — documentation a test executes, so
+  a type cannot claim to read something the game does not compute.
+- **Exact at Bonded, which is a deliberate departure from the spec.** The spec
+  said "at the required minBand: jittered", full stop. Applied literally that
+  makes `curtis_next_move` — gate Bonded, price $100, the ceiling product — the
+  only disclosure in the game that is *never* accurate, because there is no band
+  above Bonded to buy. `accuracyFor` therefore returns exact above the gate **or
+  at Bonded**, which is the rule `blockIntelView` has followed since v1.20:
+  jittered below the top level, exact at it. Every other row is unaffected, and
+  the test walks all seven.
+- **Both hashes unchanged, and the reason is structural rather than lucky.**
+  `selectRunSummary` picks explicit keys and never serializes `run`, so the new
+  field cannot reach the harness output; no strategy dispatches
+  `BUY_DISCLOSURE`; and no strategy builds a relationship to Warm on a source,
+  so none of them would reach the gate even if one tried to spend. The spec
+  allowed either outcome — this is the "existing strategies don't reach the
+  disclosure gate" case it named, and it is the honest one.
+- **The chance reads name three corners, not all of them, and that is a voice
+  constraint.** `DISCLOSURE_CHANCE_DEPTH = 3`, worst first. Yalonda reciting six
+  percentages off the top of her head is not Yalonda, and it does not fit a
+  320px screen either. The cap is presentation only — the numbers that survive
+  it are as accurate as the band makes them — and it is commented as such at the
+  one place it applies.
+- **Biniam needed a door, and that is the only content added beyond text.** He
+  sells the block-vulnerability read and there was nowhere on the phone to ask
+  him: `STORY_CONTACTS` had Yalonda, Juan, Mina, Dre, Curtis, and Simone. He is
+  a personal contact now, gated on `npc.biniam.met` so The Nile still introduces
+  him, with `actions: []` — no new verbs, no new Biniam content, just somewhere
+  to stand.
+- **A quiet night is a product, not an empty response.** Curtis at `invisible`
+  has no plan at all. The player still paid, and each source has an authored
+  line for it, because "nobody is coming tonight" is worth $50 to someone who
+  was about to spend the night defending a corner.
+- **One call per person per day, and the cooldown is on the person.** That is
+  what makes "buying the same intel twice returns the same text" true without a
+  second mechanism: the first answer is already sitting in the inbox and the
+  second ask never reaches a debit. A test asserts the refusal is
+  identity-equal to the prior state, which also covers the different-product
+  case — asking Dre for pressure after buying targets is the same refusal.
+- **The browser pass caught two things the unit tests could not, which is the
+  argument for running it.** First, `.contact-actions .btn{min-width:0}` beat
+  `.disclosure-buy{min-width:72px}` on specificity, so every price button
+  rendered 42px wide — under the tap floor at four of five viewports, and
+  invisible to a CSS regex asserting the rule exists. The rule is scoped through
+  `.contact-actions` now. Second, the row printed the price twice: once on the
+  button and again in the `action-copy` sub-label. The sub-label reads
+  `No time passes` instead, which is the thing the price does not say.
+- **Verified in Chromium at 320 / 375 / 414 / 768 / 1440px**: panel renders, no
+  horizontal overflow, no tap target under 44px, zero console errors. The walk —
+  buy from Dre, $1000 → $950, his text in the inbox, `Already talked today` on
+  the second ask, the feed line — passes at 375px. Phone off disables the entry
+  point with `Phone service is off`; below the gate it does not render at all.
+- **Test count 813 → 844.** Thirty-one tests in `tests/v1-27.test.js`. The one
+  worth flagging is the gossip-complementarity test, which pins its voices at
+  Bonded rather than Warm: `setBand` installs a single ledger row, and a night
+  of raids appends enough negative rows to walk a Warm fixture under the v1.23
+  delivery gate before morning. Left at Warm it failed for a v1.23 reason with
+  nothing to say about v1.27.
+
+### Open / deliberately not done
+
+- **Phase 3.2 sources.** Tone and Selam are the obvious next candidates and
+  neither is written for it. Tone would sell what Dre already sells; Selam has
+  never been written speaking about the corners. Both need an authored register
+  before a table row, not after.
+- **Nothing sells intel about the player.** The table runs one way. Curtis
+  buying a read on the player is the symmetric build and a different system —
+  he would act on it, not display it.
+- **The 2.2 balance pass on Curtis's pressure constants** is untouched, and
+  still gated on the simulator reaching the block layer.
 
 ## v1.26 Hustle Menu Jobs + Bill Payment — built (branch `claude/v1-26-hustle-qol-ym7le8`)
 

@@ -147,7 +147,7 @@ function Header({ state, onMenu }) {
   // them as five segments; the exact number stays the accessible name.
   const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil((value / ceiling) * 5))), total: 5 });
   return <header className="top">
-    <h1 className="sr-only">907Hustle: One Good Run · v1.26</h1>
+    <h1 className="sr-only">907Hustle: One Good Run · v1.27</h1>
     <div className="hud primary-hud">
       <Hud label="Day / Time" bare value={<><b className="hud-day">Day {state.run.day}{state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""}</b><span className="hud-slot">{C.SLOTS[state.run.slot]}</span><SlotPips slot={state.run.slot} /></>} />
       <Hud label="District" bare accent="muted" value={<><span className="hud-diamond" aria-hidden="true">◆</span>{area.name}</>} />
@@ -709,7 +709,35 @@ function JobDetail({ state, dispatch, job, onBack }) {
   </div></>;
 }
 
-function SocialContacts({ state, dispatch, navigateMore }) {
+// v1.27 — the "Ask about..." panel. Rendered inside a contact card, and only on
+// the Phone: buying intel is a phone conversation, which is why it costs no
+// part of the day and why it disappears when service is off.
+//
+// The rows read their disabled state straight off the selector rather than
+// re-deriving it here, so a button can never offer a dispatch BUY_DISCLOSURE
+// would drop — the same discipline phoneBills follows.
+function DisclosurePanel({ state, dispatch, npcId }) {
+  const [open, setOpen] = useState(false);
+  const access = C.selectors.disclosureAvailability(state, npcId);
+  if (!access.visible) return null;
+  return <>
+    {/* Disabled rather than hidden when the line is dead or the call is already
+        spent: the player should be able to see that this person sells something
+        and why today is not the day. An already-open panel stays open so the
+        rows can say "Already talked today" next to what was asked. */}
+    <button className="btn secondary" aria-expanded={open} disabled={!access.available && !open} onClick={() => setOpen(!open)}>Ask about…<span className="action-copy">{access.reason}</span></button>
+    {open && <div className="disclosure-list">
+      {access.offers.map((offer) => <div className="disclosure-row" key={offer.intelType}>
+        <span className="disclosure-name">{offer.label}</span>
+        <button className="btn disclosure-buy" disabled={!offer.available} onClick={() => dispatch({ type: "BUY_DISCLOSURE", npcId, intelType: offer.intelType })}>{money(offer.price)}<span className="action-copy">{offer.reason}</span></button>
+      </div>)}
+    </div>}
+  </>;
+}
+
+// `surface` distinguishes the Phone mount from the More → People mount. Both
+// render the same cards; only the Phone sells intel.
+function SocialContacts({ state, dispatch, navigateMore, surface = "people" }) {
   const [openId, setOpenId] = useState(null);
   const personal = C.selectors.personalContacts(state);
   const contacts = C.selectors.knownSocialContacts(state);
@@ -722,6 +750,7 @@ function SocialContacts({ state, dispatch, navigateMore }) {
         {["yalonda", "juan"].includes(person.id) && <button className="btn secondary" disabled={!present || state.people.household.lastQuestionDay === state.run.day} onClick={() => dispatch({ type: "TALK_HOUSEHOLD", npcId: person.id })}>Talk<span className="action-copy">{present ? "Free · once daily" : "Not home now"}</span></button>}
         {person.id === "mina" && <button className="btn secondary" onClick={() => dispatch({ type: "VISIT_MINA" })}>Talk with Mina<span className="action-copy">Free at Night Owl during Evening or Night</span></button>}
         {person.id === "dre" && navigateMore && <button className="btn secondary" onClick={navigateMore}>Open Finances</button>}
+        {surface === "phone" && <DisclosurePanel state={state} dispatch={dispatch} npcId={person.id} />}
       </div>} />}
     </div>;
   });
@@ -1457,7 +1486,7 @@ function PhoneScreen({ state, dispatch, onBack, openList, navigateMore }) {
         : state.phone.inbox.length ? state.phone.inbox.map((message) => <div className="card compact" key={message.id}><div className="card-title">{message.from}<small>DAY {message.day} · {C.SLOTS[message.slot]}</small></div><p className="compact">{message.text}</p></div>) : <div className="card compact muted">No messages yet.</div>}
     </AccordionSection>
     <AccordionSection title="Contacts" meta={`${knownContacts} known`}>
-      <SocialContacts state={state} dispatch={dispatch} navigateMore={navigateMore} />
+      <SocialContacts state={state} dispatch={dispatch} navigateMore={navigateMore} surface="phone" />
     </AccordionSection>
     <AccordionSection title="Bills" badge={billsDueSoon} badgeVariant={bills.some((row) => row.severity === 2) ? "danger" : "warning"}>
       {bills.length ? bills.map((row) => <div className={`bill-row${row.severity === 2 ? " bad" : row.severity === 1 ? " warn" : row.paid ? " paid" : ""}`} key={row.id}>
@@ -1792,7 +1821,7 @@ function MenuModal({ state, dispatch, onClose, onTitle }) {
   return <><Modal title="Run menu" onClose={onClose}>
     <ExpandableMoreSection
       collapsedContent={<p className="popup-lead">Autosave is on. This run saves to your browser after every action.</p>}
-      expandedContent={<p className="popup-flavor">907Hustle v1.26 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
+      expandedContent={<p className="popup-flavor">907Hustle v1.27 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
       moreLabel="Save detail" lessLabel="Hide detail" />
     <button className="btn full primary" onClick={onTitle}>Return to Title</button>
     <button className="btn full secondary choice" onClick={() => setConfirmRestart(true)}>Restart Run<span>Creates a new seed and returns to Street Name entry.</span></button>

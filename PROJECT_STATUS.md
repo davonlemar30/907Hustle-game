@@ -2,14 +2,21 @@
 
 Last updated: 2026-08-16 (America/Anchorage)
 
-**HEAD of `main` is `11ec2ef`, the v1.19 merge (PR #81).** v1.20 is built on
-branch `claude/v1-20-lieutenant-modifiers-3lwvkk` and verified there:
-`npm test` 699 passing, `npm run build` clean, 2,000-run simulation with zero
-dead ends, `--total 200`
+**HEAD of `main` is `1a9a099`, the v1.20 merge (PR #82).** Verified on the
+branch before merge: `npm test` 699 passing, `npm run build` clean, 2,000-run
+simulation with zero dead ends, `--total 200`
 `c8b3bf0745871555c326f4861b0a8d576ce149c9fa7bd871e9215b51236092d8`,
 `--total 2000` `d9d0fbf1d24c1c7cca8db9db7897f044811a46c4d41ff6a23ca678a0dc3dfb39`.
 
-## v1.20 Lieutenant Typed Modifiers on Soldiers — built (branch `claude/v1-20-lieutenant-modifiers-3lwvkk`)
+**Phase 1 of the Godfather adaptation is closed.** 1.1 Tone recruitment
+(v1.18), 1.2 Pherris recruitment and 1.3 Deshawn tier retro-gate (v1.19), and
+1.4 lieutenant typed modifiers (v1.20) are all shipped. The one Phase 1
+companion item still open is **4.1 First-claim moment** — the ceremony pass the
+phase list wanted to ship alongside the mechanic. Phase 2 (splitting police
+raids from Curtis moves, then the Curtis planner) is next, and it can now treat
+Tone's multiplier as the defense layer the planner has to overcome.
+
+## v1.20 Lieutenant Typed Modifiers on Soldiers — merged (PR #82, `1a9a099`)
 
 - Branch: `claude/v1-20-lieutenant-modifiers-3lwvkk`, on top of the v1.19 merge
   (PR #81, `11ec2ef`). Built from the "v1.20 Build Prompt: Lieutenant Typed

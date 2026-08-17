@@ -9,7 +9,7 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 Built on `claude/v1-24-first-claim-uc4fdx`, on top of the v1.23 merge (PR #85,
 `59b8865`). Save schema stays at v11 (nothing persisted — the check is a derived
 read over the board); **both sim hashes byte-identical to v1.20, v1.21 and
-v1.23**; zero dead ends across 2,000 runs; 798 tests passing.
+v1.23**; zero dead ends across 2,000 runs; 799 tests passing.
 
 The first corner the player claims stops reading like the sixth. One branch in
 `CLAIM_BLOCK`, read before the ownership write, gates four things that fire once
@@ -32,12 +32,19 @@ to say about winning the first.
   it ships at `HOME_DISTRICT_ID` with the corner named in the copy instead.
   v1.23 hit the same wall from the other side — **this has now cost two builds**,
   and the suite asserts against it so it does not cost a third.
-- **The simulator's territory blindness is worse and more specific than
-  recorded.** All **thirteen** strategies claim zero blocks across 2,000 runs,
-  not only `operator`. And `operator` does not fail at the claim gate: over 200
-  runs it never buys the garage and never recruits anybody, so it dies at the
-  *first* prerequisite. **Getting a strategy to buy North Star Garage is the
-  blocker**, and it is upstream of everything the 2.2 balance pass needs to see.
+- **The simulator's territory blindness is broader than recorded.** All
+  **thirteen** strategies claim zero blocks across 2,000 runs, not only
+  `operator`, which is why neither hash moved.
+- **A correction, and a trap.** This section first claimed `operator` never buys
+  the garage and never recruits anybody. That probe was invalid — `normalizeSeed`
+  falls back to one constant for any non-numeric seed, so the 200 string-seeded
+  "runs" were one run repeated. With numeric seeds `operator` leases the garage
+  in **1/200** runs (day ~9) and recruits somebody in **76/200** — but **0/200
+  ever have both at once**, and `stickup` is the mirror image at 18/200 and
+  1/200. Territory needs garage → Eli → promotion → soldier, and the trade loop
+  spends 58% of cash on inventory every iteration, so the lease and the
+  recruitment never clear together. **The blocker is holding both at once, not
+  reaching either** — a narrower and more tractable target than before.
 
 ## Shipped — v1.23 Attack Telegraphing Through Gossip Channels — **Phase 2.3**
 

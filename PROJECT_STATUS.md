@@ -3,8 +3,8 @@
 Last updated: 2026-08-17 (America/Anchorage)
 
 **v1.24 is built on `claude/v1-24-first-claim-uc4fdx`, on top of the v1.23 merge
-(PR #85, `59b8865`).** Verified on the branch: `npm test` **798 passing** (767
-through v1.23, 31 new in `tests/v1-24.test.js`), `npm run build` clean,
+(PR #85, `59b8865`).** Verified on the branch: `npm test` **799 passing** (767
+through v1.23, 32 new in `tests/v1-24.test.js`), `npm run build` clean,
 `npm run check-docs` clean, 2,000-run simulation with zero dead ends,
 `--total 200`
 `c8b3bf0745871555c326f4861b0a8d576ce149c9fa7bd871e9215b51236092d8`,
@@ -87,17 +87,33 @@ what was assumed.
   `pushPhoneMessage` stamps the current day and slot — and a player whose phone
   is off gets it in `heldInbox` rather than losing it, which is the existing
   behavior for every message in the game.
-- **Both sim hashes are unchanged, and that was measured rather than inferred.**
-  The Phase List has recorded since v1.20 that the `operator` strategy claims
-  zero blocks across 2,000 runs. Two things were checked here rather than
-  assumed. First, **it is not just `operator`** — all **thirteen** strategies
-  report `claimed: 0` over 2,000 runs. Second, and more useful for whoever picks
-  up the simulator work: `operator` does not fail at the claim gate at all. Over
-  200 runs it **never controls North Star Garage and never recruits a single crew
-  member** (`garage: 0, anyCrew: 0`), so it dies at the *first* territory
-  prerequisite, three steps before Eli, the promotion, or a soldier. **Getting a
-  strategy to buy the garage is the actual blocker**, and it is upstream of
-  everything Phase 2's balance pass needs to measure.
+- **Both sim hashes are unchanged, and the reason was measured.** The Phase List
+  has recorded since v1.20 that the `operator` strategy claims zero blocks across
+  2,000 runs. Confirmed and widened here: **it is not just `operator`** — all
+  **thirteen** strategies report `claimed: 0` over 2,000 runs, so no strategy
+  exercises the ceremony and neither hash could move.
+- **Correction to this section's first draft, and a trap worth knowing about.**
+  It originally claimed `operator` "never buys the garage and never recruits
+  anybody — `garage: 0, anyCrew: 0` over 200 runs." **That measurement was
+  invalid.** `normalizeSeed` (`src/events/random.js:10`) falls back to a single
+  constant for any seed where `Number(seed)` is not finite, so **every
+  non-numeric string seed produces the identical run**. The probe used
+  `play("sim-" + i, …)`, which is 200 copies of one run, not 200 runs. Re-measured
+  with numeric seeds — the form `summarize` itself uses, `play(1000 + i, name)`:
+
+  | strategy | leases the garage | recruits anyone | **both in one run** |
+  |---|---|---|---|
+  | `operator` | **1/200** | 76/200 | **0/200** |
+  | `stickup` | 18/200 | 1/200 | **0/200** |
+
+  The garage is **reachable but rare**, landing around day 9. The real blocker is
+  the last column: **no strategy has ever held the garage and a crew member in
+  the same run.** Territory needs garage → Eli → promotion → soldier, and the
+  trade loop spends 58% of cash on inventory every iteration, so the $650 lease
+  and the recruitment cost never clear together. That is resource competition,
+  not a missing code path — and it is a more tractable target than "reach the
+  block layer" implied. `claimed: 0` is unaffected: that figure came from real
+  CLI output, which already uses numeric seeds.
 - **Viewports verified in a real browser**, not by inspection: 320 / 375 / 414 /
   768 / 1440px, zero horizontal overflow at every width, the untitled card
   measuring exactly 44px so the tap-target minimum holds, and zero console

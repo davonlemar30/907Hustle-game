@@ -1117,10 +1117,21 @@ is unsupported.
 ## Testing
 
 ```bash
-npm test                              # 733 tests
+npm test                              # 799 tests
 node tests/simulate-runs.js --total 200
 node tests/simulate-runs.js --total 2000   # slower, for balance work
 ```
+
+**Seeds must be numeric, and a string seed fails silently.** `normalizeSeed`
+(`src/events/random.js:10`) returns a single fallback constant whenever
+`Number(seed)` is not finite, so `createRun({ seed: "alpha" })` and
+`createRun({ seed: "beta" })` are **the same run**. Most of the suite passes
+readable string labels, which is fine for a single-run fixture and actively
+misleading in a loop: a test that iterates four string seeds to prove something
+holds "across seeds" is running one seed four times. `tests/v1-24.test.js` shows
+the fix — `seedFor(label)` hashes the label so the labels stay readable and the
+seeds actually differ — and asserts the collapse directly so nobody
+re-introduces it. `simulate-runs.js` was never affected: it seeds `1000 + i`.
 
 **The simulator is the regression net for refactors.** Runs are seeded
 (`1000 + i`) and fully deterministic, so identical output means identical

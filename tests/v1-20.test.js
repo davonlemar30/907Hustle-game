@@ -75,8 +75,11 @@ test("Tone's defense multiplier disappears on departure, arrest, and loyalty zer
 
 // The defense formula is a probability, so it is measured rather than asserted
 // on a single roll: same seeds, same blocks, same soldiers, one thing changed.
+// v1.21: measured at `watching`. Below that phase Curtis never comes, so every
+// blockLossRate is structurally zero and the tier comparison would pass or fail
+// on nothing at all.
 test("Tone measurably raises block retention, and every tier beats the one below", () => {
-  const config = { runs: 60, nights: 8 };
+  const config = { runs: 60, nights: 8, curtisPhase: "watching" };
   const baseline = measure("baseline", { ...config });
   const tier1 = measure("tone1", { ...config, tone: 1 });
   const tier2 = measure("tone2", { ...config, tone: 2 });
@@ -88,7 +91,7 @@ test("Tone measurably raises block retention, and every tier beats the one below
 });
 
 test("a departed Tone defends exactly like no Tone at all", () => {
-  const config = { runs: 40, nights: 6 };
+  const config = { runs: 40, nights: 6, curtisPhase: "watching" };
   const baseline = measure("baseline", { ...config });
   const departed = measure("departed", { ...config, tone: 3, toneStatus: "departed" });
   assert.deepEqual(departed, { ...baseline, config: "departed" }, "every measured number is identical");
@@ -97,7 +100,14 @@ test("a departed Tone defends exactly like no Tone at all", () => {
 test("the raid pass reads defense strength from soldiers times Tone, and nothing else", () => {
   const core = fs.readFileSync(path.join(root, "game-core.js"), "utf8");
   assert.match(core, /const defenseStrength = assigned\.length \* RAID_DEFENSE_PER_SOLDIER \* toneDefense;/);
-  assert.match(core, /RAID_BLOCK_LOSS_CHANCE \/ defenseStrength/);
+  // v1.21 split the raid in two, and the casualty half is now shared: both
+  // adversaries roll against the same garrison through takeRaidCasualty. The
+  // conditional block-loss roll it replaced belonged to a police raid that
+  // could take the corner, which is exactly what no longer happens.
+  assert.match(core, /function takeRaidCasualty\(state, random, record, toneDefense\)/);
+  assert.equal((core.match(/takeRaidCasualty\(state, random, record, toneDefense\)/g) || []).length, 3,
+    "defined once, called once by each pass");
+  assert.doesNotMatch(core, /RAID_BLOCK_LOSS_CHANCE/, "a police raid no longer has a block-loss roll at all");
   assert.equal(C.RAID_DEFENSE_PER_SOLDIER, 1, "one soldier is one point of defense before any modifier");
 });
 
@@ -244,7 +254,7 @@ test("a player holding nothing gets nothing from Deshawn", () => {
 });
 
 test("Deshawn measurably lowers peak Heat for a block-holding run, tier over tier", () => {
-  const config = { runs: 60, nights: 8 };
+  const config = { runs: 60, nights: 8, curtisPhase: "watching" };
   const baseline = measure("baseline", { ...config });
   const tier1 = measure("deshawn1", { ...config, deshawn: 1 });
   const tier2 = measure("deshawn2", { ...config, deshawn: 2 });

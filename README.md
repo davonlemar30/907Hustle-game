@@ -2,29 +2,33 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-## Current Build (v1.20)
+## Current Build (v1.21)
 
-**v1.20: Lieutenant Typed Modifiers on Soldiers** — the Made Men stop being
-better encounter rolls and start being better empire management. Each
-lieutenant now owns one number on the territory layer: **Tone** makes your
-blocks harder to take, **Pherris** shows you what Curtis is holding, **Deshawn**
-makes the whole operation quieter. Nothing new is stored — all three are derived
-from the crew record the save already carries, which is why the schema does not
-move.
+**v1.21: Police Raids and Curtis Moves, Split** — territory stops being random
+attrition from one source and becomes a war on two fronts. The police care about
+your **Heat** and the corner's **patrol frequency**; they cost you people and
+make you hotter, and they never take a block. Curtis cares about how **visible**
+the corner is to his network and how hard he is already **looking**; he takes the
+block, and he does not call the cops on himself. You can now read each threat and
+answer it separately: go quiet and the corners stay yours, get noticed and they
+do not. Nothing new is stored — the split changes nightly resolution, not state
+shape.
 
 | | |
 |---|---|
 | Save schema | **v11** (`907ogr_v11`), loads v3 and up |
-| Tests | **699** passing (`npm test`) |
+| Tests | **733** passing (`npm test`) |
 | Simulation, 200 runs | `c8b3bf0745871555c326f4861b0a8d576ce149c9fa7bd871e9215b51236092d8` |
 | Simulation, 2,000 runs | `d9d0fbf1d24c1c7cca8db9db7897f044811a46c4d41ff6a23ca678a0dc3dfb39` |
 
-Both hashes moved for **bookkeeping only**: the simulator gained a territory
-telemetry block. Strip those keys back out and the output is byte-identical to
-v1.19's `114d08f7…` / `1bd2c299…` — no current sim strategy reaches the block
-layer, so no run's play changed. The modifiers are measured by a dedicated A/B
-harness instead (`tests/measure-lieutenant-modifiers.js`, numbers in
-Verification).
+**Both hashes are byte-identical to v1.20**, and that is the check rather than a
+footnote. No sim strategy reaches the block layer — `operator` claims zero blocks
+across 2,000 seeded runs — so the nightly territory pass draws nothing from the
+tick's RNG either before or after the split. Moving the two gates onto
+`stringHash` was chosen partly for that: a change this deep in nightly resolution
+that leaves both hashes untouched has proven it changed nothing outside the
+corners. The behavior itself is measured by the A/B harness
+(`tests/measure-lieutenant-modifiers.js`, numbers in Verification).
 
 **The systems underneath:**
 
@@ -52,6 +56,33 @@ Verification).
 Full structural reference: **[ARCHITECTURE.md](ARCHITECTURE.md)** (file map,
 state shape, event-card schema, and the rules a change has to hold to).
 Build-by-build history: **[PROJECT_STATUS.md](PROJECT_STATUS.md)**.
+
+## What changed in v1.21
+
+**Territory becomes a war on two fronts instead of attrition from one source.**
+
+- **Two adversaries, two rolls, two sets of inputs.** Police read Heat and
+  `patrolFrequency` (discounted by Eli) and never change who owns a corner.
+  Curtis reads `curtisVisibility` and his awareness phase (divided by your
+  garrison), takes the corner, and adds no Heat. Both resolve inside the same
+  `resolveSoldierOperations` — there is no second nightly function.
+- **`curtisVisibility` finally does something offensive.** It had exactly one
+  reader before this build (Eli's `hold_ground` placement weight). It is now
+  what decides whether Curtis can see your corner at all.
+- **Phase-gated targeting.** Below `ambient` he never moves. At `ambient` he only
+  sees visibility 2+; at `watching`, 1+; at `approaching`, everything.
+  **Spenard Rec Center Lot (visibility 0) is never his at any phase** — the quiet
+  lot is the safe, low-earning corner, and that is a design position, not an
+  accident.
+- **Claiming without defending is no longer free.** Curtis walks onto empty
+  corners at twice the rate of defended ones. A second posted soldier still
+  halves the risk, which is v1.20's promise kept.
+- **Losing corners makes him hunt harder.** A lost block is a `defiance` row on
+  his network, so it raises `curtisAwareness` by 1 — bounded at +6 across the
+  six-corner map, and it still bleeds back down on quiet days.
+- **You can tell who hit you.** Different phone texts, different feed lines,
+  different observations, and the report card's severity styling now actually
+  renders (it was reading the wrong log entry and had never fired).
 
 ## What changed in v1.20
 
@@ -848,44 +879,92 @@ node tests/simulate-runs.js --total 200 | shasum -a 256
 
 ## Verification
 
-- Node tests: **699 passing** (676 through v1.19, 23 new in `tests/v1-20.test.js`)
+- Node tests: **733 passing** (699 through v1.20, 34 new in `tests/v1-21.test.js`)
 - Deterministic simulations: **2,000 runs, zero crashes or dead ends**
 - Simulation SHA-256: `d9d0fbf1d24c1c7cca8db9db7897f044811a46c4d41ff6a23ca678a0dc3dfb39`
   (`--total 2000`) and
   `c8b3bf0745871555c326f4861b0a8d576ce149c9fa7bd871e9215b51236092d8`
-  (`--total 200`). **Both moved at v1.20 for bookkeeping only.** The simulator
-  gained a `territory` telemetry block (claimed / held / lost / raids / income /
-  loss rate); delete those keys from the output and it hashes byte-identical to
-  the v1.19 baselines `1bd2c299…` / `114d08f7…`. That is the honest reading of
-  the gameplay change too: **no sim strategy reaches the block layer**, so the
-  new raid math and heat trickle never fire in a simulated run. The `operator`
-  strategy claims **zero** blocks in 2,000 runs — it is a run-pacing finding, not
-  a modifier measurement, and it is why the modifiers are measured separately.
-- **The modifiers, measured** (`node tests/measure-lieutenant-modifiers.js 300 10`
-  — 300 seeded runs, 10 nights, 3 corners, 6 soldiers, real reducer through
-  `CONFIRM_END_DAY`):
+  (`--total 200`). **Both are byte-identical to v1.20**, which for a change this
+  deep in nightly resolution is the proof rather than a footnote. No sim strategy
+  reaches the block layer — `operator` claims **zero** blocks in 2,000 runs — so
+  the territory pass draws nothing from the tick's RNG before or after. Hashing
+  the two new gates off the seed (rather than drawing them) is what guarantees
+  it: adding a second pass cannot shift the stream for anything that resolves
+  after it. If either hash moves on a territory build, something else in the diff
+  touched the stream.
+- **The split, measured by awareness phase** — all six corners held, 300 seeded
+  runs, 10 nights, real reducer through `CONFIRM_END_DAY`
+  (`node tests/measure-lieutenant-modifiers.js 300 10`):
 
-  | Config | Block-loss rate | Soldiers lost / run | Avg peak Heat | Territory income / run |
+  | Phase | Block loss rate | Police raids / block-night | Curtis flips / block-night | Avg peak Heat | Income / run |
+  |---|---|---|---|---|---|
+  | `invisible` | 0.000 | 0.171 | 0.000 | 14.94 | $3,516 |
+  | `ambient` | 0.119 | 0.171 | 0.018 | 14.84 | $3,480 |
+  | `watching` | 0.294 | 0.170 | 0.047 | 14.54 | $3,410 |
+  | `approaching` | 0.422 | 0.169 | 0.069 | 14.08 | $3,354 |
+
+  The police column is **flat across every phase** and the Curtis column climbs
+  monotonically. That is the split working: the two adversaries no longer share
+  an input, so what Curtis knows cannot change how often the police come, and how
+  hot you are cannot change how often he comes.
+
+- **Per corner at `watching`** — the clearest single demonstration. The two
+  columns name *different* corners, which they could not do before this build:
+
+  | Block | Curtis visibility | Patrol | Police / block-night | Curtis / block-night |
   |---|---|---|---|---|
-  | no lieutenants | 0.449 | 5.91 | 11.36 | $1,319 |
-  | Tone tier 1 | 0.383 | 5.88 | 12.11 | $1,453 |
-  | Tone tier 2 | 0.324 | 5.83 | 12.70 | $1,545 |
-  | Tone tier 3 | **0.288** | 5.61 | 13.26 | $1,694 |
-  | Deshawn tier 1 | 0.449 | 5.91 | 10.87 | $1,325 |
-  | Deshawn tier 2 | 0.453 | 5.91 | 10.36 | $1,327 |
-  | Deshawn tier 3 | 0.454 | 5.91 | **9.96** | $1,331 |
-  | Tone 3 + Deshawn 3 | 0.296 | 5.74 | 11.79 | $1,739 |
+  | Wash & Go Lot | 1 | 1 | 0.159 | 0.023 |
+  | Fourth Avenue Strip | 2 | 2 | 0.191 | 0.069 |
+  | Minnesota Off-Ramp | 1 | 1 | 0.150 | 0.036 |
+  | Spenard Rec Center Lot | 0 | 1 | 0.153 | **0.000** |
+  | Northern Lights Motel Row | 3 | 2 | 0.177 | **0.097** |
+  | Service Road Chokepoint | 2 | 3 | **0.198** | 0.080 |
 
-  **Tone: 0.449 → 0.288 block-loss**, a 36% cut in corners lost, strictly
-  improving tier over tier, and +28% territory income because a corner held is a
-  corner earning. **Deshawn: 11.36 → 9.96 average peak Heat**, also strictly
-  tier-ordered, and the only config in the table whose worst-case peak is not 15.
-  A departed lieutenant measures identically to no lieutenant at all, asserted
-  metric-for-metric in `tests/v1-20.test.js`.
-  The counter-effect is real and worth naming: **Tone raises peak Heat**
-  (11.36 → 13.26) because corners he saves keep drawing raids and trickle. That
-  is the pairing the triangle is designed around — hold harder with Tone, carry
-  it with Deshawn.
+  **Motel Row is Curtis's corner** (visibility 3, most-targeted at every phase).
+  **The Service Road Chokepoint is the police's** (patrol 3, most-raided at every
+  phase). **Spenard Rec Center Lot is nobody's to take** — visibility 0 zeroes
+  the Curtis chance even at `approaching`, while the police raid it as normal.
+
+- **On the 15% parity criterion: not met at a single phase, and that is the
+  honest result.** Measured against v1.20's own harness on the identical three
+  corners (v1.20 baseline block-loss **0.435**), v1.21 lands at −100% / −20% /
+  +37% / +64% across `invisible` / `ambient` / `watching` / `approaching`. Parity
+  is nearest **`ambient`**, not `watching` as the build prompt projected. The
+  projection assumed corners stay staffed; they do not — 5.4 of 6 soldiers are
+  lost per run, and an empty corner is twice as easy for Curtis to take, so the
+  undefended rate dominates the average. The gradient itself is clean and
+  monotonic and is what the build exists to create: a quiet player keeps corners
+  indefinitely, a watched player loses them. Shifting the whole curve one phase
+  cooler is a one-constant call (`CURTIS_BASE_CHANCE` 0.12 → ~0.09), left for a
+  balance pass rather than taken silently here.
+
+- **The modifiers, re-measured against the split** (300 runs, 10 nights, 3
+  corners, 6 soldiers, pinned at `watching` — below that phase every Curtis
+  number is structurally zero and the comparison would measure nothing):
+
+  | Config | Block-loss rate | Police / bn | Curtis / bn | Soldiers lost / run | Avg peak Heat | Income / run |
+  |---|---|---|---|---|---|---|
+  | no lieutenants | 0.581 | 0.153 | 0.081 | 5.41 | 9.51 | $2,203 |
+  | Tone tier 1 | 0.509 | 0.161 | 0.067 | 5.20 | 9.83 | $2,407 |
+  | Tone tier 2 | 0.451 | 0.169 | 0.057 | 4.97 | 10.19 | $2,565 |
+  | Tone tier 3 | **0.377** | 0.173 | **0.046** | 4.62 | 10.56 | $2,746 |
+  | Deshawn tier 1 | 0.582 | 0.150 | 0.081 | 5.37 | 8.82 | $2,214 |
+  | Deshawn tier 2 | 0.584 | 0.148 | 0.081 | 5.37 | 8.23 | $2,223 |
+  | Deshawn tier 3 | 0.581 | **0.146** | 0.081 | 5.34 | **7.65** | $2,236 |
+  | Tone 3 + Deshawn 3 | 0.382 | 0.161 | 0.046 | 4.50 | 8.48 | $2,786 |
+
+  **Tone: 0.581 → 0.377 block-loss**, a 35% cut, strictly improving tier over
+  tier, and +25% territory income because a corner held is a corner earning. His
+  Curtis column halves (0.081 → 0.046) while his police column does not move —
+  correct, since he is a divisor on whether Curtis comes and a saving throw on
+  what a raid costs, never a reason for the police to stay home.
+  **Deshawn: 9.51 → 7.65 average peak Heat**, strictly tier-ordered, and his
+  block-loss column is flat — retention is Tone's job, and the split makes that
+  legible for the first time. His police column drifts down (0.153 → 0.146)
+  because lower Heat is a lower police chance: the emergent interaction, working.
+  The counter-effect is still real — **Tone raises peak Heat** (9.51 → 10.56)
+  because corners he saves keep drawing raids and trickle. That is the pairing
+  the triangle is designed around: hold harder with Tone, carry it with Deshawn.
 - **The de-escalation refactor is hash-neutral.** Routing Deshawn's three
   hardcoded sites through `presenceEffectsFor` was measured on its own commit
   first: both hashes came back byte-identical to v1.18. It is not

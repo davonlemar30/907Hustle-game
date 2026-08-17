@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.20**. This file
+How 907Hustle: One Good Run is put together, current as of **v1.21**. This file
 is meant to be the only thing you need to read before changing code; for *why*
 the game is designed the way it is, see the ClickUp docs at the bottom.
 
@@ -59,6 +59,9 @@ src/data/               Static definitions. No logic, no state.
                         triangle (TONE_DEFENSE_MULTIPLIER / DESHAWN_HEAT_REDUCTION),
                         Made Men / Guards note
   curtis-awareness.js   Phases and floors, watcher pools, phase texts, chance formula
+  territory.js          Police-raid and Curtis-move constants, the phase visibility
+                        gate, RAID_DEFENSE_PER_SOLDIER — the whole nightly balance
+                        surface for the block layer, in one place
   arrest.js             Bail, priors, processing slots, heat relief, crew jail, copy
   disposition-bands.js  BANDS, bandFor()
 
@@ -487,8 +490,11 @@ below. Once Curtis notices you, he does not fully forget.
 genuinely lands on him through `network` — `broadcastTracked` is the seam, and it
 only counts the bump when `curtis` is in the returned reach list, so an
 observation failing his sensitivity filter raises nothing; **+1** for 3 or more
-Spenard market transactions in a day, once per day; **+2** per successful robbery.
-**Nothing** from The Nile or the gym. **What lowers it:** the day-end block
+Spenard market transactions in a day, once per day; **+2** per successful robbery; **+1** per block lost to him, since v1.21 —
+`block_lost_to_curtis` is a `defiance` row on `network`, so it clears his filter
+and routes through the same seam. Losing a corner makes him hunt harder, and the
+map is only six corners, so the escalation is bounded at +6 and still bleeds back
+down on quiet days. **Nothing** from The Nile or the gym. **What lowers it:** the day-end block
 extends `quietStreak` on any day with no criminal activity, and from the
 **second** consecutive quiet day on the level bleeds a point per day, never below
 the current floor.
@@ -687,21 +693,10 @@ recruiting costs $140, discounted 25% when Deshawn is tier 2 or better.
    stay_quiet, manual). Switching policy costs no player time.
 2. **Income.** Each assigned soldier earns the block's `earningPotential`, the
    second and third diminished by `0.85^index`. Paid as dirty cash.
-3. **Raids.** Whether one *arrives* is unchanged:
-   `0.10 + heat * 0.02 + patrol * 0.15 - eliEffectiveness * 0.05`, capped at
-   0.9 — heat, patrols, and the corner's own traffic decide that. What the
-   garrison decides is how it ends, and since v1.20 that reads a **defense
-   strength**: `assigned.length * RAID_DEFENSE_PER_SOLDIER * toneMultiplier`.
-   A raid always adds a heat point and a `growth / visible_business` row to
-   Curtis, then:
-   - **casualty**, `assigned.length / defenseStrength` — headcount cancels, so
-     this is Tone's number alone (1.0 without him, 0.67 at tier 3). Failing it
-     means the raid was turned away and the block-loss roll never happens.
-   - **block loss**, `0.35 / defenseStrength` — here headcount does count. This
-     is the change a v1.19 player feels: a second posted soldier now halves the
-     chance of losing the corner, where before it only gave the raid another
-     name to take. A one-soldier block with no Tone is the old 0.35 exactly.
+3. **Two adversaries, two rolls (v1.21).** See "The raid split" below. Police
+   first on staffed corners, then Curtis on every corner the player holds.
 4. **Attrition.** An idle-loss roll per soldier, `0.05 - eliEffectiveness * 0.01`.
+   Skipped on a corner Curtis just took — there is nobody left on it.
 5. **Territory heat.** One roll for the whole operation, after the blocks
    resolve: `sum(heatExposure of held blocks) * 0.06 * deshawnReduction`, capped
    at 0.9, for +1 Heat. Ownership is what costs attention, not staffing — an
@@ -710,7 +705,75 @@ recruiting costs $140, discounted 25% when Deshawn is tier 2 or better.
    the same number the night rolls against), and a player holding nothing never
    rolls it, which is why Deshawn is worth nothing to them.
 
-The pass reports as one "Eli's report" feed line per crossed day.
+The pass reports as one "Eli's report" feed line per crossed day, plus one phone
+text per adversary and one consequence card when a corner is lost. Block losses
+are the one thing that still gets its own feed line.
+
+### The raid split (v1.21)
+
+Before v1.21 a single blended roll decided both "the police busted your corner"
+and "Curtis took your corner". That meant Heat quietly governed how much
+territory the player kept, a player who went quiet still lost corners at the
+same rate, and `curtisVisibility` — the stat describing how exposed a block is
+to Curtis's network — had no offense-side reader at all. They are two events
+now, resolved in sequence inside the same `resolveSoldierOperations`. There is
+no second nightly function.
+
+| | Police raid | Curtis move |
+|---|---|---|
+| Reads | player Heat, `patrolFrequency`, Eli | `curtisVisibility`, awareness phase |
+| Ignores | `curtisVisibility` | Heat, `patrolFrequency`, Eli |
+| Runs on | **staffed** corners only | **every** corner the player holds |
+| Chance | `POLICE_BASE_CHANCE + heat * POLICE_HEAT_WEIGHT + patrol * POLICE_PATROL_WEIGHT - eli * POLICE_ELI_DISCOUNT`, capped 0.9 | `CURTIS_BASE_CHANCE * (visibility * CURTIS_VISIBILITY_WEIGHT) * CURTIS_PHASE_MULTIPLIER[phase] / defense` |
+| Heat | **+1** | **none** — he is not the police |
+| Ownership | **never changes** | **flips to `curtis`** |
+| Observation | `heat_exposure / police_raid` on `neighborhood` | `defiance / block_lost_to_curtis` on `network` |
+| Counter | `record.raidCount` | the owner flip itself |
+
+Constants live in **`src/data/territory.js`**, which requires nothing (the
+one-way rule: data into logic, never back). Both gates are hashed rather than
+drawn: `stringHash(seed:raid:blockId:day:police|curtis)`, which is what lets a
+second pass exist without shifting the tick's RNG stream, and what makes a
+reloaded save replay the night instead of rerolling it. The roll is fixed; the
+threshold is live, and that is where the player's agency sits.
+
+**Phase-gated visibility.** `CURTIS_PHASE_VISIBILITY_GATE` is the minimum
+`curtisVisibility` a block needs to be on his map at all. Below it he does not
+come, at any odds.
+
+| Phase | Gate | What he can see |
+|---|---|---|
+| `invisible` | 99 | nothing — he is not looking |
+| `ambient` | 2 | Fourth Avenue Strip, Motel Row, Service Road Chokepoint |
+| `watching` | 1 | those plus Wash & Go Lot and Minnesota Off-Ramp |
+| `approaching` | 0 | everything with visibility above zero |
+
+**Spenard Rec Center Lot is never his, at any phase.** Its `curtisVisibility` is
+0, so the multiplier zeroes the chance even at `approaching` where the gate lets
+it through. The police still raid it. This is a deliberate design position — the
+quiet lot nobody's network carries news about is the safe, low-earning corner —
+not an emergent accident.
+
+**How the Made Men map onto the two.** Tone divides both: on the police side
+through the shared casualty roll (`takeRaidCasualty`), on Curtis's side as a
+divisor on whether he comes at all. Eli discounts the **police roll only** — he
+manages an operation against the police, not a war with Curtis. Deshawn touches
+neither directly; his heat reduction keeps Heat lower, which lowers the police
+chance, and that interaction is emergent and correct.
+
+**Headcount still protects the corner.** Curtis's divisor is
+`max(1, soldiersAssigned.length) * RAID_DEFENSE_PER_SOLDIER * tone`, which keeps
+v1.20's promise that a second posted soldier halves the chance of losing the
+block. `CURTIS_BASE_CHANCE` is 0.12 rather than 0.06 precisely so that two
+posted soldiers land where a single blended roll used to — and so an
+**undefended** corner is the one that costs double. Claiming without defending
+is no longer free.
+
+**`curtisVisibility` now has two readers**: `eliPolicyBlockScore`'s `hold_ground`
+weight (defensive placement) and `curtisMoveChance` (his targeting). Both are
+exported as selectors — `policeRaidChance` and `curtisMoveChance` — the same way
+`territoryHeatChance` is, so a Territory screen can show the player the same
+numbers the night rolls against, per adversary.
 
 **Block intel.** `blockIntelLevel(state)` in `src/selectors.js` replaced the
 `flags.spenardBlocksRevealed` boolean with a ladder: without Pherris the flag
@@ -910,7 +973,7 @@ is unsupported.
 ## Testing
 
 ```bash
-npm test                              # 601 tests
+npm test                              # 733 tests
 node tests/simulate-runs.js --total 200
 node tests/simulate-runs.js --total 2000   # slower, for balance work
 ```
@@ -922,13 +985,15 @@ before and after: a matching hash proves you changed nothing the player can see.
 Nothing in the run path may use `Math.random()` — only `makeRandom(seed)`, and
 not even that where a `stringHash` off the seed will do.
 
-**Current baselines, verified at v1.19.** Both moved on purpose, for the same two
-kinds of reason v1.18 moved them. Bookkeeping: the per-NPC telemetry loop covers
-`EXPOSURE_NPC_IDS`, so Pherris's lens adds two keys per strategy block, and the
-build added `pherrisProvenRuns`/`pherrisRecruitedRuns` to make her gate
-measurable. Gameplay: `907list_profit` now reaches a second channel, she is
-recruitable, and the three market-leaning strategies spend her price and pay her
-wage. The v1.18 baselines were `9ae8cd3c…` / `b233d725…`.
+**Current baselines, verified at v1.21.** Both are **byte-identical to v1.20**,
+and that is a real check rather than a coincidence: no sim strategy ever reaches
+the block layer (`operator` claims zero blocks across 2,000 seeded runs), so the
+nightly territory pass draws nothing from the tick's RNG either before or after
+the raid split. Moving the two gates onto `stringHash` was chosen partly for
+that — a change this deep in the nightly resolution that leaves both hashes
+untouched has proven it changed nothing outside the corners. If either hash moves
+on a territory build, something else in the diff touched the stream. The v1.19
+baselines were `114d08f7…` / `1bd2c299…`; the v1.18 ones `9ae8cd3c…` / `b233d725…`.
 
 **The de-escalation refactor in the same build is hash-neutral**, and was
 measured that way deliberately: it shipped as its own commit and both hashes came
@@ -942,8 +1007,8 @@ unit test in `tests/v1-15.test.js`.
 
 | Run | SHA-256 |
 |---|---|
-| `--total 200` | `114d08f7aaf1ab529e36af7716da69e311cbe23db13af96a91b79c290799b9db` |
-| `--total 2000` | `1bd2c29905bcb3dd55adff32c6787b4f659e5629fa5d1f225f7cbf40272acc36` |
+| `--total 200` | `c8b3bf0745871555c326f4861b0a8d576ce149c9fa7bd871e9215b51236092d8` |
+| `--total 2000` | `d9d0fbf1d24c1c7cca8db9db7897f044811a46c4d41ff6a23ca678a0dc3dfb39` |
 
 When a hash moves, read the per-strategy metric blocks — the simulator reports
 `arrests` and `crewJailedAtEnd` for exactly that. The two argument forms differ:

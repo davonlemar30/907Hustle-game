@@ -4,6 +4,59 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
+## Shipped — v1.21 Police Raids and Curtis Moves Split — **Phase 2.1**
+
+Built on `claude/v1-21-raid-split-w86iuj`, on top of the v1.20 merge (PR #83,
+`43652c3`). This is task **2.1** of the Godfather adaptation phase list. Save
+schema stays at v11 (the split changes nightly resolution, not state shape);
+**both sim hashes are byte-identical to v1.20**; zero dead ends across 2,000
+runs; 733 tests passing.
+
+- **One blended roll became two independent passes.** Police read Heat and
+  `patrolFrequency`, cost people and Heat, and never take a corner. Curtis reads
+  `curtisVisibility` and his awareness phase, takes the corner, and costs no
+  Heat. Both live in the same `resolveSoldierOperations` — no parallel nightly
+  function.
+- **`curtisVisibility` gained its first offense-side reader.** Before this build
+  it only weighted Eli's defensive placement; the stat that describes exposure to
+  Curtis's network did nothing about Curtis.
+- **Phase-gated targeting** (`CURTIS_PHASE_VISIBILITY_GATE`): nothing below
+  `ambient`, visibility 2+ at `ambient`, 1+ at `watching`, everything at
+  `approaching`. **Spenard Rec Center Lot (visibility 0) is never his** — a
+  stated design position, written into ARCHITECTURE rather than left emergent.
+- **Claiming without defending stopped being free.** Curtis takes empty corners
+  at twice the defended rate; a second posted soldier still halves the risk.
+- **Territory now feeds his awareness.** A lost corner is a `defiance` row on
+  `network`, so it raises `curtisAwareness` by 1 — bounded at +6 across the map,
+  still decaying on quiet days. This is the escalation fuel 2.2 burns.
+- **Measured off-sim, per phase.** The A/B harness reports the two adversaries
+  separately and sweeps all four phases. Police rate is **flat across phases**
+  (0.171 / 0.171 / 0.170 / 0.169) while Curtis climbs (0 / 0.018 / 0.047 /
+  0.069) — the decoupling, visible in one table. Per corner at `watching`, Motel
+  Row tops Curtis targeting (0.097) and the Service Road Chokepoint tops police
+  raids (0.198): two adversaries, two different corners.
+- **The 15% parity criterion was not met at a single phase, and the build says
+  so.** Against v1.20's 0.435 baseline on identical corners: −100% / −20% / +37%
+  / +64% by phase. Parity is nearest `ambient`, not `watching` as projected,
+  because corners sit empty most nights and undefended corners cost double.
+
+### Next
+
+- **Phase 2.2, the Curtis planner.** It now has a targeting system to plug into
+  rather than one to invent: `curtisMoveChance` already decides which corners are
+  on his map at a given phase, so the planner's job is choosing among them and
+  spending pressure, not deciding whether pressure exists.
+- **The whole loss curve may want to shift one phase cooler.** A one-constant
+  change (`CURTIS_BASE_CHANCE` 0.12 → ~0.09) would put parity at `watching`
+  where the build prompt expected it. Deliberately not taken here — it is a
+  balance decision, not a bug fix, and it should be made with 2.2's pressure
+  costs on the table.
+- **The `operator` strategy still never reaches territory.** Unchanged from
+  v1.20 and now more load-bearing: the block layer has twice the balance surface
+  and the 2,000-run instrument still cannot see any of it.
+
+---
+
 ## Shipped — v1.20 Lieutenant Typed Modifiers on Soldiers — **Phase 1 closed**
 
 Merged as PR #82 (`1a9a099`). Branch:
@@ -37,9 +90,10 @@ passing.
 
 ### Next
 
-- Splitting police raids from Curtis moves (Phase 2.1), then a Curtis planner
-  that has to overcome the player's defense layer (Phase 2.2). Both can now
-  reference Tone's multiplier as the thing to beat.
+- ~~Splitting police raids from Curtis moves (Phase 2.1)~~ — **shipped in
+  v1.21**, above. The Curtis planner (Phase 2.2) is next and can reference both
+  Tone's multiplier and the new `curtisMoveChance` targeting as the things to
+  work against.
 - **The `operator` strategy never reaches territory.** Until a sim strategy
   actually claims a corner, the block layer's balance is invisible to the 2,000-
   run instrument and only the A/B harness can see it. That is the highest-value

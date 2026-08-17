@@ -23,6 +23,7 @@
   const Crew = require("./src/data/crew.js");
   const Arrest = require("./src/data/arrest.js");
   const CurtisAwareness = require("./src/data/curtis-awareness.js");
+  const Territory = require("./src/data/territory.js");
 
   const VERSION = 11;
   const RUN_DAYS = 7;
@@ -95,35 +96,32 @@
   const SOLDIERS_PER_BLOCK_CAP = 3;
   const SOLDIER_INCOME_BASE_DIMINISH = 0.85;
   const SOLDIER_ATTRITION_BASE_CHANCE = 0.05;
-  const RAID_BASE_CHANCE = 0.10;
-  const RAID_HEAT_WEIGHT = 0.02;
-  const RAID_PATROL_WEIGHT = 0.15;
-  const RAID_BLOCK_LOSS_CHANCE = 0.35; // conditional on a raid already hitting
 
-  // --- v1.20 raid defense ---------------------------------------------------
-  // What a raid meets when it arrives. Defense strength is the garrison that
-  // was standing there when it started, times whatever Tone is worth
-  // (Crew.toneDefenseMultiplier - 1.0 when he is not on the crew):
+  // --- v1.21 raid defense ---------------------------------------------------
+  // The chances themselves live in src/data/territory.js, which is where a
+  // balance pass belongs. What lives here is how the garrison meets them.
+  //
+  // Defense strength is the people who were standing there when it started,
+  // times whatever Tone is worth (Crew.toneDefenseMultiplier - 1.0 when he is
+  // not on the crew):
   //
   //   defenseStrength = soldiersAssigned.length * RAID_DEFENSE_PER_SOLDIER * tone
   //
-  // Two rolls read it, and both are written so that a one-soldier block with no
-  // Tone is byte-identical to the pre-v1.20 math:
+  // Both adversaries roll a casualty against it, in takeRaidCasualty:
   //
-  //   casualty     assigned.length / defenseStrength - the raid getting through
-  //                the people posted. Headcount cancels out on purpose: a
-  //                second body is a second target as much as a second
-  //                defender, so this is Tone's number alone (1.0 without him,
-  //                0.67 at tier 3).
-  //   block loss   RAID_BLOCK_LOSS_CHANCE / defenseStrength - holding the
-  //                corner itself, where headcount does count. This is the
-  //                change a v1.19 player would feel: posting a second soldier
-  //                now halves the chance of losing the block, where before it
-  //                only gave the raid another name to take.
+  //   casualty     assigned.length / defenseStrength - whoever showed up
+  //                getting through the people posted. Headcount cancels out on
+  //                purpose: a second body is a second target as much as a
+  //                second defender, so this is Tone's number alone (1.0
+  //                without him, 0.67 at tier 3).
   //
-  // Rolled in that order, and the block-loss roll only happens on a casualty:
-  // if the garrison turned the raid away, the corner did not change hands.
-  const RAID_DEFENSE_PER_SOLDIER = 1;
+  // Holding the corner is a different question, and after v1.21 only Curtis
+  // asks it. A police raid never changes who owns a block, so there is no
+  // block-loss roll on that side at all; on Curtis's side the garrison is a
+  // divisor on his chance to come at all rather than a save after the fact,
+  // which is what keeps v1.20's promise that a second posted soldier halves
+  // the chance of losing the corner.
+  const RAID_DEFENSE_PER_SOLDIER = Territory.RAID_DEFENSE_PER_SOLDIER;
 
   // --- v1.20 territory heat trickle -----------------------------------------
   // Held corners cost attention whether or not anybody is posted on them, at
@@ -4395,22 +4393,94 @@
     }
     return moved;
   }
+  // Both nightly gates, hashed rather than drawn off the tick's RNG. Same
+  // idiom as the watcher roll: the seed, the subject, the day, and a salt that
+  // keeps the two passes from ever sharing an answer. Hashing them is what
+  // lets a second pass exist at all without shifting the stream for everything
+  // that resolves after it tonight, and it means reloading a save replays the
+  // night instead of rerolling it. The roll is fixed; the threshold it is
+  // compared against is not, which is where the player's agency lives.
+  function blockGateRoll(state, blockId, kind) {
+    return (stringHash(`${state.run.seed}:raid:${blockId}:${state.run.day}:${kind}`) % 10000) / 10000;
+  }
+  // What the police roll against on a staffed corner. Heat and the block's own
+  // patrol frequency, discounted by Eli. curtisVisibility is deliberately not
+  // in here: the police do not care whose corner it is.
+  function policeRaidChance(state, blockId) {
+    const block = SPENARD_BLOCK_BY_ID[blockId];
+    const record = state.world.territoryBlocks?.[blockId];
+    if (!block || !record || record.owner !== "player" || !record.soldiersAssigned.length) return 0;
+    const eli = state.people.crew.eli;
+    const discount = eli.lieutenantStage === "operations_lieutenant" ? eli.lieutenantEffectiveness * Territory.POLICE_ELI_DISCOUNT : 0;
+    return clamp(Territory.POLICE_BASE_CHANCE
+      + state.player.heat * Territory.POLICE_HEAT_WEIGHT
+      + block.patrolFrequency * Territory.POLICE_PATROL_WEIGHT
+      - discount, 0, 0.9);
+  }
+  // What Curtis rolls against on any corner the player holds, posted or empty.
+  // Visibility and phase decide whether he comes; the garrison decides how hard
+  // it is when he does. Heat and patrolFrequency are deliberately not in here:
+  // he is not the police and does not read their patrol routes.
+  function curtisMoveChance(state, blockId) {
+    const block = SPENARD_BLOCK_BY_ID[blockId];
+    const record = state.world.territoryBlocks?.[blockId];
+    if (!block || !record || record.owner !== "player") return 0;
+    const phase = CurtisAwareness.phaseForLevel(curtisAwarenessOf(state).level);
+    const gate = Territory.CURTIS_PHASE_VISIBILITY_GATE[phase];
+    if (block.curtisVisibility < (gate == null ? 99 : gate)) return 0;
+    const defense = Math.max(1, record.soldiersAssigned.length) * RAID_DEFENSE_PER_SOLDIER * Crew.toneDefenseMultiplier(state);
+    return clamp(Territory.CURTIS_BASE_CHANCE
+      * (block.curtisVisibility * Territory.CURTIS_VISIBILITY_WEIGHT)
+      * (Territory.CURTIS_PHASE_MULTIPLIER[phase] || 0)
+      / defense, 0, 0.9);
+  }
+  // The casualty half of a raid, shared by both adversaries: whether the
+  // garrison takes a loss, and who. Tone is the whole number here — headcount
+  // cancels out of assigned/defenseStrength on purpose, because a second body
+  // is a second target as much as a second defender. Returns true on a loss.
+  function takeRaidCasualty(state, random, record, toneDefense) {
+    const assigned = record.soldiersAssigned;
+    if (!assigned.length) return false;
+    const defenseStrength = assigned.length * RAID_DEFENSE_PER_SOLDIER * toneDefense;
+    const casualtyChance = clamp(assigned.length / defenseStrength, 0, 1);
+    if (random.next() >= casualtyChance) return false;
+    const lostId = random.pick(assigned);
+    const soldier = state.world.soldiers[lostId];
+    soldier.status = "lost";
+    soldier.blockId = null;
+    record.soldiersAssigned = assigned.filter((id) => id !== lostId);
+    return true;
+  }
   // Passive organization activity is summarized into a single compact report
   // per crossed day instead of one log line per block — a run with six
   // controlled blocks would otherwise flood the feed every night. Block
   // losses are the one exception ("major incidents"): each still gets its
   // own line, since losing a corner is worth reading on its own.
+  //
+  // v1.21: two adversaries, two passes, one night, in this order per block.
+  //
+  //   POLICE  costs people and costs Heat, and NEVER changes who owns the
+  //           corner — the state disrupts an operation, it does not claim real
+  //           estate. Staffed corners only: there is nothing to bust and
+  //           nobody to arrest on an empty lot.
+  //   CURTIS  changes who owns the corner and costs no Heat at all. Runs on
+  //           unstaffed corners too, and at double the rate — an empty one you
+  //           hold is the easiest one for him to walk back onto.
+  //
+  // Tone divides both. Eli discounts the police pass only: he manages an
+  // operation against the police, not a war with Curtis.
   function resolveSoldierOperations(state, random, crossedDay) {
     if (!crossedDay) return;
     const movedBlocks = resolveEliAutoAssignment(state);
     const eli = state.people.crew.eli;
-    const effectivenessDiscount = eli.lieutenantStage === "operations_lieutenant" ? eli.lieutenantEffectiveness * 0.05 : 0;
     let totalIncome = 0;
-    let raidedCount = 0;
+    let policeCount = 0;
+    let curtisCount = 0;
     let attritionCount = 0;
     let heldExposure = 0;
     let repelledCount = 0;
-    const raidedBlockNames = [];
+    const policeBlockNames = [];
+    const lostBlockNames = [];
     // v1.20: what Tone is worth tonight, read once. He is a modifier on the
     // guard layer, not a soldier — the number multiplies the people already
     // posted and is 1.0 the moment he is gone.
@@ -4419,52 +4489,57 @@
       const record = state.world.territoryBlocks[block.id];
       if (record.owner !== "player") continue;
       record.soldiersAssigned = record.soldiersAssigned.filter((id) => state.world.soldiers[id]?.status === "active");
-      const assigned = record.soldiersAssigned;
       // Ownership is what costs attention, not staffing: an empty corner you
       // hold is still a corner people know is yours.
       heldExposure += block.heatExposure;
-      if (assigned.length > 0) {
+      if (record.soldiersAssigned.length > 0) {
+        const assigned = record.soldiersAssigned;
         let blockIncome = 0;
         for (let index = 0; index < assigned.length; index += 1) blockIncome += block.earningPotential * Math.pow(SOLDIER_INCOME_BASE_DIMINISH, index);
         blockIncome = Math.round(blockIncome);
         totalIncome += blockIncome;
         record.incomeCollected += blockIncome;
-        const raidChance = clamp(RAID_BASE_CHANCE + state.player.heat * RAID_HEAT_WEIGHT + block.patrolFrequency * RAID_PATROL_WEIGHT - effectivenessDiscount, 0, 0.9);
-        if (random.next() < raidChance) {
-          // The raid arrives either way — heat, patrols, and the corner's own
-          // traffic decided that. What the garrison decides is how it ends.
-          const defenseStrength = assigned.length * RAID_DEFENSE_PER_SOLDIER * toneDefense;
-          const casualtyChance = clamp(assigned.length / defenseStrength, 0, 1);
+        // --- Pass A: the police ------------------------------------------
+        // They arrive on Heat and patrol frequency, and what the garrison
+        // decides is how it ends — not who owns the corner afterward.
+        if (blockGateRoll(state, block.id, "police") < policeRaidChance(state, block.id)) {
           record.lastRaidDay = state.run.day;
           record.raidCount += 1;
           state.player.heat = clamp(state.player.heat + 1, 0, 15);
-          Exposure.recordObservation(state, "curtis", { type: "growth", event: "visible_business", source: "network" });
-          raidedCount += 1;
-          raidedBlockNames.push(block.name);
-          if (random.next() >= casualtyChance) {
-            // Tone's people saw it coming and everybody walked away from it. A
-            // corner that was held does not change hands, so no loss roll.
-            repelledCount += 1;
-          } else {
-            const lostId = random.pick(assigned);
-            const soldier = state.world.soldiers[lostId];
-            soldier.status = "lost";
-            soldier.blockId = null;
-            record.soldiersAssigned = record.soldiersAssigned.filter((id) => id !== lostId);
-            if (random.next() < RAID_BLOCK_LOSS_CHANCE / defenseStrength) {
-              record.owner = "curtis";
-              const survivors = record.soldiersAssigned;
-              for (const survivorId of survivors) {
-                const survivor = state.world.soldiers[survivorId];
-                if (survivor) survivor.blockId = null;
-              }
-              record.soldiersAssigned = [];
-              logEntry(state, survivors.length
-                ? `Curtis takes ${block.name}. ${survivors.length} of Eli's people make it back to the garage.`
-                : `${block.name} slips back under Curtis's people after the raid.`, "bad");
-            }
-          }
+          policeCount += 1;
+          policeBlockNames.push(block.name);
+          // A bust on the corner is public in Spenard and it is not news
+          // Curtis trades in: heat_exposure does not clear his network filter
+          // and he is not on the neighborhood channel at all. The location is
+          // the block, not wherever the player happens to be standing.
+          broadcastTracked(state, { type: "heat_exposure", event: "police_raid", channel: "neighborhood", location: HOME_DISTRICT_ID });
+          if (!takeRaidCasualty(state, random, record, toneDefense)) repelledCount += 1;
         }
+      }
+      // --- Pass B: Curtis --------------------------------------------------
+      // No Heat is touched anywhere in here. He is not the police, and a corner
+      // changing hands between two people who both sell on it is not something
+      // the state noticed.
+      const curtisChance = curtisMoveChance(state, block.id);
+      if (curtisChance > 0 && blockGateRoll(state, block.id, "curtis") < curtisChance) {
+        const staffed = record.soldiersAssigned.length > 0;
+        takeRaidCasualty(state, random, record, toneDefense);
+        const survivors = record.soldiersAssigned;
+        for (const survivorId of survivors) {
+          const survivor = state.world.soldiers[survivorId];
+          if (survivor) survivor.blockId = null;
+        }
+        record.soldiersAssigned = [];
+        record.owner = "curtis";
+        curtisCount += 1;
+        lostBlockNames.push(block.name);
+        // The network carries this, and broadcastTracked is the seam that turns
+        // carrying it into him looking harder at the next corner.
+        broadcastTracked(state, { type: "defiance", event: "block_lost_to_curtis", channel: "network", location: HOME_DISTRICT_ID });
+        logEntry(state, staffed
+          ? `Curtis takes ${block.name}. ${survivors.length} of Eli's people make it back to the garage.`
+          : `${block.name} slips back under Curtis's people. Nobody was posted on it.`, "bad");
+        continue; // nobody is left to lose on a corner that is no longer ours
       }
       const attritionChance = Math.max(0, SOLDIER_ATTRITION_BASE_CHANCE - eli.lieutenantEffectiveness * ELI_EFFECTIVENESS_ATTRITION_DISCOUNT);
       for (const id of [...record.soldiersAssigned]) {
@@ -4485,17 +4560,37 @@
     // gets anything out of Deshawn's reduction.
     const territoryHeat = heldExposure > 0 && random.next() < territoryHeatChance(state, heldExposure);
     if (territoryHeat) state.player.heat = clamp(state.player.heat + 1, 0, 15);
-    if (totalIncome > 0 || movedBlocks.length || raidedCount || attritionCount || territoryHeat) {
+    // One text per adversary per night, not one per block. Six corners on a bad
+    // night is two messages and one card, not twelve messages and six modals —
+    // the same volume rule the report itself exists to enforce.
+    if (policeCount) {
+      pushPhoneMessage(state, "Eli", policeCount === 1
+        ? `Police came through ${policeBlockNames[0]} tonight. Corner's still ours.`
+        : `Police worked ${policeBlockNames.slice(0, 2).join(" and ")} tonight. Corners are still ours.`);
+    }
+    if (curtisCount) {
+      pushPhoneMessage(state, "Eli", curtisCount === 1
+        ? `Curtis's people are standing on ${lostBlockNames[0]}. That corner isn't ours anymore.`
+        : `We lost ${curtisCount} corners to Curtis tonight. Everybody who walked away is at the garage.`);
+      pushConsequence(state, curtisCount === 1
+        ? `Curtis has ${lostBlockNames[0]}.`
+        : `Curtis has ${lostBlockNames.slice(0, 2).join(" and ")}${curtisCount > 2 ? " and more" : ""}.`, "bad");
+    }
+    if (totalIncome > 0 || movedBlocks.length || policeCount || curtisCount || attritionCount || territoryHeat) {
       const parts = [];
       if (totalIncome > 0) parts.push(`+$${totalIncome} territory income`);
       if (movedBlocks.length === 1) parts.push(`1 soldier moved to ${movedBlocks[0]}`);
       else if (movedBlocks.length > 1) parts.push(`${movedBlocks.length} soldiers moved (${movedBlocks.slice(0, 2).join(", ")}${movedBlocks.length > 2 ? "…" : ""})`);
-      if (raidedCount) parts.push(`${raidedBlockNames.slice(0, 2).join(", ")}${raidedCount > 2 ? " and others" : ""} drew police attention`);
+      if (policeCount) parts.push(`${policeBlockNames.slice(0, 2).join(", ")}${policeCount > 2 ? " and others" : ""} took a police raid`);
       if (repelledCount) parts.push(`${repelledCount} raid${repelledCount === 1 ? "" : "s"} turned away at the corner`);
+      if (curtisCount) parts.push(`${curtisCount === 1 ? lostBlockNames[0] : `${curtisCount} corners`} lost to Curtis`);
       if (attritionCount) parts.push(`${attritionCount} soldier${attritionCount === 1 ? "" : "s"} lost to attrition`);
       if (territoryHeat) parts.push("the held corners drew a look (+1 Heat)");
-      if (!raidedCount && !attritionCount) parts.push("No casualties");
-      logEntry(state, `Eli's report: ${parts.join(" · ")}`, raidedCount || attritionCount ? "warn" : "good");
+      if (!policeCount && !curtisCount && !attritionCount) parts.push("No casualties");
+      // The tone stays warn/good. Severity is expressed through the "lost to
+      // Curtis" clause, which is what the report card reads — a "bad" tone here
+      // would render the good class.
+      logEntry(state, `Eli's report: ${parts.join(" · ")}`, policeCount || curtisCount || attritionCount ? "warn" : "good");
     }
   }
 
@@ -8378,13 +8473,18 @@
     NILE: Nile, GAMBLING: Gambling, gamblingEvents: GamblingEvents,
     LISTING_ITEMS, LISTING_CAPACITY, MARKET: Market, marketEvents: MarketEvents, NIGHT_OWL_REGULARS, NIGHT_OWL_BOARD, HOUSEHOLD_NPCS, SOCIAL_CONTACTS, STORY_CONTACTS, PHONE_INTEL, DOWNTOWN_CONTENT_STUBS, DOWNTOWN_AMBIENT,
     SPENARD_BLOCKS, SOLDIER_RECRUIT_COST, SOLDIER_BASE_CAPACITY, SOLDIER_CAPACITY_PER_BLOCK, SOLDIERS_PER_BLOCK_CAP,
-    RAID_BASE_CHANCE, RAID_HEAT_WEIGHT, RAID_PATROL_WEIGHT, RAID_BLOCK_LOSS_CHANCE, RAID_DEFENSE_PER_SOLDIER,
+    RAID_DEFENSE_PER_SOLDIER, TERRITORY: Territory,
     TERRITORY_HEAT_CHANCE_PER_EXPOSURE, TERRITORY_HEAT_CHANCE_CAP, BLOCK_INTEL_LEVEL_COPY,
     SHARK_BORROWERS, SHARK_TERMS, DRE_MISSIONS, DRE_COLLECTOR_TIERS, ELI_LIEUTENANT_UNLOCK, RESPECT_STAGE_THRESHOLDS,
     Crew, Arrest, CREW_LOYALTY_MAX: Crew.CREW_LOYALTY_MAX, CREW_LOYALTY_START: Crew.CREW_LOYALTY_START, TIER_REQUIREMENTS: Crew.TIER_REQUIREMENTS,
     DISTRICT_CONTROL_TIERS, DISTRICT_CONTROL_CAPSTONE_BLOCKS, DISTRICT_CONTROL_LABEL, ELI_OPERATION_POLICIES,
     buildEventForTest: activeEvent, storyCandidatesForTest: storyCandidates,
     recordBehaviorForTest: recordBehavior,
+    // v1.21: the nightly territory pass, reachable without driving a whole
+    // CONFIRM_END_DAY. Isolating one Heat delta otherwise means fighting rent,
+    // pressure, the Curtis settle, and the markets for it.
+    resolveSoldierOperationsForTest: resolveSoldierOperations,
+    blockGateRollForTest: blockGateRoll,
     // Street Read is invisible to the player but has to be reachable by tests.
     // Nothing here is imported by ui.jsx.
     streetRead: {
@@ -8425,6 +8525,10 @@
       blockIntelLevel, blockIntelView, curtisBlockDefense, curtisBlockTargets,
       toneDefenseMultiplier: Crew.toneDefenseMultiplier, deshawnHeatReduction: Crew.deshawnHeatReduction,
       territoryHeatChance, lieutenantTerritoryModifier,
+      // v1.21: the two nightly gates, exposed the same way territoryHeatChance
+      // is — so a Territory screen can show the player the same number the
+      // night rolls against, for each adversary separately.
+      policeRaidChance, curtisMoveChance,
       soldierRecruitAvailability, soldierAssignAvailability, blockClaimAvailability, eliPromotionAvailability,
       weeklyIncomeEstimate,
       dreTrustTier, dreIntroductionEligible, dreMissionAvailability, sharkUnlocked, sharkRiskLabel, sharkLoanAvailability,

@@ -2,12 +2,59 @@
 
 Last updated: 2026-08-16 (America/Anchorage)
 
-**HEAD of `main` is `1d51b0a`, the v1.18 merge (PR #80).** v1.19 is built on
-branch `claude/v1-19-pherris-deshawn-gates-hrl444` and verified there:
-`npm test` 676 passing, `npm run build` clean, 2,000-run simulation with zero
+**HEAD of `main` is `11ec2ef`, the v1.19 merge (PR #81).** v1.20 is built on
+branch `claude/v1-20-lieutenant-modifiers-3lwvkk` and verified there:
+`npm test` 699 passing, `npm run build` clean, 2,000-run simulation with zero
 dead ends, `--total 200`
-`114d08f7aaf1ab529e36af7716da69e311cbe23db13af96a91b79c290799b9db`,
-`--total 2000` `1bd2c29905bcb3dd55adff32c6787b4f659e5629fa5d1f225f7cbf40272acc36`.
+`c8b3bf0745871555c326f4861b0a8d576ce149c9fa7bd871e9215b51236092d8`,
+`--total 2000` `d9d0fbf1d24c1c7cca8db9db7897f044811a46c4d41ff6a23ca678a0dc3dfb39`.
+
+## v1.20 Lieutenant Typed Modifiers on Soldiers — built (branch `claude/v1-20-lieutenant-modifiers-3lwvkk`)
+
+- Branch: `claude/v1-20-lieutenant-modifiers-3lwvkk`, on top of the v1.19 merge
+  (PR #81, `11ec2ef`). Built from the "v1.20 Build Prompt: Lieutenant Typed
+  Modifiers on Soldiers" spec. **Save schema stays v11** — every modifier is
+  derived from the crew record the save already carries, so there is nothing new
+  to persist and nothing to migrate.
+- **The Made Men modifier triangle** lands in `src/data/crew.js`:
+  `TONE_DEFENSE_MULTIPLIER` (1.15 / 1.30 / 1.50), `DESHAWN_HEAT_REDUCTION`
+  (0.80 / 0.60 / 0.40), and `modifierTier()`, which draws the same
+  active/loyalty line `presenceEffectsFor` does. Pherris's rung of the triangle
+  is `blockIntelLevel()` in `src/selectors.js`.
+- **Tone → raid defense.** `resolveSoldierOperations` now computes
+  `defenseStrength = assigned.length * RAID_DEFENSE_PER_SOLDIER * tone`. Raid
+  arrival is untouched; the casualty roll is `assigned.length / defenseStrength`
+  (headcount cancels, so it is Tone's number alone) and the block-loss roll is
+  `0.35 / defenseStrength` (headcount counts). A one-soldier block with no Tone
+  is the old math exactly. A repelled raid skips the loss roll — a corner that
+  was held does not change hands.
+- **Pherris → intel ladder.** `flags.spenardBlocksRevealed` still reads as level
+  1 on its own; with her active it is her tier. Level 2 adds soldier counts and
+  a ±1 defense estimate on Curtis corners, level 3 makes it exact and adds his
+  last move plus `curtisBlockTargets()` (ranked by Curtis visibility, depth
+  gated by his awareness phase). Estimates are hashed from
+  `seed:block-intel:blockId:day` — no `Math.random`, stable across a reload.
+- **Deshawn → territory heat.** There was no ambient block-heat path before this
+  build; v1.20 adds exactly one, in the same nightly pass:
+  `sum(heatExposure of held blocks) * 0.06 * deshawnReduction`, one roll for +1
+  Heat, capped at 0.9. Ownership costs attention, not staffing. A player holding
+  nothing never rolls it, so the reduction can never leak onto criminal-action
+  heat.
+- **UI**: one read-only line per lieutenant on the crew detail card, shown only
+  while active and holding a corner; the Spenard block card reads
+  `blockIntelView` instead of the old boolean.
+- **`stringHash` moved to `src/hash.js`** (a leaf that requires nothing) so the
+  selectors can hash without closing a cycle through `src/events/random.js`,
+  which requires the selectors for `slotNumber`. `random.js` re-exports it.
+- **Both simulation hashes moved for bookkeeping only.** The simulator gained a
+  `territory` telemetry block; strip it and the output is byte-identical to
+  v1.19's. The finding underneath: **no sim strategy reaches the block layer** —
+  `operator` claims zero blocks in 2,000 runs — so the modifiers are measured by
+  `tests/measure-lieutenant-modifiers.js` instead. Tone cuts the block-loss rate
+  **0.449 → 0.288** and raises territory income 28%; Deshawn cuts average peak
+  Heat **11.36 → 9.96**; both strictly tier-ordered. Tone *raises* peak Heat
+  (11.36 → 13.26) because saved corners keep drawing raids, which is the pairing
+  the triangle is built around.
 
 ## v1.19 Observation-Gated Recruitment — Pherris + Deshawn Retro-Gate — built (branch `claude/v1-19-pherris-deshawn-gates-hrl444`)
 

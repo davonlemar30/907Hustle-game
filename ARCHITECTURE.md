@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.19**. This file
+How 907Hustle: One Good Run is put together, current as of **v1.20**. This file
 is meant to be the only thing you need to read before changing code; for *why*
 the game is designed the way it is, see the ClickUp docs at the bottom.
 
@@ -55,7 +55,9 @@ src/data/               Static definitions. No logic, no state.
   propagation.js        CHANNELS, NPC_CHANNELS, Curtis's filter, heat thresholds
   crew.js               Loyalty scale (0-10), tier requirements, wage curve,
                         presence-effect framework, RECRUITMENT_PROOF and the
-                        recruitmentEligible() predicate, Made Men / Guards note
+                        recruitmentEligible() predicate, the Made Men modifier
+                        triangle (TONE_DEFENSE_MULTIPLIER / DESHAWN_HEAT_REDUCTION),
+                        Made Men / Guards note
   curtis-awareness.js   Phases and floors, watcher pools, phase texts, chance formula
   arrest.js             Bail, priors, processing slots, heat relief, crew jail, copy
   disposition-bands.js  BANDS, bandFor()
@@ -73,10 +75,14 @@ src/events/
                         system: what the player may see, what the session grew
 
 src/exposure/engine.js  Ledgers in, dispositions out, gossip in between.
-src/selectors.js        Tiny pure reads shared by game-core and src/events
+src/selectors.js        Tiny pure reads shared by game-core and src/events,
+                        including the v1.20 block-intel ladder
+src/hash.js             stringHash() / HASH_CEILING. A leaf: requires nothing, so
+                        the selectors and random.js can both use it
 
 tests/                  node --test, no runner config
   simulate-runs.js      Seeded whole-run simulator (not a test; a harness)
+  measure-lieutenant-modifiers.js  v1.20 A/B harness for the territory modifiers
   exposure-helpers.js   putInBand(), for tests that used to assign a trust integer
 
 scripts/check-docs-version.js   Warns when this file's version lags PROJECT_STATUS.md
@@ -101,6 +107,7 @@ ones that land in two places, or in a place you would not guess.
 | A story beat / character arc card | `src/events/cards.js` **+** a descriptor in `STORY_REGISTRY` |
 | A new NPC | `src/data/npcs.js`, state in `createNpcState()`, a lens in `NPC_LENSES`, channels in `NPC_CHANNELS`. The `createNpcState()` record is **not optional**: the loop that hands out ledgers skips any lens with no record, so a lens alone is a subscriber that silently hears nothing |
 | A recruitment gate that reads a ledger | an entry in `RECRUITMENT_PROOF` (`src/data/crew.js`) — data only. `crewRecruitmentEligible()` in game-core resolves the band and score and passes them in |
+| A lieutenant modifier on the territory layer | a table in `src/data/crew.js` **+** one read at the seam it acts on (`resolveSoldierOperations`, `territoryHeatChance`, `blockIntelLevel`). Derived from the crew record, never stored |
 | An outside-the-player modifier on an attribute roll | the `bonus` argument of `resolveAction()`, sourced from `Crew.combatAdvantageFor()`. One seam, so the ceiling is enforced in one place |
 | A new growth source | a rate in `GROWTH_RATES` **and** an attribute in `GROWTH_ATTRIBUTES` — half a definition trains nothing, silently |
 | A card or dice rule | `src/data/gambling.js`; how it plays against an attribute goes in `src/events/gambling-events.js` |
@@ -590,6 +597,50 @@ effects. `PAY_CREW` clears arrears mid-run.
 
 ### Presence effects
 
+### The Made Men modifier triangle (v1.20)
+
+Presence effects change how an **event** resolves. The triangle changes how the
+**territory** performs. Each lieutenant owns exactly one number on the guard
+layer, and the three map onto the three attributes:
+
+```
+Tone (Combat)          → Defense strength multiplier on stationed soldiers
+Pherris (Intelligence) → Block intel visibility tiers
+Deshawn (Charisma)     → Territory heat trickle reduction
+```
+
+| Who | Table | Tier 1 / 2 / 3 | Read by |
+|---|---|---|---|
+| Tone | `TONE_DEFENSE_MULTIPLIER` | 1.15 / 1.30 / 1.50 | `resolveSoldierOperations` |
+| Pherris | `blockIntelLevel()` | level 1 / 2 / 3 | `blockIntelView()`, the Territory cards |
+| Deshawn | `DESHAWN_HEAT_REDUCTION` | 0.80 / 0.60 / 0.40 | `territoryHeatChance()` |
+
+The attribute connection is **thematic, not mechanical**: a player with high
+Combat recruited Tone because combat observations fed his lens, but the player's
+own attributes do not scale the lieutenant's number. That is a future build.
+
+Three rules hold the triangle together:
+
+- **Modifiers, never a parallel roster.** A tier is scope of responsibility, not
+  headcount. Tone does not add soldiers — he makes the posted ones worth more.
+  One soldier under a tier-2 Tone defends as well as 1.3 without him, and the
+  headcount that frees up is the actual reward.
+- **Derived, never stored.** All three are computed from the crew record the
+  save already carries (`Crew.modifierTier` → recruited, `status === "active"`,
+  loyalty above 0, tier clamped 1-3), so **the schema stays at v11** and an
+  effect disappears the same night its owner is arrested, departs, or stops
+  showing up. Pherris's level is deliberately a derived selector: later builds
+  add intel *sources* on the same ladder, and a cached level would need
+  invalidating by every one of them.
+- **One seam each.** Defense enters the raid math at one expression, the heat
+  trickle at one roll, the intel ladder at one selector.
+
+`Crew.modifierTier` draws the same line `presenceEffectsFor` does, loyalty 0
+included: they are on the roster and doing nothing, which is what the number
+means.
+
+### Presence effects
+
 `PRESENCE_EFFECTS` is what an active member changes about event resolution just
 by being on the payroll. Checked at **choice-build time** (the encounter
 selectors and card builders), not at render time, so the reducer and the UI
@@ -636,13 +687,47 @@ recruiting costs $140, discounted 25% when Deshawn is tier 2 or better.
    stay_quiet, manual). Switching policy costs no player time.
 2. **Income.** Each assigned soldier earns the block's `earningPotential`, the
    second and third diminished by `0.85^index`. Paid as dirty cash.
-3. **Raids.** `0.10 + heat * 0.02 + patrol * 0.15 - eliEffectiveness * 0.05`,
-   capped at 0.9. A raid loses one soldier, adds a heat point, and writes a
-   `growth / visible_business` row to Curtis; a further 35% flips the block back
-   to him.
+3. **Raids.** Whether one *arrives* is unchanged:
+   `0.10 + heat * 0.02 + patrol * 0.15 - eliEffectiveness * 0.05`, capped at
+   0.9 — heat, patrols, and the corner's own traffic decide that. What the
+   garrison decides is how it ends, and since v1.20 that reads a **defense
+   strength**: `assigned.length * RAID_DEFENSE_PER_SOLDIER * toneMultiplier`.
+   A raid always adds a heat point and a `growth / visible_business` row to
+   Curtis, then:
+   - **casualty**, `assigned.length / defenseStrength` — headcount cancels, so
+     this is Tone's number alone (1.0 without him, 0.67 at tier 3). Failing it
+     means the raid was turned away and the block-loss roll never happens.
+   - **block loss**, `0.35 / defenseStrength` — here headcount does count. This
+     is the change a v1.19 player feels: a second posted soldier now halves the
+     chance of losing the corner, where before it only gave the raid another
+     name to take. A one-soldier block with no Tone is the old 0.35 exactly.
 4. **Attrition.** An idle-loss roll per soldier, `0.05 - eliEffectiveness * 0.01`.
+5. **Territory heat.** One roll for the whole operation, after the blocks
+   resolve: `sum(heatExposure of held blocks) * 0.06 * deshawnReduction`, capped
+   at 0.9, for +1 Heat. Ownership is what costs attention, not staffing — an
+   empty corner you hold still counts. **This is the only territory heat path**
+   (`territoryHeatChance`, exported as a selector so the UI can show the player
+   the same number the night rolls against), and a player holding nothing never
+   rolls it, which is why Deshawn is worth nothing to them.
 
 The pass reports as one "Eli's report" feed line per crossed day.
+
+**Block intel.** `blockIntelLevel(state)` in `src/selectors.js` replaced the
+`flags.spenardBlocksRevealed` boolean with a ladder: without Pherris the flag
+still reads as level 1, with her it is her tier. Level 1 is the map (ownership
+plus the numbers a scout copies off a clipboard), level 2 adds soldier counts on
+your corners and a **±1 estimate** of what Curtis has on his, level 3 makes that
+exact and adds his last move and which of your corners he is lining up
+(`curtisBlockTargets`, depth gated by his awareness phase). The estimate's
+jitter is hashed from `seed:block-intel:blockId:day` — deterministic, so a
+reload never rerolls it. `blockIntelVisible()` survives as `level >= 1` for the
+callers that only ask whether the map is readable at all.
+
+`src/selectors.js` needs the hash and `src/events/random.js` needs
+`slotNumber()` from the selectors, so v1.20 moved `stringHash` into
+**`src/hash.js`** — a leaf module that requires nothing. `random.js` re-exports
+it, so every existing `require("./events/random.js").stringHash` call site is
+unchanged.
 
 ## Territory: two layers
 

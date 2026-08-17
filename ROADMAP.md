@@ -4,6 +4,48 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ---
 
+## Shipped — v1.20 Lieutenant Typed Modifiers on Soldiers
+
+Branch: `claude/v1-20-lieutenant-modifiers-3lwvkk`, on top of the v1.19 merge
+(PR #81). Save schema stays at v11 (nothing new persisted — every modifier is
+derived); both sim hashes moved for telemetry only and hash byte-identical to
+v1.19 with the new keys stripped; zero dead ends across 2,000 runs; 699 tests
+passing.
+
+- **Each Made Man owns one number on the guard layer.** Tone multiplies the
+  defense strength of posted soldiers (1.15 / 1.30 / 1.50), Pherris raises the
+  block-intel ladder (levels 1-3), Deshawn cuts the territory heat trickle
+  (0.80 / 0.60 / 0.40). Combat, Intelligence, Charisma — the attribute mapping
+  is thematic for now.
+- **A lieutenant is a typed modifier on the guard layer, never a parallel
+  roster.** The reconciliation note in `src/data/crew.js` predicted this shape
+  and now describes what shipped.
+- **Soldier headcount finally matters to block retention.** Block loss is
+  `0.35 / defenseStrength`, so the second soldier on a corner halves it. Before
+  this build a second soldier only gave the raid another name to take.
+- **Territory ownership costs ambient Heat for the first time**, in one place,
+  and a player holding nothing never rolls it.
+- **Measured off-sim.** No sim strategy reaches the block layer — `operator`
+  claims zero blocks in 2,000 runs — so `tests/measure-lieutenant-modifiers.js`
+  is the instrument. Tone: block-loss **0.449 → 0.288**. Deshawn: average peak
+  Heat **11.36 → 9.96**.
+
+### Next
+
+- Splitting police raids from Curtis moves (Phase 2.1), then a Curtis planner
+  that has to overcome the player's defense layer (Phase 2.2). Both can now
+  reference Tone's multiplier as the thing to beat.
+- **The `operator` strategy never reaches territory.** Until a sim strategy
+  actually claims a corner, the block layer's balance is invisible to the 2,000-
+  run instrument and only the A/B harness can see it. That is the highest-value
+  simulator work outstanding.
+- A Made Man at tier 2+ becoming a block's `managerId`, with per-block flavor on
+  the manager on top of these operation-wide modifiers.
+- Intel *sources* beyond Pherris (disclosure tables, NPC one-shots) on the same
+  ladder — Phase 3.
+
+---
+
 ## Shipped — v1.19 Observation-Gated Recruitment — Pherris + Deshawn Retro-Gate
 
 Branch: `claude/v1-19-pherris-deshawn-gates-hrl444`, on top of the v1.18 merge
@@ -39,7 +81,8 @@ zero dead ends across 2,000 runs; 676 tests passing.
 
 - Lieutenant typed modifiers on soldiers (Phase 1.4): a Made Man at tier 2+
   becoming a block's `managerId`, with domain flavor on the manager rather than
-  on the guard.
+  on the guard. **The modifier half shipped at v1.20**; the `managerId` half is
+  still open.
 - `curtisAwareness` still averages 0.33 of 15 across 2,000 runs. The new network
   broadcast feeds it for the first time from clean money, but the `watching`
   phase and everything behind it stay effectively unreachable.

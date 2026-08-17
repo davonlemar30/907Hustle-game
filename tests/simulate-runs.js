@@ -35,6 +35,18 @@ function exposureMetrics(state){
   }
   return out;
 }
+// v1.20: what the territory layer actually did, so Tone's defense modifier is
+// measurable in a real run rather than only in a unit test. blocksLost is the
+// number that moves: a block with capturedDay set and a Curtis owner is one the
+// player claimed and then had taken back.
+function territoryMetrics(state){
+  const blocks=Object.values(state.world.territoryBlocks||{});
+  const claimed=blocks.filter(b=>b.capturedDay!=null);
+  return {blocksClaimed:claimed.length,blocksHeld:blocks.filter(b=>b.owner==='player').length,
+    blocksLost:claimed.filter(b=>b.owner!=='player').length,
+    blockRaids:blocks.reduce((n,b)=>n+(b.raidCount||0),0),
+    blockIncome:blocks.reduce((n,b)=>n+(b.incomeCollected||0),0)};
+}
 // v1.9b: what the 907List broker track actually earned, and at which tier. The
 // per-tier daily income is the only way to tell "the tier ladder is tuned" from
 // "Broker is unreachable content", so it is sampled once per day rather than
@@ -196,7 +208,7 @@ function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun
     if(s.lender.balance&&s.player.cash>=s.lender.balance+100&&s.run.day>=2){s=C.reduceGame(s,{type:'PAY_DEBT',amount:s.lender.balance});continue}
     if(s.player.heat>p.heatCap){s=C.reduceGame(s,{type:'LAY_LOW'});continue}
     const next=p.areas[(Math.max(0,p.areas.indexOf(area))+1)%p.areas.length],busCovered=s.world.transport.weekPass||s.world.transport.dayPassDay===s.run.day;s=next===area?C.reduceGame(s,{type:'END_MARKET'}):next==='north_star_lot'&&s.player.cash<5&&!busCovered?C.reduceGame(s,{type:'WALK_HOME'}):['downtown','north_star_lot'].includes(next)&&s.player.cash<5&&!busCovered?C.reduceGame(s,{type:'END_MARKET'}):['downtown','north_star_lot'].includes(next)?C.reduceGame(s,{type:'BUS_TRAVEL',neighborhoodId:next}):C.reduceGame(s,{type:'TRAVEL',neighborhoodId:next});
-  }s=settle(s,p,beats);const summary=C.selectRunSummary(s);summary.completed=s.run.status==='ended';summary.finalState={day:s.run.day,slot:s.run.slot,energy:s.player.energy,phase:s.run.phase,pending:s.run.pendingEncounter?.id||s.run.pendingEvent?.id||null,dayEnd:s.run.dayEndPending,overtime:s.run.overtimeArmed,baseVisiting:s.base.visiting};summary.decisions=s.stats.decisions;summary.encounters=s.run.encounterCount;summary.baseValue=C.selectors.baseValue(s);summary.crew=C.selectors.recruitedCrew(s).length;summary.dealer={...(s.people.dealers?.goodie||{})};summary.meaningfulActions=s.player.behavior.meaningfulActions;summary.gymStreak=s.player.gymStreak||0;summary.derivedRatings=Object.values(C.selectors.derivedRatings(s)).join('/');summary.garageDay=s.base.acquiredDay||0;summary.evicted=s.people.household.evicted?1:0;summary.discoveries=s.world.locations.discoveries.length;summary.attributeGains=Object.values(s.player.attributes).reduce((n,v)=>n+Math.max(0,v-1),0);summary.combat=s.player.attributes.combat;summary.charisma=s.player.attributes.charisma;summary.intelligence=s.player.attributes.intelligence;summary.streetReadTier=s.streetRead.tier;summary.streetReadScore=s.streetRead.score;summary.streetReadEntries=s.streetRead.totalLifetimeEntries;summary.employerStanding=s.world.locations.employer.standing;summary.gamblingNet=s.world.locations.gambling.net;summary.arrests=s.record?.arrests||0;summary.crewJailed=Object.values(s.people.crew).filter(c=>c.status==='arrested').length;Object.assign(summary,storyMetrics(s,beats));Object.assign(summary,exposureMetrics(s));if(p.market){marketSamples.push({day:s.run.day,tier:C.selectors.marketTier(s),profit:s.nineZeroSevenList.profit});Object.assign(summary,marketMetrics(s,marketSamples))}return summary}
+  }s=settle(s,p,beats);const summary=C.selectRunSummary(s);summary.completed=s.run.status==='ended';summary.finalState={day:s.run.day,slot:s.run.slot,energy:s.player.energy,phase:s.run.phase,pending:s.run.pendingEncounter?.id||s.run.pendingEvent?.id||null,dayEnd:s.run.dayEndPending,overtime:s.run.overtimeArmed,baseVisiting:s.base.visiting};summary.decisions=s.stats.decisions;summary.encounters=s.run.encounterCount;summary.baseValue=C.selectors.baseValue(s);summary.crew=C.selectors.recruitedCrew(s).length;summary.dealer={...(s.people.dealers?.goodie||{})};summary.meaningfulActions=s.player.behavior.meaningfulActions;summary.gymStreak=s.player.gymStreak||0;summary.derivedRatings=Object.values(C.selectors.derivedRatings(s)).join('/');summary.garageDay=s.base.acquiredDay||0;summary.evicted=s.people.household.evicted?1:0;summary.discoveries=s.world.locations.discoveries.length;summary.attributeGains=Object.values(s.player.attributes).reduce((n,v)=>n+Math.max(0,v-1),0);summary.combat=s.player.attributes.combat;summary.charisma=s.player.attributes.charisma;summary.intelligence=s.player.attributes.intelligence;summary.streetReadTier=s.streetRead.tier;summary.streetReadScore=s.streetRead.score;summary.streetReadEntries=s.streetRead.totalLifetimeEntries;summary.employerStanding=s.world.locations.employer.standing;summary.gamblingNet=s.world.locations.gambling.net;summary.arrests=s.record?.arrests||0;summary.crewJailed=Object.values(s.people.crew).filter(c=>c.status==='arrested').length;Object.assign(summary,storyMetrics(s,beats));Object.assign(summary,exposureMetrics(s));Object.assign(summary,territoryMetrics(s));if(p.market){marketSamples.push({day:s.run.day,tier:C.selectors.marketTier(s),profit:s.nineZeroSevenList.profit});Object.assign(summary,marketMetrics(s,marketSamples))}return summary}
 function summarize(name,count){const runs=Array.from({length:count},(_,i)=>play(1000+i,name)),endings={};for(const r of runs)endings[r.endingLabel]=(endings[r.endingLabel]||0)+1;const avg=k=>Math.round(runs.reduce((n,r)=>n+(r[k]||0),0)/count);const robbery=k=>runs.reduce((n,r)=>n+(r.robbery?.[k]||0),0);return{strategy:name,runs:count,completed:runs.filter(r=>r.completed).length,averageCash:avg('cash'),averageNetWorth:avg('netWorth'),averageOperationScore:avg('operationScore'),averageDebt:avg('debt'),averageHighestHeat:avg('highestHeat'),averageDecisions:avg('decisions'),averageEncounters:avg('encounters'),averageBaseValue:avg('baseValue'),averageCrew:avg('crew'),robAttempts:robbery('attempts'),robSuccesses:robbery('successes'),robFailures:robbery('failures'),robPayout:robbery('totalPayout'),territoryAttempts:runs.reduce((n,r)=>n+(r.takeovers?.attempts||0),0),arrests:runs.reduce((n,r)=>n+(r.arrests||0),0),crewJailedAtEnd:runs.reduce((n,r)=>n+(r.crewJailed||0),0),deadEnds:runs.filter(r=>!r.completed).length,
   averageStoryBeats:Number((runs.reduce((n,r)=>n+r.storyBeats,0)/count).toFixed(1)),
   averageAmbientBeats:Number((runs.reduce((n,r)=>n+r.ambientBeats,0)/count).toFixed(1)),
@@ -220,6 +232,13 @@ function summarize(name,count){const runs=Array.from({length:count},(_,i)=>play(
     ['average'+id[0].toUpperCase()+id.slice(1)+'Score',Number((runs.reduce((n,r)=>n+r[id+'Score'],0)/count).toFixed(2))],
     ['average'+id[0].toUpperCase()+id.slice(1)+'Rows',Number((runs.reduce((n,r)=>n+r[id+'Rows'],0)/count).toFixed(1))],
   ])),
+  // v1.20 territory retention. blockLossRate is the acceptance number for
+  // Tone's defense modifier: claimed corners that ended the run in Curtis's
+  // hands, over corners claimed at all.
+  territory:(()=>{const claimed=runs.reduce((n,r)=>n+(r.blocksClaimed||0),0),lost=runs.reduce((n,r)=>n+(r.blocksLost||0),0);
+    return {claimed,held:runs.reduce((n,r)=>n+(r.blocksHeld||0),0),lost,
+      raids:runs.reduce((n,r)=>n+(r.blockRaids||0),0),income:runs.reduce((n,r)=>n+(r.blockIncome||0),0),
+      lossRate:claimed?Number((lost/claimed).toFixed(3)):0};})(),
   dealerRobberies:runs.reduce((n,r)=>n+(r.dealer?.robbedCount||0),0),
   dealerGone:runs.filter(r=>r.dealer?.gone).length,
   averageDealerStanding:Number((runs.reduce((n,r)=>n+(r.dealer?.standing||0),0)/count).toFixed(1)),

@@ -147,7 +147,7 @@ function Header({ state, onMenu }) {
   // them as five segments; the exact number stays the accessible name.
   const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil((value / ceiling) * 5))), total: 5 });
   return <header className="top">
-    <h1 className="sr-only">907Hustle: One Good Run · v1.28</h1>
+    <h1 className="sr-only">907Hustle: One Good Run · v1.29</h1>
     <div className="hud primary-hud">
       <Hud label="Day / Time" bare value={<><b className="hud-day">Day {state.run.day}{state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""}</b><span className="hud-slot">{C.SLOTS[state.run.slot]}</span><SlotPips slot={state.run.slot} /></>} />
       <Hud label="District" bare accent="muted" value={<><span className="hud-diamond" aria-hidden="true">◆</span>{area.name}</>} />
@@ -326,7 +326,7 @@ function Home({ state, dispatch, navigate }) {
       </div>
       <div className="home-identity">
         <span className="identity-badge" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5.6 15.2h12.8l-1.1-6-3 2.5L12 7l-2.3 4.7-3-2.5-1.1 6z" fill="currentColor" /><rect x="6" y="16.4" width="12" height="1.6" rx=".8" fill="currentColor" /></svg></span>
-        <span className="identity-pill"><span className="k">Identity</span><b>{view.identity.label}</b></span>
+        <span className="identity-pill"><span className="k">Rank</span><b>{view.identity.label}</b></span>
       </div>
     </div>
     {summary.rest && <p className="home-summary">{summary.rest}</p>}
@@ -371,7 +371,7 @@ function Home({ state, dispatch, navigate }) {
     </div>
     {atHome && <>
       <MenuRow title={state.phone.active ? "Phone" : "No Service"} status={state.phone.active ? `${state.phone.inbox.length} texts` : "Restoration directions"} description={state.phone.active ? "Texts, contacts, bills, and word around town." : "Open the phone to see how to restore service."} onClick={() => navigate("phone")} />
-      {state.inventory.laptop && C.selectors.nineZeroSevenListAccess(state, "home").visible && <MenuRow title="907List Laptop" status={`${C.selectors.marketTierConfig(state).listings} today`} description="Open the day's listings with condition and seller history." onClick={() => navigate("more", "907list", "home")} />}
+      {state.inventory.laptop && C.selectors.nineZeroSevenListAccess(state, "home").visible && <MenuRow title="907List Laptop" status={`${C.selectors.marketTierConfig(state).listings} today`} description="Open the day's listings with condition and seller history." onClick={() => navigate("hustle", "root", "home", "907list")} />}
     </>}
   </div>;
 }
@@ -1045,13 +1045,14 @@ function SharkPanel({ state, dispatch }) {
 // player's own job is one tap from the rail instead of five screens down. The
 // Jobs row is the only section that renders before `hustle.visible` — legal work
 // exists on Day 1, and the illegal half keeps its own locked card below it.
-function HustleScreen({ state, dispatch, page, setPage, onTrade }) {
+function HustleScreen({ state, dispatch, page, setPage, onTrade, sub }) {
   if (page === "market") return <Market state={state} onTrade={onTrade} />;
   if (page === "boost") return <Boost state={state} dispatch={dispatch} />;
   if (page === "stickup") return <Rob state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   if (page === "shark") return <><PageHead title="Shark" sub="Borrower profiles, qualitative risk, and open notes" onBack={() => setPage("root")} /><SharkPanel state={state} dispatch={dispatch} /></>;
   if (page.startsWith("job:")) { const job = C.SPENARD_JOBS.find((item) => item.id === page.split(":")[1]); return <JobDetail state={state} dispatch={dispatch} job={job} onBack={() => setPage("jobs")} />; }
   const jobs = C.selectors.discoveredJobs(state);
+  if (page === "907list") return <NineOhSevenList state={state} dispatch={dispatch} surface={sub === "home" ? "home" : "phone"} onBack={() => setPage("root")} />;
   if (page === "jobs") return <><PageHead title="Jobs" sub="Found work still requires an application and callback" onBack={() => setPage("root")} /><div className="scroll">{jobs.map((job) => { const record = state.jobs.records[job.id]; const pay = C.selectors.jobPayRange(state, job.id); const availability = C.selectors.jobAvailability(state, job.id); const slots = job.id === "night_owl" && record.rank >= 1 ? [2, 3] : job.slots; return <MenuRow key={job.id} title={job.name} status={`${money(pay.min)}–${money(pay.max)}`} description={`${slots.map((slot) => C.SLOTS[slot]).join(" / ")} · Risk: ${job.risk} · Rank ${record.rank} · ${availability.available ? "Available" : availability.reason}`} tone={availability.available ? "" : "muted"} onClick={() => setPage(`job:${job.id}`)} />; })}</div></>;
   // The active employer reads from the hub itself. Whether tonight's shift is
   // still open is the one thing worth knowing without opening the list.
@@ -1059,6 +1060,13 @@ function HustleScreen({ state, dispatch, page, setPage, onTrade }) {
   const activeShift = activeJob ? C.selectors.jobAvailability(state, activeJob.id) : null;
   return <><PageHead title="Hustle" sub="All your money, one place" /><div className="scroll">
     <MenuRow title="Jobs" status={activeJob ? `Rank ${state.jobs.records[activeJob.id].rank}` : `${jobs.length} found`} description={activeJob ? `${activeJob.name} · ${activeShift.available ? "Shift available" : activeShift.reason}` : "Applications, callbacks, and available shifts."} onClick={() => setPage("jobs")} />
+    {/* v1.29: 907List follows Jobs onto Hustle for the reason Jobs came here in
+        v1.26 — it is an income surface, and Hustle is where the money lives. It
+        sits outside the `hustle.visible` gate because resale is not dirty work
+        and `knows907List` is already its own gate. The More entry and the Phone
+        entry are gone; the Home laptop keeps its row, because opening listings
+        on the laptop you own is where that belongs in the world. */}
+    {state.knowledge.knows907List && <MenuRow title="907List" status={`${state.nineZeroSevenList.inventory.length}/${C.selectors.marketCapacity(state)} held`} description={`${C.selectors.marketOverview(state).name} tier. Buy low, read the listing, find the next buyer.`} disabled={!C.selectors.nineZeroSevenListAccess(state, "phone").available && !C.selectors.nineZeroSevenListAccess(state, "home").available} onClick={() => setPage("907list")} />}
     {!state.hustle.visible && <div className="card locked"><div className="card-title">No hustle yet<small>LOCKED</small></div><p>Complete the first dirty-income action. A discovered street market remains available through Street.</p></div>}
     {state.hustle.visible && <>
     {state.market.visible && <MenuRow title="Market" status={`${state.hustle.soldUnits} units sold`} description="Buy, sell, and finish a market session." onClick={() => setPage("market")} />}
@@ -1468,7 +1476,35 @@ function Character({ state, onBack }) {
   </div></>;
 }
 
-function PhoneScreen({ state, dispatch, onBack, openList, navigateMore }) {
+// v1.29: a text you can answer or throw away.
+//
+// Every message used to render as an inert card. Notifications stacked up with
+// no way to clear them, the nav badge counted messages the player had already
+// read, and an offer from an employer reported itself without letting you take
+// it - the playtest called that dead taps everywhere.
+//
+// A message carrying `action` gets buttons wired to reducer cases that already
+// exist (ACCEPT_JOB, DECLINE_JOB). Those are gated on the offer still being
+// live, so a card left over from an offer answered elsewhere degrades to
+// dismiss-only rather than presenting a button that does nothing. Everything
+// else is informational and only needs to be clearable.
+function PhoneMessage({ state, dispatch, message }) {
+  const offer = message.action && message.action.kind === "job_offer" ? message.action : null;
+  const live = offer && state.jobs.offers.includes(offer.jobId);
+  const dismiss = () => dispatch({ type: "DISMISS_PHONE_MESSAGE", id: message.id });
+  return <div className="card compact message">
+    <div className="card-title">{message.from}<small>DAY {message.day} · {C.SLOTS[message.slot]}</small>
+      <button className="message-dismiss" aria-label={`Dismiss message from ${message.from}`} onClick={dismiss}>×</button>
+    </div>
+    <p className="compact">{message.text}</p>
+    {live && <div className="btn-row message-actions">
+      <button className="btn primary" onClick={() => dispatch({ type: "ACCEPT_JOB", jobId: offer.jobId })}>Accept the job</button>
+      <button className="btn secondary" onClick={() => dispatch({ type: "DECLINE_JOB", jobId: offer.jobId })}>Turn it down</button>
+    </div>}
+  </div>;
+}
+
+function PhoneScreen({ state, dispatch, onBack, navigateMore }) {
   // v1.9c — accordion hub. v1.14 — powered by the shared AccordionSection, so
   // expanded/collapsed is that component's own React-only state and the phone
   // still opens with Texts alone expanded.
@@ -1483,7 +1519,10 @@ function PhoneScreen({ state, dispatch, onBack, openList, navigateMore }) {
     {offline && <div className="card locked"><div className="card-title">Signal unavailable<small>{state.phone.daysPastDue} days past due</small></div><p>Pay {money(C.PHONE_BILL)} at Night Owl to start restoration. Online payment requires active service and a laptop.</p><button className="btn full primary" disabled={state.player.cash < C.PHONE_BILL} onClick={() => dispatch({ type: "PAY_PHONE_BILL", surface: "store" })}>Pay at Night Owl · {money(C.PHONE_BILL)}<span className="action-copy">Free · service restores after the next action</span></button></div>}
     <AccordionSection title="Texts" meta={offline ? `${state.phone.heldInbox.length} held` : `${state.phone.inbox.length} text${state.phone.inbox.length === 1 ? "" : "s"}`} defaultExpanded>
       {offline ? <div className="card compact muted">{state.phone.heldInbox.length} message{state.phone.heldInbox.length === 1 ? " is" : "s are"} waiting for service.</div>
-        : state.phone.inbox.length ? state.phone.inbox.map((message) => <div className="card compact" key={message.id}><div className="card-title">{message.from}<small>DAY {message.day} · {C.SLOTS[message.slot]}</small></div><p className="compact">{message.text}</p></div>) : <div className="card compact muted">No messages yet.</div>}
+        : state.phone.inbox.length ? <>
+          {state.phone.inbox.length > 1 && <button className="btn secondary full clear-all" onClick={() => dispatch({ type: "CLEAR_PHONE_INBOX" })}>Clear all {state.phone.inbox.length}</button>}
+          {state.phone.inbox.map((message) => <PhoneMessage key={message.id} state={state} dispatch={dispatch} message={message} />)}
+        </> : <div className="card compact muted">No messages yet.</div>}
     </AccordionSection>
     <AccordionSection title="Contacts" meta={`${knownContacts} known`}>
       <SocialContacts state={state} dispatch={dispatch} navigateMore={navigateMore} surface="phone" />
@@ -1503,7 +1542,6 @@ function PhoneScreen({ state, dispatch, onBack, openList, navigateMore }) {
       {offline ? <div className="card compact muted">Word comes back when service does.</div>
         : intel.length ? intel.map((line, index) => <div className="card compact" key={index}>{line}</div>) : <div className="card compact muted">Nothing on the wire yet.</div>}
     </AccordionSection>
-    {state.knowledge.knows907List && <MenuRow title="907List" status={state.phone.active ? `${C.selectors.marketTierConfig(state).listings} listings` : "No service"} description="Local resale listings." disabled={!state.phone.active} onClick={openList} />}
   </div></>;
 }
 
@@ -1573,8 +1611,7 @@ function More({ state, dispatch, features, page, setPage, sub, subToken }) {
   if (page === "safehouse") return <Safehouse state={state} dispatch={dispatch} onBack={() => setPage("finances")} />;
   if (page === "recovery") return <Recovery state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   if (page === "character") return <Character state={state} onBack={() => setPage("root")} />;
-  if (page === "phone") return <PhoneScreen state={state} dispatch={dispatch} onBack={() => setPage("root")} openList={() => setPage("907list")} />;
-  if (page === "907list") return <NineOhSevenList state={state} dispatch={dispatch} surface={sub === "home" ? "home" : "phone"} onBack={() => setPage("root")} />;
+  if (page === "phone") return <PhoneScreen state={state} dispatch={dispatch} onBack={() => setPage("root")} />;
   if (page === "help") return <Help marketVisible={state.market.visible} onBack={() => setPage("root")} />;
   if (page === "crew") return <People key={`crew:${subToken}`} state={state} dispatch={dispatch} initialPage="crew" onExit={() => setPage("root")} />;
   const identity = C.selectors.streetIdentity(state);
@@ -1584,11 +1621,10 @@ function More({ state, dispatch, features, page, setPage, sub, subToken }) {
   const financeSummary = !hasDreDebt ? `${money(state.player.cleanCash)} clean` : !state.lender.balance ? "Debt clear" : daysLeft <= 0 ? "Debt due" : `Debt Day ${state.lender.dueDay}`;
   return <><PageHead title="More" sub="Character, progress, finances, and help stay available; property unlocks operations" /><div className="scroll">
     <MenuRow title="Finances" status={financeSummary} description={hasDreDebt ? "Cash, debt, Shark notes, and financial risk." : "Cash and financial risk."} onClick={() => setPage("finances")} />
-    {state.knowledge.knows907List && <MenuRow title="907List" status={`${state.nineZeroSevenList.inventory.length}/${C.selectors.marketCapacity(state)} held`} description={`${C.selectors.marketOverview(state).name} tier. Buy low, read the listing, find the next buyer.`} disabled={!C.selectors.nineZeroSevenListAccess(state, "phone").available && !C.selectors.nineZeroSevenListAccess(state, "home").available} onClick={() => setPage("907list")} />}
     <MenuRow title="Operations" status={opsSummary} description={features.operations.available ? "Safehouse, territory, soldiers, gear, and Rob." : features.operations.hint} disabled={!features.operations.available} onClick={() => setPage("operations")} />
     {features.recovery.available && <MenuRow title="Recovery" status={`Health ${state.player.health}`} description="Treat injuries or lay low to reduce Heat." onClick={() => setPage("recovery")} />}
     {C.CREW.some((person) => state.people.crew[person.id].introduced || state.people.crew[person.id].recruited) && <MenuRow title="Crew" status={`${C.selectors.recruitedCrew(state).length}/${C.selectors.crewCapacityFor(state)} active`} description="Wages, loyalty, tiers, and who answers when it gets loud." onClick={() => setPage("crew")} />}
-    <MenuRow title="Character" status={identity} description="Street Identity, what you are good at, and what the block remembers." onClick={() => setPage("character")} />
+    <MenuRow title="Character" status={identity} description="Rank, what you are good at, and what the block remembers." onClick={() => setPage("character")} />
     <MenuRow title="Help" status="Available" description="Time, trading, major actions, and the dynamic checkpoint." onClick={() => setPage("help")} />
   </div></>;
 }
@@ -1813,7 +1849,36 @@ function EndDayModal({ state, dispatch }) {
     {state.run.overtimeUsedDay !== state.run.day && <button className="btn full secondary" disabled={!canExtend} onClick={() => dispatch({ type: "ONE_MORE_THING" })}>One More Thing<span className="action-copy">{canExtend ? "Arm one final action · costs 2 reserve" : "Needs at least 2 reserve"}</span></button>}
   </Modal>;
 }
-function EndModal({ state, onTitle }) { const summary = C.selectRunSummary(state); const hasDreDebt = state.lender.status === "active" || state.lender.status === "cleared"; return <Modal title={summary.endingLabel}><p className="popup-lead">{summary.streetName} reached the Day {state.run.checkpointDay || state.run.day} checkpoint as {summary.streetIdentityLabel}. This is the operation that survived, and the damage that came with it.</p><div className="outcome-grid"><Outcome label="Operation Score" value={summary.operationScore} /><Outcome label="Net worth" value={money(summary.netWorth)} /><Outcome label="Territories" value={`${summary.territories.filter((item) => item.owner === "player").length}/3`} /><Outcome label="Takeovers" value={`${summary.takeovers.wins}W / ${summary.takeovers.losses}L`} />{hasDreDebt && <Outcome label="Debt" value={money(summary.debt)} />}<Outcome label="Crew" value={summary.crew.length} /></div><div className="recap">{hasDreDebt ? `Dre: ${summary.lenderRelationship}. ` : ""}Curtis: {summary.rivalRelationship}. {summary.majorDecisions.slice(-3).join(" ")}</div><button className="btn full primary" onClick={onTitle}>Return to title</button></Modal>; }
+// v1.29: an ending, not a crash.
+//
+// This screen opened with the same checkpoint sentence for every outcome, so a
+// player evicted on Day 9 was told they "reached the checkpoint" and never
+// learned which obligation ended it. The lead now names the cause when there
+// was one, and the checkpoint framing is kept for the runs that actually
+// reached a checkpoint. Days survived and net gain sit first, because they are
+// the two numbers that answer "how did I do" without reading a score.
+function EndModal({ state, onTitle }) {
+  const summary = C.selectRunSummary(state);
+  const hasDreDebt = state.lender.status === "active" || state.lender.status === "cleared";
+  const cause = summary.endCause;
+  return <Modal title={cause ? cause.title : summary.endingLabel}>
+    {cause
+      ? <p className="popup-lead bad">{cause.line}</p>
+      : <p className="popup-lead">{summary.streetName} reached the Day {state.run.checkpointDay || state.run.day} checkpoint as {summary.streetIdentityLabel}. This is the operation that survived, and the damage that came with it.</p>}
+    <div className="outcome-grid">
+      <Outcome label="Days survived" value={summary.daysSurvived} />
+      <Outcome label="Net gain" value={signedMoney(summary.netGain)} tone={summary.netGain >= 0 ? "good" : "bad"} />
+      <Outcome label="Net worth" value={money(summary.netWorth)} />
+      <Outcome label="Operation Score" value={summary.operationScore} />
+      <Outcome label="Territory" value={`${summary.territories.filter((item) => item.owner === "player").length}/3`} />
+      <Outcome label="Crew" value={summary.crew.length} />
+      {hasDreDebt && <Outcome label="Debt left" value={money(summary.debt)} />}
+      <Outcome label="Rank" value={summary.streetIdentityLabel} />
+    </div>
+    <div className="recap">{hasDreDebt ? `Dre: ${summary.lenderRelationship}. ` : ""}Curtis: {summary.rivalRelationship}. {summary.majorDecisions.slice(-3).join(" ")}</div>
+    <button className="btn full primary" onClick={onTitle}>Return to title</button>
+  </Modal>;
+}
 // Two actions plus a close control. Save-slot internals sit behind "More".
 function MenuModal({ state, dispatch, onClose, onTitle }) {
   const [confirmRestart, setConfirmRestart] = useState(false);
@@ -1821,24 +1886,33 @@ function MenuModal({ state, dispatch, onClose, onTitle }) {
   return <><Modal title="Run menu" onClose={onClose}>
     <ExpandableMoreSection
       collapsedContent={<p className="popup-lead">Autosave is on. This run saves to your browser after every action.</p>}
-      expandedContent={<p className="popup-flavor">907Hustle v1.28 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
+      expandedContent={<p className="popup-flavor">907Hustle v1.29 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
       moreLabel="Save detail" lessLabel="Hide detail" />
     <button className="btn full primary" onClick={onTitle}>Return to Title</button>
     <button className="btn full secondary choice" onClick={() => setConfirmRestart(true)}>Restart Run<span>Creates a new seed and returns to Street Name entry.</span></button>
   </Modal>{confirmRestart && <ConfirmPrompt title="Restart this run?" text="The current autosave will be replaced after you confirm." confirmLabel="Restart Run" onConfirm={restart} onCancel={() => setConfirmRestart(false)} />}</>;
 }
-// One line by default. The full log is still one tap away, but it no longer
-// costs 88px of vertical space on every screen in the game.
+// v1.29: three lines by default, wrapped, never clipped.
+//
+// v1.26 cut this to a single ellipsised line to stop spending 88px of every
+// screen on history the player had already read. The Aug 17 playtest measured
+// the cost of that trade and it came out the other way: the log was too small
+// to want to read, and the one line it did show got cut off mid-sentence
+// because `text-overflow: ellipsis` was doing exactly what it was asked to.
+//
+// Feed lines are narrative content, not a status bar. Three of them are legible
+// at 375px without scrolling, they wrap instead of truncating, and the full
+// history is still one tap away.
+const FEED_COLLAPSED_LINES = 3;
 function Feed({ entries }) {
   const [open, setOpen] = useState(false);
-  const latest = entries[0];
-  if (!latest) return null;
+  if (!entries.length) return null;
+  const shown = open ? entries.slice(0, 24) : entries.slice(0, FEED_COLLAPSED_LINES);
   return <div className="feed" aria-label="Street feed">
-    <button className="feed-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
-      <span className={`feed-line ${latest.tone || ""}`}><time>{latest.stamp}</time>{latest.text}</span>
-      <span className="feed-more" aria-hidden="true">{open ? "Hide" : "Log"}</span>
-    </button>
-    {open && <div className="feed-list">{entries.slice(1, 8).map((entry, index) => <div key={index} className={`feed-line ${entry.tone || ""}`}><time>{entry.stamp}</time>{entry.text}</div>)}</div>}
+    <div className="feed-lines">{shown.map((entry, index) => <div key={index} className={`feed-line ${entry.tone || ""}`}><time>{entry.stamp}</time>{entry.text}</div>)}</div>
+    {entries.length > FEED_COLLAPSED_LINES && <button className="feed-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <span className="feed-more">{open ? "Hide log" : `Full log · ${entries.length}`}</span>
+    </button>}
   </div>;
 }
 
@@ -1969,7 +2043,10 @@ function GameShell({ state, dispatch, onTitle }) {
     if (marketOpen && !nextIsMarket && state.run.currentVisit.trades > 0) act({ type: "END_MARKET" });
   }
   const setStreetPageSafe = (page) => { if (tab === "street") closeMarketIfTraded(page === "market"); setStreetPage(page); };
-  const setHustlePageSafe = (page) => { if (tab === "hustle") closeMarketIfTraded(page === "market"); setHustlePage(page); };
+  // Clearing `sub` matters for 907List (v1.29): the Home laptop deep-links with
+  // sub "home" to get the laptop surface, and without this the flag would
+  // survive a walk back to the Hustle root and hand the phone the wrong one.
+  const setHustlePageSafe = (page) => { if (tab === "hustle") closeMarketIfTraded(page === "market"); setHustlePage(page); setNav((prev) => (prev.sub === null ? prev : { ...prev, sub: null })); };
 
   // Every dispatch is routed through `act` so the shell can diff the committed
   // state before and after. The reducer is untouched — this is a pure read,
@@ -1999,8 +2076,8 @@ function GameShell({ state, dispatch, onTitle }) {
   const screens = {
     home: <Home state={state} dispatch={act} navigate={navigate} />,
     street: <StreetScreen state={state} dispatch={act} page={streetPage} setPage={setStreetPageSafe} onTrade={setTrade} navigate={navigate} />,
-    hustle: <HustleScreen state={state} dispatch={act} page={hustlePage} setPage={setHustlePageSafe} onTrade={setTrade} />,
-    phone: <PhoneScreen state={state} dispatch={act} openList={() => navigate("more", "907list")} navigateMore={navigateMore} />,
+    hustle: <HustleScreen state={state} dispatch={act} page={hustlePage} setPage={setHustlePageSafe} onTrade={setTrade} sub={nav.sub} />,
+    phone: <PhoneScreen state={state} dispatch={act} navigateMore={navigateMore} />,
     more: <More state={state} dispatch={act} features={features} page={nav.more} setPage={setMorePage} sub={nav.sub} subToken={nav.token} />,
   };
   return <div className={`app${tonkStage ? " tonk-fullscreen" : ""}`}>
@@ -2030,7 +2107,12 @@ function GameShell({ state, dispatch, onTitle }) {
     {state.run.status === "ended" && <EndModal state={state} onTitle={onTitle} />}
     {result && !state.run.dayEndPending && !state.run.pendingEvent && !state.run.pendingEncounter && <ActionResultOverlay result={result} onDismiss={() => setResult(null)} />}
     {state.run.pendingUnlocks[0] && !result && !state.run.openingPending && !state.run.pendingEvent && !state.run.pendingEncounter && !state.run.pendingOperationResult && !state.run.dayEndPending && state.run.status === "playing" && <TabUnlockedOverlay unlock={state.run.pendingUnlocks[0]} onDismiss={() => dispatch({ type: "DISMISS_TAB_UNLOCK" })} />}
-    <ConsequencePopup items={state.run.consequenceQueue || []} onDismiss={(id) => dispatch({ type: "DISMISS_CONSEQUENCE", id })} />
+    {/* v1.29: gated on a live run, the way every other overlay above already
+        is. The queue is still written on the way out - the ending pushes its
+        own titled card and tests read it there - but EndModal is the surface
+        that delivers it, and stacking both put the consequence card on top of
+        the final stats it was repeating. */}
+    {state.run.status === "playing" && <ConsequencePopup items={state.run.consequenceQueue || []} onDismiss={(id) => dispatch({ type: "DISMISS_CONSEQUENCE", id })} />}
   </div>;
 }
 

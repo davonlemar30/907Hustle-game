@@ -1,10 +1,10 @@
 # 907Hustle: One Good Run — Project Status
 
-Last updated: 2026-08-17 (America/Anchorage)
+Last updated: 2026-08-18 (America/Anchorage)
 
-**v1.28 is built on `claude/curtis-balance-pass-s3bacr`, on top of the v1.27
-merge (PR #89, `483627c`).** Verified on the branch: `npm test`
-**868 passing**, `npm run build` clean, `npm run check-docs` clean, 2,000-run
+**v1.29 is built on `claude/playtest-qol-pass-qutbfs`, on top of the v1.28 merge
+(PR #90, `54f1034`).** Verified on the branch: `npm test` **889 passing**
+(868 + 21 new), `npm run build` clean, `npm run check-docs` clean, 2,000-run
 simulation with zero dead ends across **fourteen** strategies. **Both hashes are
 unchanged** — `--total 200`
 `25afb74e10487dee6fc62641d944d3cea093873f28c740ba43e10bb0828d6dc1`,
@@ -12,16 +12,29 @@ unchanged** — `--total 200`
 `f10432b1f61624cbc8df35e299a2d36ca369e1e822ca0d6578a337562e524665`. Save schema
 stays **v11**.
 
-**The unchanged hashes were not the expected result and are worth reading
-carefully.** v1.28 rewrote how the nightly Curtis pass resolves, and the build
-spec assumed both hashes would move. They did not, because the `territory`
-strategy claims **zero blocks in 200 runs** — no strategy in the simulator ever
-owns a corner, so `curtisMoveChance` is never called on a player-owned block and
-nothing this build changed is reachable from that harness. The upside is that the
-thirteen original strategies are provably behavior-identical by the hash itself,
-with no per-strategy diff needed. The downside is the standing one: **the
-simulator does not cover the block layer, and an unchanged hash must never be
-read as though it does.**
+**Six of the seven tasks in this build are display work, and the seventh is
+unreachable from the simulator. Read the unchanged hashes accordingly.** Tasks
+1, 2, 3 and 6 touch `ui.jsx` and `v05.css` only, and the harness reads
+`game-core.js` and never `ui.jsx`, so those could not have moved a hash. Task 7
+is copy inside an existing effect block. Task 4 adds a field and a card at an
+already-existing terminal and draws no RNG.
+
+Task 5 — the missed-shift ladder — was the one expected to move the hash, and it
+did not. **This was measured, not assumed.** `tests/simulate-runs.js` dispatches
+`WORK_JOB` but never `APPLY_JOB` or `ACCEPT_JOB`, and `jobAvailability` requires
+`activeJobId === jobId` for every non-day-labor employer, so **no strategy in the
+simulator has ever held a job.** The only work any of the fourteen can do is
+`day_labor`, which the ladder exempts by design. The attendance system is
+therefore invisible to the harness in exactly the way v1.28's Curtis changes
+were: **an unchanged hash here is a statement about coverage, not about
+behaviour, and must never be read as though the ladder is verified.** What
+verifies it is `tests/v1-29.test.js`, which walks the rungs through real
+`CONFIRM_END_DAY` passes.
+
+**The standing gap this makes concrete:** the simulator covers neither the block
+layer (v1.28) nor employment (v1.29). Two of the last two builds have shipped
+systems the harness cannot see. That is now the most valuable thing to fix in the
+instrument, ahead of any further balance work measured against it.
 
 ## Standing design correction — the run has no fixed length
 
@@ -39,6 +52,79 @@ simulator's ten days do not fund the ladder*, not as a claim about the game.
 Territory is deliberately mid-to-late-game content funded by early economy
 systems (weed, booze, robbery tiers) that are still being fleshed out. The full
 statement is in ARCHITECTURE.md under "The run has no fixed length."
+
+## v1.29 Playtest QoL Pass — built (branch `claude/playtest-qol-pass-qutbfs`)
+
+Seven items off the Aug 17 playtest (ClickUp `2kyd583p-21294`, filed alongside
+the Drug Lord 2 comparison notes). No new systems. Everything here makes systems
+that already existed readable, honest, and less frustrating.
+
+- **The feed shows three wrapped lines, and this reverses a v1.26 decision on
+  purpose.** v1.26 cut the log to one ellipsised line to stop spending 88px of
+  every screen on history the player had already read. The playtest measured the
+  cost of that trade: the log was too small to want to read, and the one line it
+  did show was cut off mid-sentence, because `text-overflow: ellipsis` was doing
+  exactly what it had been asked to. Feed lines are narrative content, not a
+  status bar. Verified in Chromium at 320/375/414/768/1440: three lines rendered,
+  all three wrapping at 375px, zero clipped, zero ellipsis, no internal scroll,
+  44px expand control, no horizontal overflow, zero console errors.
+
+- **Phone texts can be dismissed and answered.** The inbox stacked up with no way
+  to empty it and the badge counted messages already read, which is what the
+  playtest meant by dead taps everywhere. `pushPhoneMessage` grew an optional
+  `action` descriptor; the only kind today is `job_offer`, which renders Accept
+  and Turn-it-down wired to the `ACCEPT_JOB` / `DECLINE_JOB` cases that already
+  existed. **No new job flow was written.** The buttons are gated on the offer
+  still being live so a stale card degrades to dismiss-only, and answering an
+  offer anywhere retires the text that carried it. Verified in-browser: badge
+  3 → 2 on dismiss, and accepting from the phone sets `activeJobId` without
+  leaving the screen.
+
+- **907List followed Jobs onto Hustle**, the v1.26 pattern. It was not in Spenard
+  navigation, which the build spec assumed; it was in three places — the More
+  root, the Phone, and the Home laptop. The More and Phone rows are gone. The
+  **laptop row stays and now deep-links into Hustle**, because opening listings
+  on the laptop you own is where that belongs in the world. Access selectors are
+  untouched, so no pricing, capacity, or district rule moved.
+
+- **A lost run says what lost it.** The end screen opened with the same
+  checkpoint sentence for every outcome, so a player evicted on Day 9 was told
+  they "reached the checkpoint" and never learned which obligation ended it.
+  `endRun` now records `run.endCause` and pushes it as a titled `bad` consequence
+  card; eviction passes the specific line `householdWarning` was already writing.
+  Final stats gained **Days survived** and **Net gain**, the latter derived from
+  the long-standing `stats.startingNetWorth` rather than a new tracked field.
+  `ConsequencePopup` is now gated on a live run, because it was stacking on top
+  of the end screen it was repeating.
+
+- **Missed shifts have consequences, and the build spec's premise here was
+  wrong.** The spec said "the shift system knows when you're supposed to work."
+  It does not. `job.scheduled` is a once-per-day flag and `lastScheduledShiftDay`
+  records the day worked; **there is no employer roster in state.** Rather than
+  invent one inside a QoL pass, the ladder counts **consecutive** days that ended
+  without a shift, and any worked shift resets it to zero. Rung 1 feed line,
+  rung 2 text from the employer, rung 3 fired with `job_lost` on both channels.
+  Day labor is exempt at every rung; the Night Owl is de-scheduled rather than
+  fired, the same exemption the Heat ladder gives it; grace applies on the hire
+  day. No RNG. **A player who works every other day is never fired — the system
+  punishes ghosting, not an irregular schedule.**
+
+- **Identity is Rank everywhere the player can see it.** Display-only: every
+  internal key, selector, and CSS class name is unchanged.
+
+- **The regular-customer-price card states its trade.** The old previews named a
+  mood ("Build standing and keep the corner dependable") rather than a
+  consequence. Both options now say what you get and what it costs, in 17 and 14
+  words.
+
+**One playtest item filed High is deliberately not here:** *"Let the player pay
+crew wages before owning the garage"* (`86bbfz17r`). It is a real bug and it was
+not in this build's task list, so it stays for the next pass.
+
+**One pre-existing issue surfaced by the viewport sweep and left alone:**
+`.entity-chip` renders at 23px tall. It is an inline text link inside a sentence
+rather than a layout control, it is unchanged from `main`, and nothing in this
+build touches it.
 
 ## v1.28 Curtis Pressure Balance Pass (Phase 2.2) — built (branch `claude/curtis-balance-pass-s3bacr`)
 

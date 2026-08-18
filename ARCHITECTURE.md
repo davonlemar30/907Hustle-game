@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.28**. This file
+How 907Hustle: One Good Run is put together, current as of **v1.29**. This file
 is meant to be the only thing you need to read before changing code; for *why*
 the game is designed the way it is, see the ClickUp docs at the bottom.
 
@@ -1246,8 +1246,16 @@ building it is still new gameplay.
 
 **Canonical names, everywhere outside `migrateSave`:** Curtis (never Rook),
 Goodie (never Kip Sallis), Mina (never Mara, Miri, or Samira), Pherris (never
-Miri), Deshawn, Tone. **Heat is 0-15**, never 0-100 — any doc or comment quoting
-a heat threshold above 15 is describing a scale this game does not have.
+Miri, she/her), Deshawn, Tone, Yalonda (never "wife"). **Heat is 0-15**, never
+0-100 — any doc or comment quoting a heat threshold above 15 is describing a
+scale this game does not have. The building is an **apartment**, and the tab is
+**HUSTLE**, never Crime or Illegal.
+
+**The player-facing word is "Rank", never "Identity" or "Street Identity"**
+(v1.29). This is a display rule only: `streetIdentity`, `streetIdentityView`,
+`describeStreetIdentity`, `historicalIdentity` and every internal key keep their
+names, and so do the `.identity-pill` / `.identity-badge` CSS classes. Class
+names and state keys are not player-facing; strings in `ui.jsx` are.
 
 Some CSS classes are **built by interpolation** and a plain grep for the literal
 name will not find them. Before deleting a rule, check for
@@ -1265,12 +1273,23 @@ Jobs moved onto the tab, because legal work exists on Day 1 and a hidden tab
 would have made the player's own job unreachable. `hustle.visible` still gates
 the illegal sections *inside* `HustleScreen` — it no longer gates the rail.
 
-**Hustle is the one income surface**, legal work first: Jobs → Market → Boost →
-Stickup → Shark. Jobs is the only row that renders before `hustle.visible`, and
-the row itself carries the active employer, rank, and whether tonight's shift is
-still open, so employment is readable without opening the list. Job discovery is
-unchanged and still happens through `WANDER_SPENARD` out on the Street — finding
-work is a thing you do in the neighborhood; managing it is a thing you do here.
+**Hustle is the one income surface**, legal work first: Jobs → 907List → Market
+→ Boost → Stickup → Shark. Jobs is the row that renders before `hustle.visible`,
+and the row itself carries the active employer, rank, and whether tonight's shift
+is still open, so employment is readable without opening the list. Job discovery
+is unchanged and still happens through `WANDER_SPENARD` out on the Street —
+finding work is a thing you do in the neighborhood; managing it is a thing you do
+here.
+
+**907List followed Jobs onto the tab in v1.29**, for the same reason: it is an
+income surface. It renders outside the `hustle.visible` gate, because resale is
+not dirty work and `knowledge.knows907List` is already its own gate. Its old
+rows under More and the Phone are gone. The **Home laptop row survives** and deep
+links to `navigate("hustle", "root", "home", "907list")`, which is the one path
+that sets `nav.sub` to `home` and therefore selects the laptop surface;
+`setHustlePageSafe` clears `sub` on any in-screen navigation so the flag cannot
+leak back onto the phone surface. `nineZeroSevenListAccess(state, surface)` is
+untouched, so the move changed no pricing, access, or capacity rule.
 
 **Bills are payable from the Phone.** The Bills accordion's rent and phone rows
 dispatch the long-standing `PAY_RENT` / `PAY_PHONE_BILL` cases, which spend
@@ -1281,6 +1300,63 @@ dispatch that would be dropped: rent cannot be pre-paid, and a dead phone must
 still be settled in person. `PAY_PHONE_BILL` takes a `surface` — `store` answers
 to the Spenard storefront's district gate, while `online` and `phone` do not,
 because those two are surfaces the player carries with them.
+
+## The feed, the phone, and what ends a run (v1.29)
+
+**The feed shows three wrapped lines.** v1.26 cut it to one ellipsised line to
+stop spending 88px of every screen on read history; the Aug 17 playtest measured
+that trade and it came out the other way, because the one line it did show was
+being cut off mid-sentence by `text-overflow: ellipsis`. Feed lines are narrative
+content, so `Feed` renders `entries.slice(0, FEED_COLLAPSED_LINES)` (three) into
+`.feed-lines`, which holds `min-height:74px` open so the panel does not resize
+under the player's thumb as the day fills in. Nothing truncates at any width. The
+expand control only renders once there is more history than the panel shows, and
+is still a 44px target. The regression test is in `tests/ui-contract.test.js` and
+it asserts the absence of the old `nowrap` + `ellipsis` pair by name.
+
+**Phone texts can be dismissed and answered.** `state.phone.inbox` items grew an
+optional `action` descriptor — `{ kind, jobId }` — set by `pushPhoneMessage`'s
+fourth argument. `DISMISS_PHONE_MESSAGE` and `CLEAR_PHONE_INBOX` filter the list;
+neither costs a slot, energy, or money, and neither answers to a district, for
+the same reason paying a bill from your own phone does not. The only `kind` today
+is `job_offer`, which renders Accept and Turn-it-down wired to the pre-existing
+`ACCEPT_JOB` / `DECLINE_JOB` cases. Those buttons are gated on the offer still
+being in `state.jobs.offers`, so a stale card degrades to dismiss-only instead of
+dead-tapping, and `retireOfferMessages` takes the text down whenever the offer is
+answered from anywhere. Messages saved before v1.29 carry no `action` and stay
+informational, which is why none of this needed a migration.
+
+**Attendance is the complement to `applyHeatEmployment`.** `applyAttendance`
+runs inside `confirmDayEnd` and is shaped like the Heat ladder on purpose: the
+employer says something before they do something, and the rung is legible.
+`state.jobs.missedShifts[jobId]` counts **consecutive** days that ended without a
+shift for the active employer, and any worked shift resets it to zero — so an
+irregular schedule is never punished, only abandonment. Rung 1 is a feed line,
+rung 2 is a text from the employer, rung 3 fires the player, resets the record
+the way `ACCEPT_JOB` does, and broadcasts `job_lost` on `household` and
+`neighborhood`. **Day labor is exempt at every rung**, the floor the run stands
+on. **The Night Owl is de-scheduled rather than fired**, the same exemption the
+Heat ladder already gives it. There is no RNG anywhere in the ladder. Grace
+applies on `record.hiredDay`.
+
+There is deliberately **no employer roster in state**. `job.scheduled` is a
+once-per-day flag and `lastScheduledShiftDay` records the day worked; neither is
+a rota. "A day ended and you did not come in" is the honest reading of a missed
+shift, and it is what the ladder counts.
+
+**A lost run names the obligation that lost it.** `endRun(state, forced, cause)`
+writes `run.endCause = { id, title, line }` and pushes it as a titled `bad`
+consequence card. `householdWarning` passes the specific line it was already
+writing for the feed, so an eviction says which obligation broke instead of the
+generic `nowhere_to_go`; the other terminals derive theirs from `END_CAUSES`.
+`selectRunSummary` exposes `endCause`, `daysSurvived`, `netGain` (derived from
+the long-standing `stats.startingNetWorth`, not a new field) and
+`reachedCheckpoint`, and `EndModal` leads with the cause, keeping the checkpoint
+sentence only for runs that reached one. `ConsequencePopup` is now gated on a
+live run so it cannot stack on top of the end screen it is repeating.
+
+`run.endCause` is `run`-scoped and rebuilt by `NEW_RUN`; `missedShifts` and
+`hiredDay` arrive through `mergeDefaults`. **Save schema stays v11.**
 
 ## Protected APIs
 

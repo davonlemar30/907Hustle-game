@@ -19,6 +19,36 @@ still being built out.
 
 ---
 
+## Shipped — v1.29 Playtest QoL Pass
+
+Seven friction items off the Aug 17 playtest. No new systems; everything here
+makes an existing one readable or honest.
+
+- The feed shows three wrapped lines instead of one clipped one, reversing the
+  v1.26 space-saving decision on the strength of a playtest that measured its
+  cost. Verified across 320-1440px: no clipping, no ellipsis, no overflow.
+- Phone texts are dismissible individually and in bulk, and a job offer can be
+  accepted or declined from the phone through the `ACCEPT_JOB` / `DECLINE_JOB`
+  cases that already existed. Answering an offer retires its text.
+- 907List moved onto Hustle beside Jobs, out of the More menu and the Phone. The
+  Home laptop keeps its row and deep-links into the tab.
+- A lost run names the obligation that ended it, with days survived and net gain
+  on the end screen. The consequence stack no longer covers that screen.
+- Missed shifts fire you after three **consecutive** days away, with a feed
+  warning and an employer text on the way. Working any shift resets the count.
+  Day labor exempt, Night Owl de-scheduled rather than fired, grace on hire day,
+  no RNG.
+- Identity reads as Rank everywhere a player can see it. Internals unchanged.
+- The regular-customer-price card states both trades in plain language.
+
+889 tests, both simulation hashes unchanged, zero dead ends across fourteen
+strategies, save schema v11. **The unchanged hashes are a coverage statement:**
+the simulator never holds a job, so the attendance ladder is invisible to it.
+`tests/v1-29.test.js` is what verifies that system.
+
+Deferred: crew wages before the garage (a real bug, filed High, out of this
+build's scope) and the gym pricing rebalance.
+
 ## Shipped — v1.28 Curtis Pressure Balance Pass (Phase 2.2)
 
 **Phase 2.2 closes.** Curtis stops being a first-authored guess and becomes a

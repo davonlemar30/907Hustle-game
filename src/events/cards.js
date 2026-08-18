@@ -246,9 +246,15 @@ function activeEvent(id, state) {
       { label: "Ask what he moves", effect: { meetDealer: "goodie" }, preview: "Opens Goodie as a contact. Straight to business, and he notices that too.", result: "He tells you weed and shrooms and nothing else, and he tells you the prices without being asked, which is either confidence or a test. He does not offer a name until you are already turning to go, and then he offers it to your back." },
       { label: "Mark the corner and keep walking", effect: { meetDealer: "goodie", dealerStanding: { id: "goodie", delta: -1 } }, preview: "Opens Goodie as a contact, cold. He read the look you gave the bag.", result: "You do not stop, but you slow down enough to count the bag, the two people with him, and the gap between the vents and the street. He watches you do all of it. Neither of you pretends the other was not counting something." },
     ]),
+    // v1.29: both options now say what they cost before you pick one. The old
+    // previews ("Build standing and keep the corner dependable" / "Keep access
+    // without another promise") named a mood, not a trade, and a player could
+    // not tell what either button did. What is actually on the table is a
+    // standing bump worth a real discount on Goodie's weight, against a hard
+    // one-buy-a-day cap that bites hardest on the nights you want a second.
     goodie_regular: () => event("goodie_regular", "The Regular-Customer Price", "Goodie has stopped checking the bills twice. He names the regular price and one rule: one buy a day, no exceptions when the corner is hot.", [
-      { label: "Accept the terms", effect: { dealerStanding: { id: "goodie", delta: 1 }, setFlags: { goodieRegularTerms: true } }, preview: "Build standing and keep the corner dependable.", result: "Goodie nods once. The price improves; the daily limit does not." },
-      { label: "Keep it transactional", effect: { setFlags: { goodieRegularTerms: false } }, preview: "Keep access without another promise.", result: "He counts the bag, counts the cash, and leaves trust exactly where it was." },
+      { label: "Take the regular price", effect: { dealerStanding: { id: "goodie", delta: 1 }, setFlags: { goodieRegularTerms: true } }, preview: "Cheaper weight from Goodie. One buy a day, and none at all when the corner is hot.", result: "Goodie nods once. The price improves; the daily limit does not." },
+      { label: "Pay full and stay loose", effect: { setFlags: { goodieRegularTerms: false } }, preview: "No discount and no promise. Buy as often as you want, whenever you want.", result: "He counts the bag, counts the cash, and leaves trust exactly where it was." },
     ]),
     goodie_atlanta: () => event("goodie_atlanta", "What Atlanta Taught Him", "Goodie talks about Atlanta only after the last buyer leaves: too many people mistaking fast growth for invisible growth, and a corner that disappeared in one afternoon.", [
       { label: "Listen without mining it", effect: { dealerStanding: { id: "goodie", delta: 1 }, setFlags: { goodieAtlantaHeard: true } }, preview: "Goodie reads respect in the silence.", result: "He finishes the story and gives you tomorrow's reliable rumor before you ask." },

@@ -2,6 +2,121 @@
 
 Last updated: 2026-08-18 (America/Anchorage)
 
+**v1.30 is built on `claude/v1-30-build-crew-wages-3mxnzo`, on top of the v1.29
+merge (PR #91, `88acb22`).** Verified on the branch: `npm test` **908 passing**
+(889 + 19 new), `npm run build` clean, `npm run check-docs` clean, 2,000-run
+simulation with zero dead ends across **fifteen** strategies. **Both hashes
+moved** — `--total 200`
+`fb6725fc5bb27fe0c68118d94fa66388b7706c584b451e020bf798ce458e9252`,
+`--total 2000`
+`8a70844536f937141b787fef8b919a39fc95c6b86bf33f7ab2dcb55c6d0a4f45`. Save schema stays
+**v11**.
+
+**The hashes moved for one reason and it is the fifteenth strategy.** Tasks 1
+and 2 were verified against the old hashes before Task 3 was written: with the
+wage gate removed, the casualty field stamped, and Tone's row in the table, the
+200-run hash came back **byte-identical** to `25afb74e…`. No strategy dispatches
+`PAY_CREW` or `BUY_DISCLOSURE`, and no strategy holds a corner long enough to
+lose a soldier on one. Adding `worker` then re-partitioned the run budget across
+fifteen strategies instead of fourteen, which changes every block. The fourteen
+originals were proved unchanged the v1.25 way: `summarize(name, 15)` per
+strategy, before and after, **byte-identical across all fourteen**.
+
+## v1.30 Crew Wages + Phase 3.2 Sources + Sim Employment — built (branch `claude/v1-30-build-crew-wages-3mxnzo`)
+
+Three independent items. Two of them were gates standing in the wrong place; the
+third is an instrument for a system that shipped last build unmeasured.
+
+- **Crew wages no longer require a garage, and the bug was reachable because a
+  test satisfied the gate instead of asserting it.** `PAY_CREW` required both
+  `base.controlled` and `base.visiting`. Tone, Pherris and Deshawn recruit
+  through Exposure scenes rather than through the base, so a player could hold
+  crew with no garage and no reachable way to pay them: arrears accrue, two
+  nights of grace run out, a loyalty point comes off every night after, and the
+  member walks — with the Pay button disabled throughout and the Bills row
+  reading "Pay at the garage". `tests/v1-15.test.js:174` has covered `PAY_CREW`
+  since the crew system shipped and stayed green the whole time, because its
+  fixture sets both base flags true. The new tests are written from the other
+  side: no garage anywhere in the fixture. The Bills row stays display-only per
+  v1.26's reasoning and now names People → Crew.
+
+- **Tone sells a briefing on the player's own corners, and the build prompt's
+  premise for it was false.** 3.2 asked for "which of the player's corners had
+  soldiers survive a raid last night, and which lost one," describing it as
+  information the player already has. The player had it; **the game did not**.
+  `takeRaidCasualty` nulls the lost soldier's `blockId` and stamps nothing on the
+  block, and the per-night counts are function-locals that reach the feed as text
+  and are then discarded. Only `lastRaidDay`, `raidCount`, `curtisTookBack` and
+  current headcount survive the night. Resolved with one additive field,
+  `territoryBlocks[*].lastCasualtyDay`, set in both loss paths — `undefined` on
+  an older save never equals yesterday, so the schema held at v11 with no
+  migration. `territory_status`, $40, Warm, exact.
+
+- **Two table rules bend for him, both on purpose.** He is the first crew source,
+  so the row carries `requiresCrew` — the only row field read out of state
+  rather than out of `disclosures.js`, with the check in `disclosureOffers` and
+  the reducer because the module may not read state. And he is authored `exact`
+  only: `resolvedAccuracy` upgrades the at-gate `jittered` to `exact` when no
+  jittered voice exists, so the missing branch **is** the enforcement. This was
+  not free — the first cut dropped his row entirely at his own gate, because
+  `accuracyFor` returns `jittered` there and the offers list refuses to sell what
+  it cannot speak.
+
+- **Selam is excluded in the file, in writing.** She has never been written
+  speaking about territory or criminal operations. 3.2 named her as an obvious
+  candidate without checking whether there was a voice to give her; there is not.
+  Pherris stays out (her tier already sells it), Deshawn stays out for the fourth
+  build running (off the network by design). A test asserts all three.
+
+- **The simulator can see employment for the first time.** v1.29 shipped the
+  attendance ladder verified only by unit tests, and it had never once run in a
+  simulated `CONFIRM_END_DAY`: the fourteen strategies dispatch `WORK_JOB` but
+  never `APPLY_JOB`/`ACCEPT_JOB`, and every employer that is not day labor
+  requires `activeJobId === jobId` — while day labor is exempt from the ladder at
+  every rung. `worker` applies, accepts, works every shift it is offered, and
+  pays its obligations. Over 2,000 runs: **job held in 133 of 133 worker runs,
+  10.0 shifts, $670 wages, rank 3.0, and 0 for missed shifts, firings, missed
+  rent, lapsed phone, and household warnings.**
+
+- **Two ordering decisions in that strategy were measured, not guessed.** With
+  the shift left after the 907List turn, a flip ate the slot the shift needed and
+  the strategy tripped rung 1 of its own ladder — shifts per run went from 5 to
+  10 once the shift moved ahead of everything discretionary. And with the bill
+  reserve at rent + phone, it still missed rent in 2 runs of 40 and let the phone
+  lapse in 3, because both come due on day 7 for $225 against a starting $100 and
+  a day-6 flip cleared the reserve. Rent is now paid before the phone (rent feeds
+  the eviction ladder; a lapsed phone is recoverable once hired) and the reserve
+  is the rent due, the phone, and the rent after that. 100 runs then came back
+  clean on every obligation.
+
+### What was assumed and turned out false
+
+1. **"Task 2 adds a disclosure row (data, not state)."** Per-corner casualties
+   were never recorded anywhere. One additive field was the smallest correction;
+   without it the $40 product could say "cops came through" but never "you lost a
+   man there," which was the line the spec was actually written around.
+2. **"The disclosure row shape can express Tone's gate."** It could not — every
+   existing row is `{npcId, intelType, minBand}` and every existing source is a
+   social NPC with no crew record.
+3. **"The strategy should NEVER trigger the attendance ladder."** True only after
+   the shift was given priority over the 907List turn. As first written it
+   tripped rung 1, which is exactly the kind of thing the instrument exists to
+   catch.
+
+### Deliberately not done
+
+- `PAY_CREW` still debits `player.cash` directly instead of through `spendCash`,
+  and still does not add to `crewMeta.totalWagesPaid`. Both are pre-existing,
+  both are now easier to hit, and neither is in this build's scope.
+- The Bills wages row has no Pay button. v1.26 decided crew wages are not a
+  one-tap amount and the gate removal does not change that.
+- 907List flipping is net negative for `worker` on cash at run end ($226 with it
+  against $505 without, at the same reserve). Inventory value is not cash and the
+  comparison is not like-for-like, but a supplemental income stream that lowers
+  the cash line is worth someone's attention.
+
+---
+
 **v1.29 is built on `claude/playtest-qol-pass-qutbfs`, on top of the v1.28 merge
 (PR #90, `54f1034`).** Verified on the branch: `npm test` **889 passing**
 (868 + 21 new), `npm run build` clean, `npm run check-docs` clean, 2,000-run

@@ -92,7 +92,8 @@ expected result and is a finding in its own right. 868 tests.
 
 ### Next
 
-**3.2 is the only sequenced item left before Phase 5.** The Godfather critical
+**3.2 shipped in v1.30 — see the section above; this paragraph predates it.**
+The Godfather critical
 path is now done through 3.1, and 2.2's closure removes the last open item behind
 it. Two things this build surfaced and deliberately left:
 
@@ -103,6 +104,46 @@ it. Two things this build surfaced and deliberately left:
 - **The warning's tactical ceiling is a defense-model question**, not a Curtis
   question. Whoever picks it up should start at `SOLDIERS_PER_BLOCK_CAP` and Eli's
   `operationPolicy`, not at `src/data/territory.js`.
+
+---
+
+## Shipped — v1.30 Crew Wages, Phase 3.2 Sources, Sim Employment
+
+**3.2 is shipped, and Phase 3 is closed.** Four of its six named NPCs shipped in
+3.1; Tone shipped here with a product of his own; Selam, Pherris and Deshawn are
+excluded in the file with the reasoning written down rather than left to the next
+build to re-derive. Save schema stays **v11**. 908 tests. **Both hashes moved**
+(`fb6725fc5bb27fe0c68118d94fa66388b7706c584b451e020bf798ce458e9252` /
+`8a70844536f937141b787fef8b919a39fc95c6b86bf33f7ab2dcb55c6d0a4f45`) — the
+fifteenth strategy re-partitions the run budget, and the fourteen originals were
+proved byte-identical at fixed run counts.
+
+- **The crew wage gate is gone.** `PAY_CREW` required owning *and* standing in
+  the garage, which crew recruited through Exposure scenes never needed. The trap
+  had no exit: arrears accrued, grace ran out, loyalty bled a point a night, and
+  the member walked with the Pay button disabled throughout. Filed `86bbfz17r`,
+  deferred out of v1.29, fixed here.
+- **Tone's `territory_status` needed a field the game did not have.** 3.2
+  described his product as information the player already has. The player had it;
+  the engine did not — per-corner casualties went into the feed as text and were
+  discarded. One additive `lastCasualtyDay` stamp, v11 intact.
+- **The simulator sees employment.** v1.29's attendance ladder had never run in a
+  simulated day-end. `worker` holds a job in every run, works 10 shifts, and
+  reads 0 on missed shifts, firings, missed rent, lapsed phone and warnings
+  across 2,000 runs.
+
+### Next
+
+**Phase 3 is done; the open threads are 5.1 combat and the escalation-loop
+counter-pressure question v1.28 left.** Two things this build surfaced:
+
+- **A responsible-citizen strategy makes less cash with 907List than without it**
+  ($226 against $505 at the same reserve). Inventory value is not cash so the
+  comparison is not like-for-like, but a supplemental income stream that lowers
+  the cash line is worth measuring properly.
+- **Selam has no authored register for anything operational.** She was named in
+  3.2 as an obvious intel candidate and is the wrong character for it. If she is
+  wanted as a source, that is a writing build first.
 
 ---
 

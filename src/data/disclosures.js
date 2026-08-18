@@ -62,6 +62,13 @@ const INTEL_TYPES = [
   { id: "police_heat_map", label: "Where the police are working", price: 30, reads: "policeRaidChance", staleness: "day", shape: "chances" },
   { id: "block_vulnerability", label: "Which corner is soft", price: 60, reads: "curtisMoveChance", staleness: "day", shape: "chances" },
   { id: "curtis_next_move", label: "The corner they keep naming", price: 100, reads: "curtisNightPlan", staleness: "day", shape: "single" },
+  // v1.30. The one product on the table that is not about Curtis. It reads the
+  // player's OWN corners back to them - headcount, whether the police came
+  // through last night, whether a body was lost, whether the corner changed
+  // hands - which is why it is the cheapest thing here. The player was already
+  // told all of it, one line at a time, in a feed they were scrolling past at
+  // midnight. What $40 buys is somebody who organised it before you woke up.
+  { id: "territory_status", label: "How your corners came through the night", price: 40, reads: "blockSoldierCount", staleness: "day", shape: "corners" },
 ];
 
 const INTEL_TYPE_BY_ID = Object.fromEntries(INTEL_TYPES.map((type) => [type.id, type]));
@@ -84,6 +91,17 @@ const INTEL_TYPE_IDS = INTEL_TYPES.map((type) => type.id);
 // Pherris is absent on purpose. Her intel is a standing subscription on the
 // Territory cards and it is already shipped; putting her here would sell the
 // player a second time for something she is already giving them.
+//
+// Selam is not a disclosure source. She has never been written speaking about
+// territory or criminal operations, and a line to fill a table would be the
+// wrong character. Authored register first, table row second. v1.23 left her
+// out of the gossip voices for exactly this reason, and 3.2 named her as an
+// obvious candidate without checking whether there was a voice to give her.
+// There is not. Writing one is a character build, not a table build.
+//
+// Deshawn stays out for the fourth build running. His whole value is being off
+// Curtis's network, and a man who is not on the wire cannot sell what is on
+// it. He shapes what other people say and never becomes a source himself.
 const DISCLOSURES = [
   // Dre climbs the whole ladder alone, because he is the only pure network
   // contact the player builds a real relationship with. What Warm buys is the
@@ -101,6 +119,13 @@ const DISCLOSURES = [
   { npcId: "yalonda", intelType: "police_heat_map", minBand: BANDS.WARM },
   { npcId: "juan", intelType: "police_heat_map", minBand: BANDS.TRUSTED },
   { npcId: "biniam", intelType: "block_vulnerability", minBand: BANDS.TRUSTED },
+  // v1.30. Tone is the first crew source, and the first who sells something
+  // that is not Curtis intel. `requiresCrew` is the only row field the game
+  // reads out of state rather than out of this file: a lieutenant who has not
+  // been hired, or who has walked, is not answering the phone about your
+  // corners. The check lives in disclosureOffers because THIS module may not
+  // read state - it is the same boundary that keeps the jitter honest.
+  { npcId: "tone", intelType: "territory_status", minBand: BANDS.WARM, requiresCrew: true },
 ];
 
 const DISCLOSURE_NPC_IDS = [...new Set(DISCLOSURES.map((entry) => entry.npcId))];
@@ -113,6 +138,7 @@ const DISCLOSURE_SENDERS = {
   juan: "Juan",
   yalonda: "Yalonda",
   biniam: "Biniam",
+  tone: "Tone",
 };
 
 function disclosureFor(npcId, intelType) {
@@ -145,11 +171,33 @@ function senderFor(npcId) {
 // it. Without it `curtis_next_move`, whose gate IS Bonded, could never be
 // bought accurately at any price, and the most expensive product in the game
 // would be the only one that always lies a little.
+//
+// v1.30 adds the second exception, at the other end of the table.
+// `territory_status` is authored `exact` only, so Tone hands back the truth at
+// his gate instead of a jittered read. He is not guessing at Curtis - he is
+// counting his own people on the player's own corners, and a man who is wrong
+// about that is not an approximate source, he is a broken one. The gate stays
+// at Warm because the relationship is what buys the phone call, not the
+// arithmetic. disclosureText returns null for an unauthored accuracy, and
+// disclosureOffers refuses to sell a row it cannot speak, so the absent
+// `jittered` branch is the enforcement rather than a gap in it.
 function accuracyFor(band, minBand) {
   const value = Number(band);
   if (!Number.isFinite(value) || value < minBand) return "unavailable";
   if (value > minBand || value >= BANDS.BONDED) return "exact";
   return "jittered";
+}
+
+// v1.30. The rule the two exceptions above are actually implemented by, in one
+// place so the offers list, the reducer, and the tests cannot drift apart on
+// it. A product with no authored `jittered` voice is exact at its own gate:
+// the absence of the branch IS the design statement, and this is where it gets
+// read. Everything else falls through to accuracyFor untouched, so the five
+// v1.27 rows behave exactly as they did.
+function resolvedAccuracy(npcId, intelType, band, minBand) {
+  const accuracy = accuracyFor(band, minBand);
+  if (accuracy === "jittered" && !hasVoice(npcId, intelType, "jittered")) return "exact";
+  return accuracy;
 }
 
 // --- Jitter ----------------------------------------------------------------
@@ -328,6 +376,21 @@ const VOICES = {
       ],
     },
   },
+  // v1.30. Tone gives you the fact and stops - the same register gossip.js
+  // named in v1.23, and the one his page has carried since v1.18. No hedging,
+  // no reassurance, no adjectives. He reports headcount the way he reported the
+  // sedan in the camera blind spot: what is there, how many, and then nothing.
+  // The one thing he does at the end is ask about your people, because that is
+  // the only place his voice ever softens.
+  tone: {
+    territory_status: {
+      exact: [
+        (p) => `Walked them at first light. ${list(p.corners, (c) => `${c.name}: ${c.text}`)}.`,
+        (p) => `Morning count. ${list(p.corners, (c) => `${c.name}: ${c.text}`)}. That's where you stand.`,
+        (p) => `${list(p.corners, (c) => `${c.name}: ${c.text}`)}. Tell me who you want covered tonight.`,
+      ],
+    },
+  },
 };
 
 // The line that comes back when the source has nothing to sell today. It is a
@@ -339,6 +402,7 @@ const EMPTY_LINES = {
   juan: "Quiet out there today. Nothing worth calling about.",
   yalonda: "Nobody's been by today. It's been quiet, thank God.",
   biniam: "The room was quiet last night. Nobody said anything about you.",
+  tone: "You don't hold any corners. Nothing to walk. Say the word when that changes.",
 };
 
 function hasVoice(npcId, intelType, accuracy) {
@@ -373,6 +437,7 @@ module.exports = {
   priceFor,
   senderFor,
   accuracyFor,
+  resolvedAccuracy,
   jitterChance,
   jitterWeight,
   jitterList,

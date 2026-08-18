@@ -648,12 +648,19 @@ without ever seeing the math.
   and it can send you home hurt) grow Combat on a `log2` curve. Sessions one
   through three matter, four through seven taper, and past that the gym alone
   cannot carry you. Three consecutive days is worth a level on the next check.
-- **Street Identity is derived, not assigned.** Sixteen labels from a matrix of
-  your strongest attribute against what you have actually been seen doing. Pure
-  read, no nightly loop, no stored value, and it gates nothing.
+- **Rank is derived, not assigned.** Sixteen labels from a matrix of your
+  strongest attribute against what you have actually been seen doing. Pure read,
+  no nightly loop, no stored value, and it gates nothing. (Called Street Identity
+  until v1.29; the internal names still are.)
 - **Heat costs you work.** A warning at 8, a final warning at 10, fired at 12 —
   matching Yalonda's housing ladder. Day labor is exempt. The Night Owl stops
   scheduling you rather than firing you, so Mina survives a bad week.
+- **Not showing up costs you work too.** The same ladder shape, counting
+  consecutive days that ended without a shift: a feed line on the first, a text
+  from your employer on the second, fired on the third. Working any shift resets
+  the count, so an irregular schedule is safe and only ghosting is not. Grace on
+  the day you are hired, day labor exempt, and the Night Owl de-scheduled rather
+  than fired.
 - **Reputation is settled as a design decision.** There is no global reputation
   stat and there will not be one; see ARCHITECTURE.md.
 
@@ -868,9 +875,12 @@ The fixed bottom rail contains five destinations:
 
 1. **Home** — household, immediate obligations, and the current situation.
 2. **Street** — Travel (three destinations: the district you are in, Home, and Leave Spenard), People, and the pre-unlock Street Market.
-3. **Hustle** — Market, Boost, Stickup, and Shark; hidden until dirty income first succeeds.
-4. **Phone** — always present. Inactive service shows No Service and walk-in restoration directions.
+3. **Hustle** — every income surface in one place, legal work first: Jobs, 907List, Market, Boost, Stickup, and Shark. The tab itself is always present; `hustle.visible` gates only the illegal sections inside it.
+4. **Phone** — always present. Texts can be dismissed individually or cleared together, and a job offer can be accepted or turned down without leaving the screen. Inactive service shows No Service and walk-in restoration directions.
 5. **More** — finances, operations, recovery, character, Street Read, history, and help.
+
+Under the rail sits the feed: three wrapped lines of the most recent log, always
+visible, never truncated, with the full history one tap away.
 
 All primary controls target a minimum 44px touch area. The shell is designed for 320px-wide phones through desktop layouts without horizontal overflow.
 

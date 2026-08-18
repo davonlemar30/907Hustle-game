@@ -698,12 +698,27 @@
     state.run.consequenceQueue.push({ id: `${state.run.day}:${state.run.slot}:${state.run.consequenceQueue.length}:${stringHash(text)}`, text, tone: tone || "", title: title || "" });
     state.run.consequenceQueue = state.run.consequenceQueue.slice(-6);
   }
-  function pushPhoneMessage(state, from, text) {
+  // v1.29: `action` is an optional descriptor that lets a text be answered from
+  // the phone instead of only reporting that something happened. It is a plain
+  // tag - `{ kind, jobId }` - and the UI maps a kind to buttons that dispatch
+  // reducer cases that already exist. Messages written before this build carry
+  // no `action` and stay informational, which is why nothing needed migrating.
+  function pushPhoneMessage(state, from, text, action) {
     const item = { id: `${state.run.day}:${state.run.slot}:${stringHash(`${from}:${text}`)}`, from, text, day: state.run.day, slot: state.run.slot, read: false };
+    if (action) item.action = action;
     if (state.phone.active) state.phone.inbox.unshift(item);
     else state.phone.heldInbox.push(item);
     return item;
   }
+  // An offer answered from anywhere - the phone, the Jobs screen - takes its own
+  // text down with it. Otherwise the inbox keeps a card whose Accept button has
+  // nothing left to accept, which is the dead tap this build is removing.
+  function retireOfferMessages(state, jobId) {
+    const live = (message) => !(message.action && message.action.kind === "job_offer" && message.action.jobId === jobId);
+    state.phone.inbox = state.phone.inbox.filter(live);
+    state.phone.heldInbox = state.phone.heldInbox.filter(live);
+  }
+
   function resolveJobApplications(state) {
     const now = slotNumber(state.run.day, state.run.slot);
     const waiting = [];
@@ -723,7 +738,7 @@
         continue;
       }
       if (application.jobId !== state.jobs.activeJobId && !state.jobs.offers.includes(application.jobId)) state.jobs.offers.push(application.jobId);
-      pushPhoneMessage(state, job.name, `We have an offer for you. Call back when you're ready to commit.`);
+      pushPhoneMessage(state, job.name, `We have an offer for you. Call back when you're ready to commit.`, { kind: "job_offer", jobId: job.id });
       logEntry(state, `${job.name} calls back with an offer. It waits for your answer.`, "good");
     }
     state.jobs.applications = waiting;
@@ -1409,8 +1424,13 @@
       // How many times an employer has pulled you aside about the heat. Keyed by
       // employer id; day labor never appears here.
       warnings: {},
+      // v1.29: consecutive days ended without working for that employer. Keyed
+      // the same way, reset to zero by any shift, and day labor never appears
+      // here either. Separate from `warnings` on purpose - Heat and attendance
+      // are two different ladders and an employer can be climbing both.
+      missedShifts: {},
       records: Object.fromEntries(SPENARD_JOBS.map((job) => [job.id, {
-        xp: 0, rank: 0, shifts: 0, lastWorkedDay: null, relationship: 0, contactMet: false,
+        xp: 0, rank: 0, shifts: 0, lastWorkedDay: null, hiredDay: null, relationship: 0, contactMet: false,
         coworkersMet: [], currentCoworkerId: null, learnedDetails: [],
       }])),
       nightOwlStash: {
@@ -1432,7 +1452,7 @@
       run: {
         status: "creating_character", day: 1, slot: 0, seed, rngState: random.state,
         premise: "fresh_arrival", openingPending: false, phase: "week_zero", pressureStartedDay: null, checkpointDay: null,
-        ending: null, pendingEvent: null, pendingEncounter: null, pendingOperationResult: null, pendingUnlocks: [], consequenceQueue: [], pendingObservations: [], daySummary: null,
+        ending: null, endCause: null, pendingEvent: null, pendingEncounter: null, pendingOperationResult: null, pendingUnlocks: [], consequenceQueue: [], pendingObservations: [], daySummary: null,
         // v1.23: which voices have already texted today, so one NPC cannot send
         // two gossip texts in a day. Session state - nothing here needs to
         // outlive the run, and it rebuilds itself on the first delivery.
@@ -3475,6 +3495,86 @@
   const JOB_HEAT_FIRST_WARNING = 8;
   const JOB_HEAT_FINAL_WARNING = 10;
   const JOB_HEAT_FIRING = 12;
+  // Attendance costs you work too (v1.29).
+  //
+  // The complement to applyHeatEmployment, and deliberately the same shape: the
+  // employer says something before they do something, and the rung you are on
+  // is legible. Jobs paid like free money before this, with all the time in the
+  // world left over to hustle and no reason to ever show up.
+  //
+  // The rule is CONSECUTIVE days, not total. Working any shift resets the count
+  // to zero, so somebody who works every other day is never fired for it. That
+  // is the design: this punishes ghosting, not an irregular schedule. There is
+  // no employer roster in state - `job.scheduled` is a once-per-day flag, not a
+  // rota - so "a day ended and you did not come in" is the honest reading of a
+  // missed shift, and it is what the ladder counts.
+  //
+  // No RNG anywhere. The counter hits the threshold and you are fired.
+  const JOB_MISSED_FIRST_WARNING = 1;
+  const JOB_MISSED_FINAL_WARNING = 2;
+  const JOB_MISSED_FIRING = 3;
+  function applyAttendance(state, endedDay) {
+    const jobId = state.jobs.activeJobId;
+    const job = SPENARD_JOB_BY_ID[jobId];
+    if (!job || job.dayLabor) return null;
+    const record = state.jobs.records[jobId];
+    if (!record) return null;
+    // Worked today: the ladder resets, whatever rung it was on.
+    if (record.lastWorkedDay === endedDay) {
+      if (state.jobs.missedShifts) state.jobs.missedShifts[jobId] = 0;
+      return null;
+    }
+    // Grace on the day you are hired. Nobody is fired for not starting a shift
+    // on an afternoon they were still being interviewed in the morning.
+    if (record.hiredDay === endedDay) return null;
+    // mergeDefaults hands `missedShifts` to every old save on load, so this is
+    // belt-and-braces rather than a migration. It is worth the one expression:
+    // this runs inside the day-end settlement, and throwing here would take the
+    // run down at the moment the player has the least ability to recover it.
+    if (!state.jobs.missedShifts) state.jobs.missedShifts = {};
+    const missed = (state.jobs.missedShifts[jobId] || 0) + 1;
+    state.jobs.missedShifts[jobId] = missed;
+    // The Night Owl does not fire you, it stops putting you on the schedule -
+    // the same pattern the Heat ladder already respects. Mina is still there,
+    // and that relationship was never employment.
+    if (missed >= JOB_MISSED_FIRING && jobId === "night_owl") {
+      logEntry(state, "Mina takes you off the schedule. She does not make it a conversation.", "warn");
+      return "descheduled";
+    }
+    if (missed >= JOB_MISSED_FIRING) {
+      state.jobs.activeJobId = null;
+      state.jobs.hired = ["day_labor"];
+      state.jobs.offers = state.jobs.offers.filter((id) => id !== jobId);
+      // The same reset ACCEPT_JOB and the Heat ladder use: the standing was
+      // with them, not with you.
+      record.xp = 0;
+      record.rank = 0;
+      record.relationship = 0;
+      record.hiredDay = null;
+      delete state.jobs.missedShifts[jobId];
+      delete state.jobs.warnings[jobId];
+      pushPhoneMessage(state, job.name, "Three days, no call. We gave the shifts away. Don't come back.");
+      logEntry(state, `${job.name} let you go for not showing up.`, "bad");
+      pushConsequence(state, `${job.name} fired you over attendance. Day labor is still there.`, "bad", "You Stopped Showing Up");
+      for (const channel of ["household", "neighborhood"]) {
+        Exposure.broadcastObservation(state, {
+          type: "financial", event: "job_lost", location: state.world.currentNeighborhoodId, channel,
+        });
+      }
+      return "fired";
+    }
+    if (missed === JOB_MISSED_FINAL_WARNING) {
+      pushPhoneMessage(state, job.name, "Second day nobody heard from you. Don't make this a pattern.");
+      logEntry(state, `${job.name} texts about the second day you missed.`, "warn");
+      return "final_warning";
+    }
+    if (missed === JOB_MISSED_FIRST_WARNING) {
+      logEntry(state, "Your boss is asking where you were.", "warn");
+      return "warned";
+    }
+    return null;
+  }
+
   function applyHeatEmployment(state, jobId) {
     const job = SPENARD_JOB_BY_ID[jobId];
     if (!job || job.dayLabor) return null;
@@ -6126,12 +6226,37 @@
     if (operationScore(state) >= 800) return "quiet_operation";
     return "clean_exit";
   }
-  function endRun(state, forced) {
+  // v1.29: what ended the run, in the player's words.
+  //
+  // The run has always had an ending id and a label. What it never had was the
+  // obligation that caused it, so a loss read as the game closing rather than
+  // as a consequence. `nowhere_to_go` covered rent, contraband, and danger
+  // brought home without distinguishing them, and the end screen opened with a
+  // checkpoint sentence whether you reached the checkpoint or were evicted.
+  //
+  // `cause` is the line householdWarning was already writing for the feed;
+  // every other terminal derives one from its ending id. Stored on `run`, which
+  // is rebuilt by NEW_RUN, so no schema bump and no migration - an older save
+  // has no endCause and falls back to the label.
+  const END_CAUSES = {
+    nowhere_to_go: { title: "Nowhere to Go", line: "The room is closed. Yalonda is done waiting, and there is nobody left to call." },
+    arrested: { title: "Caught", line: "The Heat finally had somewhere to land. They had your name before you got to the corner." },
+    killed: { title: "Taken Down", line: "You ran out of health on a night that had no give in it." },
+    base_lost: { title: "The Garage Is Gone", line: "North Star took too much damage to hold. Everything staged there went with it." },
+  };
+  function endRun(state, forced, cause) {
     state.run.status = "ended";
     state.run.pendingEvent = null;
     state.run.pendingEncounter = null;
     state.run.pendingOperationResult = null;
     state.run.ending = chooseEnding(state, forced);
+    const fallback = END_CAUSES[state.run.ending];
+    const line = cause || (fallback && fallback.line) || null;
+    const title = (fallback && fallback.title) || endingLabel(state.run.ending);
+    if (line) {
+      state.run.endCause = { id: state.run.ending, title, line };
+      pushConsequence(state, line, "bad", title);
+    }
     logEntry(state, `By sunrise, the week has a name: ${endingLabel(state.run.ending)}.`, state.run.ending === "one_good_run" ? "good" : "warn");
   }
 
@@ -6142,7 +6267,9 @@
     logEntry(state, reason, "bad");
     if (catastrophic || household.warnings >= 3) {
       household.evicted = true;
-      endRun(state, "nowhere_to_go");
+      // `reason` is the specific obligation that broke - the missed rent, the
+      // contraband, the danger brought home. It is what the player needs named.
+      endRun(state, "nowhere_to_go", reason);
     }
   }
 
@@ -6364,6 +6491,10 @@
     settleCurtisNight(state);
     resolveSharkLoans(state);
     resolveCrewTracks(state);
+    // v1.29: the day that just ended is the one attendance is judged on. It is
+    // passed explicitly rather than read off state so the rung does not depend
+    // on sitting above the `run.day = oldDay + 1` line further down.
+    applyAttendance(state, oldDay);
     // v1.23: tomorrow night's warnings. Raised here because this is the first
     // point where every input is final - the night just resolved so ownership is
     // settled, settleCurtisNight moved the awareness phase, and resolveCrewTracks
@@ -7584,13 +7715,31 @@
       state.jobs.activeJobId = job.id;
       state.jobs.hired = ["day_labor", job.id];
       state.jobs.offers = state.jobs.offers.filter((id) => id !== job.id);
+      state.jobs.records[job.id].hiredDay = state.run.day;
+      retireOfferMessages(state, job.id);
       pushConsequence(state, previousId ? `${SPENARD_JOB_BY_ID[previousId].name} gets the quit call. ${job.name} is now your employer.` : `${job.name} is now your employer.`, "good");
       return state;
     }
     if (action.type === "DECLINE_JOB") {
       if (!state.jobs.offers.includes(action.jobId)) return inputState;
       state.jobs.offers = state.jobs.offers.filter((id) => id !== action.jobId);
+      retireOfferMessages(state, action.jobId);
       pushConsequence(state, `You turn down ${SPENARD_JOB_BY_ID[action.jobId].name}.`, "");
+      return state;
+    }
+    // v1.29: the inbox stacked up with no way to empty it, and the nav badge
+    // counted messages the player had already read and acted on. Neither case
+    // costs time or answers to a district, for the reason PAY_PHONE_BILL from
+    // the phone does not: clearing a text is not an action in the world.
+    if (action.type === "DISMISS_PHONE_MESSAGE") {
+      const before = state.phone.inbox.length;
+      state.phone.inbox = state.phone.inbox.filter((message) => message.id !== action.id);
+      if (state.phone.inbox.length === before) return inputState;
+      return state;
+    }
+    if (action.type === "CLEAR_PHONE_INBOX") {
+      if (!state.phone.inbox.length) return inputState;
+      state.phone.inbox = [];
       return state;
     }
     if (action.type === "CURTIS_DECISION") {
@@ -8773,6 +8922,13 @@
     }));
     return {
       ending: state.run.ending, endingLabel: endingLabel(state.run.ending), cash: state.player.cash,
+      // v1.29: what ended it, how long you lasted, and what the run was worth
+      // in the end. `netGain` is derived, not tracked - startingNetWorth has
+      // been in stats since the beginning, so no new field and no schema bump.
+      endCause: state.run.endCause || null,
+      daysSurvived: state.run.day,
+      netGain: netWorth(state) - state.stats.startingNetWorth,
+      reachedCheckpoint: state.run.ending !== "nowhere_to_go" && state.run.ending !== "arrested" && state.run.ending !== "killed" && state.run.ending !== "base_lost",
       streetName: state.player.streetName || "Unnamed run",
       streetIdentity: streetIdentity(state), streetIdentityLabel: streetIdentity(state),
       storedCash: state.base.storedCash, debt: state.lender.balance, inventoryValue: inventoryValue(state),

@@ -270,11 +270,27 @@ test("action results and story events stay separate surfaces", () => {
   assert.match(ui, /function EventModal\(/);
 });
 
-test("the street feed collapses to one line instead of owning 88px of every screen", () => {
-  assert.match(ui, /className="feed-toggle"/);
-  assert.match(ui, /\{open && <div className="feed-list">/);
-  assert.match(css, /\.feed\{max-height:none;overflow:visible;padding:0;border-top:0\}/);
+// v1.29 replaces the v1.26 contract this test used to assert. That build cut
+// the feed to a single ellipsised line to save 88px on every screen; the Aug 17
+// playtest found the log was then too small to read and clipped its own
+// sentences. Feed lines are narrative content, so the contract is now three
+// wrapped lines by default and no truncation at any width.
+test("the street feed shows three wrapped lines and never truncates one", () => {
+  assert.match(ui, /const FEED_COLLAPSED_LINES = 3;/);
+  assert.match(ui, /entries\.slice\(0, FEED_COLLAPSED_LINES\)/);
+  assert.match(ui, /className="feed-lines"/);
+  // The expand control is still a 44px target, and still optional: it only
+  // renders once there is more history than the collapsed panel shows.
+  assert.match(ui, /entries\.length > FEED_COLLAPSED_LINES && <button className="feed-toggle"/);
   assert.match(css, /\.feed-toggle\{[^}]*min-height:44px/);
+  // Three lines of room held open, so the panel does not resize under the
+  // player's thumb as the day fills in.
+  assert.match(css, /\.feed-lines\{min-height:74px/);
+  // The clipping the playtest photographed: nowrap plus ellipsis on the one
+  // line the collapsed feed rendered. Neither may come back.
+  assert.doesNotMatch(css, /\.feed-toggle>\.feed-line\{[^}]*text-overflow:ellipsis/);
+  assert.match(css, /\.feed-lines>\.feed-line\{[^}]*white-space:normal[^}]*text-overflow:clip\}/);
+  assert.match(css, /\.feed-line\{[^}]*overflow-wrap:anywhere\}/);
 });
 
 test("Safehouse is a hub instead of the longest page in the build", () => {

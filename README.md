@@ -23,8 +23,8 @@ once.
 |---|---|
 | Save schema | **v11** (`907ogr_v11`), loads v3 and up |
 | Tests | **868** passing (`npm test`) |
-| Simulation, 200 runs | `c1469e6db3958e6bf439478cc05426829409cce6d66ec12c8c37df5332f2b5b7` |
-| Simulation, 2,000 runs | `6bc6eb31cf360245f895290e292f75092a1a9e19405f12fda6534230999f4178` |
+| Simulation, 200 runs | `dc1b7bd2b47489be3463b9c5692b7b28afd4305b76152199a35a933f29174662` |
+| Simulation, 2,000 runs | `a56bc1f99d67166c8af0d98b1f9e87b9dd30b590c0869d5dde37560d0c1e54d2` |
 
 **Both hashes are unchanged, and that was not the expected result.** This build
 rewrote how the nightly Curtis pass resolves. The hashes held because the

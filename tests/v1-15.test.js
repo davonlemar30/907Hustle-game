@@ -565,7 +565,13 @@ test("no introduction before seven days on the crew, and none after departure", 
   assert.equal(state.npc.deshawn.lastIntroDay, null, "departed crew make no calls");
 });
 
-test("the rent grace re-arms once per rent period while Deshawn is active", () => {
+// v1.32 rewrote both grace tests. The originals were correct for a run that
+// ended at day 10, where Deshawn ate at most one miss. They passed unchanged
+// through v1.31's removal of the day cap, at which point one grace a week
+// against one rent a week meant rent was never missed at all - and neither test
+// asserted that a miss ever LANDS, which is why a mechanic that had quietly
+// become an infinite rent subsidy still showed green.
+test("the rent grace defers the miss by a day, and re-arms once per rent period", () => {
   let state = fresh(4270);
   withDeshawn(state);
   assert.equal(state.flags.extraRentGraceAvailable, undefined);
@@ -576,19 +582,54 @@ test("the rent grace re-arms once per rent period while Deshawn is active", () =
   state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
   assert.equal(state.flags.extraRentGraceAvailable, false, "grace consumed on the missed due day");
   assert.equal(state.flags.extraRentGraceUsedDueDay, 5);
-  assert.equal(state.npc.yalonda.rentMissed, 0, "the grace ate the miss");
-  // Same period: no re-arm, the next miss lands.
+  assert.equal(state.npc.yalonda.rentMissed, 0, "the miss does not land tonight");
+  assert.equal(state.obligations.lastMissedDueDay, null, "and the period is not stamped, so the check re-fires tomorrow");
+  // The next night the deferral runs out and the miss lands. This is the
+  // assertion the original test never made, and its absence is what let the
+  // grace become a cancellation instead of a delay.
   prepareNight(state, 6);
   state.player.cash = 0; state.player.dirtyCash = 0; state.player.cleanCash = 0;
   state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
-  assert.equal(state.flags.extraRentGraceAvailable, false, "once per overdue period");
-  // Next rent period: he talks to Yalonda again.
+  assert.equal(state.npc.yalonda.rentMissed, 1, "one day late, but it lands");
+  assert.equal(state.obligations.lastMissedDueDay, 5, "and now the period is stamped");
+  // Still the same period: it is counted once, not once a night.
+  prepareNight(state, 7);
+  state.player.cash = 0; state.player.dirtyCash = 0; state.player.cleanCash = 0;
+  state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
+  assert.equal(state.npc.yalonda.rentMissed, 1, "one miss per rent period, not one per night");
+  // Next rent period: he talks to Yalonda again, and buys another single day.
   prepareNight(state, 12);
   state.player.cash = 0; state.player.dirtyCash = 0; state.player.cleanCash = 0;
   state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
   assert.equal(state.flags.extraRentGraceUsedDueDay, 12, "the new period's grace was armed and consumed");
+  assert.equal(state.npc.yalonda.rentMissed, 1, "deferred again");
+  prepareNight(state, 13);
+  state.player.cash = 0; state.player.dirtyCash = 0; state.player.cleanCash = 0;
+  state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
+  assert.equal(state.npc.yalonda.rentMissed, 2, "and lands again a day later");
+  assert.ok(state.people.household.warnings >= 1, "so the eviction ladder actually advances with Deshawn on the crew");
 });
 
+test("paying inside the deferred day is what the grace is for", () => {
+  let state = fresh(4272);
+  withDeshawn(state);
+  state.flags.extraRentGraceAvailable = true;
+  state.obligations.rentDueDay = 5;
+  prepareNight(state, 5);
+  state.player.cash = 0; state.player.dirtyCash = 0; state.player.cleanCash = 0;
+  state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
+  assert.equal(state.npc.yalonda.rentMissed, 0, "deferred");
+  // The day Deshawn bought: find the money and the miss never happens.
+  state.player.cash = 400; state.player.cleanCash = 400; state.player.dirtyCash = 0;
+  state = C.reduceGame(state, { type: "PAY_RENT" });
+  assert.ok(state.obligations.rentDueDay > state.run.day, "the due day rolls past today");
+  prepareNight(state, 6);
+  state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
+  assert.equal(state.npc.yalonda.rentMissed, 0, "nothing lands - that is the day he bought");
+});
+
+// v1.32: under the deferring grace a banked grace still only buys a day, so a
+// departed Deshawn leaves the player with at most one more day and then nothing.
 test("no re-arm after Deshawn departs", () => {
   let state = fresh(4271);
   withDeshawn(state, { status: "departed" });

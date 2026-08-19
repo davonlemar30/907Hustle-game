@@ -187,6 +187,8 @@ function workerTurn(s,p,shift){
      &&(s.people.household.evicted||s.run.day<s.obligations.rentDueDay||s.player.cash>=C.WEEKLY_RENT+C.PHONE_BILL)){
     const next=moved(C.reduceGame(s,{type:'PAY_PHONE_BILL',surface:'store'}));if(next)return next;
   }
+  // Bills above are for every profile; everything below is the job ladder and
+  // belongs only to the employment strategy.
   if(!p.employment)return null;
   // The shift comes before anything discretionary, and this ordering is the
   // whole difference between a strategy that holds a job and one that owns a
@@ -241,7 +243,14 @@ const strategies={
   trader:{caught:['run','surrender','fight'],products:['weed','shrooms'],areas:['north_star_lot','downtown'],profit:1.10,heatCap:5,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['talk','run','pay','surrender'],mode:'trader'},
   thief:{caught:['fight','run','surrender'],products:[],areas:['north_star_lot'],profit:2,heatCap:8,plan:'last_score',track:'security',gear:'utility_knife',crew:'tone',encounter:['run','talk','fight','surrender'],mode:'thief'},
   gambler:{caught:['surrender','run','fight'],products:[],areas:['north_star_lot'],profit:2,heatCap:3,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['talk','run','pay','surrender'],mode:'gambler'},
-  trainer:{caught:['fight','run','surrender'],products:[],areas:['north_star_lot'],profit:2,heatCap:3,plan:'defend',track:'recovery',gear:'running_shoes',crew:'eli',encounter:['run','talk','fight','surrender'],mode:'trainer'},
+  // v1.32. The eviction-ladder instrument, and the one profile that deliberately
+  // does not pay. Chosen for lifespan: it survives into the mid-30s, so it
+  // actually reaches the ladder, where `stickup` is arrested around day 7 and
+  // never gets there. Worth knowing when reading its number: trainer is both a
+  // will-not-pay and a cannot-pay - measured WITH bills enabled it still evicted
+  // in 75% of runs, because it spends its cash on the gym. Both readings are
+  // real; this flag makes the first one deliberate instead of accidental.
+  trainer:{caught:['fight','run','surrender'],products:[],areas:['north_star_lot'],profit:2,heatCap:3,plan:'defend',track:'recovery',gear:'running_shoes',crew:'eli',encounter:['run','talk','fight','surrender'],mode:'trainer',skipBills:true},
   mixed_freedom:{caught:['run','fight','surrender'],products:['weed','shrooms'],areas:['north_star_lot','downtown'],profit:1.12,heatCap:6,plan:'defend',track:'security',gear:'utility_knife',crew:'eli',encounter:['talk','run','fight','pay','surrender'],mode:'mixed',property:true},
   // v1.0: recruits soldiers and claims Spenard blocks aggressively once Eli is
   // an active lieutenant, to soak-test the new passive-income/raid systems.
@@ -290,8 +299,47 @@ const strategies={
   // runs come back clean on every obligation.
   worker:{caught:['surrender','run','fight'],products:[],areas:['north_star_lot'],profit:2,heatCap:2,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['talk','run','pay','surrender'],mode:'legal',employment:true,payBills:true,market:true,marketMargin:12,marketFloat:C.WEEKLY_RENT*2+C.PHONE_BILL,marketQuick:true,marketRiskCap:0.14},
 };
+// v1.32. Health telemetry, and it exists because "killed" became the dominant
+// end cause the moment runs got long enough to reach it - four purely legal,
+// low-Heat strategies die in 8 of 8 runs around day 35. Before tuning a single
+// health constant somebody has to know whether that is the engine or the
+// instrument, and there is strong reason to think it is partly the instrument:
+// the harness contains exactly ONE healing dispatch in its whole history
+// (NILE_WELLNESS, in the gambler branch), the same 14-of-15 shape that hid the
+// rent bug. `gambler` is the only strategy with zero killed deaths.
+//
+// This wraps dispatch to attribute every health delta to the action that caused
+// it. Pure observation - it records and returns, changes no state and draws no
+// RNG - so it cannot move a hash by itself.
+function healthLedger(){
+  const lost={},healed={}; let dispatches=0;
+  return {
+    lost,healed,
+    get healDispatches(){return dispatches},
+    record(action,before,after){
+      const delta=after-before;
+      if(delta<0)lost[action]=(lost[action]||0)-delta;
+      else if(delta>0){healed[action]=(healed[action]||0)+delta;dispatches+=1}
+    },
+    summary(){
+      const total=(o)=>Object.values(o).reduce((n,v)=>n+v,0);
+      const top=(o)=>Object.entries(o).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([k,v])=>k+':'+v).join(' ');
+      return {healthLost:total(lost),healthHealed:total(healed),healDispatches:dispatches,
+        healthLostBy:top(lost),healthHealedBy:top(healed)};
+    },
+  };
+}
 function settle(state,profile,beats){let s=state,guard=0;const note=(id)=>{if(beats&&(!beats.length||beats[beats.length-1].id!==id))beats.push({id,slot:(s.run.day-1)*4+s.run.slot})};while(guard++<20){if(s.run.openingPending){s=C.reduceGame(s,{type:'DISMISS_OPENING'});continue}if(s.run.daySummary){s=C.reduceGame(s,{type:'DISMISS_DAY_SUMMARY'});continue}if(s.run.pendingOperationResult){s=C.reduceGame(s,{type:'ACKNOWLEDGE_OPERATION_RESULT'});continue}if(s.run.pendingEncounter){note(s.run.pendingEncounter.id);const available=C.selectors.encounterChoices(s).map(c=>c.id);const posture=s.run.pendingEncounter.type==='boost_caught'?(profile.caught||[]):profile.encounter;const choice=posture.find(id=>available.includes(id))||profile.encounter.find(id=>available.includes(id))||available[0];s=C.reduceGame(s,{type:'RESOLVE_ENCOUNTER',choiceId:choice});continue}if(s.run.pendingEvent){note(s.run.pendingEvent.id);const choices=s.run.pendingEvent.choices;let index=s.run.pendingEvent.id==='dre_terms'?choices.length-1:choices.findIndex(c=>(c.effect?.cash||0)>=0);if(index<0)index=choices.findIndex(c=>Math.abs(c.effect?.cash||0)<=s.player.cash);s=C.reduceGame(s,{type:'RESOLVE_EVENT',choiceIndex:index<0?choices.length-1:index});continue}if(s.run.dayEndPending){s=C.reduceGame(s,{type:'CONFIRM_END_DAY'});continue}break}return s}
-function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun({seed}),{type:'START_RUN',streetName:`Sim ${seed}`}),guard=0;const beats=[];const marketSamples=[];let wages=0;
+function play(seed,name){const p=strategies[name];
+  const health=healthLedger();
+  const rawReduce=C.reduceGame;
+  // Swapped for the run and restored in the finally below. Every dispatch the
+  // loop makes, including the ones inside settle(), is accounted.
+  C.reduceGame=(st,ac)=>{const before=st.player?.health;const next=rawReduce(st,ac);
+    if(typeof before==='number'&&typeof next.player?.health==='number')health.record(ac.type,before,next.player.health);
+    return next;};
+  try{
+  let s=C.reduceGame(C.createRun({seed}),{type:'START_RUN',streetName:`Sim ${seed}`}),guard=0;const beats=[];const marketSamples=[];let wages=0;
     // Nothing in game-core totals job income - addCleanCash moves a balance, it
     // does not keep a running sum - so the shift payout is read as the clean
     // cash a WORK_JOB dispatch adds. Positive deltas only, and it is a floor
@@ -315,7 +363,15 @@ function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun
     if(p.market&&s.knowledge.knows907List&&(!marketSamples.length||marketSamples[marketSamples.length-1].day!==s.run.day)){
       marketSamples.push({day:s.run.day,tier:C.selectors.marketTier(s),profit:s.nineZeroSevenList.profit});
     }
-    if(p.payBills||p.employment){const next=workerTurn(s,p,shift);if(next&&next!==s){s=next;continue}}
+    // v1.32. Every profile pays what it owes unless it is the deliberate
+    // control. Until now exactly ONE strategy of fifteen had ever dispatched
+    // PAY_RENT - `worker`, via the payBills flag added in v1.30 - which never
+    // mattered while runs ended at day 10, before eviction could land. At 40
+    // days it meant the whole table measured "what happens if nobody pays rent"
+    // rather than "is rent affordable". This is pay-when-the-cash-is-there on
+    // the due day, NOT a reserve: a profile whose money is in inventory or the
+    // gym still misses, which is the honest reading.
+    if(!p.skipBills){const next=workerTurn(s,p,shift);if(next&&next!==s){s=next;continue}}
     if(p.market){const next=marketTurn(s,p);if(next&&next!==s){s=next;continue}}
     if(s.run.phase==='week_zero'){
       if(s.run.slot>=2&&!s.nightOwl.boardViewedDays.includes(s.run.day)){s=C.reduceGame(s,{type:'VIEW_NIGHT_OWL_BOARD'});continue}
@@ -390,7 +446,15 @@ function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun
     if(s.lender.balance&&s.player.cash>=s.lender.balance+100&&s.run.day>=2){s=C.reduceGame(s,{type:'PAY_DEBT',amount:s.lender.balance});continue}
     if(s.player.heat>p.heatCap){s=C.reduceGame(s,{type:'LAY_LOW'});continue}
     const next=p.areas[(Math.max(0,p.areas.indexOf(area))+1)%p.areas.length],busCovered=s.world.transport.weekPass||s.world.transport.dayPassDay===s.run.day;s=next===area?C.reduceGame(s,{type:'END_MARKET'}):next==='north_star_lot'&&s.player.cash<5&&!busCovered?C.reduceGame(s,{type:'WALK_HOME'}):['downtown','north_star_lot'].includes(next)&&s.player.cash<5&&!busCovered?C.reduceGame(s,{type:'END_MARKET'}):['downtown','north_star_lot'].includes(next)?C.reduceGame(s,{type:'BUS_TRAVEL',neighborhoodId:next}):C.reduceGame(s,{type:'TRAVEL',neighborhoodId:next});
-  }s=settle(s,p,beats);const summary=C.selectRunSummary(s);summary.completed=s.run.status==='ended';summary.finalState={day:s.run.day,slot:s.run.slot,energy:s.player.energy,phase:s.run.phase,pending:s.run.pendingEncounter?.id||s.run.pendingEvent?.id||null,dayEnd:s.run.dayEndPending,overtime:s.run.overtimeArmed,baseVisiting:s.base.visiting};summary.decisions=s.stats.decisions;summary.encounters=s.run.encounterCount;summary.baseValue=C.selectors.baseValue(s);summary.crew=C.selectors.recruitedCrew(s).length;summary.dealer={...(s.people.dealers?.goodie||{})};summary.meaningfulActions=s.player.behavior.meaningfulActions;summary.gymStreak=s.player.gymStreak||0;summary.derivedRatings=Object.values(C.selectors.derivedRatings(s)).join('/');summary.garageDay=s.base.acquiredDay||0;summary.evicted=s.people.household.evicted?1:0;summary.discoveries=s.world.locations.discoveries.length;summary.attributeGains=Object.values(s.player.attributes).reduce((n,v)=>n+Math.max(0,v-1),0);summary.combat=s.player.attributes.combat;summary.charisma=s.player.attributes.charisma;summary.intelligence=s.player.attributes.intelligence;summary.streetReadTier=s.streetRead.tier;summary.streetReadScore=s.streetRead.score;summary.streetReadEntries=s.streetRead.totalLifetimeEntries;summary.employerStanding=s.world.locations.employer.standing;summary.gamblingNet=s.world.locations.gambling.net;summary.arrests=s.record?.arrests||0;summary.crewJailed=Object.values(s.people.crew).filter(c=>c.status==='arrested').length;Object.assign(summary,storyMetrics(s,beats));Object.assign(summary,exposureMetrics(s));Object.assign(summary,territoryMetrics(s));if(p.market){marketSamples.push({day:s.run.day,tier:C.selectors.marketTier(s),profit:s.nineZeroSevenList.profit});Object.assign(summary,marketMetrics(s,marketSamples))}if(p.employment){Object.assign(summary,employmentMetrics(s,wages))}return summary}
+  }s=settle(s,p,beats);const summary=C.selectRunSummary(s);summary.completed=s.run.status==='ended';summary.finalState={day:s.run.day,slot:s.run.slot,energy:s.player.energy,phase:s.run.phase,pending:s.run.pendingEncounter?.id||s.run.pendingEvent?.id||null,dayEnd:s.run.dayEndPending,overtime:s.run.overtimeArmed,baseVisiting:s.base.visiting};summary.decisions=s.stats.decisions;summary.encounters=s.run.encounterCount;summary.baseValue=C.selectors.baseValue(s);summary.crew=C.selectors.recruitedCrew(s).length;summary.dealer={...(s.people.dealers?.goodie||{})};summary.meaningfulActions=s.player.behavior.meaningfulActions;summary.gymStreak=s.player.gymStreak||0;summary.derivedRatings=Object.values(C.selectors.derivedRatings(s)).join('/');summary.garageDay=s.base.acquiredDay||0;summary.evicted=s.people.household.evicted?1:0;summary.discoveries=s.world.locations.discoveries.length;summary.attributeGains=Object.values(s.player.attributes).reduce((n,v)=>n+Math.max(0,v-1),0);summary.combat=s.player.attributes.combat;summary.charisma=s.player.attributes.charisma;summary.intelligence=s.player.attributes.intelligence;summary.streetReadTier=s.streetRead.tier;summary.streetReadScore=s.streetRead.score;summary.streetReadEntries=s.streetRead.totalLifetimeEntries;summary.employerStanding=s.world.locations.employer.standing;summary.gamblingNet=s.world.locations.gambling.net;summary.arrests=s.record?.arrests||0;summary.crewJailed=Object.values(s.people.crew).filter(c=>c.status==='arrested').length;Object.assign(summary,storyMetrics(s,beats));Object.assign(summary,exposureMetrics(s));Object.assign(summary,territoryMetrics(s));if(p.market){marketSamples.push({day:s.run.day,tier:C.selectors.marketTier(s),profit:s.nineZeroSevenList.profit});Object.assign(summary,marketMetrics(s,marketSamples))}if(p.employment){Object.assign(summary,employmentMetrics(s,wages))}
+  Object.assign(summary,health.summary());
+  // Eviction and death race each other - roughly day 29 against day 35 - and
+  // neither number reads correctly without the other, so the end day travels
+  // with them.
+  summary.endDay=s.run.day;
+  summary.endHealth=s.player.health;
+  return summary}
+  finally{C.reduceGame=rawReduce}}
 function summarize(name,count){const runs=Array.from({length:count},(_,i)=>play(1000+i,name)),endings={};for(const r of runs)endings[r.endingLabel]=(endings[r.endingLabel]||0)+1;const avg=k=>Math.round(runs.reduce((n,r)=>n+(r[k]||0),0)/count);const robbery=k=>runs.reduce((n,r)=>n+(r.robbery?.[k]||0),0);return{strategy:name,runs:count,completed:runs.filter(r=>r.completed).length,averageCash:avg('cash'),averageNetWorth:avg('netWorth'),averageOperationScore:avg('operationScore'),averageDebt:avg('debt'),averageHighestHeat:avg('highestHeat'),averageDecisions:avg('decisions'),averageEncounters:avg('encounters'),averageBaseValue:avg('baseValue'),averageCrew:avg('crew'),robAttempts:robbery('attempts'),robSuccesses:robbery('successes'),robFailures:robbery('failures'),robPayout:robbery('totalPayout'),territoryAttempts:runs.reduce((n,r)=>n+(r.takeovers?.attempts||0),0),arrests:runs.reduce((n,r)=>n+(r.arrests||0),0),crewJailedAtEnd:runs.reduce((n,r)=>n+(r.crewJailed||0),0),deadEnds:runs.filter(r=>!r.completed).length,
   averageStoryBeats:Number((runs.reduce((n,r)=>n+r.storyBeats,0)/count).toFixed(1)),
   averageAmbientBeats:Number((runs.reduce((n,r)=>n+r.ambientBeats,0)/count).toFixed(1)),

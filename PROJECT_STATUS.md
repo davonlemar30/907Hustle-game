@@ -2,6 +2,139 @@
 
 Last updated: 2026-08-18 (America/Anchorage)
 
+## v1.32 Make the Obligations Real — built
+
+v1.31 removed the day-count terminator and let runs reach forty days. The first
+honest economic reading that produced turned up something that invalidated most
+of it, and this build is the correction plus the measurement it unblocks.
+
+### Rent was free, and it had been for one build
+
+**While Deshawn was recruited and active, rent was never missed.** His grace
+re-armed once per rent period and rent fell due once per rent period, so the two
+cancelled exactly and **eviction — the game's primary lose condition — was
+unreachable.** Measured across all fifteen strategies:
+
+| Deshawn active in | avg `rentMissed` | evictions |
+|---|---|---|
+| 100% of runs | 0.4–1.6 | **0%** |
+| 88% | 0.1–1.0 | **0%** |
+| 0–25% | 1.8–3.6 | **13–63%** |
+
+`cautious` was the proof: Deshawn *departed* over unpaid wages mid-run and
+`rentMissed` immediately went to 2 with a warning issued.
+
+**This was not a v1.15 bug.** `tests/v1-15.test.js` deliberately asserted the
+weekly re-arm, and that design was correct for a run that ended at day 10, where
+Deshawn ate at most one miss — a bounded perk that fits his character. **v1.31
+removed the boundary and a bounded perk became an infinite subsidy.** The
+mechanic never changed; the run length did.
+
+### The fix is the one the copy already described
+
+The grace now **defers the miss by a day instead of cancelling the week** — it
+clears `obligations.lastMissedDueDay` rather than setting it, so the nightly
+check re-fires the next night and the miss lands one day late. Paying inside
+that day rolls the due day past today, which is the day Deshawn actually bought.
+The log line has always read *"the rent conversation waits one more day"*; it is
+now true. **No field was added — the deferral is the absence of the stamp — so
+the schema stays v11.**
+
+Both grace tests were rewritten. Neither had ever asserted that a miss *lands*,
+which is why a mechanic that had become an infinite subsidy still showed green.
+
+### Fixing the grace alone would have been the wrong build
+
+**Fourteen of fifteen strategies had never once dispatched `PAY_RENT`** — only
+`worker`, via a flag added in v1.30. That never mattered while runs ended before
+eviction could land. Pre-measured, 15 strategies x 8 seeds:
+
+| | overall evictions | `territory` evict% | `territory` claims/run |
+|---|---|---|---|
+| Before | ~7% | 13% | 4.7 |
+| **Grace fixed only** | **51%** | **100%** | — |
+| Grace fixed + all pay bills | 15% | 0% | 1.6 |
+
+The middle row is the trap: fixing the grace on its own evicts the `territory`
+strategy in **every run** and re-breaks the block layer v1.31 had just unlocked.
+So bills became universal, with `trainer` as the one documented non-payer — the
+eviction-ladder instrument, chosen for lifespan because `stickup` is arrested
+around day 7 and never reaches a rent period at all.
+
+**Shipped result at `--total 200`:** 18% evictions, `territory` still claiming
+20 corners and resolving 21 raids, `worker` at 0 evictions, zero dead ends.
+
+### What health telemetry found, and it corrects the review's guess
+
+Task 4 measured rather than fixed, and the measurement moved the diagnosis
+twice. The pre-plan review proposed that `killed` dominance was explained by
+harness coverage — `gambler` being the only strategy that heals. **It is not.**
+Across 90 runs the harness dispatched a heal **twice**, and `gambler` survives
+because it barely loses health, not because it restores it.
+
+Health lost by source, 90 runs, all fifteen strategies:
+
+| source | share |
+|---|---|
+| `RESOLVE_ENCOUNTER` | 44% |
+| `RESOLVE_EVENT` | 19% |
+| `WORK_JOB` | 16% |
+| `ROB` / `ROB_DEALER` | 12% |
+| 907List meetups | 6% |
+| `WALK_HOME` | 3% |
+
+So the drain is **broad, not one mechanic**, and nothing puts health back: the
+engine has no passive regeneration and every recovery path is elective and
+mostly paid. At ten days nobody reached zero; at forty, the strategies that work
+shifts or take encounters all do. **That is v1.33's question, deliberately not
+touched here** — one variable at a time is why these numbers are trustworthy.
+
+### The hazard class, inventoried
+
+Deshawn's grace is an instance of a general problem: **any mechanic whose cost
+was bounded by the run ending is now unbounded.** Inventory for v1.33, not fixed
+here:
+
+- **Dre's note compounds daily with no ceiling**, plus +1 Heat per late day —
+  roughly 3 firings in a ten-day run, up to ~33 now.
+- **Heat has no passive decay.** All four decay sites are elective or
+  conditional (arrest relief, `LAY_LOW`, a Pherris/Deshawn block manager,
+  Deshawn de-escalation) while nightly +1 sources are numerous. Verified.
+- **Health is strictly monotonic downward** — see above.
+- **Per-slot encounter rolls scale linearly with run length**, ~28 per run
+  became ~160, which is the volume multiplier on the health drain.
+- **`missed_obligation` observations are un-clamped**, driving Dre's disposition
+  unboundedly negative with no recovery path.
+- **Story pacing** was authored to ration a seven-day registry and now only
+  paces it; every long run exhausts every `once: true` beat by ~day 20.
+
+Coverage note: `re-arm` appears exactly once in the codebase, so no second
+re-arming grant exists. The hazard class is real but bounded.
+
+### Measured findings shipped as findings, not fixes
+
+- **`trainer` evicts in 75% of runs even with bills enabled** — it spends its
+  cash on the gym and genuinely cannot afford rent. That is what an obligation
+  system should produce. It is now also the deliberate non-payer control, so it
+  is both a will-not-pay and a cannot-pay; both readings are real.
+- **`legal_worker` still tops the table at 1,362 net worth, down from 2,533**
+  once it pays for its own room. Legal work is genuinely strong; the lead halved.
+- **A broke run stops paying Deshawn too, and he leaves** around day 8. The rent
+  shield is itself paid for, which is good design and also means a whole-run
+  with-him/without-him comparison measures his departure rather than his grace.
+
+### Verification
+
+`npm test` **934 passing** (920 + 14 new in `tests/v1-32.test.js`, plus two
+rewritten grace tests). `npm run build` clean, `npm run check-docs` clean. Save
+schema **v11**. `--total 200` -> `dc1b7bd2b47489be3463b9c5692b7b28afd4305b76152199a35a933f29174662`, `--total 2000` -> `a56bc1f99d67166c8af0d98b1f9e87b9dd30b590c0869d5dde37560d0c1e54d2`.
+Zero dead ends at both counts. Guard conditions all hold: eviction reachable but
+not universal (**18% at 200 runs, 20% at 2,000**), the block layer still
+measurable (235 corners claimed and 214 raids resolved across 2,000 runs), and a
+strategy that pays its obligations is not evicted (`worker`, 0).
+
+---
+
 ## v1.31 The Run Has No Fixed Length — built
 
 The standing design correction has been in ARCHITECTURE.md, PROJECT_STATUS.md and

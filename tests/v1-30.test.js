@@ -292,10 +292,16 @@ test("the employment telemetry only exists on the strategy that earns it", () =>
   }
 });
 
-test("every new branch in the tick loop is gated on a profile flag", () => {
-  // This is the property that makes the fourteen-unchanged proof possible at
-  // all: an ungated branch would re-order somebody else's day.
-  assert.match(simSource, /if\(p\.payBills\|\|p\.employment\)\{const next=workerTurn/, "the employment turn is opt-in");
+test("strategy-specific behaviour and telemetry stay opt-in", () => {
+  // v1.30 gated every new branch on a profile flag so the fourteen original
+  // strategies stayed byte-identical, and that is what made the equivalence
+  // proof possible. v1.32 deliberately broke half of it for the bills turn:
+  // paying rent became universal, because leaving it opt-in meant fourteen of
+  // fifteen strategies had never once dispatched PAY_RENT and the entire table
+  // was measuring "what happens if nobody pays". The job ladder inside the same
+  // turn, and all of its telemetry, are still opt-in.
+  assert.match(simSource, /if\(!p\.skipBills\)\{const next=workerTurn/, "bills are universal, with one named exception");
+  assert.match(simSource, /if\(!p\.employment\)return null;/, "the job ladder inside it is employment-only");
   assert.match(simSource, /if\(p\.employment\)\{Object\.assign\(summary,employmentMetrics/, "so is its telemetry");
   assert.match(simSource, /strategies\[name\]\.employment\?\{employment:\{/, "and its roll-up");
 });

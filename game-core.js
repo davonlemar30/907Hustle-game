@@ -29,6 +29,11 @@
 
   const VERSION = 11;
   const RUN_DAYS = 7;
+  // v1.31. Dre fronts you cash and wants it back in a week. This used to be
+  // `lender.dueDay = run.checkpointDay`, which meant the note quietly inherited
+  // the run's old day-count ending - and removing that ending without rehoming
+  // this would have deleted a lose condition rather than freed one.
+  const LOAN_TERM_DAYS = 7;
   const PRESSURE_DAYS = 7;
   const MAX_ENERGY = 4;
   const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
@@ -2521,6 +2526,17 @@
     if (!state.run.pendingUnlocks.includes(id)) state.run.pendingUnlocks.push(id);
     return true;
   }
+  // v1.31. The day the run's late-game story beats consider "late enough".
+  // This is the SAME arithmetic the old checkpoint used, and deliberately so -
+  // three authored beats (Dre's note coming due, Curtis's late pressure, Mina's
+  // callback) were paced against it and should keep firing exactly when they
+  // did. What changed is that it no longer has the power to end anything. The
+  // stored field is still `run.checkpointDay` because renaming it would move
+  // the save schema for no player-visible gain; the name is historical, and
+  // this function is the only thing that should read it.
+  function lateRunDay(state) {
+    return state.run.checkpointDay || Infinity;
+  }
   function startPressurePhase(state) {
     if (state.run.phase === "pressure") return;
     state.run.phase = "pressure";
@@ -3783,7 +3799,6 @@
     if (eli.contactStage === "recruitable") return { available: false, reason: "The test is complete. Visit the garage to recruit Eli." };
     if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
     if (state.player.cash < 35) return { available: false, reason: "The test route needs $35 for fuel and a vehicle." };
-    if (state.run.day === checkpointDay(state) && state.run.slot === 3) return { available: false, reason: "There is no part of the run left for the test route." };
     return { available: true, reason: "Uses one part of day.", cost: 35 };
   }
   function minaThreatEligible(state) {
@@ -4211,7 +4226,6 @@
     const robbery = normalizeRobberyStats(state.stats.robbery, state);
     if (robbery.lastAttemptedDay === state.run.day) return { available: false, reason: "You already tried a Rob today." };
     if ((state.stick?.dailyCount || 0) >= Districts.STICK_DAILY_CAP) return { available: false, reason: "Two robberies in a day is how people get named. Tomorrow." };
-    if (state.run.day === checkpointDay(state) && state.run.slot === 3) return { available: false, reason: "There is no part of the run left to resolve a score." };
     if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
     const capital = workingCapital(state);
     if (capital >= WORKING_CAPITAL_RESERVE) return { available: false, reason: `Rob opens when working capital falls below $${WORKING_CAPITAL_RESERVE}.` };
@@ -4259,7 +4273,6 @@
     if (record.gone) return blocked(`${definition.name.split(" ")[0]} does not work this block any more.`);
     if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return blocked("Resolve the current situation first.");
     if (state.world.currentNeighborhoodId !== definition.areaId) return blocked(`${definition.name.split(" ")[0]} works out of ${AREA_BY_ID[definition.areaId].name}.`);
-    if (state.run.day === checkpointDay(state) && state.run.slot === 3) return blocked("There is no part of the run left for this.");
 
     const plug = PLUG_BY_ID[id];
     const minaBonus = atLeastBand(state, "mina", BANDS.TRUSTED) ? 0.08 : atLeastBand(state, "mina", BANDS.WARM) ? 0.05 : 0;
@@ -5556,12 +5569,13 @@
         logEntry(state, `Dre leaves the new total under the Mini-Mart wiper: $${state.lender.balance}. No greeting.`, "bad");
       }
     }
-    // Fresh-arrival runs set dueDay === RUN_DAYS, so `day > dueDay` can never
-    // become true inside a seven-day run and missedDays/collectorTier would
-    // stay 0 forever — the Day 7 deadline itself never produces a consequence.
-    // Reaching that boundary with debt still owed is the first enforcement
-    // trigger for this run length; severity scales with how much is unpaid.
-    if (pressureActive && crossedDay && state.lender.status === "active" && state.lender.balance > 0 && state.run.day >= checkpointDay(state) && state.lender.collectorTier < 1) {
+    // v1.31: this reads the note now, not the run. The old comment here
+    // explained a workaround - fresh-arrival runs set dueDay to the run length,
+    // so `day > dueDay` could never come true inside a seven-day run and the
+    // deadline produced no consequence, so the checkpoint stood in for it. With
+    // the run open-ended and the loan on a real seven-day term from the day it
+    // is taken, the due day arrives on its own and the workaround is gone.
+    if (pressureActive && crossedDay && state.lender.status === "active" && state.lender.balance > 0 && state.run.day >= state.lender.dueDay && state.lender.collectorTier < 1) {
       const owedRatio = state.lender.principal > 0 ? state.lender.balance / state.lender.principal : 1;
       state.lender.collectorTier = owedRatio >= 0.9 ? 2 : 1;
       logEntry(state, "Dre's patience runs out with the note still open. Somebody is coming to collect in person.", "bad");
@@ -5716,7 +5730,7 @@
       requires: (s) => minaOpen(s) && curtisHostile(s) && s.hustle.soldUnits >= 50 && atLeastBand(s, "mina", BANDS.TRUSTED), area: "north_star_lot",
       earliest: { day: 5, slot: 1 }, latest: null, once: true, cooldown: 0, weight: 8, exit: (s) => !minaOpen(s) },
     { id: "mina_after", chain: "mina_spenard", stage: 6, classification: "callback", trigger: "chain",
-      requires: (s) => !!s.flags.minaBoundaryResolved && (!!s.flags.minaSedanNightResolved || s.run.day >= checkpointDay(s)), area: "north_star_lot",
+      requires: (s) => !!s.flags.minaBoundaryResolved && (!!s.flags.minaSedanNightResolved || s.run.day >= lateRunDay(s)), area: "north_star_lot",
       earliest: { day: 6, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
 
     // --- Service Roads -------------------------------------------------------
@@ -5760,7 +5774,7 @@
       requires: (s) => s.lender.collectorTier >= 1, area: null,
       earliest: { day: 5, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: (s) => s.lender.balance <= 0 },
     { id: "dre_day7", chain: "dre_note", stage: 5, classification: "ending_setup", trigger: "chain",
-      requires: (s) => s.lender.status === "active" && !!s.flags.dreTermsResolved && s.run.day >= checkpointDay(s), area: null,
+      requires: (s) => s.lender.status === "active" && !!s.flags.dreTermsResolved && s.run.day >= s.lender.dueDay, area: null,
       earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
 
     // --- Curtis's Attention ----------------------------------------------------
@@ -5783,7 +5797,7 @@
       requires: (s) => !!s.flags.curtisTaxResolved, area: null,
       earliest: { day: 4, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 8, exit: null },
     { id: "curtis_day7", chain: "curtis_pressure", stage: 6, classification: "ending_setup", trigger: "chain",
-      requires: (s) => !!s.flags.earlyThreatResolved && s.run.day >= checkpointDay(s), area: null,
+      requires: (s) => !!s.flags.earlyThreatResolved && s.run.day >= lateRunDay(s), area: null,
       earliest: { day: 1, slot: 0 }, latest: null, once: true, cooldown: 0, weight: 9, exit: null },
 
     // --- The Wash & Go -------------------------------------------------------
@@ -6081,7 +6095,7 @@
       state.lender.status = "active";
       state.lender.principal = 1000;
       state.lender.balance = 1200;
-      state.lender.dueDay = state.run.checkpointDay;
+      state.lender.dueDay = state.run.day + LOAN_TERM_DAYS;
       addDirtyCash(state, 1000);
       state.npc.dre.known = true;
       state.npc.dre.loansTaken += 1;
@@ -6254,7 +6268,7 @@
       addDirtyCash(state, 1200);
       state.lender.principal = 1200;
       state.lender.balance = 1380;
-      state.lender.dueDay = Math.min(state.run.day + 5, checkpointDay(state));
+      state.lender.dueDay = state.run.day + 5;
       state.lender.status = "active";
       state.lender.afterPayoffOffer = "accepted";
       state.flags.acceptedSecondNote = true;
@@ -6600,12 +6614,15 @@
     Exposure.propagateHeat(state);
     drainObservations(state);
     evolveMarkets(state, random);
-    if (state.run.phase === "pressure" && oldDay >= checkpointDay(state)) {
-      state.run.dailyActions = [];
-      endRun(state);
-      state.run.rngState = random.state;
-      return state;
-    }
+    // v1.31: the run does not end because a number went up. This is where a
+    // day count used to terminate it - phase "pressure" plus oldDay past the
+    // checkpoint called endRun outright, with no obligation, health or Heat
+    // check anywhere in the condition. That contradicted the standing design
+    // correction every build prompt has carried since v1.24: THE GAME HAS NO
+    // FIXED RUN LENGTH. A run now ends three ways and three only - an
+    // obligation you cannot pay (rent, the phone, Dre's note), health at zero,
+    // or Heat at the terminal 15 - plus the one the player chooses, which is
+    // EXECUTE_FINAL_PLAN and is no longer locked to a particular day either.
     state.run.day = oldDay + 1;
     state.run.slot = 0;
     state.player.energy = MAX_ENERGY;
@@ -7849,7 +7866,7 @@
       state.lender.status = "active";
       state.lender.principal = principal;
       state.lender.balance = repeat ? 1380 : 1200;
-      state.lender.dueDay = repeat ? Math.min(state.run.day + 5, checkpointDay(state)) : checkpointDay(state);
+      state.lender.dueDay = state.run.day + (repeat ? 5 : LOAN_TERM_DAYS);
       state.npc.dre.loansTaken += 1;
       addDirtyCash(state, principal);
       pushConsequence(state, `Dre opens a $${principal} note. $${state.lender.balance} is due Day ${state.lender.dueDay}.`, "warn");
@@ -8992,7 +9009,11 @@
     }
     if (action.type === "PREPARE_FINAL_PLAN") {
       const allowed = ["escape", "defend", "partner", "challenge", "last_score"];
-      if (state.run.day < checkpointDay(state) - 1 || !allowed.includes(action.planId) || state.run.finalPlanPrepared) return inputState;
+      // v1.31: no day gate. Calling the final score is how a player chooses to
+      // stop, and an open-ended run cannot tell them which day they are allowed
+      // to want that. Preparing it still costs a part of the day, and it can
+      // still only be prepared once.
+      if (!allowed.includes(action.planId) || state.run.finalPlanPrepared) return inputState;
       base.run.finalPlan = action.planId; base.run.finalPlanPrepared = true;
       base.stats.majorDecisions.push(`Prepared final plan: ${action.planId}`);
       recordBehavior(base, "earner", 2, `final_plan:${action.planId}`, "day7_plan");
@@ -9000,7 +9021,10 @@
       return advanceRun(base, { reason: "PREPARE_FINAL_PLAN" });
     }
     if (action.type === "EXECUTE_FINAL_PLAN") {
-      if (state.run.day !== checkpointDay(state) || !state.run.finalPlan || state.run.pendingEncounter) return inputState;
+      // v1.31: executable whenever the plan is prepared, rather than on one
+      // specific day. This is the "or choose to stop" half of the lose
+      // condition, and it is the only ending the player controls.
+      if (!state.run.finalPlan || state.run.pendingEncounter) return inputState;
       startEncounter(base, "late", true);
       base.run.pendingEncounter.feedback = `${base.run.pendingEncounter.description} Your ${base.run.finalPlan.replace("_", " ")} plan decides what is at stake.`;
       return base;
@@ -9129,7 +9153,7 @@
     const balance = state.lender.balance;
     const daysLeft = state.lender.dueDay - state.run.day;
     return {
-      day: state.run.day, runDays: state.run.checkpointDay || "open", slot: state.run.slot, partLabel: SLOTS[state.run.slot],
+      day: state.run.day, runDays: "open", slot: state.run.slot, partLabel: SLOTS[state.run.slot],
       districtName: area.name,
       cash: state.player.cash, health: state.player.health,
       heat: {
@@ -9256,6 +9280,13 @@
     DISTRICT_CONTROL_TIERS, DISTRICT_CONTROL_CAPSTONE_BLOCKS, DISTRICT_CONTROL_LABEL, ELI_OPERATION_POLICIES,
     buildEventForTest: activeEvent, storyCandidatesForTest: storyCandidates,
     recordBehaviorForTest: recordBehavior,
+    // v1.31. Ending SELECTION and ending TRIGGERING used to be testable in one
+    // step, because a day count reliably ended a run and tests reached endings
+    // by walking to Day 7 Night. With the terminator gone, the two are separate
+    // concerns: chooseEnding is pure state -> ending and is what those tests
+    // were always really asserting, while the paths that reach it (obligation,
+    // health, Heat, the player's own final score) get their own coverage.
+    endRunForTest: endRun,
     // v1.21: the nightly territory pass, reachable without driving a whole
     // CONFIRM_END_DAY. Isolating one Heat delta otherwise means fighting rent,
     // pressure, the Curtis settle, and the markets for it.

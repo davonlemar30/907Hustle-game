@@ -1,25 +1,67 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.30**. This file
+How 907Hustle: One Good Run is put together, current as of **v1.31**. This file
 is meant to be the only thing you need to read before changing code; for *why*
 the game is designed the way it is, see the ClickUp docs at the bottom.
 
 ## The run has no fixed length
 
-**There is no day cap, no timed ending, and no "day 7 fork."** The player hustles
-indefinitely. The only way a run ends is a lose condition — eviction, and the
-other `endRun` paths. `RUN_DAYS = 7` (`game-core.js:30`) is a *debt deadline and
-checkpoint* constant: it seeds `lender.dueDay`, `run.checkpointDay`, and the
-income projection in `collectedPerRun`. It has never terminated a run, and a
-v1.26 test walks an unpaid run to **day 29** before eviction ends it.
+**There is no day cap and no timed ending.** The player hustles indefinitely. As
+of **v1.31 this is true of the code as well as of this file** — and until v1.31
+it was not.
 
-The 10-day cap inside `tests/simulate-runs.js` is an **instrument boundary** — it
-bounds the harness so hashes are comparable, nothing more. Do not read it as a
-design position, and do not evaluate balance, pacing, or reachability against a
-day count. Territory is deliberately mid-to-late-game content funded by early
-economy systems (weed, booze, robbery tiers) that are still being built out; that
-it is not reachable inside the simulator's ten days is a statement about the
-instrument, not about the game.
+**What this section used to say, and why it was wrong.** It read: *"`RUN_DAYS` is
+a debt deadline and checkpoint constant… it has never terminated a run."* That
+sentence was false for as long as it was written. `confirmDayEnd` carried this:
+
+```js
+if (state.run.phase === "pressure" && oldDay >= checkpointDay(state)) {
+  state.run.dailyActions = []; endRun(state);
+```
+
+No obligation check, no health check, no Heat check — a day count, ending the
+run. `startPressurePhase` set `checkpointDay = day + PRESSURE_DAYS`, Week Zero
+finished around day 3, and every run therefore stopped around **day 10**. The
+second one was quieter: `EXECUTE_FINAL_PLAN`, the only ending the player
+chooses, was dispatchable on exactly one day. Six builds of balance work were
+measured against a boundary this file denied existed, and the denial is why
+nobody went looking for it.
+
+**A run now ends four ways and four only.** Three are failures and one is a
+choice:
+
+1. **an obligation you cannot pay** — rent (three household warnings → eviction),
+   the phone, or Dre's note
+2. **health at zero**
+3. **Heat at the terminal 15**
+4. **the player calling the final score** — `PREPARE_FINAL_PLAN` then
+   `EXECUTE_FINAL_PLAN`, on whatever day they like
+
+A solvent, healthy, cool player is never stopped: a v1.31 test drives one past
+**day 60** and a manual walk reached **day 756** still playing. An unpaid run
+still ends in eviction around day 29, the v1.26 number, unchanged.
+
+**`RUN_DAYS = 7` is now only an income-projection constant** (`collectedPerRun`).
+The loan has its own term, `LOAN_TERM_DAYS = 7`, counted from the day it is
+taken — it used to inherit `run.checkpointDay`, which meant removing the
+checkpoint naively would have deleted a lose condition rather than freed one.
+`run.checkpointDay` survives as a **story-pacing marker only**, read by
+`lateRunDay()` and nothing else, because three authored beats were timed against
+it and should still fire when they did. It cannot end anything.
+
+**The harness owns its own boundary**, which is what it always should have been.
+`tests/simulate-runs.js` takes a per-strategy `maxDays` (default **40**) and
+exits through the same voluntary ending a player uses. Strategies that go broke,
+get hurt, or get arrested leave earlier through the real fail-state.
+
+**This immediately unblocked the block layer.** Three consecutive handoffs
+recorded that no strategy had ever claimed a corner, so every territory constant
+tuned since v1.20 was unverifiable. The cause was arithmetic, not economy: the
+`territory` strategy bought the garage on average **day 7.3** and the run was
+taken away at day 10, leaving no room for the four rungs above it (Eli, the
+promotion, a soldier, the claim). At a 40-day horizon it claims corners in
+volume, and its average net worth went **79 → 1,452** — from last place in the
+table to second. It was never a weak strategy. It never got to finish.
 
 ## The shape of it
 
@@ -1388,7 +1430,9 @@ ladder exempts at every rung. So `applyAttendance` had never once run inside a
 simulated `CONFIRM_END_DAY`. The `worker` strategy holds a real employer across
 the window, which means it runs every night, and `missedShiftRuns` /
 `firedRuns` in the employment roll-up are the numbers a future change that
-breaks it would move. Both currently read 0 across 2,000 runs.
+breaks it would move. **v1.31 stretched that window from ten days to forty**, so
+the ladder now runs roughly four times as many nights per run and the same two
+numbers cover far more ground.
 
 There is deliberately **no employer roster in state**. `job.scheduled` is a
 once-per-day flag and `lastScheduledShiftDay` records the day worked; neither is
@@ -1449,20 +1493,26 @@ before and after: a matching hash proves you changed nothing the player can see.
 Nothing in the run path may use `Math.random()` — only `makeRandom(seed)`, and
 not even that where a `stringHash` off the seed will do.
 
-**Current baselines, set at v1.30** — `--total 200`
-`fb6725fc5bb27fe0c68118d94fa66388b7706c584b451e020bf798ce458e9252`, `--total 2000`
-`8a70844536f937141b787fef8b919a39fc95c6b86bf33f7ab2dcb55c6d0a4f45`. They moved because v1.30 added a
-**fifteenth** strategy, `worker`, plus nine employment telemetry keys on that
-strategy alone. The v1.25–v1.29 pair was
-`25afb74e…` / `f10432b1…`.
+**Current baselines, set at v1.31** — `--total 200`
+`c1469e6db3958e6bf439478cc05426829409cce6d66ec12c8c37df5332f2b5b7`, `--total 2000`
+`6bc6eb31cf360245f895290e292f75092a1a9e19405f12fda6534230999f4178`. **Everything moved, and no
+per-strategy equivalence is claimed this time** — deliberately. v1.31 removed the
+day-count terminator, so all fifteen strategies now run to the harness's 40-day
+`maxDays` instead of stopping around day 10. There is no unchanged subset to
+compare against; the previous pair was v1.30's `fb6725fc…` / `8a708445…`.
 
-**A fifteenth strategy invalidates a raw before/after diff by itself**, for the
-reason spelled out below: `--total N` re-partitions a fixed budget, so every
-block's `runs` count changes even where behavior did not. v1.30 proved the
-fourteen originals unchanged the way v1.25 did — `summarize(name, 15)` per
-strategy, before and after, byte-identical across all fourteen. The employment
-telemetry is gated on the profile flag precisely so that comparison is an
-equality rather than a diff with exceptions.
+**`maxDays` is where the boundary lives now.** Per-strategy, default 40, and the
+harness exits through the same voluntary `EXECUTE_FINAL_PLAN` a player uses
+rather than through a mechanic the game imposes. Raising or lowering it moves
+both hashes by design. A 200-run pass takes about 55 seconds at 40 days.
+
+**When a build does leave a subset of strategies untouched**, prove it the v1.25
+way rather than diffing raw output: `--total N` re-partitions a fixed budget, so
+adding or removing a strategy changes every block's `runs` count even where
+behavior did not. Call `summarize(name, 15)` per strategy at a fixed count on
+both sides and compare with new keys stripped. v1.30 did this for its fourteen
+originals; strategy-specific telemetry is gated on a profile flag precisely so
+that comparison stays an equality rather than a diff with exceptions.
 
 **v1.28 rewrote the nightly Curtis resolution and both hashes came back
 byte-identical — which is a finding about the simulator, not a lucky escape.**

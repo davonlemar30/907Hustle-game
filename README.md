@@ -23,8 +23,8 @@ once.
 |---|---|
 | Save schema | **v11** (`907ogr_v11`), loads v3 and up |
 | Tests | **868** passing (`npm test`) |
-| Simulation, 200 runs | `fb6725fc5bb27fe0c68118d94fa66388b7706c584b451e020bf798ce458e9252` |
-| Simulation, 2,000 runs | `8a70844536f937141b787fef8b919a39fc95c6b86bf33f7ab2dcb55c6d0a4f45` |
+| Simulation, 200 runs | `c1469e6db3958e6bf439478cc05426829409cce6d66ec12c8c37df5332f2b5b7` |
+| Simulation, 2,000 runs | `6bc6eb31cf360245f895290e292f75092a1a9e19405f12fda6534230999f4178` |
 
 **Both hashes are unchanged, and that was not the expected result.** This build
 rewrote how the nightly Curtis pass resolves. The hashes held because the
@@ -35,9 +35,14 @@ It also means the simulator does not cover the block layer, and an unchanged has
 there must never be read as though it does. 2,000 runs, zero dead ends.
 
 **The run has no fixed length.** There is no day cap and no timed ending — the
-player hustles indefinitely, and a run ends only on a lose condition.
-`RUN_DAYS = 7` is a debt-deadline constant, and the 10-day cap in the simulator
-is an instrument boundary for hash comparability, not a design position.
+player hustles indefinitely, and a run ends only on a lose condition (an
+obligation you cannot pay, health at zero, Heat at 15) or when the player calls
+the final score themselves, on any day they like. **v1.31 removed a day-count
+terminator that had been ending every run around day 10** while these documents
+said no such thing existed. `RUN_DAYS = 7` is now only an income-projection
+constant; the loan carries its own seven-day term. The **40-day `maxDays`** in
+the simulator is an instrument boundary for hash comparability, not a design
+position.
 
 <details>
 <summary>Previously — v1.27: Disclosure Tables</summary>

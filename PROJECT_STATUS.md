@@ -2,6 +2,114 @@
 
 Last updated: 2026-08-18 (America/Anchorage)
 
+## v1.31 The Run Has No Fixed Length — built
+
+The standing design correction has been in ARCHITECTURE.md, PROJECT_STATUS.md and
+every build prompt since v1.24: *this game has no fixed run length; the lose
+condition is failing to pay bills or rent.* **The code did not do that.** This
+build makes the code match the design, and the discrepancy turned out to explain
+a measurement problem three consecutive handoffs had filed as an economy problem.
+
+### What was actually in there
+
+Two day-count endings, one loud and one quiet.
+
+```js
+// game-core.js, confirmDayEnd - removed in v1.31
+if (state.run.phase === "pressure" && oldDay >= checkpointDay(state)) {
+  state.run.dailyActions = []; endRun(state);
+```
+
+No obligation check, no health check, no Heat check. `startPressurePhase` set
+`checkpointDay = day + PRESSURE_DAYS`, Week Zero finished around day 3, so every
+run ended around **day 10**. The quiet one: `EXECUTE_FINAL_PLAN` — the only
+ending the player chooses — was dispatchable on exactly one day.
+
+**The documentation actively concealed this.** ARCHITECTURE.md said `RUN_DAYS`
+"has never terminated a run." That sentence was false when it was written and
+stayed false through six builds. Nobody went looking because the file said there
+was nothing to find.
+
+### What a run ends on now
+
+Three failures and one choice: an obligation you cannot pay (rent → three
+household warnings → eviction, the phone, Dre's note), health at zero, Heat at
+the terminal 15, or the player calling the final score on any day. A solvent
+player is never stopped — a test drives one past **day 60**, and a manual walk
+reached **day 756** still playing. An unpaid run still ends in eviction at
+**day 29**, the v1.26 number, unchanged.
+
+### The trap that removal would have walked into
+
+`lender.dueDay = run.checkpointDay`. Delete the checkpoint naively and Dre's note
+never comes due — **removing a lose condition while trying to free one.** The
+loan now carries `LOAN_TERM_DAYS = 7` from the day it is taken, which is also
+what Dre would actually say. A note taken on day 12 is due day 19; under the old
+code, with a checkpoint of 10, it was already overdue on arrival.
+
+The collector escalation had grown a workaround around the same knot — its
+comment explained that "fresh-arrival runs set dueDay === RUN_DAYS, so
+`day > dueDay` can never become true inside a seven-day run," so the checkpoint
+stood in for the deadline. With a real term the deadline arrives on its own and
+the workaround is gone.
+
+`run.checkpointDay` survives as a **story-pacing marker only**, read by
+`lateRunDay()` and nothing else, because three authored beats were timed against
+it. Dre's beat moved onto the note's own due date, which is what it was always
+about. Save schema stays **v11** — no field was added or removed.
+
+### The block layer, unblocked
+
+v1.24, v1.28 and v1.29 all recorded the same thing: no strategy had ever claimed
+a corner, so every territory constant tuned since v1.20 was unverifiable. **It
+was arithmetic, not economy.** The `territory` strategy bought the garage on
+average **day 7.3** and the run was taken away at day 10 — four rungs (Eli, the
+promotion, a soldier, the claim) and no calendar left to climb them.
+
+At the new 40-day harness horizon, over 200 runs:
+
+| | before | after |
+|---|---|---|
+| `territory` average net worth | 79 (last place) | **1,452** (second) |
+| blocks claimed | 0, always | 66 in 13 runs |
+| raids resolved on player corners | 0 | 68 |
+| evictions across all strategies | 0 | 31 |
+
+`lossRate` on held corners is now measurable at **0.015**. Every Curtis constant
+from v1.20, v1.21, v1.25 and v1.28 is verifiable for the first time.
+
+### What the longer horizon says about balance
+
+Read this as a finding, not a mandate — it is the first honest look the
+instrument has ever given. Most criminal strategies got **worse** over 40 days
+(`cautious` 165 → 88, `trader` 163 → 105, `thief` 273 → 87) because obligations
+accumulate and Heat catches up, while the ten-day window had been flattering
+them. `legal_worker` still tops the table, and still does it without paying rent
+once. The compounding strategies — `territory`, `flipper` (139 → 678), `broker`
+(141 → 607) — are the ones the short window was hiding.
+
+### Verification
+
+`npm test` **920 passing** (908 + 12 new in `tests/v1-31.test.js`).
+`npm run build` clean, `npm run check-docs` clean. Save schema **v11**.
+Both hashes moved, and everything moved with them — 15 strategies now run to 40
+days instead of 10, so no per-strategy equivalence is claimed or possible this
+time. `--total 200` → `c1469e6db3958e6bf439478cc05426829409cce6d66ec12c8c37df5332f2b5b7`.
+`--total 2000` → `6bc6eb31cf360245f895290e292f75092a1a9e19405f12fda6534230999f4178`.
+Zero dead ends, 200/200 and 2,000/2,000 completed. Verified in Chromium at
+320-1440px with a pre-v1.31 v11 save: it loads and plays, the HUD reads "Day 3"
+with no denominator, zero overflow, 44px tap targets intact, zero console errors.
+
+### Deliberately not done
+
+- **No balance changes.** The numbers above are a measurement, and tuning them in
+  the same build that fixed the instrument would make the next comparison
+  meaningless.
+- `legal_worker` never pays rent and is not evicted inside 40 days. That is worth
+  understanding before anyone reads its position in the table as performance.
+
+---
+
 **v1.30 is built on `claude/v1-30-build-crew-wages-3mxnzo`, on top of the v1.29
 merge (PR #91, `88acb22`).** Verified on the branch: `npm test` **908 passing**
 (889 + 19 new), `npm run build` clean, `npm run check-docs` clean, 2,000-run
@@ -154,19 +262,23 @@ instrument, ahead of any further balance work measured against it.
 ## Standing design correction — the run has no fixed length
 
 **This applies to every future build, not just this one.** There is no day cap,
-no "day 7 fork," no timed ending. The player hustles indefinitely, and the only
-way a run ends is a lose condition. `RUN_DAYS = 7` is a debt-deadline and
-checkpoint constant; it has never terminated a run. A v1.26 test walks an unpaid
-run to **day 29** before eviction ends it.
+no timed ending. The player hustles indefinitely, and the only way a run ends is
+a lose condition or the player's own decision to call the final score.
 
-The 10-day cap inside `tests/simulate-runs.js` is an **instrument boundary** that
-keeps hashes comparable. It is not a design position. Do not evaluate balance,
-pacing, or reachability against a day count — including the v1.25 finding that
-territory is unreachable "inside a run's length," which should be read as *the
-simulator's ten days do not fund the ladder*, not as a claim about the game.
-Territory is deliberately mid-to-late-game content funded by early economy
-systems (weed, booze, robbery tiers) that are still being fleshed out. The full
-statement is in ARCHITECTURE.md under "The run has no fixed length."
+**v1.31 made this true of the code.** The sentence that used to sit here —
+*"`RUN_DAYS = 7` is a debt-deadline and checkpoint constant; it has never
+terminated a run"* — **was false**. `confirmDayEnd` ended the run on a day count
+with no obligation, health or Heat check, and every run stopped around day 10.
+Six builds of balance work were measured against a boundary this document
+denied existed. The denial is why nobody went looking. See the v1.31 section
+below and ARCHITECTURE.md under "The run has no fixed length."
+
+The **40-day `maxDays`** in `tests/simulate-runs.js` is an instrument boundary
+that keeps hashes comparable, and it is now the only cap anywhere. It is not a
+design position. The v1.25 finding that territory was unreachable was real but
+misattributed: the garage lands around day 7.3 and the run was being taken away
+at day 10, so the ladder ran out of calendar, not money. At 40 days the block
+layer is reached in volume.
 
 ## v1.29 Playtest QoL Pass — built (branch `claude/playtest-qol-pass-qutbfs`)
 

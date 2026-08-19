@@ -116,7 +116,7 @@ test("leaving the market is the close action, and browsing stays free", () => {
 test("the required Street Name is offered before classless confirmation and shown on the save", () => {
   assert.match(ui, /Street Name/); assert.match(ui, /maxLength=\{C\.STREET_NAME_MAX\}/);
   assert.match(ui, /What do they call you\?/); assert.match(ui, /disabled=\{!validName\}/);
-  assert.match(ui, /\{preview\.name\}/); assert.match(ui, /\{summary\.streetName\} reached the Day/);
+  assert.match(ui, /\{preview\.name\}/); assert.match(ui, /\{summary\.streetName\} called it on Day/);
 });
 // The gate was never the bug. The Start control carries .edge-card, and the
 // stylesheet had a disabled rule for .btn, .nav button, .menu-row, and

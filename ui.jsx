@@ -59,7 +59,7 @@ function TitleScreen({ saveInfo, onLoad, onNew }) {
         <button className="btn full secondary title-button" onClick={onNew}>New Game<span className="action-copy">Start fresh in Spenard with $100 clean</span></button>
         <button className="btn full ghost" aria-expanded={help} onClick={() => setHelp(!help)}>How to Play</button>
         {help && <div className="how-to">
-          <b>Four parts per day, with the checkpoint set by your run.</b>
+          <b>Four parts per day, for as long as you can keep it going.</b>
           <ExpandableMoreSection
             collapsedContent={<p>Work, travel, exploration, recovery, meetings, and major operations move the clock. Your first days establish a life in Spenard before the pressure starts.</p>}
             expandedContent={<p className="popup-flavor">Each day has Morning, Afternoon, Evening, and Night. Night actions open a confirmation gate before the city rolls into tomorrow.</p>} />
@@ -147,9 +147,9 @@ function Header({ state, onMenu }) {
   // them as five segments; the exact number stays the accessible name.
   const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil((value / ceiling) * 5))), total: 5 });
   return <header className="top">
-    <h1 className="sr-only">907Hustle: One Good Run · v1.30</h1>
+    <h1 className="sr-only">907Hustle: One Good Run · v1.31</h1>
     <div className="hud primary-hud">
-      <Hud label="Day / Time" bare value={<><b className="hud-day">Day {state.run.day}{state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""}</b><span className="hud-slot">{C.SLOTS[state.run.slot]}</span><SlotPips slot={state.run.slot} /></>} />
+      <Hud label="Day / Time" bare value={<><b className="hud-day">Day {state.run.day}</b><span className="hud-slot">{C.SLOTS[state.run.slot]}</span><SlotPips slot={state.run.slot} /></>} />
       <Hud label="District" bare accent="muted" value={<><span className="hud-diamond" aria-hidden="true">◆</span>{area.name}</>} />
       <Hud label="Cash" bare accent="green" value={money(state.player.cash)} good flash={cashFlash} />
       <button className="status-toggle" aria-expanded={open} aria-label="Show more status" onClick={() => setOpen(!open)}>Status <span>{open ? "Hide" : "View"}</span></button>
@@ -1452,7 +1452,7 @@ function Recovery({ state, dispatch, onBack }) {
   return <><PageHead title="Recovery" sub="Essential care first; larger options appear when the damage justifies them" onBack={onBack} /><div className="scroll"><div className="card"><div className="card-title">Health<small>{state.player.health}/100</small></div><div className="meter"><span style={{ width: `${state.player.health}%`, background: state.player.health < 40 ? "var(--red)" : "var(--green)" }} /></div></div><div className="card inventory-row"><div><div className="card-title">First aid</div><div className="muted">Immediate care · restore up to 18 Health</div></div><button className="btn good-btn" disabled={state.player.cash < firstAidCost || state.player.health >= 100} onClick={() => dispatch({ type: "USE_FIRST_AID", amount: 18, cost: firstAidCost })}>{money(firstAidCost)}<span className="action-copy">Free · no time passes</span></button></div>{state.player.health <= 82 && treatment(40, 135, "Clinic visit", "Larger treatment for a serious injury")}{state.player.health <= 55 && (doctorOpen ? treatment(75, 290, "No-Questions Doctor", "Private care unlocked through trust or Safehouse recovery") : <div className="card locked"><div className="card-title">Private medical contact<small>Locked</small></div><p className="muted">Build a trusted medical relationship or install the Safe Room recovery upgrade.</p></div>)}<div className="card"><div className="card-title">Lay Low<small>Next part of day</small></div><p>Expected immediate result: lower Heat by {layLow.heatReduction}. Debt, wages, markets, and Curtis continue moving while the lights are off.</p><button className="btn full secondary" onClick={() => dispatch({ type: "LAY_LOW" })}>Lay Low<span className="action-copy">Lowers Heat and advances time</span></button></div></div></>;
 }
 
-function Help({ onBack, marketVisible }) { return <><PageHead title="How to Play" sub="The four-part rhythm of One Good Run" onBack={onBack} /><div className="scroll"><div className="card"><h2>Your run</h2><p>Each day contains Morning, Afternoon, Evening, and Night. Week Zero establishes your life in Spenard. A later approach sets the checkpoint.</p></div>{marketVisible && <div className="card"><h2>Market visits</h2><p>Buy and sell several times at locked prices. Walking away after a trade uses one part of day. Looking costs nothing.</p></div>}<div className="card"><h2>Major actions</h2><p>Travel, recovery, meetings, debt payments, and operations advance to the next part of day. Resolve an event choice without paying a second time cost.</p></div><div className="card"><h2>The pressure phase</h2><p>Protect working capital, manage Heat and Health, build relationships, and decide whether territory or a clean exit is worth the risk.</p></div></div></>; }
+function Help({ onBack, marketVisible }) { return <><PageHead title="How to Play" sub="The four-part rhythm of One Good Run" onBack={onBack} /><div className="scroll"><div className="card"><h2>Your run</h2><p>Each day contains Morning, Afternoon, Evening, and Night. Week Zero establishes your life in Spenard. After that the run is open: it ends when you cannot pay what you owe, when your health or Heat runs out, or when you decide to call the final score.</p></div>{marketVisible && <div className="card"><h2>Market visits</h2><p>Buy and sell several times at locked prices. Walking away after a trade uses one part of day. Looking costs nothing.</p></div>}<div className="card"><h2>Major actions</h2><p>Travel, recovery, meetings, debt payments, and operations advance to the next part of day. Resolve an event choice without paying a second time cost.</p></div><div className="card"><h2>The pressure phase</h2><p>Protect working capital, manage Heat and Health, build relationships, and decide whether territory or a clean exit is worth the risk.</p></div></div></>; }
 
 function Character({ state, onBack }) {
   const identity = C.selectors.streetIdentityView(state);
@@ -1625,7 +1625,7 @@ function More({ state, dispatch, features, page, setPage, sub, subToken }) {
     {features.recovery.available && <MenuRow title="Recovery" status={`Health ${state.player.health}`} description="Treat injuries or lay low to reduce Heat." onClick={() => setPage("recovery")} />}
     {C.CREW.some((person) => state.people.crew[person.id].introduced || state.people.crew[person.id].recruited) && <MenuRow title="Crew" status={`${C.selectors.recruitedCrew(state).length}/${C.selectors.crewCapacityFor(state)} active`} description="Wages, loyalty, tiers, and who answers when it gets loud." onClick={() => setPage("crew")} />}
     <MenuRow title="Character" status={identity} description="Rank, what you are good at, and what the block remembers." onClick={() => setPage("character")} />
-    <MenuRow title="Help" status="Available" description="Time, trading, major actions, and the dynamic checkpoint." onClick={() => setPage("help")} />
+    <MenuRow title="Help" status="Available" description="Time, trading, major actions, and how a run ends." onClick={() => setPage("help")} />
   </div></>;
 }
 
@@ -1854,9 +1854,10 @@ function EndDayModal({ state, dispatch }) {
 // This screen opened with the same checkpoint sentence for every outcome, so a
 // player evicted on Day 9 was told they "reached the checkpoint" and never
 // learned which obligation ended it. The lead now names the cause when there
-// was one, and the checkpoint framing is kept for the runs that actually
-// reached a checkpoint. Days survived and net gain sit first, because they are
-// the two numbers that answer "how did I do" without reading a score.
+// was one. v1.31 removed the checkpoint entirely, so the other branch names the
+// day the player chose to stop instead of a milestone that no longer exists.
+// Days survived and net gain sit first, because they are the two numbers that
+// answer "how did I do" without reading a score.
 function EndModal({ state, onTitle }) {
   const summary = C.selectRunSummary(state);
   const hasDreDebt = state.lender.status === "active" || state.lender.status === "cleared";
@@ -1864,7 +1865,7 @@ function EndModal({ state, onTitle }) {
   return <Modal title={cause ? cause.title : summary.endingLabel}>
     {cause
       ? <p className="popup-lead bad">{cause.line}</p>
-      : <p className="popup-lead">{summary.streetName} reached the Day {state.run.checkpointDay || state.run.day} checkpoint as {summary.streetIdentityLabel}. This is the operation that survived, and the damage that came with it.</p>}
+      : <p className="popup-lead">{summary.streetName} called it on Day {summary.daysSurvived} as {summary.streetIdentityLabel}. This is the operation that survived, and the damage that came with it.</p>}
     <div className="outcome-grid">
       <Outcome label="Days survived" value={summary.daysSurvived} />
       <Outcome label="Net gain" value={signedMoney(summary.netGain)} tone={summary.netGain >= 0 ? "good" : "bad"} />
@@ -1886,7 +1887,7 @@ function MenuModal({ state, dispatch, onClose, onTitle }) {
   return <><Modal title="Run menu" onClose={onClose}>
     <ExpandableMoreSection
       collapsedContent={<p className="popup-lead">Autosave is on. This run saves to your browser after every action.</p>}
-      expandedContent={<p className="popup-flavor">907Hustle v1.30 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
+      expandedContent={<p className="popup-flavor">907Hustle v1.31 · Seed {state.run.seed} · Core v{state.version} · storage key {C.SAVE_KEY}</p>}
       moreLabel="Save detail" lessLabel="Hide detail" />
     <button className="btn full primary" onClick={onTitle}>Return to Title</button>
     <button className="btn full secondary choice" onClick={() => setConfirmRestart(true)}>Restart Run<span>Creates a new seed and returns to Street Name entry.</span></button>
@@ -1987,7 +1988,8 @@ function AmbientTicker({ state }) {
 }
 
 function nextPartLabel(state) {
-  if (state.run.checkpointDay && state.run.day >= state.run.checkpointDay && state.run.slot >= C.SLOTS.length - 1) return "the checkpoint";
+  // v1.31: there is no longer a part of the day that ends the run, so Night
+  // always names tomorrow.
   if (state.run.slot >= C.SLOTS.length - 1) return `Day ${state.run.day + 1}, ${C.SLOTS[0]}`;
   return C.SLOTS[state.run.slot + 1];
 }

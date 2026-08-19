@@ -119,9 +119,10 @@ test("authored serious violence closes the intact Mina escape ending", () => {
     state.npc.mina.ledger.push({ type: "honesty", event: "test_history", location: null, value: null, day: 1, count: 20, source: "witnessed" });
     state.npc.mina.available = true; state.npc.mina.usedWithoutConsent = false;
     state.flags.seriousViolence = serious;
-    state = C.reduceGame(state, { type: "END_MARKET" });
-    state.run.pendingEvent = null; state.run.pendingEncounter = null;
-    state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
+    // v1.31: this used to walk to Day 7 Night and let the day-count terminator
+    // end the run. Nothing ends a run on a day count any more, and what this
+    // test is actually about is which ending chooseEnding selects.
+    C.endRunForTest(state);
     return state.run.ending;
   }
   assert.equal(ending(false), "mina_escape");

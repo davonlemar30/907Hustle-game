@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.29**. This file
+How 907Hustle: One Good Run is put together, current as of **v1.30**. This file
 is meant to be the only thing you need to read before changing code; for *why*
 the game is designed the way it is, see the ClickUp docs at the bottom.
 
@@ -638,6 +638,21 @@ member departs: assignments and block manager slots clear, and the record stays
 (history matters) but stops counting toward capacity, power, wages, or presence
 effects. `PAY_CREW` clears arrears mid-run.
 
+**`PAY_CREW` is not gated on the garage, and v1.30 removed the gate that said it
+was.** Tone, Pherris and Deshawn recruit through Exposure scenes rather than
+through the base, so a player could hold crew without ever holding a garage —
+and the reducer required both `base.controlled` and `base.visiting`. That built
+a trap with no exit: arrears accrued, two nights of grace ran out, a loyalty
+point came off every night after, and the member walked, with the Pay button
+disabled the entire time and the Bills row reading "Pay at the garage". The
+garage is a prerequisite for territory (Eli, soldiers, claims) and never for
+crew. `BAIL_CREW` and `PROMOTE_CREW_TIER` were already ungated on the same
+reasoning; the wage path just joins them, and the Bills row now names People →
+Crew. Two pre-existing quirks were left alone and are worth knowing: `PAY_CREW`
+debits `player.cash` directly rather than through `spendCash`, and it does not
+add to `crewMeta.totalWagesPaid`, so the lifetime counter undercounts arrears
+cleared by hand.
+
 ### Presence effects
 
 ### The Made Men modifier triangle (v1.20)
@@ -1039,7 +1054,33 @@ from a window. **Deshawn is absent and stays absent** — his whole value is bei
 off Curtis's network, and a man who is not on the wire cannot sell what is on it.
 He shapes what *other* people say (the v1.23 tier ladder) and never becomes a
 source. **Pherris is absent** because her intel is a subscription she already
-sells; a disclosure row would charge the player twice for it.
+sells; a disclosure row would charge the player twice for it. **Selam is absent
+and v1.30 wrote the reason into the file**: she has never been written speaking
+about territory or criminal operations, and a line to fill a table would be the
+wrong character. Authored register first, table row second. Phase 3.2 named her
+as an obvious candidate without checking whether there was a voice to give her;
+there is not, and writing one is a character build rather than a table build.
+
+**Tone is the sixth product and the first crew source (v1.30).**
+`territory_status`, $40, gated at Warm **and** on him being recruited and
+active. It is the only row that is not about Curtis: it reads the player's own
+corners back to them — headcount, whether the police came through last night,
+whether the corner lost somebody, all of it already in the feed and already
+scrolled past. Two rules bend for it, both deliberately. The row carries
+`requiresCrew`, the only field the game reads out of state rather than out of
+`disclosures.js`, and the check lives in `disclosureOffers` and the reducer
+because the module may not read state. And it is **authored `exact` only**:
+`resolvedAccuracy` upgrades the at-gate `jittered` to `exact` when no jittered
+voice exists, so the absence of the branch is the design statement. A man
+miscounting his own people on your own corners would be a bug, not a texture.
+His channel is `direct` — he walked them.
+
+**Answering "which corner lost a man" needed one new field.** `takeRaidCasualty`
+nulled the soldier's `blockId` and stamped nothing, and the per-night counts were
+function-locals that went into the feed as text and were discarded, so the
+morning after, the question was unanswerable. `territoryBlocks[*].lastCasualtyDay`
+is set in both loss paths (raid and attrition). Additive, `null` by default,
+`undefined` on an older save never equals yesterday — **schema stays v11**.
 
 **Accuracy is the band.** `accuracyFor(band, minBand)` returns `unavailable`
 below the gate, `jittered` at it, and `exact` above it — or at Bonded, which is
@@ -1339,6 +1380,16 @@ on. **The Night Owl is de-scheduled rather than fired**, the same exemption the
 Heat ladder already gives it. There is no RNG anywhere in the ladder. Grace
 applies on `record.hiredDay`.
 
+**As of v1.30 the ladder is finally visible to the simulator.** It shipped in
+v1.29 verified only by unit tests: the fourteen strategies dispatched `WORK_JOB`
+but never `APPLY_JOB` or `ACCEPT_JOB`, and `jobAvailability` requires
+`activeJobId === jobId` for every employer that is not day labor — which the
+ladder exempts at every rung. So `applyAttendance` had never once run inside a
+simulated `CONFIRM_END_DAY`. The `worker` strategy holds a real employer across
+the window, which means it runs every night, and `missedShiftRuns` /
+`firedRuns` in the employment roll-up are the numbers a future change that
+breaks it would move. Both currently read 0 across 2,000 runs.
+
 There is deliberately **no employer roster in state**. `job.scheduled` is a
 once-per-day flag and `lastScheduledShiftDay` records the day worked; neither is
 a rota. "A day ended and you did not come in" is the honest reading of a missed
@@ -1398,11 +1449,20 @@ before and after: a matching hash proves you changed nothing the player can see.
 Nothing in the run path may use `Math.random()` — only `makeRandom(seed)`, and
 not even that where a `stringHash` off the seed will do.
 
-**Current baselines, set at v1.25 and re-verified at v1.26, v1.27 and v1.28** — `--total 200`
-`25afb74e10487dee6fc62641d944d3cea093873f28c740ba43e10bb0828d6dc1`, `--total 2000`
-`f10432b1f61624cbc8df35e299a2d36ca369e1e822ca0d6578a337562e524665`. They moved
-for the first time since v1.20, and only because v1.25 added a fourteenth
-strategy plus six territory telemetry keys; `game-core.js` was untouched.
+**Current baselines, set at v1.30** — `--total 200`
+`fb6725fc5bb27fe0c68118d94fa66388b7706c584b451e020bf798ce458e9252`, `--total 2000`
+`8a70844536f937141b787fef8b919a39fc95c6b86bf33f7ab2dcb55c6d0a4f45`. They moved because v1.30 added a
+**fifteenth** strategy, `worker`, plus nine employment telemetry keys on that
+strategy alone. The v1.25–v1.29 pair was
+`25afb74e…` / `f10432b1…`.
+
+**A fifteenth strategy invalidates a raw before/after diff by itself**, for the
+reason spelled out below: `--total N` re-partitions a fixed budget, so every
+block's `runs` count changes even where behavior did not. v1.30 proved the
+fourteen originals unchanged the way v1.25 did — `summarize(name, 15)` per
+strategy, before and after, byte-identical across all fourteen. The employment
+telemetry is gated on the profile flag precisely so that comparison is an
+equality rather than a diff with exceptions.
 
 **v1.28 rewrote the nightly Curtis resolution and both hashes came back
 byte-identical — which is a finding about the simulator, not a lucky escape.**

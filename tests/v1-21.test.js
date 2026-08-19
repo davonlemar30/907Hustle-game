@@ -625,13 +625,14 @@ test("the split needs no new state: a v11 save carries it, a v3 save migrates in
   assert.equal(C.SAVE_KEY, "907ogr_v11");
   const state = holding(2125, { blocks: ["fourth_ave_strip"], phase: "watching" });
   const record = state.world.territoryBlocks.fourth_ave_strip;
-  // v1.28 added exactly one field, `curtisTookBack`, and it is boolean and
-  // additive - so mergeDefaults hydrates every older save to false and the
-  // schema still does not move. The list is asserted whole rather than by
-  // membership so a future build cannot slip a field in unnoticed.
+  // v1.28 added `curtisTookBack` and v1.30 added `lastCasualtyDay`. Both are
+  // additive scalars that default to a falsy value, so mergeDefaults hydrates
+  // every older save and the schema still does not move. The list is asserted
+  // whole rather than by membership so a future build cannot slip a field in
+  // unnoticed - which is exactly how v1.30's field was caught here.
   assert.deepEqual(Object.keys(record).sort(),
-    ["capturedDay", "curtisTookBack", "incomeCollected", "lastRaidDay", "managerId", "owner", "raidCount", "soldiersAssigned"],
-    "the block record gained one additive boolean and nothing else");
+    ["capturedDay", "curtisTookBack", "incomeCollected", "lastCasualtyDay", "lastRaidDay", "managerId", "owner", "raidCount", "soldiersAssigned"],
+    "the block record gained two additive scalars and nothing else");
   const reloaded = C.hydrateRun(JSON.parse(C.serializeRun(state)));
   assert.equal(reloaded.version, C.VERSION);
   C.resolveSoldierOperationsForTest(reloaded, noCasualty(), true);

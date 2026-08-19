@@ -4657,7 +4657,14 @@
         { id: "curtis_pressure", label: "How hard he's coming", price: 75, reads: "curtisNightPlan", staleness: "night", shape: "pressure" },
         { id: "police_heat_map", label: "Where the police are working", price: 30, reads: "policeRaidChance", staleness: "day", shape: "chances" },
         { id: "block_vulnerability", label: "Which corner is soft", price: 60, reads: "curtisMoveChance", staleness: "day", shape: "chances" },
-        { id: "curtis_next_move", label: "The corner they keep naming", price: 100, reads: "curtisNightPlan", staleness: "day", shape: "single" }
+        { id: "curtis_next_move", label: "The corner they keep naming", price: 100, reads: "curtisNightPlan", staleness: "day", shape: "single" },
+        // v1.30. The one product on the table that is not about Curtis. It reads the
+        // player's OWN corners back to them - headcount, whether the police came
+        // through last night, whether a body was lost, whether the corner changed
+        // hands - which is why it is the cheapest thing here. The player was already
+        // told all of it, one line at a time, in a feed they were scrolling past at
+        // midnight. What $40 buys is somebody who organised it before you woke up.
+        { id: "territory_status", label: "How your corners came through the night", price: 40, reads: "blockSoldierCount", staleness: "day", shape: "corners" }
       ];
       var INTEL_TYPE_BY_ID = Object.fromEntries(INTEL_TYPES.map((type) => [type.id, type]));
       var INTEL_TYPE_IDS = INTEL_TYPES.map((type) => type.id);
@@ -4677,7 +4684,14 @@
         // gate is higher and his numbers are the ones worth buying.
         { npcId: "yalonda", intelType: "police_heat_map", minBand: BANDS.WARM },
         { npcId: "juan", intelType: "police_heat_map", minBand: BANDS.TRUSTED },
-        { npcId: "biniam", intelType: "block_vulnerability", minBand: BANDS.TRUSTED }
+        { npcId: "biniam", intelType: "block_vulnerability", minBand: BANDS.TRUSTED },
+        // v1.30. Tone is the first crew source, and the first who sells something
+        // that is not Curtis intel. `requiresCrew` is the only row field the game
+        // reads out of state rather than out of this file: a lieutenant who has not
+        // been hired, or who has walked, is not answering the phone about your
+        // corners. The check lives in disclosureOffers because THIS module may not
+        // read state - it is the same boundary that keeps the jitter honest.
+        { npcId: "tone", intelType: "territory_status", minBand: BANDS.WARM, requiresCrew: true }
       ];
       var DISCLOSURE_NPC_IDS = [...new Set(DISCLOSURES.map((entry) => entry.npcId))];
       var DISCLOSURE_SENDERS = {
@@ -4685,7 +4699,8 @@
         mina: "Mina",
         juan: "Juan",
         yalonda: "Yalonda",
-        biniam: "Biniam"
+        biniam: "Biniam",
+        tone: "Tone"
       };
       function disclosureFor(npcId, intelType) {
         return DISCLOSURES.find((entry) => entry.npcId === npcId && entry.intelType === intelType) || null;
@@ -4705,6 +4720,11 @@
         if (!Number.isFinite(value) || value < minBand) return "unavailable";
         if (value > minBand || value >= BANDS.BONDED) return "exact";
         return "jittered";
+      }
+      function resolvedAccuracy(npcId, intelType, band, minBand) {
+        const accuracy = accuracyFor(band, minBand);
+        if (accuracy === "jittered" && !hasVoice(npcId, intelType, "jittered")) return "exact";
+        return accuracy;
       }
       function jitterChance(chance, key) {
         const offset = stringHash(key) % 31 - 15;
@@ -4824,6 +4844,21 @@
               (p) => `Don't take this as more than it is. ${list(p.chances, (c) => `${c.name} around ${c.text}`)}. People drink and they talk, so.`
             ]
           }
+        },
+        // v1.30. Tone gives you the fact and stops - the same register gossip.js
+        // named in v1.23, and the one his page has carried since v1.18. No hedging,
+        // no reassurance, no adjectives. He reports headcount the way he reported the
+        // sedan in the camera blind spot: what is there, how many, and then nothing.
+        // The one thing he does at the end is ask about your people, because that is
+        // the only place his voice ever softens.
+        tone: {
+          territory_status: {
+            exact: [
+              (p) => `Walked them at first light. ${list(p.corners, (c) => `${c.name}: ${c.text}`)}.`,
+              (p) => `Morning count. ${list(p.corners, (c) => `${c.name}: ${c.text}`)}. That's where you stand.`,
+              (p) => `${list(p.corners, (c) => `${c.name}: ${c.text}`)}. Tell me who you want covered tonight.`
+            ]
+          }
         }
       };
       var EMPTY_LINES = {
@@ -4831,7 +4866,8 @@
         mina: "I asked around. Nobody's saying anything about your spots. That's good, right?",
         juan: "Quiet out there today. Nothing worth calling about.",
         yalonda: "Nobody's been by today. It's been quiet, thank God.",
-        biniam: "The room was quiet last night. Nobody said anything about you."
+        biniam: "The room was quiet last night. Nobody said anything about you.",
+        tone: "You don't hold any corners. Nothing to walk. Say the word when that changes."
       };
       function hasVoice(npcId, intelType, accuracy) {
         var _a, _b;
@@ -4858,6 +4894,7 @@
         priceFor,
         senderFor,
         accuracyFor,
+        resolvedAccuracy,
         jitterChance,
         jitterWeight,
         jitterList,
@@ -5760,6 +5797,22 @@
             visibleWhen: (s) => s.npc.biniam.met,
             status: (s) => bandLabel(bandOf(s, "biniam")),
             summary: (s) => `He runs the room upstairs and hears what the table says. ${bandLabel(bandOf(s, "biniam"))} with you.`,
+            actions: []
+          },
+          // v1.30, and the same reason Biniam is here: the disclosure table needs a
+          // door. He is the first crew source, and crew live on the People screens
+          // rather than in the phone book, so without this card the territory_status
+          // row had nowhere to be asked for. Gated on him actually being on the
+          // payroll - a lieutenant who was never hired is not a contact, and one who
+          // walked stops being one. No call/text/visit verbs: this is a place to
+          // stand, and everything else about Tone is unchanged.
+          {
+            id: "tone",
+            name: "Anton 'Tone' Bell",
+            role: "Enforcer",
+            visibleWhen: (s) => crewIsActive(s, "tone"),
+            status: (s) => `Loyalty ${s.people.crew.tone.loyalty}/10`,
+            summary: (s) => `He walks your corners at first light and reports what he counted. ${bandLabel(bandOf(s, "tone"))} with you.`,
             actions: []
           },
           {
@@ -6842,7 +6895,12 @@
                 // v1.28. Set the first time he takes this corner back off the player,
                 // and never cleared. Additive and boolean, so mergeDefaults hydrates
                 // every save that predates it to false and the schema stays v11.
-                curtisTookBack: false
+                curtisTookBack: false,
+                // v1.30. The day this corner last lost a soldier, to police, to
+                // Curtis, or to attrition. Read by Tone's territory_status briefing;
+                // null on a corner that has never lost anybody. Additive the same
+                // way, so the schema stays v11.
+                lastCasualtyDay: null
               }])),
               soldiers: {},
               nextSoldierId: 1
@@ -9644,6 +9702,7 @@
           soldier.status = "lost";
           soldier.blockId = null;
           record.soldiersAssigned = assigned.filter((id) => id !== lostId);
+          record.lastCasualtyDay = state.run.day;
           return true;
         }
         function resolveSoldierOperations(state, random, crossedDay) {
@@ -9711,6 +9770,7 @@
                 soldier.status = "lost";
                 soldier.blockId = null;
                 record.soldiersAssigned = record.soldiersAssigned.filter((sid) => sid !== id);
+                record.lastCasualtyDay = state.run.day;
                 attritionCount += 1;
               }
             }
@@ -9848,6 +9908,11 @@
         function disclosureAskedToday(state, npcId) {
           return disclosuresToday(state).some((entry) => entry.npcId === npcId);
         }
+        function crewIsActive(state, npcId) {
+          var _a, _b;
+          const record = (_b = (_a = state.people) == null ? void 0 : _a.crew) == null ? void 0 : _b[npcId];
+          return !!(record && record.recruited && record.status === "active");
+        }
         function heldBlockIds(state) {
           return SPENARD_BLOCKS.filter((block) => {
             var _a, _b, _c;
@@ -9857,6 +9922,21 @@
         function disclosureTruth(state, intelType) {
           if (intelType === "curtis_targets" || intelType === "curtis_pressure" || intelType === "curtis_next_move") {
             return { plan: curtisNightPlan(state) };
+          }
+          if (intelType === "territory_status") {
+            const lastNight = state.run.day - 1;
+            return {
+              corners: heldBlockIds(state).map((blockId) => {
+                const record = state.world.territoryBlocks[blockId];
+                return {
+                  blockId,
+                  name: SPENARD_BLOCK_BY_ID[blockId].name,
+                  soldiers: blockSoldierCount(state, blockId),
+                  raided: record.lastRaidDay === lastNight,
+                  lostSomebody: record.lastCasualtyDay === lastNight
+                };
+              })
+            };
           }
           const read = intelType === "police_heat_map" ? policeRaidChance : curtisMoveChance;
           return { chances: heldBlockIds(state).map((blockId) => ({ blockId, name: SPENARD_BLOCK_BY_ID[blockId].name, chance: read(state, blockId) })) };
@@ -9886,6 +9966,16 @@
             const index = exact ? 0 : Disclosures.listShape(`${key}:shape`) === "faithful" ? 0 : Math.min(1, truth.plan.length - 1);
             return { name: truth.plan[index].name };
           }
+          if (intelType === "territory_status") {
+            if (!truth.corners.length) return { empty: true };
+            return {
+              corners: truth.corners.map((corner) => {
+                const head = corner.soldiers === 0 ? "nobody on it" : corner.soldiers === 1 ? "one up" : `${corner.soldiers} up`;
+                const night = corner.lostSomebody ? "lost a man" : corner.raided ? corner.soldiers > 0 ? "cops came through, everybody held" : "cops came through" : "quiet night";
+                return { name: corner.name, soldiers: corner.soldiers, text: `${head}, ${night}` };
+              })
+            };
+          }
           if (!truth.chances.length) return { empty: true };
           const ranked = truth.chances.map((row) => {
             const chance = exact ? row.chance : Disclosures.jitterChance(row.chance, `${key}:${row.blockId}`);
@@ -9899,9 +9989,11 @@
           const phoneOff = !((_a = state.phone) == null ? void 0 : _a.active);
           return Disclosures.disclosuresForNpc(npcId).map((entry) => {
             const type = Disclosures.INTEL_TYPE_BY_ID[entry.intelType];
-            const accuracy = Disclosures.accuracyFor(bandOf(state, npcId), entry.minBand);
+            const accuracy = Disclosures.resolvedAccuracy(npcId, entry.intelType, bandOf(state, npcId), entry.minBand);
             const price = type.price;
             if (accuracy === "unavailable") return null;
+            if (entry.requiresCrew && !crewIsActive(state, npcId)) return null;
+            if (!Disclosures.hasVoice(npcId, entry.intelType, accuracy)) return null;
             const available = !phoneOff && !asked && state.player.cash >= price;
             const reason = phoneOff ? "Phone service is off" : asked ? "Already talked today" : state.player.cash < price ? `Need ${cashText(price)}` : "No time passes";
             return { intelType: entry.intelType, label: type.label, price, accuracy, available, reason };
@@ -12919,7 +13011,7 @@
             return state;
           }
           if (action.type === "PAY_CREW") {
-            if (!state.base.controlled || !state.base.visiting || !CREW_BY_ID[action.crewId]) return inputState;
+            if (!CREW_BY_ID[action.crewId]) return inputState;
             const crew = state.people.crew[action.crewId];
             if (!crew.recruited || crew.wageDue <= 0 || state.player.cash < crew.wageDue) return inputState;
             const amount = crew.wageDue;
@@ -12970,8 +13062,9 @@
             const intelType = action.intelType;
             const entry = Disclosures.disclosureFor(npcId, intelType);
             if (!entry || !((_l = state.phone) == null ? void 0 : _l.active)) return inputState;
-            const accuracy = Disclosures.accuracyFor(bandOf(state, npcId), entry.minBand);
+            const accuracy = Disclosures.resolvedAccuracy(npcId, intelType, bandOf(state, npcId), entry.minBand);
             if (accuracy === "unavailable") return inputState;
+            if (entry.requiresCrew && !crewIsActive(state, npcId)) return inputState;
             if (disclosureAskedToday(state, npcId)) return inputState;
             const price = Disclosures.priceFor(intelType);
             if (state.player.cash < price) return inputState;
@@ -14933,7 +15026,7 @@
         const showCrew = C.selectors.recruitedCrew(state).length > 0;
         const showCurtis = state.npc.curtis.relationship !== "unaware";
         const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil(value / ceiling * 5))), total: 5 });
-        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.29"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day, state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
+        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.30"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day, state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
       }
       var NAV_ICONS = {
         home: "M12 3 3 10.4V21h6v-6h6v6h6V10.4z",
@@ -15413,7 +15506,7 @@
         const recruitGate = person.id === "deshawn" ? C.selectors.deshawnRecruitmentAvailability(state) : person.id === "tone" ? C.selectors.toneRecruitmentAvailability(state) : person.id === "pherris" ? C.selectors.pherrisRecruitmentAvailability(state) : null;
         const liability = person.id === "eli" ? "A compromised route can add Heat; unpaid wages cut his Power." : person.id === "pherris" ? "She expects ownership and may withhold information when treated like a list." : "His methods can raise Heat and provoke Curtis.";
         const modifier = C.selectors.lieutenantTerritoryModifier(state, person.id);
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: person.name, sub: `${person.role} \xB7 Crew Power ${person.power}`, onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Current status", /* @__PURE__ */ React.createElement("small", null, crew.contactStage.replaceAll("_", " "))), /* @__PURE__ */ React.createElement("p", null, person.description), /* @__PURE__ */ React.createElement("div", { className: "detail-list" }, /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Recruitment:"), " ", money(cost)), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Daily wage:"), " ", money(C.Crew.wageFor(person, Math.max(1, crew.tier || 1))), " \xB7 auto-paid at day end"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Capacity:"), " 1 field crew slot"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Primary benefit:"), " Power ", person.power, " and role-specific operation choices"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Main liability:"), " ", liability), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Hiring time:"), " Free at North Star Garage"))), person.id === "eli" && !crew.recruited && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Give Eli a Test Route", /* @__PURE__ */ React.createElement("small", null, "$35 \xB7 one part of day")), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "Fund a small service-road delivery. A clean run can earn modest cash; trouble can cost Health and add Heat. Completing it unlocks recruitment."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !eliTest.available, onClick: () => dispatch({ type: "ELI_TEST_ROUTE" }) }, "Start the test route", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, eliTest.reason))), (crew.introduced && person.id !== "eli" || person.id === "deshawn") && !crew.recruited && /* @__PURE__ */ React.createElement("button", { className: "btn full good-btn", disabled: !state.base.visiting || state.player.cash < cost || recruitGate && !recruitGate.available, onClick: () => dispatch({ type: "RECRUIT_CREW", crewId: person.id }) }, "Recruit ", person.name.split(" ")[0], " \xB7 ", money(cost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, recruitGate ? recruitGate.reason : "Free at North Star Garage")), crew.introduced && !crew.recruited && person.id === "eli" && crew.contactStage === "recruitable" && /* @__PURE__ */ React.createElement("button", { className: "btn full good-btn", disabled: !state.base.visiting || state.player.cash < cost || C.selectors.recruitedCrew(state).length >= C.selectors.crewCapacityFor(state), onClick: () => dispatch({ type: "RECRUIT_CREW", crewId: person.id }) }, "Recruit Eli \xB7 ", money(cost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free at North Star Garage")), crew.recruited && /* @__PURE__ */ React.createElement("div", { className: "card" }, crew.status === "departed" ? /* @__PURE__ */ React.createElement("p", { className: "warn" }, "Departed. Loyalty ran out. The record of what was owed stays on the ledger.") : crew.status === "arrested" ? /* @__PURE__ */ React.createElement("p", { className: "warn" }, "In custody \xB7 Loyalty ", crew.loyalty, "/10 \xB7 out on Day ", crew.jailedUntilDay, ". Nobody who serves the whole stretch comes back loyal.") : /* @__PURE__ */ React.createElement("p", null, "Active \xB7 Loyalty ", crew.loyalty, "/10 \xB7 arrears ", money(crew.wageDue), " \xB7 assignment ", crew.assignment || "none"), crew.status === "arrested" && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !bail.available, onClick: () => dispatch({ type: "BAIL_CREW", crewId: person.id }) }, "Bail out \xB7 ", money(bail.cost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, bail.available ? "Costs one point of loyalty instead of all of it \xB7 no time passes" : bail.reason)), crew.status !== "departed" && crew.status !== "arrested" && crew.wageDue > 0 && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !state.base.visiting || state.player.cash < crew.wageDue, onClick: () => dispatch({ type: "PAY_CREW", crewId: person.id }) }, "Pay arrears \xB7 ", money(crew.wageDue), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Clears the unpaid Power penalty without advancing time"))), crew.recruited && ["pherris", "tone", "deshawn"].includes(person.id) && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Relationship track", /* @__PURE__ */ React.createElement("small", null, "TIER ", crew.tier)), modifier && /* @__PURE__ */ React.createElement("p", { className: "compact" }, /* @__PURE__ */ React.createElement("b", null, modifier.label, " ", modifier.value), " \xB7 ", modifier.detail), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !tier.available, onClick: () => dispatch({ type: "PROMOTE_CREW_TIER", crewId: person.id }) }, "Advance relationship tier", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, tier.available ? `${tier.cost ? money(tier.cost) : "Free"} \xB7 no time passes` : tier.reason))), person.id === "eli" && crew.recruited && (crew.lieutenantStage === "operations_lieutenant" ? /* @__PURE__ */ React.createElement("div", { className: "card cleared-card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Operations Lieutenant", /* @__PURE__ */ React.createElement("small", null, "Effectiveness ", crew.lieutenantEffectiveness, "/3")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Eli places soldiers, rotates corners, and defends territory without a check-in each time."), findEliReport(state) && /* @__PURE__ */ React.createElement(EliReportCard, { state }), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Standing order"), /* @__PURE__ */ React.createElement("div", { className: "policy-grid", role: "radiogroup", "aria-label": "Eli's standing order" }, Object.entries(C.ELI_OPERATION_POLICIES).map(([id, policy]) => /* @__PURE__ */ React.createElement("button", { key: id, role: "radio", "aria-checked": crew.operationPolicy === id, className: `policy-btn${crew.operationPolicy === id ? " active" : ""}`, onClick: () => dispatch({ type: "SET_ELI_POLICY", policy: id }) }, /* @__PURE__ */ React.createElement("b", null, policy.label), /* @__PURE__ */ React.createElement("span", null, policy.description)))), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "Changing the order costs no time. ", crew.operationPolicy === "manual" ? "Assign soldiers yourself in Soldiers." : "Eli places and redistributes soldiers automatically each night.")) : (() => {
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: person.name, sub: `${person.role} \xB7 Crew Power ${person.power}`, onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Current status", /* @__PURE__ */ React.createElement("small", null, crew.contactStage.replaceAll("_", " "))), /* @__PURE__ */ React.createElement("p", null, person.description), /* @__PURE__ */ React.createElement("div", { className: "detail-list" }, /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Recruitment:"), " ", money(cost)), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Daily wage:"), " ", money(C.Crew.wageFor(person, Math.max(1, crew.tier || 1))), " \xB7 auto-paid at day end"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Capacity:"), " 1 field crew slot"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Primary benefit:"), " Power ", person.power, " and role-specific operation choices"), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Main liability:"), " ", liability), /* @__PURE__ */ React.createElement("span", null, /* @__PURE__ */ React.createElement("b", null, "Hiring time:"), " Free at North Star Garage"))), person.id === "eli" && !crew.recruited && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Give Eli a Test Route", /* @__PURE__ */ React.createElement("small", null, "$35 \xB7 one part of day")), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "Fund a small service-road delivery. A clean run can earn modest cash; trouble can cost Health and add Heat. Completing it unlocks recruitment."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !eliTest.available, onClick: () => dispatch({ type: "ELI_TEST_ROUTE" }) }, "Start the test route", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, eliTest.reason))), (crew.introduced && person.id !== "eli" || person.id === "deshawn") && !crew.recruited && /* @__PURE__ */ React.createElement("button", { className: "btn full good-btn", disabled: !state.base.visiting || state.player.cash < cost || recruitGate && !recruitGate.available, onClick: () => dispatch({ type: "RECRUIT_CREW", crewId: person.id }) }, "Recruit ", person.name.split(" ")[0], " \xB7 ", money(cost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, recruitGate ? recruitGate.reason : "Free at North Star Garage")), crew.introduced && !crew.recruited && person.id === "eli" && crew.contactStage === "recruitable" && /* @__PURE__ */ React.createElement("button", { className: "btn full good-btn", disabled: !state.base.visiting || state.player.cash < cost || C.selectors.recruitedCrew(state).length >= C.selectors.crewCapacityFor(state), onClick: () => dispatch({ type: "RECRUIT_CREW", crewId: person.id }) }, "Recruit Eli \xB7 ", money(cost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free at North Star Garage")), crew.recruited && /* @__PURE__ */ React.createElement("div", { className: "card" }, crew.status === "departed" ? /* @__PURE__ */ React.createElement("p", { className: "warn" }, "Departed. Loyalty ran out. The record of what was owed stays on the ledger.") : crew.status === "arrested" ? /* @__PURE__ */ React.createElement("p", { className: "warn" }, "In custody \xB7 Loyalty ", crew.loyalty, "/10 \xB7 out on Day ", crew.jailedUntilDay, ". Nobody who serves the whole stretch comes back loyal.") : /* @__PURE__ */ React.createElement("p", null, "Active \xB7 Loyalty ", crew.loyalty, "/10 \xB7 arrears ", money(crew.wageDue), " \xB7 assignment ", crew.assignment || "none"), crew.status === "arrested" && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: !bail.available, onClick: () => dispatch({ type: "BAIL_CREW", crewId: person.id }) }, "Bail out \xB7 ", money(bail.cost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, bail.available ? "Costs one point of loyalty instead of all of it \xB7 no time passes" : bail.reason)), crew.status !== "departed" && crew.status !== "arrested" && crew.wageDue > 0 && /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", disabled: state.player.cash < crew.wageDue, onClick: () => dispatch({ type: "PAY_CREW", crewId: person.id }) }, "Pay arrears \xB7 ", money(crew.wageDue), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, state.player.cash < crew.wageDue ? `Need ${money(crew.wageDue)}` : "Clears the unpaid Power penalty without advancing time"))), crew.recruited && ["pherris", "tone", "deshawn"].includes(person.id) && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Relationship track", /* @__PURE__ */ React.createElement("small", null, "TIER ", crew.tier)), modifier && /* @__PURE__ */ React.createElement("p", { className: "compact" }, /* @__PURE__ */ React.createElement("b", null, modifier.label, " ", modifier.value), " \xB7 ", modifier.detail), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !tier.available, onClick: () => dispatch({ type: "PROMOTE_CREW_TIER", crewId: person.id }) }, "Advance relationship tier", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, tier.available ? `${tier.cost ? money(tier.cost) : "Free"} \xB7 no time passes` : tier.reason))), person.id === "eli" && crew.recruited && (crew.lieutenantStage === "operations_lieutenant" ? /* @__PURE__ */ React.createElement("div", { className: "card cleared-card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Operations Lieutenant", /* @__PURE__ */ React.createElement("small", null, "Effectiveness ", crew.lieutenantEffectiveness, "/3")), /* @__PURE__ */ React.createElement("p", { className: "compact" }, "Eli places soldiers, rotates corners, and defends territory without a check-in each time."), findEliReport(state) && /* @__PURE__ */ React.createElement(EliReportCard, { state }), /* @__PURE__ */ React.createElement("div", { className: "section-label" }, "Standing order"), /* @__PURE__ */ React.createElement("div", { className: "policy-grid", role: "radiogroup", "aria-label": "Eli's standing order" }, Object.entries(C.ELI_OPERATION_POLICIES).map(([id, policy]) => /* @__PURE__ */ React.createElement("button", { key: id, role: "radio", "aria-checked": crew.operationPolicy === id, className: `policy-btn${crew.operationPolicy === id ? " active" : ""}`, onClick: () => dispatch({ type: "SET_ELI_POLICY", policy: id }) }, /* @__PURE__ */ React.createElement("b", null, policy.label), /* @__PURE__ */ React.createElement("span", null, policy.description)))), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "Changing the order costs no time. ", crew.operationPolicy === "manual" ? "Assign soldiers yourself in Soldiers." : "Eli places and redistributes soldiers automatically each night.")) : (() => {
           const promo = C.selectors.eliPromotionAvailability(state);
           return /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Promote to Operations Lieutenant", /* @__PURE__ */ React.createElement("small", null, "Runs soldiers and corners on their own")), /* @__PURE__ */ React.createElement("p", { className: "muted compact" }, "Needs Eli's loyalty to reach ", C.ELI_LIEUTENANT_UNLOCK.minLoyalty, "."), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", disabled: !promo.available, onClick: () => dispatch({ type: "PROMOTE_LIEUTENANT", crewId: "eli" }) }, "Give Eli Operations", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, promo.available ? "Free \xB7 no time passes" : promo.reason)));
         })())));
@@ -15683,7 +15776,7 @@
             id: "wages",
             name: "Crew wages",
             amount: owed || crew.reduce((sum, person) => sum + person.wage, 0),
-            where: "Pay at the garage",
+            where: "Pay in People \u2192 Crew",
             due: "Daily",
             ...owed > 0 ? { status: "Unpaid", severity: 2 } : { status: "Paid up", severity: 0, paid: true }
           });
@@ -15904,7 +15997,7 @@
           ExpandableMoreSection,
           {
             collapsedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-lead" }, "Autosave is on. This run saves to your browser after every action."),
-            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.29 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
+            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.30 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
             moreLabel: "Save detail",
             lessLabel: "Hide detail"
           }

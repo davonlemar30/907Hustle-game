@@ -78,9 +78,11 @@ const DEFAULT_BLOCKS = ["northern_lights_motels", "fourth_ave_strip", "service_r
 // A player holding corners, with money, at a pinned awareness phase, with the
 // named people on the named bands. Both `level` and `floor` are pinned so the
 // quiet-day bleed cannot walk the phase back down inside a day-end pass.
-function holding(seed, { blocks = DEFAULT_BLOCKS, phase = "approaching", bands = {}, cash = 1000, heat = 6, soldiers = 2 } = {}) {
+function holding(seed, { blocks = DEFAULT_BLOCKS, phase = "approaching", bands = {}, cash = 1000, heat = 6, soldiers = 2, crew = [] } = {}) {
   const state = fresh(seed);
   state.base.controlled = true;
+  // v1.30: a `requiresCrew` row needs its source on the payroll and standing.
+  for (const crewId of crew) Object.assign(state.people.crew[crewId], { recruited: true, status: "active" });
   const level = CurtisAwareness.phaseFloor(phase);
   Object.assign(state.curtisAwareness, { level, floor: level, phase, phaseMessagesSent: ["watching", "approaching"] });
   let next = 1;
@@ -159,6 +161,11 @@ test("a source can only sell what their own channel would have carried", () => {
     curtis_next_move: "network",
     police_heat_map: "neighborhood",
     block_vulnerability: "neighborhood",
+    // v1.30. Tone reports from the player's own corners in person, so the
+    // honest channel is `direct` rather than the wire. He is on `network` too
+    // and would pass either test - `direct` is the one that describes what he
+    // actually did, which is walk them at first light.
+    territory_status: "direct",
   };
   for (const entry of Disclosures.DISCLOSURES) {
     const channel = CHANNEL_FOR_TYPE[entry.intelType];
@@ -196,9 +203,18 @@ test("below the gate an NPC does not offer the intel at all", () => {
 test("at the gate the read is jittered, one band above it is exact", () => {
   for (const entry of Disclosures.DISCLOSURES) {
     const above = bandNameAbove(entry.minBand);
-    const atGate = holding(2702, { bands: { [entry.npcId]: bandNameFor(entry.minBand) } });
+    const crew = entry.requiresCrew ? [entry.npcId] : [];
+    const atGate = holding(2702, { bands: { [entry.npcId]: bandNameFor(entry.minBand) }, crew });
     const offerAt = C.selectors.disclosureOffers(atGate, entry.npcId).find((offer) => offer.intelType === entry.intelType);
     assert.ok(offerAt, `${entry.npcId} sells ${entry.intelType} at their own gate`);
+    // v1.30: a product authored exact-only is exact at its gate too, and the
+    // absent `jittered` branch is what enforces it. territory_status is the
+    // first - a man miscounting his own people on your own corners would be a
+    // bug rather than an approximate source, so there is nothing to jitter.
+    if (!Disclosures.hasVoice(entry.npcId, entry.intelType, "jittered")) {
+      assert.equal(offerAt.accuracy, "exact", `${entry.intelType} is exact at its gate because that is all it is written to be`);
+      continue;
+    }
     // Bonded is the ceiling, so a Bonded-gated row has no band above it and is
     // exact at the gate - the same rule blockIntelView has followed since
     // v1.20, where the top level is exact and everything below it jitters.

@@ -488,6 +488,16 @@
     { id: "biniam", name: "Biniam Tesfaye", role: "The Nile, second floor", visibleWhen: (s) => s.npc.biniam.met,
       status: (s) => bandLabel(bandOf(s, "biniam")),
       summary: (s) => `He runs the room upstairs and hears what the table says. ${bandLabel(bandOf(s, "biniam"))} with you.`, actions: [] },
+    // v1.30, and the same reason Biniam is here: the disclosure table needs a
+    // door. He is the first crew source, and crew live on the People screens
+    // rather than in the phone book, so without this card the territory_status
+    // row had nowhere to be asked for. Gated on him actually being on the
+    // payroll - a lieutenant who was never hired is not a contact, and one who
+    // walked stops being one. No call/text/visit verbs: this is a place to
+    // stand, and everything else about Tone is unchanged.
+    { id: "tone", name: "Anton 'Tone' Bell", role: "Enforcer", visibleWhen: (s) => crewIsActive(s, "tone"),
+      status: (s) => `Loyalty ${s.people.crew.tone.loyalty}/10`,
+      summary: (s) => `He walks your corners at first light and reports what he counted. ${bandLabel(bandOf(s, "tone"))} with you.`, actions: [] },
     { id: "curtis", name: "Curtis Foyer", role: "Rival", visibleWhen: (s) => s.npc.curtis.relationship !== "unaware",
       status: (s) => s.npc.curtis.relationship, summary: (s) => `He reads you as ${s.npc.curtis.relationship}.`, actions: [] },
     { id: "simone", name: "Simone Hart", role: "Independent protection organizer", visibleWhen: (s) => s.npc.simone.known,
@@ -1543,6 +1553,11 @@
           // and never cleared. Additive and boolean, so mergeDefaults hydrates
           // every save that predates it to false and the schema stays v11.
           curtisTookBack: false,
+          // v1.30. The day this corner last lost a soldier, to police, to
+          // Curtis, or to attrition. Read by Tone's territory_status briefing;
+          // null on a corner that has never lost anybody. Additive the same
+          // way, so the schema stays v11.
+          lastCasualtyDay: null,
         }])),
         soldiers: {}, nextSoldierId: 1,
       },
@@ -4620,6 +4635,13 @@
     soldier.status = "lost";
     soldier.blockId = null;
     record.soldiersAssigned = assigned.filter((id) => id !== lostId);
+    // v1.30: the only record that this corner lost somebody tonight. Before
+    // this the casualty went into the feed as text and nowhere else - the
+    // soldier's blockId is nulled and the block record kept no trace, so
+    // "which corner lost a man last night" was unanswerable the morning after.
+    // Tone's territory_status disclosure reads it. Additive: an older save has
+    // no field, undefined never equals yesterday, and the schema stays v11.
+    record.lastCasualtyDay = state.run.day;
     return true;
   }
   // Passive organization activity is summarized into a single compact report
@@ -4729,6 +4751,7 @@
           soldier.status = "lost";
           soldier.blockId = null;
           record.soldiersAssigned = record.soldiersAssigned.filter((sid) => sid !== id);
+          record.lastCasualtyDay = state.run.day;
           attritionCount += 1;
         }
       }
@@ -5026,6 +5049,14 @@
     return disclosuresToday(state).some((entry) => entry.npcId === npcId);
   }
 
+  // Recruited and still standing. Crew.getActiveCrew is the canonical predicate
+  // and this is the same test on one id, kept here because disclosures are the
+  // only caller that needs it per-person rather than as a roster.
+  function crewIsActive(state, npcId) {
+    const record = state.people?.crew?.[npcId];
+    return !!(record && record.recruited && record.status === "active");
+  }
+
   // The corners the player actually holds, in Curtis's own priority order. Both
   // chance-shaped products read this: a heat map of corners you do not own is
   // not intel, it is trivia.
@@ -5046,6 +5077,26 @@
   function disclosureTruth(state, intelType) {
     if (intelType === "curtis_targets" || intelType === "curtis_pressure" || intelType === "curtis_next_move") {
       return { plan: curtisNightPlan(state) };
+    }
+    // v1.30. Tone's read, and the only one pointed at the player's own side of
+    // the board. Every field here is something the player was already told
+    // overnight and has since scrolled past: how many are still standing, who
+    // got raided, who lost somebody, whose corner changed hands. Yesterday, not
+    // today, because the briefing is the morning after the night it describes.
+    if (intelType === "territory_status") {
+      const lastNight = state.run.day - 1;
+      return {
+        corners: heldBlockIds(state).map((blockId) => {
+          const record = state.world.territoryBlocks[blockId];
+          return {
+            blockId,
+            name: SPENARD_BLOCK_BY_ID[blockId].name,
+            soldiers: blockSoldierCount(state, blockId),
+            raided: record.lastRaidDay === lastNight,
+            lostSomebody: record.lastCasualtyDay === lastNight,
+          };
+        }),
+      };
     }
     const read = intelType === "police_heat_map" ? policeRaidChance : curtisMoveChance;
     return { chances: heldBlockIds(state).map((blockId) => ({ blockId, name: SPENARD_BLOCK_BY_ID[blockId].name, chance: read(state, blockId) })) };
@@ -5083,6 +5134,27 @@
       const index = exact ? 0 : Disclosures.listShape(`${key}:shape`) === "faithful" ? 0 : Math.min(1, truth.plan.length - 1);
       return { name: truth.plan[index].name };
     }
+    // No jitter branch on purpose: this product is authored exact only. See the
+    // accuracy note in disclosures.js - a man miscounting his own people on the
+    // player's own corners is a bug, not a texture.
+    if (intelType === "territory_status") {
+      if (!truth.corners.length) return { empty: true };
+      return {
+        corners: truth.corners.map((corner) => {
+          const head = corner.soldiers === 0 ? "nobody on it"
+            : corner.soldiers === 1 ? "one up"
+            : `${corner.soldiers} up`;
+          // "everybody held" is only true if there was anybody there to hold
+          // it. An empty corner the police walked through gets the plainer
+          // clause, because the alternative is Tone congratulating a garrison
+          // that does not exist.
+          const night = corner.lostSomebody ? "lost a man"
+            : corner.raided ? (corner.soldiers > 0 ? "cops came through, everybody held" : "cops came through")
+            : "quiet night";
+          return { name: corner.name, soldiers: corner.soldiers, text: `${head}, ${night}` };
+        }),
+      };
+    }
     if (!truth.chances.length) return { empty: true };
     // Worst first, and only the worst few. This is a presentation cap, not a
     // second accuracy axis - the numbers that survive it are as true as the
@@ -5109,9 +5181,19 @@
     return Disclosures.disclosuresForNpc(npcId)
       .map((entry) => {
         const type = Disclosures.INTEL_TYPE_BY_ID[entry.intelType];
-        const accuracy = Disclosures.accuracyFor(bandOf(state, npcId), entry.minBand);
+        const accuracy = Disclosures.resolvedAccuracy(npcId, entry.intelType, bandOf(state, npcId), entry.minBand);
         const price = type.price;
         if (accuracy === "unavailable") return null;
+        // v1.30. The one row field that is a state read. A crew source has to
+        // actually be on the crew: not hired, in custody, or walked out over
+        // unpaid wages all mean the phone rings out. Hidden rather than greyed,
+        // the same rule the band gate follows - a locked row for a lieutenant
+        // the player has never met would advertise the table.
+        if (entry.requiresCrew && !crewIsActive(state, npcId)) return null;
+        // And a row whose accuracy has no authored voice is not for sale.
+        // territory_status is exact-only, so this is what stops a Warm-band
+        // jittered read from being offered and then coming back as silence.
+        if (!Disclosures.hasVoice(npcId, entry.intelType, accuracy)) return null;
         const available = !phoneOff && !asked && state.player.cash >= price;
         // The button already renders the price, so the sub-label says the thing
         // the price does not: this is a phone call, and it does not cost a part
@@ -7600,8 +7682,15 @@
       logEntry(state, `${action.type === "STORE_PRODUCT" ? "Stored" : "Retrieved"} ${qty} ${PRODUCT_BY_ID[action.productId].name} at the garage.`, "");
       return state;
     }
+    // v1.30: no garage clause. Tone, Pherris and Deshawn recruit through
+    // Exposure scenes rather than through the garage, so gating payroll on
+    // owning and standing inside the base built a trap: crew with arrears the
+    // player had no reachable way to clear, bleeding a loyalty point a night
+    // until they walked. The garage is a territory prerequisite (Eli, soldiers,
+    // claims), never a crew one. BAIL_CREW and PROMOTE_CREW_TIER were already
+    // ungated for the same reason - this row just joins them.
     if (action.type === "PAY_CREW") {
-      if (!state.base.controlled || !state.base.visiting || !CREW_BY_ID[action.crewId]) return inputState;
+      if (!CREW_BY_ID[action.crewId]) return inputState;
       const crew = state.people.crew[action.crewId];
       if (!crew.recruited || crew.wageDue <= 0 || state.player.cash < crew.wageDue) return inputState;
       const amount = crew.wageDue;
@@ -7660,8 +7749,14 @@
       const intelType = action.intelType;
       const entry = Disclosures.disclosureFor(npcId, intelType);
       if (!entry || !state.phone?.active) return inputState;
-      const accuracy = Disclosures.accuracyFor(bandOf(state, npcId), entry.minBand);
+      const accuracy = Disclosures.resolvedAccuracy(npcId, intelType, bandOf(state, npcId), entry.minBand);
       if (accuracy === "unavailable") return inputState;
+      // v1.30. disclosureOffers mirrors this; the reducer owns it. A crew
+      // source who was never hired, is in custody, or walked out over unpaid
+      // wages is not answering, and a stale card must not be able to buy from
+      // them. The unauthored-accuracy case is already covered below by the
+      // `!text` guard, which is what keeps territory_status exact-only.
+      if (entry.requiresCrew && !crewIsActive(state, npcId)) return inputState;
       // One call per person per day. They do not sit by the phone waiting, and
       // the cooldown is what stops the intel economy becoming a vending
       // machine for anyone with cash. Note this also covers "bought the same

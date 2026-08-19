@@ -139,6 +139,80 @@ function marketTurn(s,p){
 // the garage rate drops from 178/200 to 116/200 and the lieutenant from 81 to 9,
 // because this profile's trade loop returns less than it ties up on a bankroll
 // this thin. Banking outright wins, so the reserve is the whole target.
+// v1.30. Employment telemetry, and the reason the strategy exists: until now
+// nothing in the harness held a job, so applyAttendance had never once run in
+// a simulated CONFIRM_END_DAY and the v1.29 ladder was verified only by unit
+// tests. These keys are what a future build that breaks it would move.
+// `wages` is passed in rather than read off state because nothing totals job
+// income - addCleanCash moves a balance, it does not keep a running sum - so
+// the loop accumulates it from the cash delta across each shift.
+function employmentMetrics(s,wages){
+  const records=Object.values(s.jobs.records||{});
+  const active=s.jobs.activeJobId;
+  return{
+    jobHeld:active&&active!=='day_labor'?1:0,
+    jobRank:active?(s.jobs.records[active]?.rank||0):0,
+    shiftsWorked:records.reduce((n,r)=>n+(r.shifts||0),0),
+    wagesEarned:wages,
+    // Every one of these should stay flat at zero. The ladder counts
+    // consecutive days that ended without a shift, so a strategy that works
+    // whenever a shift is offered never reaches rung one - and if a future
+    // change makes it reachable, this is the number that moves.
+    missedShiftPeak:Math.max(0,...Object.values(s.jobs.missedShifts||{}),0),
+    rentMissed:s.npc.yalonda?.rentMissed||0,
+    phonePastDue:s.phone.daysPastDue||0,
+    householdWarnings:s.people.household.warnings||0,
+  };
+}
+// The employment turn. Free actions first: rent and the phone cost no slot, and
+// a lapsed phone silently ends the whole thread, because APPLY_JOB and the
+// callback that answers it both require a live line. Then the job ladder.
+// Returns the next state, or null when there was nothing worth doing - same
+// contract as marketTurn. Every branch compares before returning so a dispatch
+// the reducer refuses can never spin the tick loop into the guard.
+function workerTurn(s,p,shift){
+  const moved=(next)=>next!==s?next:null;
+  // Rent first, and the order is the point. Both come due on day 7 and together
+  // they are $225 against a starting $100, so on a thin week only one of them
+  // gets paid. Rent is the one the lose condition is made of - two unpaid
+  // periods raise a household warning and three warnings is an eviction - while
+  // a lapsed phone is recoverable and costs nothing once the player is already
+  // hired. Paying the cheaper bill first because it fits is how a simulated
+  // responsible citizen ends up evicted.
+  if(!s.people.household.evicted&&s.run.day>=s.obligations.rentDueDay&&s.player.cash>=C.WEEKLY_RENT){
+    const next=moved(C.reduceGame(s,{type:'PAY_RENT'}));if(next)return next;
+  }
+  // The phone only comes after rent is settled, or is not yet due.
+  if(s.player.cash>=C.PHONE_BILL&&(s.run.day>=s.phone.billDueDay||s.phone.daysPastDue>0||!s.phone.active)
+     &&(s.people.household.evicted||s.run.day<s.obligations.rentDueDay||s.player.cash>=C.WEEKLY_RENT+C.PHONE_BILL)){
+    const next=moved(C.reduceGame(s,{type:'PAY_PHONE_BILL',surface:'store'}));if(next)return next;
+  }
+  if(!p.employment)return null;
+  // The shift comes before anything discretionary, and this ordering is the
+  // whole difference between a strategy that holds a job and one that owns a
+  // job. Left after the 907List turn, a flip eats the slot the shift needed and
+  // the day ends without one - which is a missed shift on the attendance
+  // ladder, from a strategy whose entire premise is that it shows up.
+  {
+    const job=C.selectors.discoveredJobs(s).find(job=>C.selectors.jobAvailability(s,job.id).available);
+    if(job){const before=s.player.cleanCash;const next=moved(C.reduceGame(s,{type:'WORK_JOB',jobId:job.id,approach:'work_hard'}));if(next){shift(before,next);return next}}
+  }
+  // A live offer is free to accept and ends the search.
+  if(!s.jobs.activeJobId&&s.jobs.offers.length){
+    const next=moved(C.reduceGame(s,{type:'ACCEPT_JOB',jobId:s.jobs.offers[0]}));if(next)return next;
+  }
+  // One application at a time, best ceiling first, ties broken by id so the
+  // choice is deterministic rather than array-order luck. A failed interview
+  // drops the application and the next tick re-applies, which makes the roll a
+  // delay instead of a dead end.
+  if(!s.jobs.activeJobId&&!s.jobs.applications.length&&s.phone.active){
+    const target=C.selectors.discoveredJobs(s)
+      .filter(job=>!job.dayLabor&&!s.jobs.offers.includes(job.id))
+      .sort((a,b)=>(b.pay[1]-a.pay[1])||(a.id<b.id?-1:1))[0];
+    if(target){const next=moved(C.reduceGame(s,{type:'APPLY_JOB',jobId:target.id}));if(next)return next;}
+  }
+  return null;
+}
 function territoryTarget(s,p){
   if(!s.base.controlled)return C.GARAGE_DEPOSIT;
   const crew=s.people.crew[p.crew];
@@ -191,14 +265,47 @@ const strategies={
   // and it leases as early as day 2. Spenard only - there are no blocks
   // anywhere else, so Downtown is a wasted slot for this one.
   territory:{caught:['run','fight','surrender'],products:['weed','shrooms'],areas:['north_star_lot'],profit:1.12,heatCap:8,plan:'defend',track:'operations',gear:'utility_knife',crew:'eli',encounter:['talk','run','fight','pay','surrender'],mode:'mixed',property:true,operator:true,bankForTerritory:true,leaseAt:C.GARAGE_DEPOSIT,leaseDay:2,recruitBy:99},
+  // v1.30. The instrument for employment, which nothing else reaches. The
+  // fourteen above dispatch WORK_JOB but never APPLY_JOB or ACCEPT_JOB, and
+  // jobAvailability requires activeJobId===jobId for every employer that is
+  // not day labor - so the only work any of them has ever done is the one job
+  // the attendance ladder exempts. This one holds a real employer, which means
+  // applyAttendance finally runs inside the sim's CONFIRM_END_DAY pass.
+  //
+  // The responsible citizen: no crime, no territory, no product. It works,
+  // pays rent and the phone on the day they come due, and flips 907List on the
+  // side for the supplemental income a single wage does not cover. `plan` is
+  // not decoration - PREPARE_FINAL_PLAN/EXECUTE_FINAL_PLAN is how every run in
+  // this harness terminates, and a profile without one would burn the 500
+  // iteration guard and report as a dead end. heatCap 2 keeps the interview
+  // roll near its ceiling, since the callback chance falls off above Heat 4.
+  // marketFloat is the bill reserve, doing the same job territoryReserve does
+  // for the territory profile: obligations stay in the pocket instead of
+  // becoming inventory, so a flip can never be the reason the rent was late.
+  // It is the one number that keeps "pays its obligations" true rather than
+  // aspirational, and it was measured rather than guessed: at rent+phone the
+  // strategy still missed rent in 2 runs of 40 and let the phone lapse in 3,
+  // because a 907List buy on day 6 cleared the reserve and day 7 wants both
+  // bills at once. At the rent due, the phone, and the rent after that, 100
+  // runs come back clean on every obligation.
+  worker:{caught:['surrender','run','fight'],products:[],areas:['north_star_lot'],profit:2,heatCap:2,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['talk','run','pay','surrender'],mode:'legal',employment:true,payBills:true,market:true,marketMargin:12,marketFloat:C.WEEKLY_RENT*2+C.PHONE_BILL,marketQuick:true,marketRiskCap:0.14},
 };
 function settle(state,profile,beats){let s=state,guard=0;const note=(id)=>{if(beats&&(!beats.length||beats[beats.length-1].id!==id))beats.push({id,slot:(s.run.day-1)*4+s.run.slot})};while(guard++<20){if(s.run.openingPending){s=C.reduceGame(s,{type:'DISMISS_OPENING'});continue}if(s.run.daySummary){s=C.reduceGame(s,{type:'DISMISS_DAY_SUMMARY'});continue}if(s.run.pendingOperationResult){s=C.reduceGame(s,{type:'ACKNOWLEDGE_OPERATION_RESULT'});continue}if(s.run.pendingEncounter){note(s.run.pendingEncounter.id);const available=C.selectors.encounterChoices(s).map(c=>c.id);const posture=s.run.pendingEncounter.type==='boost_caught'?(profile.caught||[]):profile.encounter;const choice=posture.find(id=>available.includes(id))||profile.encounter.find(id=>available.includes(id))||available[0];s=C.reduceGame(s,{type:'RESOLVE_ENCOUNTER',choiceId:choice});continue}if(s.run.pendingEvent){note(s.run.pendingEvent.id);const choices=s.run.pendingEvent.choices;let index=s.run.pendingEvent.id==='dre_terms'?choices.length-1:choices.findIndex(c=>(c.effect?.cash||0)>=0);if(index<0)index=choices.findIndex(c=>Math.abs(c.effect?.cash||0)<=s.player.cash);s=C.reduceGame(s,{type:'RESOLVE_EVENT',choiceIndex:index<0?choices.length-1:index});continue}if(s.run.dayEndPending){s=C.reduceGame(s,{type:'CONFIRM_END_DAY'});continue}break}return s}
-function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun({seed}),{type:'START_RUN',streetName:`Sim ${seed}`}),guard=0;const beats=[];const marketSamples=[];while(s.run.status==='playing'&&guard++<500){s=settle(s,p,beats);if(s.run.status!=='playing')break;
+function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun({seed}),{type:'START_RUN',streetName:`Sim ${seed}`}),guard=0;const beats=[];const marketSamples=[];let wages=0;
+    // Nothing in game-core totals job income - addCleanCash moves a balance, it
+    // does not keep a running sum - so the shift payout is read as the clean
+    // cash a WORK_JOB dispatch adds. Positive deltas only, and it is a floor
+    // rather than a receipt: a shift that ends up crossing a day nets whatever
+    // that rollover spent against the wage. For this strategy that is nearly
+    // nothing (it holds no crew, and rent and the phone are separate
+    // dispatches), which is what makes the number worth reporting.
+    const shift=(before,after)=>{wages+=Math.max(0,after.player.cleanCash-before)};while(s.run.status==='playing'&&guard++<500){s=settle(s,p,beats);if(s.run.status!=='playing')break;
     // Sampled before the day's actions so a tier's income is credited to the
     // tier that was actually active while it was being earned.
     if(p.market&&s.knowledge.knows907List&&(!marketSamples.length||marketSamples[marketSamples.length-1].day!==s.run.day)){
       marketSamples.push({day:s.run.day,tier:C.selectors.marketTier(s),profit:s.nineZeroSevenList.profit});
     }
+    if(p.payBills||p.employment){const next=workerTurn(s,p,shift);if(next&&next!==s){s=next;continue}}
     if(p.market){const next=marketTurn(s,p);if(next&&next!==s){s=next;continue}}
     if(s.run.phase==='week_zero'){
       if(s.run.slot>=2&&!s.nightOwl.boardViewedDays.includes(s.run.day)){s=C.reduceGame(s,{type:'VIEW_NIGHT_OWL_BOARD'});continue}
@@ -206,12 +313,12 @@ function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun
       const regular=C.selectors.nightOwlRegularFor(s),regularState=s.nightOwl.regulars[regular.id];
       if(s.run.slot>=2&&regularState.lastTalkDay!==s.run.day){s=C.reduceGame(s,{type:'TALK_NIGHT_OWL_REGULAR',regularId:regular.id});continue}
       const job=C.selectors.discoveredJobs(s).find(entry=>C.selectors.jobAvailability(s,entry.id).available);
-      if(job){s=C.reduceGame(s,{type:'WORK_JOB',jobId:job.id,approach:p.mode==='legal'?'work_hard':'socialize'});continue}
+      if(job){const before=s.player.cleanCash;s=C.reduceGame(s,{type:'WORK_JOB',jobId:job.id,approach:p.mode==='legal'?'work_hard':'socialize'});shift(before,s);continue}
       s=C.reduceGame(s,{type:'WANDER_SPENARD'});continue;
     }
     if((p.mode==='trader'||p.mode==='mixed'||p.mode==='stickup')&&!s.world.productAccess.weed){s=C.reduceGame(s,{type:'EXPLORE_SPENARD'});continue}
     if(p.mode==='gambler'&&!s.world.locations.gamblingKnown){s=C.reduceGame(s,{type:'EXPLORE_SPENARD'});continue}
-    if(p.mode==='legal'){const job=C.selectors.discoveredJobs(s).find(job=>C.selectors.jobAvailability(s,job.id).available);if(job){s=C.reduceGame(s,{type:'WORK_JOB',jobId:job.id,approach:'work_hard'});continue}}
+    if(p.mode==='legal'){const job=C.selectors.discoveredJobs(s).find(job=>C.selectors.jobAvailability(s,job.id).available);if(job){const before=s.player.cleanCash;s=C.reduceGame(s,{type:'WORK_JOB',jobId:job.id,approach:'work_hard'});shift(before,s);continue}}
     if(p.mode==='thief'&&C.selectors.activityAvailability(s).shoplifting.available){s=C.reduceGame(s,{type:'SHOPLIFT'});continue}
     // v1.11: the gambler plays the real tables at The Nile. Rewired rather than
     // added as a twelfth strategy so the strategy count and averageGamblingNet
@@ -271,7 +378,7 @@ function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun
     if(s.lender.balance&&s.player.cash>=s.lender.balance+100&&s.run.day>=2){s=C.reduceGame(s,{type:'PAY_DEBT',amount:s.lender.balance});continue}
     if(s.player.heat>p.heatCap){s=C.reduceGame(s,{type:'LAY_LOW'});continue}
     const next=p.areas[(Math.max(0,p.areas.indexOf(area))+1)%p.areas.length],busCovered=s.world.transport.weekPass||s.world.transport.dayPassDay===s.run.day;s=next===area?C.reduceGame(s,{type:'END_MARKET'}):next==='north_star_lot'&&s.player.cash<5&&!busCovered?C.reduceGame(s,{type:'WALK_HOME'}):['downtown','north_star_lot'].includes(next)&&s.player.cash<5&&!busCovered?C.reduceGame(s,{type:'END_MARKET'}):['downtown','north_star_lot'].includes(next)?C.reduceGame(s,{type:'BUS_TRAVEL',neighborhoodId:next}):C.reduceGame(s,{type:'TRAVEL',neighborhoodId:next});
-  }s=settle(s,p,beats);const summary=C.selectRunSummary(s);summary.completed=s.run.status==='ended';summary.finalState={day:s.run.day,slot:s.run.slot,energy:s.player.energy,phase:s.run.phase,pending:s.run.pendingEncounter?.id||s.run.pendingEvent?.id||null,dayEnd:s.run.dayEndPending,overtime:s.run.overtimeArmed,baseVisiting:s.base.visiting};summary.decisions=s.stats.decisions;summary.encounters=s.run.encounterCount;summary.baseValue=C.selectors.baseValue(s);summary.crew=C.selectors.recruitedCrew(s).length;summary.dealer={...(s.people.dealers?.goodie||{})};summary.meaningfulActions=s.player.behavior.meaningfulActions;summary.gymStreak=s.player.gymStreak||0;summary.derivedRatings=Object.values(C.selectors.derivedRatings(s)).join('/');summary.garageDay=s.base.acquiredDay||0;summary.evicted=s.people.household.evicted?1:0;summary.discoveries=s.world.locations.discoveries.length;summary.attributeGains=Object.values(s.player.attributes).reduce((n,v)=>n+Math.max(0,v-1),0);summary.combat=s.player.attributes.combat;summary.charisma=s.player.attributes.charisma;summary.intelligence=s.player.attributes.intelligence;summary.streetReadTier=s.streetRead.tier;summary.streetReadScore=s.streetRead.score;summary.streetReadEntries=s.streetRead.totalLifetimeEntries;summary.employerStanding=s.world.locations.employer.standing;summary.gamblingNet=s.world.locations.gambling.net;summary.arrests=s.record?.arrests||0;summary.crewJailed=Object.values(s.people.crew).filter(c=>c.status==='arrested').length;Object.assign(summary,storyMetrics(s,beats));Object.assign(summary,exposureMetrics(s));Object.assign(summary,territoryMetrics(s));if(p.market){marketSamples.push({day:s.run.day,tier:C.selectors.marketTier(s),profit:s.nineZeroSevenList.profit});Object.assign(summary,marketMetrics(s,marketSamples))}return summary}
+  }s=settle(s,p,beats);const summary=C.selectRunSummary(s);summary.completed=s.run.status==='ended';summary.finalState={day:s.run.day,slot:s.run.slot,energy:s.player.energy,phase:s.run.phase,pending:s.run.pendingEncounter?.id||s.run.pendingEvent?.id||null,dayEnd:s.run.dayEndPending,overtime:s.run.overtimeArmed,baseVisiting:s.base.visiting};summary.decisions=s.stats.decisions;summary.encounters=s.run.encounterCount;summary.baseValue=C.selectors.baseValue(s);summary.crew=C.selectors.recruitedCrew(s).length;summary.dealer={...(s.people.dealers?.goodie||{})};summary.meaningfulActions=s.player.behavior.meaningfulActions;summary.gymStreak=s.player.gymStreak||0;summary.derivedRatings=Object.values(C.selectors.derivedRatings(s)).join('/');summary.garageDay=s.base.acquiredDay||0;summary.evicted=s.people.household.evicted?1:0;summary.discoveries=s.world.locations.discoveries.length;summary.attributeGains=Object.values(s.player.attributes).reduce((n,v)=>n+Math.max(0,v-1),0);summary.combat=s.player.attributes.combat;summary.charisma=s.player.attributes.charisma;summary.intelligence=s.player.attributes.intelligence;summary.streetReadTier=s.streetRead.tier;summary.streetReadScore=s.streetRead.score;summary.streetReadEntries=s.streetRead.totalLifetimeEntries;summary.employerStanding=s.world.locations.employer.standing;summary.gamblingNet=s.world.locations.gambling.net;summary.arrests=s.record?.arrests||0;summary.crewJailed=Object.values(s.people.crew).filter(c=>c.status==='arrested').length;Object.assign(summary,storyMetrics(s,beats));Object.assign(summary,exposureMetrics(s));Object.assign(summary,territoryMetrics(s));if(p.market){marketSamples.push({day:s.run.day,tier:C.selectors.marketTier(s),profit:s.nineZeroSevenList.profit});Object.assign(summary,marketMetrics(s,marketSamples))}if(p.employment){Object.assign(summary,employmentMetrics(s,wages))}return summary}
 function summarize(name,count){const runs=Array.from({length:count},(_,i)=>play(1000+i,name)),endings={};for(const r of runs)endings[r.endingLabel]=(endings[r.endingLabel]||0)+1;const avg=k=>Math.round(runs.reduce((n,r)=>n+(r[k]||0),0)/count);const robbery=k=>runs.reduce((n,r)=>n+(r.robbery?.[k]||0),0);return{strategy:name,runs:count,completed:runs.filter(r=>r.completed).length,averageCash:avg('cash'),averageNetWorth:avg('netWorth'),averageOperationScore:avg('operationScore'),averageDebt:avg('debt'),averageHighestHeat:avg('highestHeat'),averageDecisions:avg('decisions'),averageEncounters:avg('encounters'),averageBaseValue:avg('baseValue'),averageCrew:avg('crew'),robAttempts:robbery('attempts'),robSuccesses:robbery('successes'),robFailures:robbery('failures'),robPayout:robbery('totalPayout'),territoryAttempts:runs.reduce((n,r)=>n+(r.takeovers?.attempts||0),0),arrests:runs.reduce((n,r)=>n+(r.arrests||0),0),crewJailedAtEnd:runs.reduce((n,r)=>n+(r.crewJailed||0),0),deadEnds:runs.filter(r=>!r.completed).length,
   averageStoryBeats:Number((runs.reduce((n,r)=>n+r.storyBeats,0)/count).toFixed(1)),
   averageAmbientBeats:Number((runs.reduce((n,r)=>n+r.ambientBeats,0)/count).toFixed(1)),
@@ -326,6 +433,23 @@ function summarize(name,count){const runs=Array.from({length:count},(_,i)=>play(
       const profit=runs.reduce((n,r)=>n+(r.marketPerTier?.[tier]?.profit||0),0);
       return [tier,{days,profit,perDay:days?Number((profit/days).toFixed(1)):0,target:C.MARKET.TIER_INCOME_TARGETS[tier]}];
     })),
+  }}:{}),
+  // v1.30. Gated the same way, and for the same reason: a metrics block that
+  // ran for every profile would add keys to all fifteen summaries and make the
+  // "the other fourteen are unchanged" proof a diff with exceptions instead of
+  // an equality. `firedRuns` and `missedShiftRuns` are the two that matter -
+  // both should read 0 forever, and a future employment change that breaks the
+  // v1.29 ladder is exactly what would move them off it.
+  ...(strategies[name].employment?{employment:{
+    jobHeldRuns:runs.filter(r=>r.jobHeld).length,
+    averageShifts:Number((runs.reduce((n,r)=>n+(r.shiftsWorked||0),0)/count).toFixed(1)),
+    averageWages:avg('wagesEarned'),
+    averageRank:Number((runs.reduce((n,r)=>n+(r.jobRank||0),0)/count).toFixed(1)),
+    missedShiftRuns:runs.filter(r=>(r.missedShiftPeak||0)>0).length,
+    firedRuns:runs.filter(r=>!r.jobHeld).length,
+    rentMissedRuns:runs.filter(r=>(r.rentMissed||0)>0).length,
+    phoneLapsedRuns:runs.filter(r=>(r.phonePastDue||0)>0).length,
+    warnedRuns:runs.filter(r=>(r.householdWarnings||0)>0).length,
   }}:{}),
   legacySaveSmoke:C.selectors.derivedRatings(C.hydrateRun({...C.reduceGame(C.createRun({seed:99}),{type:'START_RUN',streetName:'Legacy'}),player:{...C.reduceGame(C.createRun({seed:99}),{type:'START_RUN',streetName:'Legacy'}).player,background:'shooter',attributes:undefined}})),
   endings}}

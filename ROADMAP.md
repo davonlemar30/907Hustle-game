@@ -110,6 +110,63 @@ it. Two things this build surfaced and deliberately left:
 
 ---
 
+## Shipped — v1.34 Crime, Played Competently
+
+The economy pass v1.33 called for, run under a design position stated up front:
+**the legal path is the highest expected-value outcome; crime is faster, riskier,
+and worse in expectation; smart crime approaches the job's net return without
+beating it.** And under one instruction — **do not tune anything until the
+instrument has played the game competently.** Nothing was tuned.
+
+- **Eighteen of eighteen strategies had never traded cross-market.** The harness
+  bought the cheapest product *in the market it was standing in*. In-market
+  spreads are non-positive by design — widest observed **+1.9%**, and that is
+  integer rounding — so all trading profit is arbitrage, at **+45% to +76%**. The
+  −6% to −22% margins were the route run backwards.
+- **Two profiles that take it:** `arbitrage` (route alone) and `hustler` (route
+  plus job). Both price *both* districts before moving, because standing still is
+  a legal move; both buy the week pass, $45 against ~$470 a run in singles.
+  Margin **−13% → +17-22%**, bus rides **105 → 27.6** a run.
+- **The answer: pure crime lands at 17% of the job, the hybrid at 110%.** Both of
+  the position's out-of-band conditions at once. The margin is fine; the
+  constraint on the first is the **capital curve**, and the cause of the second
+  is that **the trading path pays no risk premium**.
+- 955 tests. Both hashes moved. Zero dead ends. No game-core changes.
+
+**The design position is now written into `ARCHITECTURE.md` under Economy
+philosophy**, including the scaling rule: every district or tier added from here
+widens the criminal distribution in both directions while the legal path stays
+flat.
+
+**Four systems in four builds where "the engine is broken" was really "the
+instrument never exercised it."** Rent, rest, the note, and now the route.
+
+### Next — v1.35 owns the risk term on the trading path
+
+**`SELL` has no Heat term at all**, and `BUY`'s is
+`floor(product.heat * qty / 5)` against open-access products carrying `heat: 0`.
+Measured: **383 purchases, 521 units, exactly 0 Heat.** `hustler` peaks at 12.5
+Heat with 0.00 arrests against `legal_worker`'s 12.1 and 0.00 — couriering drugs
+for forty days reads like forty days at the Chevron. That is the whole reason the
+hybrid beats the job, and it is a mechanic rather than a number, which is why
+this build reported it instead of picking a rate.
+
+Second, and separable: **the capital curve**. A courier who can only afford four
+units of a ten-unit load earns four units of profit, which is why pure crime
+measures at 17% with a healthy margin. Whoever takes it should start at cargo
+capacity, plug credit, and starting cash rather than at prices.
+
+**5.2 Downtown still stays behind both.** It is currently the sell side of the
+only profitable trade in the game, so its economics are already load-bearing —
+and under the scaling rule it must raise ambient heat, wage load and loss
+exposure in step with the volume it unlocks. Adding it before the trading path
+has a risk term would ship the thesis broken at twice the size.
+
+Still on the inventory, unfixed: un-clamped `missed_obligation` observations, and
+story pacing that exhausts a seven-day registry by ~day 20 of a forty-day run.
+
+---
+
 ## Shipped — v1.33 Pressure and Attrition
 
 v1.32 left a four-item work list. **Measuring it first cut the list to one.**

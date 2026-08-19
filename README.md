@@ -2,37 +2,51 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-## Current Build (v1.28)
+## Current Build (v1.34)
 
-**v1.28: Curtis Pressure Balance Pass** — Phase 2.2 closes. Everything about
-Curtis on the block layer had been *authored*: a base chance somebody picked in
-v1.21, a phase multiplier ladder nobody had run, a pressure budget that was a
-first position. The balance pass was parked for months on the simulator's 10-day
-cap, and that cap was never the blocker — the territory harness starts from a
-corner-holding state and resolves nights through the real reducer, and has since
-v1.20. **So the constants got swept instead of argued about.** His base chance
-went 0.12 → 0.05 on a sweep run twice over, two phase multipliers moved because
-the measurement said which and why, and three things are new behavior: he reads
-your Heat above 8 and gets luckier — not because he talks to the police, but
-because a hot player's soldiers keep getting arrested and a thin corner is an
-easy corner; an empty corner is finally worth less than a corner with one person
-standing on it; and he holds a grudge about corners he has already taken back
-once.
+**v1.34: Crime, Played Competently** — the build that went looking for an
+underpowered criminal economy and found a badly played one, then found something
+worse behind it.
+
+Eighteen strategies had been trading at **−6% to −22%**, and the reason was in
+the harness rather than the game: it bought the cheapest product *in the market
+it was standing in*, with no model of where the load would be sold. In-market
+spreads are non-positive by design — the widest observed across 6 seeds × 5 days
+× 3 products is **+1.9%**, which is integer rounding — so **all trading profit is
+arbitrage between districts**, and that route pays **+45% to +76%**. A bot buying
+Downtown weed at 43 to sell at North Star for 23 was running it backwards.
+
+Two new profiles take the route: `arbitrage` (the route alone) and `hustler` (the
+route on top of a job). Both buy the week pass, because a courier paying single
+fares spends about **$470 a run** to earn — most of why the route first measured
+as dead. Margin goes **−13% → +17–22%**.
+
+**Then the honest measurement, which is the deliverable.** Against
+`legal_worker` at 100%, pure `arbitrage` lands at **17%** and the `hustler`
+hybrid at **110%** — both of the design position's out-of-band conditions firing
+at once. The margin is fine; the **capital curve** is the constraint on the first,
+and the second has a cause: **`SELL` has no Heat term at all**, and `BUY`'s is
+`floor(product.heat * qty / 5)` against open-access products that carry
+`heat: 0`. Measured: **383 purchases, 521 units, exactly 0 Heat.** Forty days of
+couriering product reads to the police like forty days at the Chevron.
+
+**No prices were tuned.** That was the instruction and it was the right one —
+four builds running, "the engine is broken" has meant "the instrument never
+exercised it." The economy's design position is now written down in
+`ARCHITECTURE.md` under **Economy philosophy**, and the missing risk term is
+v1.35's, because there is no measured basis for picking a rate today.
 
 | | |
 |---|---|
 | Save schema | **v11** (`907ogr_v11`), loads v3 and up |
-| Tests | **868** passing (`npm test`) |
-| Simulation, 200 runs | `1f1e32b63829681efd120cbc108212b53fb9cfad781cb392a71c111334dfa27d` |
-| Simulation, 2,000 runs | `d617a1b371f4ee76ec776825cfd5ad53c15621046ce7e35972d3e50ea2814d5d` |
+| Tests | **955** passing (`npm test`) |
+| Simulation, 200 runs | `64fffbac2564fb7d022f3094a840dc443b8d29255a6436f05954b4905eb1da63` |
+| Simulation, 2,000 runs | `5e76a0fbb5f1eec2005b758354620d8c8a983c3d2ce7bbdc3ff4d9c9c027d338` |
 
-**Both hashes are unchanged, and that was not the expected result.** This build
-rewrote how the nightly Curtis pass resolves. The hashes held because the
-`territory` strategy claims **zero blocks in 200 runs** — no strategy in the
-simulator ever owns a corner, so nothing the build changed is reachable from that
-harness. It proves the thirteen original strategies behavior-identical for free.
-It also means the simulator does not cover the block layer, and an unchanged hash
-there must never be read as though it does. 2,000 runs, zero dead ends.
+Both hashes moved: `--total N` splits a fixed budget across the strategy table,
+so eighteen entries re-partition what sixteen held and every block changes.
+Zero dead ends at 200 and 2,000. Evictions 25%, `territory` claiming 18 blocks a
+run, `worker` still at zero evictions.
 
 **The run has no fixed length.** There is no day cap and no timed ending — the
 player hustles indefinitely, and a run ends only on a lose condition (an
@@ -43,6 +57,26 @@ said no such thing existed. `RUN_DAYS = 7` is now only an income-projection
 constant; the loan carries its own seven-day term. The **40-day `maxDays`** in
 the simulator is an instrument boundary for hash comparability, not a design
 position.
+
+<details>
+<summary>Previously — v1.28: Curtis Pressure Balance Pass</summary>
+
+**v1.28: Curtis Pressure Balance Pass** — Phase 2.2 closes. Everything about
+Curtis on the block layer had been *authored*: a base chance somebody picked in
+v1.21, a phase multiplier ladder nobody had run, a pressure budget that was a
+first position. The balance pass was parked for months on the simulator's 10-day
+cap, and that cap was never the blocker — the territory harness starts from a
+corner-holding state and resolves nights through the real reducer, and has since
+v1.20. **So the constants got swept instead of argued about.** His base chance
+went 0.12 to 0.05 on a sweep run twice over, two phase multipliers moved because
+the measurement said which and why, and three things are new behavior: he reads
+your Heat above 8 and gets luckier — not because he talks to the police, but
+because a hot player's soldiers keep getting arrested and a thin corner is an
+easy corner; an empty corner is finally worth less than a corner with one person
+standing on it; and he holds a grudge about corners he has already taken back
+once.
+
+</details>
 
 <details>
 <summary>Previously — v1.27: Disclosure Tables</summary>

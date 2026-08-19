@@ -251,11 +251,12 @@ test("Selam, Pherris and Deshawn are absent, and the file says why", () => {
 // --- Task 3: the harness finally sees employment -----------------------------
 
 test("the strategy table carries an employment profile", () => {
-  // v1.33 added a sixteenth, `debtor`, for the same reason this one was added:
-  // a whole system - Dre's note - that the harness had never once exercised.
+  // The table grows whenever a system turns out to be unexercised. v1.30 added
+  // `worker` for employment, v1.33 `debtor` for Dre's note, v1.34 `arbitrage`
+  // and `hustler` for the cross-market trade no strategy had ever made.
   const { strategies } = require("./simulate-runs.js");
   const names = Object.keys(strategies);
-  assert.equal(names.length, 16, "fourteen originals, plus worker and debtor");
+  assert.equal(names.length, 18, "fourteen originals plus worker, debtor, arbitrage and hustler");
   assert.ok(names.includes("worker"));
   const worker = strategies.worker;
   assert.equal(worker.employment, true, "it applies, accepts, and works");

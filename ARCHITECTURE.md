@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.33**. This file
+How 907Hustle: One Good Run is put together, current as of **v1.34**. This file
 is meant to be the only thing you need to read before changing code; for *why*
 the game is designed the way it is, see the ClickUp docs at the bottom.
 
@@ -1252,6 +1252,100 @@ strength as the player gets to see it — Intelligence buys precision, not power
 exact at 3+, ±1 at 2, ±3 below. **`blockIntelVisible`** decides whether real
 block stats show at all; until Eli's map reveals them the UI prints "Numbers
 unconfirmed" instead of earning potential, heat exposure, and patrol frequency.
+
+## Economy philosophy
+
+**The design position, and it is not negotiable by measurement.**
+
+> The legal path is the **highest expected-value outcome**. Criminal income is
+> higher per-action but lower in expectation after costs. Each new district,
+> product tier, or scale level increases both the **ceiling and the floor** of
+> criminal income proportionally, preserving this relationship.
+
+Said plainly: crime is faster, riskier, and worse in expectation. Smart crime
+**approaches** the job's net return after Heat, arrests, crew wages, territory
+attrition and inventory loss, and does not beat it. The hustle is seductive and
+the hustle is a lie. That is the game's thesis, and the economy is the argument
+for it — so a balance change is wrong if it makes the criminal path the sensible
+one, however good the numbers look in isolation.
+
+**The scaling rule.** Every district, tier or scale level added from here widens
+the criminal distribution in *both* directions — more volume and more exposure,
+a higher best case and a worse worst case — while the legal path stays flat.
+5.2 Downtown is the first test of this: it is currently the sell side of the
+only profitable trade in the game, so adding it must raise ambient heat, wage
+load and loss exposure in step with the dirty-cash volume it unlocks. A district
+that only raises the ceiling breaks the thesis.
+
+### Where the economy actually stands (v1.34, 8 runs per profile, 40-day horizon)
+
+Net worth against `legal_worker` at 1,169 = 100%:
+
+| profile | netWorth | vs job | what it does |
+|---|---|---|---|
+| `hustler` | 1,281 | **110%** | job **plus** the arbitrage route |
+| `flipper` | 352 | 30% | 907List only |
+| `stickup` | 281 | 24% | armed robbery |
+| `worker` | 204 | 17% | job plus 907List |
+| `arbitrage` | 197 | 17% | the route, no job |
+| `territory` | 150 | 13% | the whole block layer |
+| `trader` | 30 | 3% | buy-cheapest-here, the old rule |
+
+Both of the design position's out-of-band conditions fire at once, which is the
+finding this build exists to have produced:
+
+- **Pure crime is at 17%, below the 50% "the route is dead" floor** — and *not*
+  because the margin is bad. The margin is **+17% to +24%**, against `trader`'s
+  **−13%**. A courier who can only ever afford four units of a ten-unit load
+  earns four units of profit. The binding constraint is the **capital curve**,
+  not price.
+- **Crime alongside the job is at 110%, above the "costs are too low" ceiling** —
+  the hybrid beats the pure job, which the position says it must not.
+
+Those two point at the same missing thing, and it is a mechanic rather than a
+number.
+
+### In-market spreads are non-positive by design
+
+Buy and sell prices in the same market never round-trip for a real margin. Across
+6 seeds × 5 days × 3 products in every market, the widest in-market spread
+observed is **+1.9%**, and that is integer rounding (buy 54, sell 55) rather than
+a margin. **All trading profit is arbitrage between districts**, and the route is
+large: **+45% to +76%** mean across weed, shrooms and cocaine, never negative on
+the best available pair.
+
+This is why the fourteen pre-v1.34 strategies realised **−6% to −22%** on the
+trade. `simulate-runs.js` sorted buy candidates by `price` *in the current
+market*, with no model of where the load would be sold, so a bot buying Downtown
+weed at 43 to sell at North Star for 23 was running the arbitrage backwards.
+
+Two consequences worth writing down so they are not rediscovered:
+
+- **A courier who buys single fares is paying to work.** The week pass is $45
+  once against roughly $470 a run in singles; without it the route measures as
+  dead when it is not.
+- **Never judge trading on netWorth alone.** Unsold inventory counts toward net
+  worth, so raising the sell threshold makes netWorth *rise* while the trade gets
+  worse — 1.05 → 2.00 on `trader` moves margin −11% → −86% and netWorth 40 → 171.
+  Report margin and net trade alongside it, always.
+
+### The Heat gap on the trading path (open, v1.35)
+
+`SELL` has **no Heat term at all**. `BUY` has one, but it is
+`floor(product.heat * qty / 5)` and the two open-access products carry
+`heat: 0` — measured across four seeds of three trading profiles, **383
+purchases and 521 units produced exactly 0 Heat**. Forty days of couriering
+product across the city reads to the police like forty days at the Chevron,
+which is precisely why the hybrid is free money.
+
+**This build did not fix it**, deliberately: there is no measured basis for
+choosing a rate, and picking one would be tuning ahead of the measurement. The
+rule that produced this section is the one to keep — *assume the economy is fine
+until proven otherwise, and do not tune prices, margins or product costs until
+the instrument has played the game competently*. Four builds running, "the
+engine is broken" has meant "the instrument never exercised it": rent (14 of 15
+never paid), rest (15 of 15 never slept), Dre's note (15 of 15 never borrowed),
+and now arbitrage (18 of 18 never traded cross-market).
 
 ## The criminal economy
 

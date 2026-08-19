@@ -1,6 +1,139 @@
 # 907Hustle: One Good Run — Project Status
 
-Last updated: 2026-08-18 (America/Anchorage)
+Last updated: 2026-08-19 (America/Anchorage)
+
+## v1.34 Crime, Played Competently — built
+
+The brief was to find out what smart crime is worth, measured against a design
+position stated up front rather than discovered: **the legal path is the highest
+expected-value outcome; crime is faster, riskier, and worse in expectation;
+smart crime approaches the job's net return without beating it.** The hustle is
+seductive and the hustle is a lie.
+
+The instruction attached to it was the important part — **do not tune prices,
+margins, or product costs until the arbitrage strategy has measured the current
+economy honestly. Assume the economy is fine until proven otherwise.** That held
+for the whole build, and it was right twice over.
+
+### The instrument had never traded
+
+Ranked at the 40-day horizon, every criminal path was worth a fraction of the
+day job and the drug trade specifically ran a **negative margin** — `cautious`
+−6%, `trader` −12%, `balanced` −22% — while buying roughly twice as often as it
+sold. The obvious read is an underpowered economy. It was wrong.
+
+`tests/simulate-runs.js` picked what to buy with `candidates.sort((a,b) =>
+a.price - b.price)` — **cheapest in the market it happened to be standing in**,
+with no model of where the load would be sold. And in-market spreads are
+non-positive by design:
+
+| area | weed buy / sell | spread |
+|---|---|---|
+| north_star_lot | 23 / 23 | 0% |
+| downtown | 43 / 40 | −7% |
+| airport_industrial | 36 / 35 | −3% |
+
+Swept properly — 6 seeds × 5 days × 3 products across every market — **the widest
+in-market spread that exists is +1.9%**, and it is integer rounding (buy 54, sell
+55) rather than a margin. Meanwhile the cross-district route pays **+73% mean on
+weed, +76% shrooms, +45% cocaine, minimum +8%, never negative** on the best
+available pair. A bot buying Downtown weed at 43 and selling it at North Star for
+23 was running the arbitrage backwards, and that is the entire negative margin.
+
+**This is the fourth build in five where "the engine is broken" meant "the
+instrument never exercised it"** — after rent (14 of 15 strategies never paid),
+rest (15 of 15 never slept), and Dre's note (15 of 15 never borrowed). Eighteen
+of eighteen had never traded cross-market. It is now a named hazard class in
+`ARCHITECTURE.md`.
+
+### Two profiles that take the route
+
+- **`arbitrage`** — the route alone. Prices *both* districts before moving,
+  because the first cut hopped whenever nothing here was affordable and rode
+  105 buses against 19 sales when nothing was affordable on either side.
+  **Standing still is a legal move.**
+- **`hustler`** — the same route on top of employment.
+
+Both buy the **week pass**: $45 once against roughly **$470 a run** in single
+fares. A courier who does not is paying to work, and that alone made the route
+first measure as dead when it is not. Bus rides per run: **105 → 27.6**.
+
+Margin moves **−13% (`trader`) → +17% to +22% (`arbitrage`)**.
+
+### What competent crime is actually worth
+
+Against `legal_worker` at 1,169 = 100%, eight runs per profile:
+
+| profile | netWorth | vs job |
+|---|---|---|
+| `hustler` (job + route) | 1,281 | **110%** |
+| `flipper` | 352 | 30% |
+| `stickup` | 281 | 24% |
+| `worker` | 204 | 17% |
+| `arbitrage` (route only) | 197 | **17%** |
+| `territory` | 150 | 13% |
+| `trader` | 30 | 3% |
+
+**Both of the design position's out-of-band conditions fire at once**, and that
+is the deliverable:
+
+- **Pure crime is at 17%, below the 50% "the route is dead" floor** — but not
+  because the margin is bad. The margin is +17% to +24%. A courier who can only
+  ever afford four units of a ten-unit load earns four units of profit. The
+  binding constraint is the **capital curve**, not price.
+- **The hybrid is at 110%, above the "costs are too low" ceiling.**
+
+Those point at one thing, and it is a mechanic rather than a number.
+
+### The finding: the trading path carries no Heat
+
+**`SELL` has no Heat term at all.** It moves dirty cash, records the criminal
+activity, logs, and never touches `player.heat`.
+
+**`BUY` has one and it is structurally zero.** The term is
+`floor(product.heat * qty / 5)`, and the two open-access products the route runs
+on carry `heat: 0` in `src/data/products.js`. Cocaine at `heat: 1` needs five
+units in a single purchase to score one point. Measured across four seeds of
+three trading profiles: **383 purchases, 521 units, exactly 0 Heat.**
+
+`hustler` peaks at 12.5 Heat with 0.00 arrests; `legal_worker` peaks at 12.1 with
+0.00. Forty days of couriering product across the city reads to the police like
+forty days at the Chevron. **The "riskier" half of "faster, riskier, worse in
+expectation" is not implemented on the trading path.**
+
+**No fix shipped, deliberately.** There is no measured basis for choosing a rate,
+and picking one would be the exact tuning-ahead-of-measurement the brief
+prohibited. v1.35 owns it.
+
+### A measurement trap worth carrying forward
+
+**Never judge trading on netWorth alone.** Unsold inventory counts toward net
+worth, so raising the sell threshold makes netWorth *rise* while the trade gets
+worse. Sweeping `profit` on `trader`, 8 seeds: 1.05 → margin −11%, netWorth 40;
+2.00 → margin −86%, netWorth 171, and **100% evicted**. Anyone optimising on
+netWorth tunes this exactly backwards.
+
+### Numbers
+
+- **955 tests** passing (945 + 10 new in `tests/v1-34.test.js`).
+- `--total 200` → `64fffbac2564fb7d022f3094a840dc443b8d29255a6436f05954b4905eb1da63`
+- `--total 2000` → `5e76a0fbb5f1eec2005b758354620d8c8a983c3d2ce7bbdc3ff4d9c9c027d338`
+- Both moved, and not only from new output: `--total N` splits a fixed budget
+  across the table, so eighteen strategies re-partition what sixteen held. **No
+  per-strategy equivalence is claimable** and none is claimed.
+- Guards: **0 dead ends** at 200 and 2,000; evictions **25%**; `territory`
+  claiming **18 blocks a run**; `worker` at **0 evictions**.
+- Save schema held at **v11**. No game-core changes at all — this build is
+  harness, tests, and documentation.
+
+### What the build prompt got right, and the one thing it did not anticipate
+
+The prompt's targets (70–90% of the job, out of band above 100% or below 50%)
+were the right instrument: they turned an ambiguous table into two specific,
+opposite failures pointing at one missing mechanic. What it did not anticipate is
+that **both** conditions could fire simultaneously — which is only possible
+because the pure and hybrid paths differ by the presence of starting capital, and
+neither pays a risk premium.
 
 ## v1.33 Pressure and Attrition — built
 

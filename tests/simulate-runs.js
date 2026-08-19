@@ -232,6 +232,104 @@ function workerTurn(s,p,shift,maxDays){
   }
   return null;
 }
+// v1.34. The trade the harness has never made.
+//
+// Buy and sell prices inside ONE market are 0% to -7% apart, so a bot that buys
+// and sells where it stands can only lose - which is exactly what fourteen
+// strategies have done since the beginning, at -6% to -22% realised margin. The
+// profit is arbitrage BETWEEN markets, and it is large and stable: measured
+// across 6 seeds x 5 days x 3 products, the best cross-market route is never
+// negative and averages +73% on weed, +76% on shrooms, +45% on cocaine.
+//
+// This turn buys in the cheap district and sells in the dear one. It is written
+// to play the route a person would see, not to solve the market: one product at
+// a time, one leg at a time, no lookahead past the counterpart district. The
+// design position it exists to test is that even played well the route lands
+// BELOW the day job once the bus fare, the slots, the Heat and the arrests are
+// counted - the hustle is seductive and the hustle is a lie - so the strategy
+// must be honest rather than optimal or the measurement proves nothing.
+const ARB_HOME='north_star_lot',ARB_AWAY='downtown';
+function arbitrageTurn(s,p){
+  const moved=(next)=>next!==s?next:null;
+  // Heat is managed by the ladder below; yielding lets LAY_LOW have the tick.
+  if(s.player.heat>p.heatCap)return null;
+  // The seven-day pass is $45, costs no part of the day, and never expires -
+  // so a courier who is going to make this trip more than nine times buys it
+  // once and never pays a fare again. Not buying it was costing $470 a run in
+  // singles against $444 of trade profit, which is most of why the route looked
+  // dead. Smart crime buys the pass.
+  if(!s.world.transport.weekPass&&s.player.cash>=45+(p.arbFloat??0)){
+    const next=moved(C.reduceGame(s,{type:'BUY_BUS_PASS',passType:'week'}));if(next)return next;
+  }
+  const here=s.world.currentNeighborhoodId;
+  if(here!==ARB_HOME&&here!==ARB_AWAY)return null;
+  const there=here===ARB_HOME?ARB_AWAY:ARB_HOME;
+  const carried=p.arbitrage.map(id=>({id,qty:s.player.inventory[id]?.qty||0,avg:s.player.inventory[id]?.avgCost||0})).filter(x=>x.qty>0);
+  const priceHere=(id)=>C.selectors.tradeUnitPrices(s,id);
+  const covered=()=>s.world.transport.weekPass||s.world.transport.dayPassDay===s.run.day;
+  const fare=()=>covered()?0:5;
+  const hop=()=>{
+    // The People Mover is the only link, $5 and a slot, and walking home costs
+    // two slots and 3 Health - which is itself part of what the route costs.
+    if(there===ARB_HOME&&s.player.cash<5&&!covered())return moved(C.reduceGame(s,{type:'WALK_HOME'}));
+    return moved(C.reduceGame(s,{type:'BUS_TRAVEL',neighborhoodId:there}));
+  };
+  // A trip has to be worth taking. Gating only on the MARGIN RATIO sends the bot
+  // across town with two units of weed because 74% of nothing still reads as a
+  // good percentage - measured, that spent $489 of fare to earn $444 of trade.
+  // The absolute return on the load has to clear the fare by `arbTripMin`.
+  const worthTheTrip=(gross)=>gross>=fare()*(p.arbTripMin??3);
+  if(carried.length){
+    // Sell here if the price clears cost by the profile's margin; otherwise the
+    // load is in the wrong district and the trip is the rest of the trade.
+    for(const item of carried){
+      const sell=priceHere(item.id).sell;
+      if(sell>=item.avg*p.profit){const next=moved(C.reduceGame(s,{type:'SELL',productId:item.id,qty:item.qty}));if(next)return next}
+    }
+    // Holding a load the far side pays more for: carry it. A load too small to
+    // clear the fare is sold here for whatever it makes rather than couriered
+    // at a loss - taking the small loss beats paying to take a bigger one.
+    const away={};
+    {const save=s.world.currentNeighborhoodId;s.world.currentNeighborhoodId=there;
+     for(const item of carried)away[item.id]=C.selectors.tradeUnitPrices(s,item.id).sell;
+     s.world.currentNeighborhoodId=save;}
+    const upside=carried.reduce((n,item)=>n+Math.max(0,(away[item.id]-priceHere(item.id).sell)*item.qty),0);
+    if(worthTheTrip(upside)){const next=hop();if(next)return next}
+    for(const item of carried){const next=moved(C.reduceGame(s,{type:'SELL',productId:item.id,qty:item.qty}));if(next)return next}
+    return null;
+  }
+  // Empty: buy only what the OTHER district pays more for. This is the whole
+  // difference from the old rule, which sorted by cheapest price in the market
+  // it was standing in and had no idea where the product would be sold.
+  const room=C.selectors.cargoCapacity(s)-C.selectors.cargoUsed(s);
+  if(room<=0)return null;
+  const spendable=Math.max(0,s.player.cash-(p.arbFloat??0));
+  // Price both districts before moving. The first cut only looked at the one it
+  // was standing in and hopped whenever nothing here was affordable - so when
+  // nothing was affordable on EITHER side it shuttled back and forth. Measured,
+  // that was 105 bus rides against 19 sales, roughly two thirds of the run spent
+  // on the People Mover. Standing still is a legal move.
+  const priceIn=(area,id)=>{const save=s.world.currentNeighborhoodId;s.world.currentNeighborhoodId=area;
+    const t=C.selectors.tradeUnitPrices(s,id);s.world.currentNeighborhoodId=save;return t};
+  const routeFrom=(from,to)=>{
+    const market=s.world.markets[from];
+    return p.arbitrage.filter(id=>s.world.productAccess[id])
+      .map(id=>({id,buy:priceIn(from,id).buy,sell:priceIn(to,id).sell,available:market.availability[id]}))
+      .filter(x=>x.available&&x.buy>0&&x.buy<=spendable&&x.sell/x.buy>=p.arbMargin)
+      .map(x=>({...x,qty:Math.min(room,x.available,Math.floor(spendable/x.buy))}))
+      .filter(x=>x.qty>0)
+      .map(x=>({...x,gross:(x.sell-x.buy)*x.qty}))
+      .sort((a,b)=>b.gross-a.gross)[0]||null;
+  };
+  const load=routeFrom(here,there);
+  if(load&&worthTheTrip(load.gross)){
+    const next=moved(C.reduceGame(s,{type:'BUY',productId:load.id,qty:load.qty}));if(next)return next;
+  }
+  // Only cross town if the far side has a load worth carrying back.
+  const far=routeFrom(there,here);
+  if(far&&worthTheTrip(far.gross)){const next=hop();if(next)return next}
+  return null;
+}
 function territoryTarget(s,p){
   if(!s.base.controlled)return C.GARAGE_DEPOSIT;
   const crew=s.people.crew[p.crew];
@@ -326,6 +424,15 @@ const strategies={
   // compounding is survivable is the thing being measured, so nothing here
   // tries to protect it from the fee schedule.
   debtor:{caught:['run','surrender','fight'],products:['weed','shrooms'],areas:['north_star_lot','downtown'],profit:1.12,heatCap:5,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['talk','run','pay','surrender'],mode:'trader',takeLoan:true},
+  // v1.34. Crime played competently, to find out what competent crime is worth.
+  // Spenard and Downtown only, because the People Mover is the only link and
+  // arbitrage needs two markets it can actually move between.
+  arbitrage:{caught:['run','surrender','fight'],products:[],areas:['north_star_lot'],profit:1.05,heatCap:6,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['talk','run','pay','surrender'],mode:'trader',arbitrage:['weed','shrooms','cocaine'],arbMargin:1.25,arbFloat:0},
+  // v1.34. The same route run alongside a job, because that is what a person
+  // actually does - nobody quits work to start couriering weed. It is the
+  // control that separates "crime is worth doing" from "crime is worth doing
+  // INSTEAD", and the two answers turned out to be very different.
+  hustler:{caught:['run','surrender','fight'],products:[],areas:['north_star_lot'],profit:1.05,heatCap:6,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['talk','run','pay','surrender'],mode:'legal',employment:true,arbitrage:['weed','shrooms','cocaine'],arbMargin:1.25,arbFloat:0},
   worker:{caught:['surrender','run','fight'],products:[],areas:['north_star_lot'],profit:2,heatCap:2,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['talk','run','pay','surrender'],mode:'legal',employment:true,payBills:true,market:true,marketMargin:12,marketFloat:C.WEEKLY_RENT*2+C.PHONE_BILL,marketQuick:true,marketRiskCap:0.14},
 };
 // v1.32. Health telemetry, and it exists because "killed" became the dominant
@@ -436,6 +543,7 @@ function play(seed,name){const p=strategies[name];
       s=C.reduceGame(s,{type:'WANDER_SPENARD'});continue;
     }
     if((p.mode==='trader'||p.mode==='mixed'||p.mode==='stickup')&&!s.world.productAccess.weed){s=C.reduceGame(s,{type:'EXPLORE_SPENARD'});continue}
+    if(p.arbitrage){const next=arbitrageTurn(s,p);if(next&&next!==s){s=next;continue}}
     if(p.mode==='gambler'&&!s.world.locations.gamblingKnown){s=C.reduceGame(s,{type:'EXPLORE_SPENARD'});continue}
     if(p.mode==='legal'){const job=C.selectors.discoveredJobs(s).find(job=>C.selectors.jobAvailability(s,job.id).available);if(job){const before=s.player.cleanCash;s=C.reduceGame(s,{type:'WORK_JOB',jobId:job.id,approach:'work_hard'});shift(before,s);continue}}
     if(p.mode==='thief'&&C.selectors.activityAvailability(s).shoplifting.available){s=C.reduceGame(s,{type:'SHOPLIFT'});continue}

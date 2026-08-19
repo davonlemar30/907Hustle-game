@@ -2,6 +2,130 @@
 
 Last updated: 2026-08-19 (America/Anchorage)
 
+## v1.35 The Risk Term, and What It Cannot Do Alone — built
+
+v1.34 handed this build one open item: the trading path pays no risk premium,
+which makes the stated economy thesis — *faster, riskier, worse in expectation* —
+false rather than merely incomplete. The premise checked out on re-run. `SELL`
+wrote no Heat at all; `BUY`'s term was `floor(product.heat * qty / 5)` and the two
+open products carry `heat: 0`, so it was structurally zero. Confirmed: **383
+purchases, 521 units, exactly 0 Heat.**
+
+### The substrate shipped
+
+Both legs now carry a quantity-keyed Heat term, deliberately tiny and ambient —
+buying weight is the quiet half, selling on a corner is the visible one:
+
+- **`BUY`** `state.player.heat += floor(qty / 8)` — 1–7 units free, a full load +1.
+- **`SELL`** `state.player.heat += floor(qty / 4)` — 1–3 free, 4+ = +1, a full load +2.
+- **The carry stays free.** `BUS_TRAVEL` is untouched. Riding the People Mover
+  holding is not a passive tick; that risk is authored event content (a stop, a
+  nosy passenger, Curtis's people on the bus) for a later pass, not a constant.
+
+Added flat as integers, not routed through the district `heatMod`, so the Heat
+meter the player reads stays legible.
+
+### The finding: a Heat term alone cannot move this balance — and no rate can
+
+Shipping it and measuring is the deliverable, and the measurement is the story.
+The term does **not** move the table, at any divisor:
+
+| buyDiv / sellDiv | hustler | hustler peak Heat | arrests (all traders) | dead ends |
+|---|---|---|---|---|
+| 8 / 4 (shipped) | **110%** | 3 | 0 | 0 |
+| 4 / 2 | 114% | 5 | 0 | 0 |
+| 2 / 2 | 116% | 6 | 0 | 0 |
+| 1 / 1 (per unit) | 110% | 7–12 | **0** | 0 |
+
+Making it more aggressive raises Heat and **net worth does not fall** — it wanders
+96–116% with no relationship to Heat. Two structural causes:
+
+1. **There is no bust path for trading.** `arrestPlayer` is called from exactly
+   three sites in `game-core.js`, all `boost` or `stick`. No BUY/SELL Heat, at any
+   level, can produce an arrest. A trader pushed to peak Heat 12 was arrested zero
+   times.
+2. **The only hard consequence (Heat 15 → run ends) is electively avoided.**
+   `LAY_LOW` sheds Heat on demand and the strategies already use it, so a courier
+   never reaches 15.
+
+The consequence surface the design leans on — *"the Heat isn't the punishment;
+it's the surface area for punishment to find you"* — is exactly the event-card
+content deferred to v1.36+. Until it exists, Heat is a number that rises and comes
+back down. **This is the fifth build in a row whose central premise turns out
+false on measurement**, and the most valuable thing the re-run could find.
+
+**Davon's call, made on the evidence:** ship the Heat substrate now, defer the
+teeth. The transaction Heat is ambient awareness; the risk premium arrives when
+the encounters that read Heat above zero are authored. **hustler stays ~110% this
+build, on purpose** — the 65–90% guard is intentionally waived, not missed.
+
+There is also a second reason the term barely fires even on its own terms: the
+profitable profiles trade in **1–3 unit lots** (Goodie caps a buy at 3), so they
+never reach BUY's 8-unit or SELL's 4-unit step. The unit tests prove the term at
+the boundaries; the strategies simply live below them.
+
+> **Correction to the v1.34 commit message and the section below.** That build
+> reported "hustler peaks at 12.5 Heat, legal_worker at 12.1." Those figures are
+> wrong — `averageHighestHeat` reports **2–4** (legal_worker 2, hustler 3,
+> arbitrage/trader 4). The conclusion is unchanged and stronger: an entire
+> courier career adds about one point of peak Heat over a day job and never once
+> reaches the police.
+
+### Task 2 (cross-market intel) — cut, by design
+
+The route is invisible to a human: no surface shows a price in a district you are
+not standing in. The planned fix was a disclosure product selling remote prices.
+**Davon cut it.** The player learns the spread by traveling — see Spenard, bus to
+Downtown, see Downtown — the way *Drug Lord* teaches it: nobody tells you, you
+learn by moving. The cross-market price seller is a **future character** (a fellow
+hustler who trades for a living and shares intel for a cut — not a supplier, and
+met later, with their own arc), not a table row bolted on now. The one technical
+groundwork (`tradeUnitPrices` gaining an `areaId` parameter) was reverted with it,
+so nothing speculative ships: v1.35 is the risk substrate and nothing else.
+
+### Task 3 (capital curve) — measured, not fixed
+
+`arbitrage` sits at 17% with a healthy **+38% realized margin**, so the floor is a
+capital constraint, not a price one. Relaxing one lever at a time on `arbitrage`
+(8 runs):
+
+| lever relaxed | hustler-scale netWorth | vs 17% baseline |
+|---|---|---|
+| **+$2,000 starting cash** | **67%** | +50 points |
+| +cargo (10 → 40) | 17% | +0 |
+| +free transport (week pass) | 10% | −7 |
+| +all three | 71% | dominated by cash |
+
+**Cash-on-hand is the whole floor.** At $375 start the bot buys 1.7 units a trip,
+reinvesting scraps; add $2,000 and it buys the full **3.0** it is allowed and
+quadruples net worth. Cargo is never the binding cap (never approached), and free
+fare did not help. The **secondary** ceiling, once cash is present, is the plug
+per-buy cap (Goodie's `maxUnits` = 3) — every buy pins at exactly 3.0.
+
+**v1.36 work list for the floor:** move capital, not cargo or fare — the bank /
+stored-cash interest ([`86bbe0m8g`](https://app.clickup.com/t/86bbe0m8g)),
+multiple lenders ([`86bbamm10`](https://app.clickup.com/t/86bbamm10)), plug credit.
+Then raise the per-buy ceiling (plug tier / standing / bulk). Deprioritize cargo
+capacity and transportation fare for the arbitrage floor specifically — both
+measured non-binding. Per the scaling rule, none of this may land before the risk
+term gains teeth, or 67% simply becomes the next "too high."
+
+### Numbers
+
+- **961 tests** passing (955 baseline + 6 new in `tests/v1-35.test.js`; the v1.34
+  "no Heat" test updated to guard that the gap is now closed).
+- `--total 200` → `af39d9e0e80e9b1c20b6b0f7e09363b7ee59756217a150f60fea2e067b51b934`
+- `--total 2000` → `3953454dc89ee92257db5a01104c235897236e8cd7578e586c17f472dfb1fb05`
+- Both hashes moved: the Heat term changes every trading trajectory (Heat feeds
+  `LAY_LOW`, ambient events, encounter odds), so no per-strategy equivalence is
+  claimable and none is claimed. The strategy table is unchanged in size.
+- Guards: **0 dead ends** at 200 and 2,000; `arbitrage` realized margin **+38%**;
+  `worker` at **0 evictions**; `territory` claiming corners (12 across 8 runs);
+  arrests real but non-universal (only `stickup`). Guard #1 (hustler 65–90%)
+  **intentionally waived** — the teeth are deferred content.
+- Save schema held at **v11**. Engine change is the two Heat lines only; no UI
+  surface changed, so there is nothing new to reach in the browser.
+
 ## v1.34 Crime, Played Competently — built
 
 The brief was to find out what smart crime is worth, measured against a design

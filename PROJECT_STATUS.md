@@ -2,6 +2,126 @@
 
 Last updated: 2026-08-18 (America/Anchorage)
 
+## v1.33 Pressure and Attrition — built
+
+v1.32 handed this build a named work list: Dre's note compounding with no
+ceiling, Heat with no passive decay, health strictly monotonic downward, and
+encounter volume scaling with the calendar. One cluster, all of it supposedly
+tuned against a ten-day run and unbounded at forty.
+
+**Measuring it first cut the list from four to one.** Two of the four were not
+engine problems. They were the coverage hole that hid the rent bug, twice more.
+
+### Heat is not a ratchet, and the strategies prove it
+
+Filed Tier 1 on the reading that all four decay sites are elective. They are —
+and the strategies elect them. Relief tracks gain closely: `cautious` sheds 11
+against 11 gained, `legal_worker` 11 against 11, `territory` 15 against 19, with
+ten to fourteen deliberate `LAY_LOW` dispatches a run. End Heat sits at 1–5 for
+everyone who manages it, and 14–15 for `aggressive`, `stickup` and `thief`,
+which is the design working rather than failing. **No change made.**
+
+### Health was never a one-way slide — the harness had just never slept
+
+`SLEEP_HOME` heals **12 for one slot**, and the simulator had dispatched it
+**zero times in its entire history**. v1.32 measured the resulting decline,
+found no passive regeneration, and wrote in ARCHITECTURE that recovery was
+"elective and mostly paid" — literally true and badly misleading. The way back
+was a free action nobody was taking.
+
+The harness now rests below half health. One rule:
+
+| | before | after |
+|---|---|---|
+| runs ending `killed` | ~50 of 90 | **1 of 96** |
+| `legal_worker` end health | 0 | 14 |
+| `flipper` end health | 0 | 24 |
+| heal dispatches | 2 per 90 runs | 101 per 16 runs |
+
+`restBelow` was chosen by measurement, not taste — at 30 the death rate is 36%,
+at 40 it is 11%, at 50 it is 1%, at 60 it is 3%. Fifty is the floor of the curve.
+
+**Two ordering bugs surfaced doing it.** Rest initially outranked the cash-out,
+so hurt strategies went to bed instead of ending and overshot the horizon by
+eight days; the horizon branch moved to the top of the tick, where a horizon
+belongs. And the horizon was never binding in the first place — the market turn
+outranked it — which only became visible once the legal strategies stopped
+dying at day 35.
+
+### Dre's note had never been borrowed, and it was genuinely broken
+
+`settle()` answered `dre_terms` with the last choice — *"Leave it with him"* —
+for every strategy on every seed since the harness was written. The loan, the
+fee schedule, the collector tier ladder, the `dre_collector` encounter and the
+`still_owing` ending were all unreachable. **Third system in three builds.**
+
+A sixteenth strategy, `debtor`, takes the money. Measured at forty days, on a
+$1,000 principal:
+
+| | balance at day 40 |
+|---|---|
+| best of 8 seeds | $3,801 |
+| mean | ~$12,700 |
+| worst | **$22,629** |
+
+Collector tier maxed in every run, 24–28 missed days, and the run never
+resolved it — the player simply carries a number no income in the game can
+touch. At ten days you would owe about $1,500, which is a real decision.
+
+**This is the one engine change in the build.** `LOAN_MAX_BALANCE_MULTIPLIER = 2`
+caps the balance at twice the principal. A ceiling, not a rate change: below it
+the fee arithmetic is untouched, and the collector ladder is deliberately left
+alone, because the pressure is supposed to come from tier escalation, the
+encounter and the daily Heat — not from arithmetic that outruns every income in
+the game. Dre stops adding to the paper; he does not stop wanting it.
+
+### What the table looks like now
+
+End causes across 96 runs — before this build, `killed` was most of it:
+
+| cause | share |
+|---|---|
+| chosen (the player called it) | 57% |
+| eviction | 23% |
+| arrested | 19% |
+| killed | **1%** |
+
+**Evictions rose from 20% to 28%, and that is a finding rather than a
+regression.** It is concentrated entirely in the thin-margin trading profiles —
+`balanced` 21% -> 69%, `operator` 15% -> 58%, `mixed_freedom` 15% -> 50% — whose
+capital sits in inventory. Resting costs the slots they used to spend earning,
+so they can no longer cover rent. **Their lose condition moved from death to
+eviction**, which is more on-theme for a game whose stated failure is not paying
+what you owe. The strategies with real income are untouched at 0%:
+`legal_worker`, `flipper`, `broker`, `worker`, `thief`.
+
+Whether a thin trading margin *should* survive rent plus recovery is a balance
+question, and it is deliberately not answered here. Tuning the economy in the
+build that changed how attrition works would make the next measurement
+uninterpretable, which is the same discipline that made these numbers worth
+having.
+
+### Left as inventory, unchanged
+
+- **Encounter volume scales with run length** (~28 rolls per run became ~160).
+  It is the largest single health drain at 44%, and with rest in place it no
+  longer kills anyone. Measured, no change needed.
+- **`missed_obligation` observations are un-clamped**, driving Dre's disposition
+  unboundedly negative with no recovery path.
+- **Story pacing** was authored to ration a seven-day registry and now only
+  paces it; every long run exhausts every `once: true` beat by ~day 20.
+
+### Verification
+
+`npm test` **945 passing** (934 + 11 new in `tests/v1-33.test.js`, plus four
+superseded assertions rewritten). `npm run build` clean, `npm run check-docs`
+clean. Save schema **v11** — the cap reads `principal`, which already existed.
+`--total 200` -> `1f1e32b63829681efd120cbc108212b53fb9cfad781cb392a71c111334dfa27d`, `--total 2000` -> `d617a1b371f4ee76ec776825cfd5ad53c15621046ce7e35972d3e50ea2814d5d`. Zero dead ends,
+200/200 and 2,000/2,000 completed. Guards hold: the block layer still
+measurable, `worker` at 0 evictions, eviction reachable but not universal.
+
+---
+
 ## v1.32 Make the Obligations Real — built
 
 v1.31 removed the day-count terminator and let runs reach forty days. The first

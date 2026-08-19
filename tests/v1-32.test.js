@@ -201,14 +201,23 @@ test("the harness reports where health goes and whether anything puts it back", 
   assert.match(run.healthLostBy, /WORK_JOB/, "and the source is attributed to the action that caused it");
 });
 
-test("the measurement that v1.33 inherits: healing is effectively absent", () => {
-  // Not a fix - a recorded fact, so the next build tunes against a known
-  // instrument rather than an assumed one. Across the whole table the harness
-  // dispatches a heal a couple of times in ninety runs, and the engine has no
-  // passive regeneration at all, so health only ever goes down.
+test("v1.33 answered this measurement: the harness now rests, and stops dying", () => {
+  // This test asserted the opposite and was right at the time - the harness
+  // dispatched a heal twice in ninety runs. v1.33 found the reason and it was
+  // not the engine: SLEEP_HOME heals 12 for one slot and the simulator had
+  // never dispatched it once. The engine still has no PASSIVE regeneration,
+  // which remains true and deliberate; what changed is that the instrument now
+  // takes the recovery the game already offered.
   const { play, strategies } = require("./simulate-runs.js");
-  let heals = 0, runs = 0;
-  for (const name of Object.keys(strategies)) { heals += play(1000, name).healDispatches; runs += 1; }
-  assert.ok(heals <= runs, `healing is rare across the table (${heals} dispatches in ${runs} runs)`);
-  assert.doesNotMatch(core, /passiveHealthRegen|regenHealth/, "and nothing restores it passively");
+  let heals = 0, killed = 0, runs = 0;
+  for (const name of Object.keys(strategies)) for (const seed of [1000, 1001, 1002]) {
+    const run = play(seed, name);
+    heals += run.healDispatches; runs += 1;
+    if (run.endCause && run.endCause.id === "killed") killed += 1;
+  }
+  assert.ok(heals > runs, `resting is now normal behaviour (${heals} heals across ${runs} runs)`);
+  // Not zero - bleeding out is a real lose condition and should stay reachable.
+  // What changed is that it stopped being how most runs end.
+  assert.ok(killed / runs < 0.1, `death is rare rather than dominant (${killed}/${runs})`);
+  assert.doesNotMatch(core, /passiveHealthRegen|regenHealth/, "recovery is still elective, not automatic");
 });

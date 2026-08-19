@@ -250,10 +250,12 @@ test("Selam, Pherris and Deshawn are absent, and the file says why", () => {
 
 // --- Task 3: the harness finally sees employment -----------------------------
 
-test("there are fifteen strategies and the fifteenth holds a job", () => {
+test("the strategy table carries an employment profile", () => {
+  // v1.33 added a sixteenth, `debtor`, for the same reason this one was added:
+  // a whole system - Dre's note - that the harness had never once exercised.
   const { strategies } = require("./simulate-runs.js");
   const names = Object.keys(strategies);
-  assert.equal(names.length, 15, "fourteen plus worker");
+  assert.equal(names.length, 16, "fourteen originals, plus worker and debtor");
   assert.ok(names.includes("worker"));
   const worker = strategies.worker;
   assert.equal(worker.employment, true, "it applies, accepts, and works");
@@ -275,10 +277,12 @@ test("the worker actually holds an employer, works it, and never trips the atten
     // strategy that takes every shift it is offered never reaches rung one, and
     // this is the assertion that will move if a future change breaks that.
     assert.equal(run.missedShiftPeak, 0, "the missed-shift counter never leaves zero");
-    assert.equal(run.householdWarnings, 0, "no household warning");
-    assert.equal(run.rentMissed, 0, "rent paid on time");
-    assert.equal(run.phonePastDue, 0, "phone paid on time");
-    assert.notEqual(run.ending, "nowhere_to_go", "and it is never evicted");
+    // v1.33 relaxed the obligation assertions from "never misses" to "never
+    // loses the room". The worker now sleeps when it is hurt, which costs the
+    // slots it used to spend earning, so it misses a rent period in roughly
+    // three runs of eight and always catches up. Evictions stay at zero, which
+    // is the property that actually matters and the one the guard tests own.
+    assert.notEqual(run.ending, "nowhere_to_go", "it is never evicted");
   }
 });
 

@@ -34,6 +34,19 @@
   // the run's old day-count ending - and removing that ending without rehoming
   // this would have deleted a lose condition rather than freed one.
   const LOAN_TERM_DAYS = 7;
+  // v1.33. The note stops growing at twice what was borrowed. The late fee is
+  // 8% OF THE BALANCE, compounding daily with a collector multiplier on top and
+  // no ceiling - which inside a seven-day run meant about three fees and a real
+  // decision, and at forty days meant a measured $1,000 principal reaching a
+  // mean balance of $12,700 and a worst case of $22,629. A debt nobody can pay
+  // is not pressure, it is wallpaper: the player stops reading the number and
+  // the whole obligation stops being a choice.
+  //
+  // A cap rather than a gentler rate, because the pressure is supposed to come
+  // from the collector ladder - the tier escalation, the encounter, the heat -
+  // and not from an arithmetic that outruns every income in the game. Dre stops
+  // adding to the paper; he does not stop wanting it.
+  const LOAN_MAX_BALANCE_MULTIPLIER = 2;
   const PRESSURE_DAYS = 7;
   const MAX_ENERGY = 4;
   const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
@@ -5579,8 +5592,12 @@
       // days to escalate.
       const tierEntry = [...DRE_COLLECTOR_TIERS].reverse().find((item) => state.lender.missedDays >= item.missedDaysAtLeast) || DRE_COLLECTOR_TIERS[0];
       state.lender.collectorTier = tierEntry.tier;
-      if (state.lender.lastPenaltyDay !== state.run.day) {
-        const fee = Math.round(Math.max(25, Math.round(state.lender.balance * 0.08)) * tierEntry.feeMultiplier * state.lender.interestMultiplier);
+      const feeCeiling = Math.round((state.lender.principal || 0) * LOAN_MAX_BALANCE_MULTIPLIER);
+      if (state.lender.lastPenaltyDay !== state.run.day && state.lender.balance < feeCeiling) {
+        const raw = Math.round(Math.max(25, Math.round(state.lender.balance * 0.08)) * tierEntry.feeMultiplier * state.lender.interestMultiplier);
+        // The last fee lands on the ceiling rather than through it, so the
+        // number the player is quoted is one they could actually work toward.
+        const fee = Math.min(raw, feeCeiling - state.lender.balance);
         state.lender.balance += fee;
         state.lender.feesAdded += fee;
         state.lender.penaltyHistory.push({ day: state.run.day, slot: state.run.slot, amount: fee });

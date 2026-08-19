@@ -141,7 +141,10 @@ test("One More Thing arms once, costs two Energy, and reopens the gate", () => {
   assert.equal(C.reduceGame(state, { type: "ONE_MORE_THING" }), state);
 });
 
-test("the dynamic checkpoint ends only after confirmation without exposing another day", () => {
+test("crossing the old checkpoint day does not end the run", () => {
+  // v1.31 replaces the test that asserted the opposite. `run.checkpointDay` is
+  // now only a story-pacing marker read by lateRunDay; it has no power to end
+  // anything, and a solvent player walks straight past it.
   let state = fresh(8);
   state.run.phase = "pressure";
   state.run.checkpointDay = 3;
@@ -151,8 +154,8 @@ test("the dynamic checkpoint ends only after confirmation without exposing anoth
   state = C.reduceGame(state, { type: "SLEEP_HOME" });
   assert.equal(state.run.status, "playing");
   state = C.reduceGame(state, { type: "CONFIRM_END_DAY" });
-  assert.equal(state.run.status, "ended");
-  assert.equal(state.run.day, 3);
+  assert.equal(state.run.status, "playing", "past the checkpoint and still going");
+  assert.equal(state.run.day, 4, "the next day is exposed");
 });
 
 test("legacy v3 saves hydrate directly into pressure with inferred lender state", () => {

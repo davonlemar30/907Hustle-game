@@ -299,7 +299,17 @@ function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun
     // that rollover spent against the wage. For this strategy that is nearly
     // nothing (it holds no crew, and rent and the phone are separate
     // dispatches), which is what makes the number worth reporting.
-    const shift=(before,after)=>{wages+=Math.max(0,after.player.cleanCash-before)};while(s.run.status==='playing'&&guard++<500){s=settle(s,p,beats);if(s.run.status!=='playing')break;
+    const shift=(before,after)=>{wages+=Math.max(0,after.player.cleanCash-before)};
+    // v1.31. The game no longer ends a run on a day count, so the instrument
+    // has to own its own boundary - which is what it always should have been.
+    // maxDays is generous on purpose: territory is mid-to-late-game content and
+    // the old ten-day window could not fund it, so measuring against that
+    // window measured the window rather than the game. A strategy that goes
+    // broke, gets hurt, or gets arrested still exits early through the real
+    // fail-state; this only catches the ones still standing.
+    const maxDays=p.maxDays??40;
+    const tickCap=maxDays*20;
+    while(s.run.status==='playing'&&guard++<tickCap){s=settle(s,p,beats);if(s.run.status!=='playing')break;
     // Sampled before the day's actions so a tier's income is credited to the
     // tier that was actually active while it was being earned.
     if(p.market&&s.knowledge.knows907List&&(!marketSamples.length||marketSamples[marketSamples.length-1].day!==s.run.day)){
@@ -373,8 +383,10 @@ function play(seed,name){const p=strategies[name];let s=C.reduceGame(C.createRun
       if(actions.ask.available){s=C.reduceGame(s,{type:'ASK_DEALER',dealerId:p.dealer});continue}
     }
     if(['thief','stickup'].includes(p.mode)&&C.selectors.robAvailability(s).available){s=C.reduceGame(s,{type:'ROB'});continue}
-    if(s.run.day>=s.run.checkpointDay-1&&!s.run.finalPlanPrepared){s=C.reduceGame(s,{type:'PREPARE_FINAL_PLAN',planId:p.plan});continue}
-    if(s.run.day===s.run.checkpointDay&&s.run.finalPlan&&!s.run.pendingEncounter&&s.run.slot>=2){s=C.reduceGame(s,{type:'EXECUTE_FINAL_PLAN'});continue}
+    // The bot cashes out at its horizon, through the same voluntary ending a
+    // player uses. No special terminator, and no day the game imposes.
+    if(s.run.day>=maxDays&&!s.run.finalPlanPrepared){s=C.reduceGame(s,{type:'PREPARE_FINAL_PLAN',planId:p.plan});continue}
+    if(s.run.day>=maxDays&&s.run.finalPlan&&!s.run.pendingEncounter){s=C.reduceGame(s,{type:'EXECUTE_FINAL_PLAN'});continue}
     if(s.lender.balance&&s.player.cash>=s.lender.balance+100&&s.run.day>=2){s=C.reduceGame(s,{type:'PAY_DEBT',amount:s.lender.balance});continue}
     if(s.player.heat>p.heatCap){s=C.reduceGame(s,{type:'LAY_LOW'});continue}
     const next=p.areas[(Math.max(0,p.areas.indexOf(area))+1)%p.areas.length],busCovered=s.world.transport.weekPass||s.world.transport.dayPassDay===s.run.day;s=next===area?C.reduceGame(s,{type:'END_MARKET'}):next==='north_star_lot'&&s.player.cash<5&&!busCovered?C.reduceGame(s,{type:'WALK_HOME'}):['downtown','north_star_lot'].includes(next)&&s.player.cash<5&&!busCovered?C.reduceGame(s,{type:'END_MARKET'}):['downtown','north_star_lot'].includes(next)?C.reduceGame(s,{type:'BUS_TRAVEL',neighborhoodId:next}):C.reduceGame(s,{type:'TRAVEL',neighborhoodId:next});

@@ -4,16 +4,19 @@ Design target: `VISION.md`. What actually exists today: `PROJECT_STATUS.md`.
 
 ## Standing correction — do not plan against a day count
 
-**The run has no fixed length.** No day cap, no "day 7 fork," no timed ending.
-The player hustles indefinitely and a run ends only on a lose condition.
-`RUN_DAYS = 7` is a debt-deadline and checkpoint constant, not a terminator — an
-unpaid run reaches day 29 before eviction ends it.
+**The run has no fixed length**, and since **v1.31** that is true of the code as
+well. A run ends on a lose condition — an obligation you cannot pay, health at
+zero, Heat at 15 — or when the player chooses to call the final score, on any
+day. An unpaid run still reaches day 29 before eviction; a solvent one does not
+stop at all.
 
-The 10-day cap in `tests/simulate-runs.js` is an **instrument boundary** for hash
-comparability. Nothing on this roadmap should be scoped, deferred, or judged
-unreachable on the strength of it. In particular, the v1.25 note below that
-territory "is not reachable inside a run's length" means *the simulator's ten
-days do not fund the ladder* — territory is intentionally mid-to-late-game
+**This correction used to be aspirational.** Until v1.31 `confirmDayEnd` ended
+every run on a day count around day 10, while this section said it did not.
+Nothing on this roadmap should be scoped, deferred, or judged unreachable on the
+strength of a day count — and the v1.25 note below that territory "is not
+reachable inside a run's length" turned out to be the cap talking, not the
+economy: at the 40-day harness horizon the block layer is reached in volume.
+Territory is intentionally mid-to-late-game
 content, funded by early economy systems (weed, booze, robbery tiers) that are
 still being built out.
 
@@ -104,6 +107,45 @@ it. Two things this build surfaced and deliberately left:
 - **The warning's tactical ceiling is a defense-model question**, not a Curtis
   question. Whoever picks it up should start at `SOLDIERS_PER_BLOCK_CAP` and Eli's
   `operationPolicy`, not at `src/data/territory.js`.
+
+---
+
+## Shipped — v1.31 The Run Has No Fixed Length
+
+**The standing correction at the top of this file was aspirational until now.**
+`confirmDayEnd` ended every run on a day count around day 10 — no obligation,
+health or Heat check in the condition — and ARCHITECTURE.md said `RUN_DAYS` "has
+never terminated a run," which was false when it was written. Six builds of
+balance work were measured against a boundary the documents denied existed.
+
+- **A run ends four ways now**: an obligation you cannot pay, health at zero,
+  Heat at 15, or the player calling the final score on any day they like.
+  `EXECUTE_FINAL_PLAN` was previously locked to one specific day.
+- **Dre's note got its own clock.** It used to inherit `run.checkpointDay`, so
+  removing the checkpoint naively would have deleted a lose condition. Seven-day
+  term from the day it is taken.
+- **The block layer is reachable for the first time.** Not an economy problem —
+  the garage landed on day 7.3 and the run was taken away at day 10. At the
+  40-day harness horizon `territory` goes from **79 net worth (last) to 1,452
+  (second)** and claims corners in volume, so every Curtis constant since v1.20
+  is finally verifiable.
+- Save schema stays **v11**. 920 tests.
+
+### Next
+
+**The instrument is honest now, so balance can be read off it.** Three things
+this build surfaced and deliberately did not act on:
+
+- **Criminal strategies get worse over 40 days** (`cautious` 165 → 88, `thief`
+  273 → 87) while legal work and brokerage compound. The ten-day window was
+  flattering the crime economy. This is the first honest look, and it wants a
+  balance pass of its own rather than a tuning tweak inside the build that
+  changed the ruler.
+- **`legal_worker` tops the table without ever paying rent** and is not evicted
+  inside 40 days. Either the eviction ladder is too slow or the strategy is
+  exploiting a gap; worth knowing which before reading its number as skill.
+- **Territory income now measurable at scale** ($75k across 13 runs). Nobody has
+  ever balanced against that figure because nobody could see it.
 
 ---
 

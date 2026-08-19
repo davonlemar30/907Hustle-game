@@ -202,9 +202,15 @@ test("Night actions open a structured recap before confirmed rollover", () => {
   }
 });
 
-test("Day 7 Night ends without exposing Day 8", () => {
+test("Day 7 Night rolls into Day 8, because no day count ends a run", () => {
+  // v1.31 inverts this test on purpose. It used to assert the opposite, and it
+  // was the clearest statement in the suite of a rule the design documents have
+  // denied since v1.24: there is no fixed run length. A player who is paying
+  // their obligations, alive, and under the terminal Heat keeps playing.
   let state = run(); state.run.day = 7; state.run.slot = 3; state = quietAdvance(state);
-  assert.equal(state.run.status, "ended"); assert.equal(state.run.day, 7); assert.equal(state.run.slot, 3);
+  assert.equal(state.run.status, "playing", "the run continues");
+  assert.equal(state.run.day, 8, "and Day 8 is exposed");
+  assert.equal(state.run.slot, 0);
 });
 
 test("seeded markets and operation outcomes are reproducible", () => {
@@ -513,7 +519,8 @@ test("betraying Mina removes her from the run and names the ending for it", () =
   assert.equal(state.npc.mina.status, "gone");
   assert.equal(state.npc.mina.chainStage, 6);
   state.run.day = 7; state.run.slot = 3;
-  const ended = quietAdvance(state);
+  const ended = structuredClone(state);
+  C.endRunForTest(ended);
   assert.equal(ended.run.ending, "mina_gone");
   assert.equal(C.selectors.endingLabel("mina_gone"), "Gone Before You Were");
 });
@@ -525,7 +532,8 @@ test("all three Day 7 Mina outcomes are reachable and distinct", () => {
     state.flags.minaBoundaryResolved = true; state.flags.minaAfterResolved = true;
     state.lender.balance = 0; state.run.day = 7; state.run.slot = 3;
     mutate(state);
-    return quietAdvance(state).run.ending;
+    C.endRunForTest(state);
+    return state.run.ending;
   }
   assert.equal(endingFor((s) => { s.run.finalPlan = "escape"; }), "mina_escape");
   // A separation is an outcome, not a failure: she takes the Monday interview.

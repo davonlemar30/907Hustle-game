@@ -5243,6 +5243,7 @@
         const Disclosures = require_disclosures();
         const VERSION = 11;
         const RUN_DAYS = 7;
+        const LOAN_TERM_DAYS = 7;
         const PRESSURE_DAYS = 7;
         const MAX_ENERGY = 4;
         const SLOTS = ["Morning", "Afternoon", "Evening", "Night"];
@@ -7925,6 +7926,9 @@
           if (!state.run.pendingUnlocks.includes(id)) state.run.pendingUnlocks.push(id);
           return true;
         }
+        function lateRunDay(state) {
+          return state.run.checkpointDay || Infinity;
+        }
         function startPressurePhase(state) {
           if (state.run.phase === "pressure") return;
           state.run.phase = "pressure";
@@ -9006,7 +9010,6 @@
           if (eli.contactStage === "recruitable") return { available: false, reason: "The test is complete. Visit the garage to recruit Eli." };
           if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
           if (state.player.cash < 35) return { available: false, reason: "The test route needs $35 for fuel and a vehicle." };
-          if (state.run.day === checkpointDay(state) && state.run.slot === 3) return { available: false, reason: "There is no part of the run left for the test route." };
           return { available: true, reason: "Uses one part of day.", cost: 35 };
         }
         function minaThreatEligible(state) {
@@ -9374,7 +9377,6 @@
           const robbery = normalizeRobberyStats(state.stats.robbery, state);
           if (robbery.lastAttemptedDay === state.run.day) return { available: false, reason: "You already tried a Rob today." };
           if ((((_a = state.stick) == null ? void 0 : _a.dailyCount) || 0) >= Districts.STICK_DAILY_CAP) return { available: false, reason: "Two robberies in a day is how people get named. Tomorrow." };
-          if (state.run.day === checkpointDay(state) && state.run.slot === 3) return { available: false, reason: "There is no part of the run left to resolve a score." };
           if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return { available: false, reason: "Resolve the current situation first." };
           const capital = workingCapital(state);
           if (capital >= WORKING_CAPITAL_RESERVE) return { available: false, reason: `Rob opens when working capital falls below $${WORKING_CAPITAL_RESERVE}.` };
@@ -9419,7 +9421,6 @@
           if (record.gone) return blocked(`${definition.name.split(" ")[0]} does not work this block any more.`);
           if (state.run.pendingEvent || state.run.pendingEncounter || state.run.pendingOperationResult) return blocked("Resolve the current situation first.");
           if (state.world.currentNeighborhoodId !== definition.areaId) return blocked(`${definition.name.split(" ")[0]} works out of ${AREA_BY_ID[definition.areaId].name}.`);
-          if (state.run.day === checkpointDay(state) && state.run.slot === 3) return blocked("There is no part of the run left for this.");
           const plug = PLUG_BY_ID[id];
           const minaBonus = atLeastBand(state, "mina", BANDS.TRUSTED) ? 0.08 : atLeastBand(state, "mina", BANDS.WARM) ? 0.05 : 0;
           const discount = Math.min(0.25, (record.standing >= 3 ? 0.18 : 0.12) + minaBonus);
@@ -10287,7 +10288,7 @@
               logEntry(state, `Dre leaves the new total under the Mini-Mart wiper: $${state.lender.balance}. No greeting.`, "bad");
             }
           }
-          if (pressureActive && crossedDay && state.lender.status === "active" && state.lender.balance > 0 && state.run.day >= checkpointDay(state) && state.lender.collectorTier < 1) {
+          if (pressureActive && crossedDay && state.lender.status === "active" && state.lender.balance > 0 && state.run.day >= state.lender.dueDay && state.lender.collectorTier < 1) {
             const owedRatio = state.lender.principal > 0 ? state.lender.balance / state.lender.principal : 1;
             state.lender.collectorTier = owedRatio >= 0.9 ? 2 : 1;
             logEntry(state, "Dre's patience runs out with the note still open. Somebody is coming to collect in person.", "bad");
@@ -10452,7 +10453,7 @@
             stage: 6,
             classification: "callback",
             trigger: "chain",
-            requires: (s) => !!s.flags.minaBoundaryResolved && (!!s.flags.minaSedanNightResolved || s.run.day >= checkpointDay(s)),
+            requires: (s) => !!s.flags.minaBoundaryResolved && (!!s.flags.minaSedanNightResolved || s.run.day >= lateRunDay(s)),
             area: "north_star_lot",
             earliest: { day: 6, slot: 0 },
             latest: null,
@@ -10665,7 +10666,7 @@
             stage: 5,
             classification: "ending_setup",
             trigger: "chain",
-            requires: (s) => s.lender.status === "active" && !!s.flags.dreTermsResolved && s.run.day >= checkpointDay(s),
+            requires: (s) => s.lender.status === "active" && !!s.flags.dreTermsResolved && s.run.day >= s.lender.dueDay,
             area: null,
             earliest: { day: 1, slot: 0 },
             latest: null,
@@ -10763,7 +10764,7 @@
             stage: 6,
             classification: "ending_setup",
             trigger: "chain",
-            requires: (s) => !!s.flags.earlyThreatResolved && s.run.day >= checkpointDay(s),
+            requires: (s) => !!s.flags.earlyThreatResolved && s.run.day >= lateRunDay(s),
             area: null,
             earliest: { day: 1, slot: 0 },
             latest: null,
@@ -11477,7 +11478,7 @@
             state.lender.status = "active";
             state.lender.principal = 1e3;
             state.lender.balance = 1200;
-            state.lender.dueDay = state.run.checkpointDay;
+            state.lender.dueDay = state.run.day + LOAN_TERM_DAYS;
             addDirtyCash(state, 1e3);
             state.npc.dre.known = true;
             state.npc.dre.loansTaken += 1;
@@ -11650,7 +11651,7 @@
             addDirtyCash(state, 1200);
             state.lender.principal = 1200;
             state.lender.balance = 1380;
-            state.lender.dueDay = Math.min(state.run.day + 5, checkpointDay(state));
+            state.lender.dueDay = state.run.day + 5;
             state.lender.status = "active";
             state.lender.afterPayoffOffer = "accepted";
             state.flags.acceptedSecondNote = true;
@@ -11962,12 +11963,6 @@
           Exposure.propagateHeat(state);
           drainObservations(state);
           evolveMarkets(state, random);
-          if (state.run.phase === "pressure" && oldDay >= checkpointDay(state)) {
-            state.run.dailyActions = [];
-            endRun(state);
-            state.run.rngState = random.state;
-            return state;
-          }
           state.run.day = oldDay + 1;
           state.run.slot = 0;
           state.player.energy = MAX_ENERGY;
@@ -13151,7 +13146,7 @@
             state.lender.status = "active";
             state.lender.principal = principal;
             state.lender.balance = repeat ? 1380 : 1200;
-            state.lender.dueDay = repeat ? Math.min(state.run.day + 5, checkpointDay(state)) : checkpointDay(state);
+            state.lender.dueDay = state.run.day + (repeat ? 5 : LOAN_TERM_DAYS);
             state.npc.dre.loansTaken += 1;
             addDirtyCash(state, principal);
             pushConsequence(state, `Dre opens a $${principal} note. $${state.lender.balance} is due Day ${state.lender.dueDay}.`, "warn");
@@ -14273,7 +14268,7 @@
           }
           if (action.type === "PREPARE_FINAL_PLAN") {
             const allowed = ["escape", "defend", "partner", "challenge", "last_score"];
-            if (state.run.day < checkpointDay(state) - 1 || !allowed.includes(action.planId) || state.run.finalPlanPrepared) return inputState;
+            if (!allowed.includes(action.planId) || state.run.finalPlanPrepared) return inputState;
             base.run.finalPlan = action.planId;
             base.run.finalPlanPrepared = true;
             base.stats.majorDecisions.push(`Prepared final plan: ${action.planId}`);
@@ -14282,7 +14277,7 @@
             return advanceRun(base, { reason: "PREPARE_FINAL_PLAN" });
           }
           if (action.type === "EXECUTE_FINAL_PLAN") {
-            if (state.run.day !== checkpointDay(state) || !state.run.finalPlan || state.run.pendingEncounter) return inputState;
+            if (!state.run.finalPlan || state.run.pendingEncounter) return inputState;
             startEncounter(base, "late", true);
             base.run.pendingEncounter.feedback = `${base.run.pendingEncounter.description} Your ${base.run.finalPlan.replace("_", " ")} plan decides what is at stake.`;
             return base;
@@ -14403,7 +14398,7 @@
           const daysLeft = state.lender.dueDay - state.run.day;
           return {
             day: state.run.day,
-            runDays: state.run.checkpointDay || "open",
+            runDays: "open",
             slot: state.run.slot,
             partLabel: SLOTS[state.run.slot],
             districtName: area.name,
@@ -14638,6 +14633,13 @@
           buildEventForTest: activeEvent,
           storyCandidatesForTest: storyCandidates,
           recordBehaviorForTest: recordBehavior,
+          // v1.31. Ending SELECTION and ending TRIGGERING used to be testable in one
+          // step, because a day count reliably ended a run and tests reached endings
+          // by walking to Day 7 Night. With the terminator gone, the two are separate
+          // concerns: chooseEnding is pure state -> ending and is what those tests
+          // were always really asserting, while the paths that reach it (obligation,
+          // health, Heat, the player's own final score) get their own coverage.
+          endRunForTest: endRun,
           // v1.21: the nightly territory pass, reachable without driving a whole
           // CONFIRM_END_DAY. Isolating one Heat delta otherwise means fighting rent,
           // pressure, the Curtis settle, and the markets for it.
@@ -14965,7 +14967,7 @@
       function TitleScreen({ saveInfo, onLoad, onNew }) {
         const [help, setHelp] = useState(false);
         const preview = saveInfo.preview;
-        return /* @__PURE__ */ React.createElement("div", { className: "title-screen" }, /* @__PURE__ */ React.createElement("div", { className: "title-backdrop", "aria-hidden": "true" }), /* @__PURE__ */ React.createElement("picture", null, /* @__PURE__ */ React.createElement("source", { type: "image/webp", media: "(max-width: 600px)", srcSet: "./assets/907hustle-title-600.webp" }), /* @__PURE__ */ React.createElement("source", { type: "image/webp", srcSet: "./assets/907hustle-title.webp" }), /* @__PURE__ */ React.createElement("img", { className: "title-art", src: "./assets/907hustle-title.png", width: "941", height: "1672", alt: "907Hustle: One Good Run over a rain-dark Spenard street" })), /* @__PURE__ */ React.createElement("div", { className: "title-shade" }), /* @__PURE__ */ React.createElement("div", { className: "title-content" }, /* @__PURE__ */ React.createElement("div", { className: "sr-only" }, /* @__PURE__ */ React.createElement("h1", null, "907Hustle: One Good Run"), /* @__PURE__ */ React.createElement("p", null, "Find your footing. Face the week you create.")), /* @__PURE__ */ React.createElement("div", { className: "title-actions" }, preview && /* @__PURE__ */ React.createElement("div", { className: "save-preview", "aria-label": "Saved run preview" }, /* @__PURE__ */ React.createElement("b", null, preview.name), /* @__PURE__ */ React.createElement("span", null, "Saved run \xB7 Day ", preview.day, " \xB7 ", preview.part), /* @__PURE__ */ React.createElement("span", null, preview.district, " \xB7 ", money(preview.cash), " cash \xB7 ", money(preview.debt), " debt")), saveInfo.error && /* @__PURE__ */ React.createElement("div", { className: "save-error", role: "alert" }, saveInfo.error), /* @__PURE__ */ React.createElement("button", { className: "btn full primary title-button", disabled: !saveInfo.valid, onClick: onLoad }, "Load Game", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, saveInfo.valid ? "Resume the exact autosaved run" : "No compatible autosave found")), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary title-button", onClick: onNew }, "New Game", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Start fresh in Spenard with $100 clean")), /* @__PURE__ */ React.createElement("button", { className: "btn full ghost", "aria-expanded": help, onClick: () => setHelp(!help) }, "How to Play"), help && /* @__PURE__ */ React.createElement("div", { className: "how-to" }, /* @__PURE__ */ React.createElement("b", null, "Four parts per day, with the checkpoint set by your run."), /* @__PURE__ */ React.createElement(
+        return /* @__PURE__ */ React.createElement("div", { className: "title-screen" }, /* @__PURE__ */ React.createElement("div", { className: "title-backdrop", "aria-hidden": "true" }), /* @__PURE__ */ React.createElement("picture", null, /* @__PURE__ */ React.createElement("source", { type: "image/webp", media: "(max-width: 600px)", srcSet: "./assets/907hustle-title-600.webp" }), /* @__PURE__ */ React.createElement("source", { type: "image/webp", srcSet: "./assets/907hustle-title.webp" }), /* @__PURE__ */ React.createElement("img", { className: "title-art", src: "./assets/907hustle-title.png", width: "941", height: "1672", alt: "907Hustle: One Good Run over a rain-dark Spenard street" })), /* @__PURE__ */ React.createElement("div", { className: "title-shade" }), /* @__PURE__ */ React.createElement("div", { className: "title-content" }, /* @__PURE__ */ React.createElement("div", { className: "sr-only" }, /* @__PURE__ */ React.createElement("h1", null, "907Hustle: One Good Run"), /* @__PURE__ */ React.createElement("p", null, "Find your footing. Face the week you create.")), /* @__PURE__ */ React.createElement("div", { className: "title-actions" }, preview && /* @__PURE__ */ React.createElement("div", { className: "save-preview", "aria-label": "Saved run preview" }, /* @__PURE__ */ React.createElement("b", null, preview.name), /* @__PURE__ */ React.createElement("span", null, "Saved run \xB7 Day ", preview.day, " \xB7 ", preview.part), /* @__PURE__ */ React.createElement("span", null, preview.district, " \xB7 ", money(preview.cash), " cash \xB7 ", money(preview.debt), " debt")), saveInfo.error && /* @__PURE__ */ React.createElement("div", { className: "save-error", role: "alert" }, saveInfo.error), /* @__PURE__ */ React.createElement("button", { className: "btn full primary title-button", disabled: !saveInfo.valid, onClick: onLoad }, "Load Game", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, saveInfo.valid ? "Resume the exact autosaved run" : "No compatible autosave found")), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary title-button", onClick: onNew }, "New Game", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Start fresh in Spenard with $100 clean")), /* @__PURE__ */ React.createElement("button", { className: "btn full ghost", "aria-expanded": help, onClick: () => setHelp(!help) }, "How to Play"), help && /* @__PURE__ */ React.createElement("div", { className: "how-to" }, /* @__PURE__ */ React.createElement("b", null, "Four parts per day, for as long as you can keep it going."), /* @__PURE__ */ React.createElement(
           ExpandableMoreSection,
           {
             collapsedContent: /* @__PURE__ */ React.createElement("p", null, "Work, travel, exploration, recovery, meetings, and major operations move the clock. Your first days establish a life in Spenard before the pressure starts."),
@@ -15026,7 +15028,7 @@
         const showCrew = C.selectors.recruitedCrew(state).length > 0;
         const showCurtis = state.npc.curtis.relationship !== "unaware";
         const segmentsFor = (value, ceiling) => ({ filled: Math.max(0, Math.min(5, Math.ceil(value / ceiling * 5))), total: 5 });
-        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.30"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day, state.run.checkpointDay ? `/${state.run.checkpointDay}` : ""), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
+        return /* @__PURE__ */ React.createElement("header", { className: "top" }, /* @__PURE__ */ React.createElement("h1", { className: "sr-only" }, "907Hustle: One Good Run \xB7 v1.31"), /* @__PURE__ */ React.createElement("div", { className: "hud primary-hud" }, /* @__PURE__ */ React.createElement(Hud, { label: "Day / Time", bare: true, value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("b", { className: "hud-day" }, "Day ", state.run.day), /* @__PURE__ */ React.createElement("span", { className: "hud-slot" }, C.SLOTS[state.run.slot]), /* @__PURE__ */ React.createElement(SlotPips, { slot: state.run.slot })) }), /* @__PURE__ */ React.createElement(Hud, { label: "District", bare: true, accent: "muted", value: /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "hud-diamond", "aria-hidden": "true" }, "\u25C6"), area.name) }), /* @__PURE__ */ React.createElement(Hud, { label: "Cash", bare: true, accent: "green", value: money(state.player.cash), good: true, flash: cashFlash }), /* @__PURE__ */ React.createElement("button", { className: "status-toggle", "aria-expanded": open, "aria-label": "Show more status", onClick: () => setOpen(!open) }, "Status ", /* @__PURE__ */ React.createElement("span", null, open ? "Hide" : "View")), /* @__PURE__ */ React.createElement("button", { className: "menu-btn", onClick: onMenu }, "Menu")), shown.chipRow && /* @__PURE__ */ React.createElement("div", { className: "hud chip-row" }, showHeat && /* @__PURE__ */ React.createElement(Chip, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, tone: state.player.heat >= 8 ? "escalated" : state.player.heat <= 2 ? "calm" : "", flash: heatFlash, icon: "fire", segments: segmentsFor(state.player.heat, 15) }), showDebt && /* @__PURE__ */ React.createElement(Chip, { label: "Debt", value: dreValue, tone: dreOverdue || dreDueTonight ? "escalated" : !state.lender.balance ? "calm" : "", icon: "cash" }), showRespect && /* @__PURE__ */ React.createElement(Chip, { label: "Respect", value: state.npc.curtis.respect, tone: "", icon: "star", segments: segmentsFor(state.npc.curtis.respect, C.RESPECT_STAGE_THRESHOLDS.day7) })), open && /* @__PURE__ */ React.createElement("div", { className: "hud status-drawer" }, /* @__PURE__ */ React.createElement(Hud, { label: "Health", value: `${state.player.health}/100`, danger: state.player.health < 40, flash: healthFlash }), /* @__PURE__ */ React.createElement(Hud, { label: "Heat", value: `${state.player.heat}/15 \xB7 ${heatLabel}`, danger: state.player.heat >= 8, flash: heatFlash }), hasDreDebt && /* @__PURE__ */ React.createElement(Hud, { label: "Debt", value: dreValue, danger: dreOverdue || dreDueTonight }), /* @__PURE__ */ React.createElement(Hud, { label: "Cargo", value: `${cargo}/${C.selectors.cargoCapacity(state)}`, danger: cargo >= C.selectors.cargoCapacity(state) }), /* @__PURE__ */ React.createElement(Hud, { label: "Respect", value: state.npc.curtis.respect }), showCrew && /* @__PURE__ */ React.createElement(Hud, { label: "Crew Power", value: C.selectors.crewPower(state, false) }), showCurtis && /* @__PURE__ */ React.createElement(Hud, { label: "Curtis", value: state.npc.curtis.relationship })));
       }
       var NAV_ICONS = {
         home: "M12 3 3 10.4V21h6v-6h6v6h6V10.4z",
@@ -15707,7 +15709,7 @@
         return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "Recovery", sub: "Essential care first; larger options appear when the damage justifies them", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Health", /* @__PURE__ */ React.createElement("small", null, state.player.health, "/100")), /* @__PURE__ */ React.createElement("div", { className: "meter" }, /* @__PURE__ */ React.createElement("span", { style: { width: `${state.player.health}%`, background: state.player.health < 40 ? "var(--red)" : "var(--green)" } }))), /* @__PURE__ */ React.createElement("div", { className: "card inventory-row" }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "First aid"), /* @__PURE__ */ React.createElement("div", { className: "muted" }, "Immediate care \xB7 restore up to 18 Health")), /* @__PURE__ */ React.createElement("button", { className: "btn good-btn", disabled: state.player.cash < firstAidCost || state.player.health >= 100, onClick: () => dispatch({ type: "USE_FIRST_AID", amount: 18, cost: firstAidCost }) }, money(firstAidCost), /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Free \xB7 no time passes"))), state.player.health <= 82 && treatment(40, 135, "Clinic visit", "Larger treatment for a serious injury"), state.player.health <= 55 && (doctorOpen ? treatment(75, 290, "No-Questions Doctor", "Private care unlocked through trust or Safehouse recovery") : /* @__PURE__ */ React.createElement("div", { className: "card locked" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Private medical contact", /* @__PURE__ */ React.createElement("small", null, "Locked")), /* @__PURE__ */ React.createElement("p", { className: "muted" }, "Build a trusted medical relationship or install the Safe Room recovery upgrade."))), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("div", { className: "card-title" }, "Lay Low", /* @__PURE__ */ React.createElement("small", null, "Next part of day")), /* @__PURE__ */ React.createElement("p", null, "Expected immediate result: lower Heat by ", layLow.heatReduction, ". Debt, wages, markets, and Curtis continue moving while the lights are off."), /* @__PURE__ */ React.createElement("button", { className: "btn full secondary", onClick: () => dispatch({ type: "LAY_LOW" }) }, "Lay Low", /* @__PURE__ */ React.createElement("span", { className: "action-copy" }, "Lowers Heat and advances time")))));
       }
       function Help({ onBack, marketVisible }) {
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "How to Play", sub: "The four-part rhythm of One Good Run", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Your run"), /* @__PURE__ */ React.createElement("p", null, "Each day contains Morning, Afternoon, Evening, and Night. Week Zero establishes your life in Spenard. A later approach sets the checkpoint.")), marketVisible && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Market visits"), /* @__PURE__ */ React.createElement("p", null, "Buy and sell several times at locked prices. Walking away after a trade uses one part of day. Looking costs nothing.")), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Major actions"), /* @__PURE__ */ React.createElement("p", null, "Travel, recovery, meetings, debt payments, and operations advance to the next part of day. Resolve an event choice without paying a second time cost.")), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "The pressure phase"), /* @__PURE__ */ React.createElement("p", null, "Protect working capital, manage Heat and Health, build relationships, and decide whether territory or a clean exit is worth the risk."))));
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "How to Play", sub: "The four-part rhythm of One Good Run", onBack }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Your run"), /* @__PURE__ */ React.createElement("p", null, "Each day contains Morning, Afternoon, Evening, and Night. Week Zero establishes your life in Spenard. After that the run is open: it ends when you cannot pay what you owe, when your health or Heat runs out, or when you decide to call the final score.")), marketVisible && /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Market visits"), /* @__PURE__ */ React.createElement("p", null, "Buy and sell several times at locked prices. Walking away after a trade uses one part of day. Looking costs nothing.")), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "Major actions"), /* @__PURE__ */ React.createElement("p", null, "Travel, recovery, meetings, debt payments, and operations advance to the next part of day. Resolve an event choice without paying a second time cost.")), /* @__PURE__ */ React.createElement("div", { className: "card" }, /* @__PURE__ */ React.createElement("h2", null, "The pressure phase"), /* @__PURE__ */ React.createElement("p", null, "Protect working capital, manage Heat and Health, build relationships, and decide whether territory or a clean exit is worth the risk."))));
       }
       function Character({ state, onBack }) {
         var _a;
@@ -15808,7 +15810,7 @@
         const hasDreDebt = state.lender.status === "active" || state.lender.status === "cleared";
         const daysLeft = hasDreDebt ? state.lender.dueDay - state.run.day : null;
         const financeSummary = !hasDreDebt ? `${money(state.player.cleanCash)} clean` : !state.lender.balance ? "Debt clear" : daysLeft <= 0 ? "Debt due" : `Debt Day ${state.lender.dueDay}`;
-        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "More", sub: "Character, progress, finances, and help stay available; property unlocks operations" }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(MenuRow, { title: "Finances", status: financeSummary, description: hasDreDebt ? "Cash, debt, Shark notes, and financial risk." : "Cash and financial risk.", onClick: () => setPage("finances") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Operations", status: opsSummary, description: features.operations.available ? "Safehouse, territory, soldiers, gear, and Rob." : features.operations.hint, disabled: !features.operations.available, onClick: () => setPage("operations") }), features.recovery.available && /* @__PURE__ */ React.createElement(MenuRow, { title: "Recovery", status: `Health ${state.player.health}`, description: "Treat injuries or lay low to reduce Heat.", onClick: () => setPage("recovery") }), C.CREW.some((person) => state.people.crew[person.id].introduced || state.people.crew[person.id].recruited) && /* @__PURE__ */ React.createElement(MenuRow, { title: "Crew", status: `${C.selectors.recruitedCrew(state).length}/${C.selectors.crewCapacityFor(state)} active`, description: "Wages, loyalty, tiers, and who answers when it gets loud.", onClick: () => setPage("crew") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Character", status: identity, description: "Rank, what you are good at, and what the block remembers.", onClick: () => setPage("character") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Help", status: "Available", description: "Time, trading, major actions, and the dynamic checkpoint.", onClick: () => setPage("help") })));
+        return /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement(PageHead, { title: "More", sub: "Character, progress, finances, and help stay available; property unlocks operations" }), /* @__PURE__ */ React.createElement("div", { className: "scroll" }, /* @__PURE__ */ React.createElement(MenuRow, { title: "Finances", status: financeSummary, description: hasDreDebt ? "Cash, debt, Shark notes, and financial risk." : "Cash and financial risk.", onClick: () => setPage("finances") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Operations", status: opsSummary, description: features.operations.available ? "Safehouse, territory, soldiers, gear, and Rob." : features.operations.hint, disabled: !features.operations.available, onClick: () => setPage("operations") }), features.recovery.available && /* @__PURE__ */ React.createElement(MenuRow, { title: "Recovery", status: `Health ${state.player.health}`, description: "Treat injuries or lay low to reduce Heat.", onClick: () => setPage("recovery") }), C.CREW.some((person) => state.people.crew[person.id].introduced || state.people.crew[person.id].recruited) && /* @__PURE__ */ React.createElement(MenuRow, { title: "Crew", status: `${C.selectors.recruitedCrew(state).length}/${C.selectors.crewCapacityFor(state)} active`, description: "Wages, loyalty, tiers, and who answers when it gets loud.", onClick: () => setPage("crew") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Character", status: identity, description: "Rank, what you are good at, and what the block remembers.", onClick: () => setPage("character") }), /* @__PURE__ */ React.createElement(MenuRow, { title: "Help", status: "Available", description: "Time, trading, major actions, and how a run ends.", onClick: () => setPage("help") })));
       }
       var disclosureSeq = 0;
       function useDomId(prefix) {
@@ -15984,7 +15986,7 @@
         const summary = C.selectRunSummary(state);
         const hasDreDebt = state.lender.status === "active" || state.lender.status === "cleared";
         const cause = summary.endCause;
-        return /* @__PURE__ */ React.createElement(Modal, { title: cause ? cause.title : summary.endingLabel }, cause ? /* @__PURE__ */ React.createElement("p", { className: "popup-lead bad" }, cause.line) : /* @__PURE__ */ React.createElement("p", { className: "popup-lead" }, summary.streetName, " reached the Day ", state.run.checkpointDay || state.run.day, " checkpoint as ", summary.streetIdentityLabel, ". This is the operation that survived, and the damage that came with it."), /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, /* @__PURE__ */ React.createElement(Outcome, { label: "Days survived", value: summary.daysSurvived }), /* @__PURE__ */ React.createElement(Outcome, { label: "Net gain", value: signedMoney(summary.netGain), tone: summary.netGain >= 0 ? "good" : "bad" }), /* @__PURE__ */ React.createElement(Outcome, { label: "Net worth", value: money(summary.netWorth) }), /* @__PURE__ */ React.createElement(Outcome, { label: "Operation Score", value: summary.operationScore }), /* @__PURE__ */ React.createElement(Outcome, { label: "Territory", value: `${summary.territories.filter((item) => item.owner === "player").length}/3` }), /* @__PURE__ */ React.createElement(Outcome, { label: "Crew", value: summary.crew.length }), hasDreDebt && /* @__PURE__ */ React.createElement(Outcome, { label: "Debt left", value: money(summary.debt) }), /* @__PURE__ */ React.createElement(Outcome, { label: "Rank", value: summary.streetIdentityLabel })), /* @__PURE__ */ React.createElement("div", { className: "recap" }, hasDreDebt ? `Dre: ${summary.lenderRelationship}. ` : "", "Curtis: ", summary.rivalRelationship, ". ", summary.majorDecisions.slice(-3).join(" ")), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", onClick: onTitle }, "Return to title"));
+        return /* @__PURE__ */ React.createElement(Modal, { title: cause ? cause.title : summary.endingLabel }, cause ? /* @__PURE__ */ React.createElement("p", { className: "popup-lead bad" }, cause.line) : /* @__PURE__ */ React.createElement("p", { className: "popup-lead" }, summary.streetName, " called it on Day ", summary.daysSurvived, " as ", summary.streetIdentityLabel, ". This is the operation that survived, and the damage that came with it."), /* @__PURE__ */ React.createElement("div", { className: "outcome-grid" }, /* @__PURE__ */ React.createElement(Outcome, { label: "Days survived", value: summary.daysSurvived }), /* @__PURE__ */ React.createElement(Outcome, { label: "Net gain", value: signedMoney(summary.netGain), tone: summary.netGain >= 0 ? "good" : "bad" }), /* @__PURE__ */ React.createElement(Outcome, { label: "Net worth", value: money(summary.netWorth) }), /* @__PURE__ */ React.createElement(Outcome, { label: "Operation Score", value: summary.operationScore }), /* @__PURE__ */ React.createElement(Outcome, { label: "Territory", value: `${summary.territories.filter((item) => item.owner === "player").length}/3` }), /* @__PURE__ */ React.createElement(Outcome, { label: "Crew", value: summary.crew.length }), hasDreDebt && /* @__PURE__ */ React.createElement(Outcome, { label: "Debt left", value: money(summary.debt) }), /* @__PURE__ */ React.createElement(Outcome, { label: "Rank", value: summary.streetIdentityLabel })), /* @__PURE__ */ React.createElement("div", { className: "recap" }, hasDreDebt ? `Dre: ${summary.lenderRelationship}. ` : "", "Curtis: ", summary.rivalRelationship, ". ", summary.majorDecisions.slice(-3).join(" ")), /* @__PURE__ */ React.createElement("button", { className: "btn full primary", onClick: onTitle }, "Return to title"));
       }
       function MenuModal({ state, dispatch, onClose, onTitle }) {
         const [confirmRestart, setConfirmRestart] = useState(false);
@@ -15997,7 +15999,7 @@
           ExpandableMoreSection,
           {
             collapsedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-lead" }, "Autosave is on. This run saves to your browser after every action."),
-            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.30 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
+            expandedContent: /* @__PURE__ */ React.createElement("p", { className: "popup-flavor" }, "907Hustle v1.31 \xB7 Seed ", state.run.seed, " \xB7 Core v", state.version, " \xB7 storage key ", C.SAVE_KEY),
             moreLabel: "Save detail",
             lessLabel: "Hide detail"
           }
@@ -16059,7 +16061,6 @@
         return /* @__PURE__ */ React.createElement("p", { className: "ambient", "aria-hidden": "true" }, /* @__PURE__ */ React.createElement("span", { key: `${where}:${index}` }, lines[index % lines.length]));
       }
       function nextPartLabel(state) {
-        if (state.run.checkpointDay && state.run.day >= state.run.checkpointDay && state.run.slot >= C.SLOTS.length - 1) return "the checkpoint";
         if (state.run.slot >= C.SLOTS.length - 1) return `Day ${state.run.day + 1}, ${C.SLOTS[0]}`;
         return C.SLOTS[state.run.slot + 1];
       }

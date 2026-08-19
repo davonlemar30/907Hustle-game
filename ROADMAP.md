@@ -110,6 +110,56 @@ it. Two things this build surfaced and deliberately left:
 
 ---
 
+## Shipped — v1.35 The Risk Term, and What It Cannot Do Alone
+
+v1.34's one open item was the risk-free trading path. The premise held on re-run,
+and the fix is a mechanic rather than a number — so this build shipped the
+mechanic and let the measurement rule on it.
+
+- **Both legs now carry a Heat term.** `BUY += floor(qty/8)`, `SELL += floor(qty/4)`,
+  tiny and ambient; the carry (`BUS_TRAVEL`) stays free by design. Six new unit
+  tests pin the boundaries.
+- **The finding: a Heat term alone cannot move this balance, at any rate.** Swept
+  `8/4` down to per-unit `1/1`, `hustler` wanders 96–116% with no relationship to
+  Heat, and traders are arrested zero times at peak Heat 12. `arrestPlayer` fires
+  only from `boost`/`stick` — there is no bust path for trading — and Heat 15 is
+  electively shed via `LAY_LOW`. The consequence surface Heat is meant to feed is
+  the deferred event-card content.
+- **Decision: ship the substrate, defer the teeth.** `hustler` stays ~110% this
+  build on purpose; the 65–90% target moves to v1.36. Fifth build running where
+  "broken" meant "never exercised" — here, a Heat mechanic with nothing wired to
+  the act it prices.
+- **Task 2 (cross-market intel) cut.** The player learns the spread by traveling,
+  *Drug Lord*-style; the price-selling NPC is a future character with their own
+  arc, not a table row now.
+- **Task 3 (capital curve) measured, not fixed.** `arbitrage`'s 17% floor is
+  cash: **+$2,000 → 67%**, while cargo and free fare do nothing. v1.36 floor work
+  is capital (bank interest, lenders, plug credit), then the plug per-buy cap.
+- 961 tests. Both hashes moved. Zero dead ends. `arbitrage` margin **+38%**.
+  Engine change is two Heat lines; save schema held at **v11**.
+
+### Next — v1.36 authors the teeth (and can then chase the floor)
+
+The substrate is live; the risk premium needs a consequence wired to Heat.
+**Author the event-card / Exposure pass**: at higher Heat, more dangerous
+encounters fire during movement, day-end and location visits — a stop while
+holding, a nosy passenger, Curtis's people on the bus — each a moment with
+choices, converting Heat into real expected-value loss. Only once those exist
+does the 65–90% target become measurable, and only then may the **capital floor**
+move (bank interest [`86bbe0m8g`], lenders [`86bbamm10`], plug credit), because
+raising the ceiling before the teeth land simply turns 110% into 150%.
+
+**5.2 Downtown still stays behind both.** It is currently the sell side of the
+only profitable trade in the game, so under the scaling rule it must raise ambient
+heat, wage load and loss exposure in step with the volume it unlocks. Adding it
+before the trading path's risk term has teeth would ship the thesis broken at
+twice the size.
+
+Still on the inventory, unfixed: un-clamped `missed_obligation` observations, and
+story pacing that exhausts a seven-day registry by ~day 20 of a forty-day run.
+
+---
+
 ## Shipped — v1.34 Crime, Played Competently
 
 The economy pass v1.33 called for, run under a design position stated up front:
@@ -141,31 +191,6 @@ flat.
 **Four systems in four builds where "the engine is broken" was really "the
 instrument never exercised it."** Rent, rest, the note, and now the route.
 
-### Next — v1.35 owns the risk term on the trading path
-
-**`SELL` has no Heat term at all**, and `BUY`'s is
-`floor(product.heat * qty / 5)` against open-access products carrying `heat: 0`.
-Measured: **383 purchases, 521 units, exactly 0 Heat.** `hustler` peaks at 12.5
-Heat with 0.00 arrests against `legal_worker`'s 12.1 and 0.00 — couriering drugs
-for forty days reads like forty days at the Chevron. That is the whole reason the
-hybrid beats the job, and it is a mechanic rather than a number, which is why
-this build reported it instead of picking a rate.
-
-Second, and separable: **the capital curve**. A courier who can only afford four
-units of a ten-unit load earns four units of profit, which is why pure crime
-measures at 17% with a healthy margin. Whoever takes it should start at cargo
-capacity, plug credit, and starting cash rather than at prices.
-
-**5.2 Downtown still stays behind both.** It is currently the sell side of the
-only profitable trade in the game, so its economics are already load-bearing —
-and under the scaling rule it must raise ambient heat, wage load and loss
-exposure in step with the volume it unlocks. Adding it before the trading path
-has a risk term would ship the thesis broken at twice the size.
-
-Still on the inventory, unfixed: un-clamped `missed_obligation` observations, and
-story pacing that exhausts a seven-day registry by ~day 20 of a forty-day run.
-
----
 
 ## Shipped — v1.33 Pressure and Attrition
 

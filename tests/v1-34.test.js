@@ -163,25 +163,33 @@ test("crime alongside a job beats the job, which the design position says it mus
   assert.ok(both > job * 0.9, `the hybrid is at least competitive with the job (${both} vs ${job})`);
 });
 
-test("the trading path carries no Heat, which is why the hybrid is free money", () => {
-  // The engine gap this build exists to have found, stated exactly.
+test("the trading path once carried no Heat, and v1.35 closed that gap", () => {
+  // The engine gap v1.34 exists to have found, and v1.35 exists to have fixed.
   //
-  // `SELL` has no Heat term at all - it moves dirty cash, records the activity
-  // and logs, and never touches `player.heat`.
+  // As of v1.34: `SELL` had no Heat term at all - it moved dirty cash, recorded
+  // the activity and logged, and never touched `player.heat`. `BUY` had one,
+  // but it was `floor(product.heat * qty / 5)`, and the two open-access products
+  // the route runs on carry `heat: 0` (src/data/products.js). Zero times
+  // anything is zero, and cocaine at `heat: 1` needed five units in a single
+  // purchase to score one point. Measured across four seeds of three trading
+  // profiles: 383 purchases, 521 units, and exactly 0 Heat. Forty days of
+  // couriering read to the police like forty days at the Chevron.
   //
-  // `BUY` has one, but it is `floor(product.heat * qty / 5)`, and the two
-  // open-access products the route runs on carry `heat: 0` (src/data/products.js).
-  // Zero times anything is zero, and cocaine at `heat: 1` needs five units in a
-  // single purchase to score one point. Measured across four seeds of three
-  // trading profiles: 383 purchases, 521 units, and exactly 0 Heat.
-  //
-  // So forty days of couriering product across the city reads to the police
-  // like forty days at the Chevron. The "riskier" half of "faster, riskier,
-  // worse in expectation" is not implemented on the trading path. v1.35 owns
-  // it, and it is a mechanic rather than a number - which is why this build
-  // reports it instead of picking a rate for it.
+  // v1.35 gave both legs a quantity-keyed risk term (BUY floor(qty/8), SELL
+  // floor(qty/4)); the exact-quantity behaviour is proved in tests/v1-35.test.js.
+  // This test guards, at the source, that the gap is closed: SELL writes Heat
+  // and BUY reads quantity rather than the dead product-heat term.
   const sellCase = core.slice(core.indexOf('if (action.type === "SELL")'), core.indexOf('if (action.type === "STORE_CASH"'));
-  assert.doesNotMatch(sellCase, /player\.heat = /, "SELL never writes Heat");
+  assert.match(sellCase, /state\.player\.heat = clamp\(state\.player\.heat \+ Math\.floor\(qty \/ 4\)/, "SELL now writes Heat (v1.35)");
+  const buyCase = core.slice(core.indexOf('if (action.type === "BUY")'), core.indexOf('if (action.type === "SELL")'));
+  assert.match(buyCase, /state\.player\.heat = clamp\(state\.player\.heat \+ Math\.floor\(qty \/ 8\)/, "BUY reads quantity (v1.35)");
+  assert.doesNotMatch(buyCase, /product\.heat \* qty/, "the dead product-heat term is gone");
+  // The measured aftermath, and the finding v1.35 hands to v1.36: the term is
+  // real but the strategies trade below it. A courier capped at three units a
+  // buy (Goodie's maxUnits) never reaches BUY's 8-unit or SELL's 4-unit step,
+  // so the two profitable profiles still register almost no Heat, and the
+  // hybrid still pays no risk premium. The teeth are the deferred event-card
+  // pass; this build ships the substrate they will read.
   const { play } = require("./simulate-runs.js");
   const raw = C.reduceGame;
   let purchases = 0, heat = 0;
@@ -194,7 +202,7 @@ test("the trading path carries no Heat, which is why the hybrid is free money", 
   try { for (const seed of [1000, 1001]) for (const name of ["arbitrage", "hustler"]) play(seed, name); }
   finally { C.reduceGame = raw; }
   assert.ok(purchases > 20, "the profiles really do buy product");
-  assert.equal(heat, 0, `and none of it registers as Heat (${heat} across ${purchases} purchases)`);
+  assert.equal(heat, 0, `and a courier buying in threes still trips no BUY Heat (${heat} across ${purchases} purchases) — the v1.35 finding`);
 });
 
 // --- The design position is written down ------------------------------------

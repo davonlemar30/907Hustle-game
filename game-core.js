@@ -7564,7 +7564,14 @@
       item.qty = totalQty;
       state.player.cash -= cost;
       market.availability[product.id] -= qty;
-      state.player.heat = clamp(state.player.heat + districtHeat(state, state.world.currentNeighborhoodId, "market", Math.floor((product.heat * qty) / 5)), 0, 15);
+      // v1.35 risk term. Buying weight is the quieter half of the trade, so it
+      // reads as ambient awareness: one bag at a time (1-7 units) draws nothing,
+      // a full load (8+) picks up a single point. Quantity, not product, is the
+      // signal — someone noticed you buying weight. The consequence is not this
+      // Heat; it is the event cards and Exposure that only find you once Heat is
+      // above zero. Added flat (integer, no district multiplier) so the surface
+      // the player reads stays legible.
+      state.player.heat = clamp(state.player.heat + Math.floor(qty / 8), 0, 15);
       recordCriminalActivity(state, state.world.currentNeighborhoodId, "market");
       state.run.currentVisit.trades += 1;
       state.run.currentVisit.grossBuy += cost;
@@ -7606,6 +7613,12 @@
       item.qty -= qty;
       if (!item.qty) item.avgCost = 0;
       addDirtyCash(state, total);
+      // v1.35 risk term. Selling is the visible act — standing on a corner
+      // making the exchange — so it runs hotter than the buy: 1-3 units draw
+      // nothing, 4+ picks up a point, a full load (8+) two. Same ambient logic
+      // as BUY; the real cost lands later, through what Heat above zero lets
+      // find you. Flat integer, no district multiplier.
+      state.player.heat = clamp(state.player.heat + Math.floor(qty / 4), 0, 15);
       recordCriminalActivity(state, state.world.currentNeighborhoodId, "market");
       state.run.currentVisit.trades += 1;
       state.run.currentVisit.grossSell += total;

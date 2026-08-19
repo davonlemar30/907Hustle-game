@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.34**. This file
+How 907Hustle: One Good Run is put together, current as of **v1.35**. This file
 is meant to be the only thing you need to read before changing code; for *why*
 the game is designed the way it is, see the ClickUp docs at the bottom.
 
@@ -1329,23 +1329,54 @@ Two consequences worth writing down so they are not rediscovered:
   worse — 1.05 → 2.00 on `trader` moves margin −11% → −86% and netWorth 40 → 171.
   Report margin and net trade alongside it, always.
 
-### The Heat gap on the trading path (open, v1.35)
+### The Heat term on the trading path (substrate shipped v1.35; teeth deferred)
 
-`SELL` has **no Heat term at all**. `BUY` has one, but it is
-`floor(product.heat * qty / 5)` and the two open-access products carry
-`heat: 0` — measured across four seeds of three trading profiles, **383
-purchases and 521 units produced exactly 0 Heat**. Forty days of couriering
-product across the city reads to the police like forty days at the Chevron,
-which is precisely why the hybrid is free money.
+Through v1.34, `SELL` had **no Heat term at all** and `BUY`'s was
+`floor(product.heat * qty / 5)` against two `heat: 0` open products — **383
+purchases, 521 units, exactly 0 Heat**. v1.35 gave both legs a quantity-keyed
+term:
 
-**This build did not fix it**, deliberately: there is no measured basis for
-choosing a rate, and picking one would be tuning ahead of the measurement. The
-rule that produced this section is the one to keep — *assume the economy is fine
-until proven otherwise, and do not tune prices, margins or product costs until
-the instrument has played the game competently*. Four builds running, "the
-engine is broken" has meant "the instrument never exercised it": rent (14 of 15
-never paid), rest (15 of 15 never slept), Dre's note (15 of 15 never borrowed),
-and now arbitrage (18 of 18 never traded cross-market).
+- **`BUY`** `player.heat += floor(qty / 8)` — buying weight is the quiet half.
+- **`SELL`** `player.heat += floor(qty / 4)` — the corner exchange is the visible
+  one, so it runs hotter.
+- **The carry (`BUS_TRAVEL`) stays free** — carrying risk is authored event
+  content, not a passive tick.
+
+The numbers are tiny and ambient on purpose. The reasoning is the important part,
+because **the term alone provably cannot create the risk premium, and no rate
+can.** Swept from `8/4` down to per-unit `1/1`, `hustler` net worth wanders
+96–116% with no relationship to Heat, and traders are arrested zero times at peak
+Heat 12. Two structural reasons:
+
+1. **No bust path exists for trading.** `arrestPlayer` is called only from
+   `boost` and `stick` sites. BUY/SELL Heat, at any level, cannot produce an
+   arrest.
+2. **Heat 15 (the only hard consequence) is electively avoided** via `LAY_LOW`,
+   which the strategies already dispatch.
+
+So Heat is currently a number that rises and is shed with no economic
+consequence. The design position holds — *the Heat isn't the punishment; it's the
+surface area for punishment to find you* — but that surface is the **event-card /
+Exposure content deferred to v1.36+**. The v1.35 decision, made on the swept
+evidence: **ship the Heat substrate now (the meter the future encounters will
+read), accept `hustler` staying ~110% this build, and author the teeth next.**
+The 65–90% target is a v1.36 acceptance criterion, not a v1.35 one.
+
+Two secondary facts worth keeping: the profitable profiles trade in **1–3 unit
+lots** (Goodie caps a buy at 3), so they sit below BUY's 8-unit and SELL's 4-unit
+steps and the term barely fires even where a consequence would land; and
+`arbitrage`'s 17% floor is a **capital** constraint — **+$2,000 starting cash
+takes it to 67%**, while +cargo and free fare do nothing — so the v1.36 floor
+work is capital (bank interest, lenders, plug credit), then the plug per-buy cap,
+not cargo or transportation.
+
+The rule that governs all of this is unchanged: *assume the economy is fine until
+proven otherwise, and do not tune prices, margins or product costs until the
+instrument has played the game competently*. Five builds running, "the engine is
+broken" has meant "the instrument never exercised it" — rent (14 of 15 never
+paid), rest (15 of 15 never slept), Dre's note (15 of 15 never borrowed),
+arbitrage (18 of 18 never traded cross-market), and now the risk term (a Heat
+mechanic with no consequence wired to the act it prices).
 
 ## The criminal economy
 

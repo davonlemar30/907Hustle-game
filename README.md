@@ -2,51 +2,46 @@
 
 907Hustle is a mobile-first, single-player crime, trading, relationship, and light-RPG web game set in an Anchorage-inspired Spenard. A run follows a newcomer balancing clean work, street income, debt, family housing, friendships, rivals, crew, and territory across a dynamic Week Zero.
 
-## Current Build (v1.34)
+## Current Build (v1.35)
 
-**v1.34: Crime, Played Competently** — the build that went looking for an
-underpowered criminal economy and found a badly played one, then found something
-worse behind it.
+**v1.35: The Risk Term, and What It Cannot Do Alone** — v1.34 found that the
+trading path pays no risk premium, which makes the game's thesis (*faster,
+riskier, worse in expectation*) false. This build shipped the mechanic to fix it
+and let the measurement rule on it.
 
-Eighteen strategies had been trading at **−6% to −22%**, and the reason was in
-the harness rather than the game: it bought the cheapest product *in the market
-it was standing in*, with no model of where the load would be sold. In-market
-spreads are non-positive by design — the widest observed across 6 seeds × 5 days
-× 3 products is **+1.9%**, which is integer rounding — so **all trading profit is
-arbitrage between districts**, and that route pays **+45% to +76%**. A bot buying
-Downtown weed at 43 to sell at North Star for 23 was running it backwards.
+Both legs of the courier loop now carry a small, quantity-keyed Heat term:
+`BUY += floor(qty/8)`, `SELL += floor(qty/4)`. The carry — riding the People Mover
+holding — stays free, because that risk is authored event content, not a passive
+tick.
 
-Two new profiles take the route: `arbitrage` (the route alone) and `hustler` (the
-route on top of a job). Both buy the week pass, because a courier paying single
-fares spends about **$470 a run** to earn — most of why the route first measured
-as dead. Margin goes **−13% → +17–22%**.
+**Then the finding, which is the deliverable: a Heat term alone cannot move this
+balance, and no rate can.** Swept from `8/4` down to per-unit `1/1`, the `hustler`
+hybrid wanders 96–116% of the job with no relationship to Heat, and traders are
+arrested **zero** times at peak Heat 12. Two structural reasons — `arrestPlayer`
+fires only from `boost`/`stick` (there is no bust path for trading), and Heat 15,
+the only hard consequence, is electively shed via Lay Low. Heat is meant to be
+*the surface area for punishment to find you*, but that punishment — the
+event-card / Exposure pass — is v1.36+ content. So v1.35 ships the **substrate**
+(the meter those encounters will read) and accepts `hustler` staying **~110%**
+this build, on purpose.
 
-**Then the honest measurement, which is the deliverable.** Against
-`legal_worker` at 100%, pure `arbitrage` lands at **17%** and the `hustler`
-hybrid at **110%** — both of the design position's out-of-band conditions firing
-at once. The margin is fine; the **capital curve** is the constraint on the first,
-and the second has a cause: **`SELL` has no Heat term at all**, and `BUY`'s is
-`floor(product.heat * qty / 5)` against open-access products that carry
-`heat: 0`. Measured: **383 purchases, 521 units, exactly 0 Heat.** Forty days of
-couriering product reads to the police like forty days at the Chevron.
-
-**No prices were tuned.** That was the instruction and it was the right one —
-four builds running, "the engine is broken" has meant "the instrument never
-exercised it." The economy's design position is now written down in
-`ARCHITECTURE.md` under **Economy philosophy**, and the missing risk term is
-v1.35's, because there is no measured basis for picking a rate today.
+Alongside it, two measurements handed to v1.36: `arbitrage`'s 17% floor is a
+**capital** constraint (**+$2,000 starting cash → 67%**; cargo and free fare do
+nothing), and the cross-market intel surface was **cut** — the player learns the
+spread by traveling, and the price-selling character is a future build.
 
 | | |
 |---|---|
 | Save schema | **v11** (`907ogr_v11`), loads v3 and up |
-| Tests | **955** passing (`npm test`) |
-| Simulation, 200 runs | `64fffbac2564fb7d022f3094a840dc443b8d29255a6436f05954b4905eb1da63` |
-| Simulation, 2,000 runs | `5e76a0fbb5f1eec2005b758354620d8c8a983c3d2ce7bbdc3ff4d9c9c027d338` |
+| Tests | **961** passing (`npm test`) |
+| Simulation, 200 runs | `af39d9e0e80e9b1c20b6b0f7e09363b7ee59756217a150f60fea2e067b51b934` |
+| Simulation, 2,000 runs | `3953454dc89ee92257db5a01104c235897236e8cd7578e586c17f472dfb1fb05` |
 
-Both hashes moved: `--total N` splits a fixed budget across the strategy table,
-so eighteen entries re-partition what sixteen held and every block changes.
-Zero dead ends at 200 and 2,000. Evictions 25%, `territory` claiming 18 blocks a
-run, `worker` still at zero evictions.
+Both hashes moved: the Heat term changes every trading trajectory (Heat feeds Lay
+Low, ambient events and encounter odds). Zero dead ends at 200 and 2,000;
+`arbitrage` realized margin **+38%**; `worker` still at zero evictions;
+`territory` still claiming corners. The 65–90% `hustler` target is intentionally
+waived here — the teeth are deferred content.
 
 **The run has no fixed length.** There is no day cap and no timed ending — the
 player hustles indefinitely, and a run ends only on a lose condition (an

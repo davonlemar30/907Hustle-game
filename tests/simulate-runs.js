@@ -170,7 +170,7 @@ function employmentMetrics(s,wages){
 // Returns the next state, or null when there was nothing worth doing - same
 // contract as marketTurn. Every branch compares before returning so a dispatch
 // the reducer refuses can never spin the tick loop into the guard.
-function workerTurn(s,p,shift){
+function workerTurn(s,p,shift,maxDays){
   const moved=(next)=>next!==s?next:null;
   // Rent first, and the order is the point. Both come due on day 7 and together
   // they are $225 against a starting $100, so on a thin week only one of them
@@ -186,6 +186,23 @@ function workerTurn(s,p,shift){
   if(s.player.cash>=C.PHONE_BILL&&(s.run.day>=s.phone.billDueDay||s.phone.daysPastDue>0||!s.phone.active)
      &&(s.people.household.evicted||s.run.day<s.obligations.rentDueDay||s.player.cash>=C.WEEKLY_RENT+C.PHONE_BILL)){
     const next=moved(C.reduceGame(s,{type:'PAY_PHONE_BILL',surface:'store'}));if(next)return next;
+  }
+  // v1.33. Sleep when hurt, which is the third thing a person does that the
+  // harness had never done once. SLEEP_HOME heals 12 for one slot and the
+  // simulator dispatched it ZERO times in its entire history - so v1.32
+  // measured health as a one-way ratchet and concluded the engine had no way
+  // back, when in fact the way back was a free action nobody was taking. Same
+  // shape as rent (14 of 15 never paid) and Dre's note (15 of 15 never
+  // borrowed): an engine mechanic that looked broken because the instrument
+  // never exercised it.
+  //
+  // The threshold is a decision, not a constant: rest below half health, so a
+  // scratch does not cost a slot but a real wound does.
+  // Not at the horizon: past maxDays the run is trying to cash out, and a
+  // strategy that keeps going to bed instead never reaches its own ending.
+  // Left unguarded this overshot the horizon by eight days.
+  if(!p.skipRest&&s.run.day<maxDays&&s.player.health<(p.restBelow??50)&&!s.people.household.evicted){
+    const next=moved(C.reduceGame(s,{type:'SLEEP_HOME'}));if(next)return next;
   }
   // Bills above are for every profile; everything below is the job ladder and
   // belongs only to the employment strategy.
@@ -297,6 +314,18 @@ const strategies={
   // because a 907List buy on day 6 cleared the reserve and day 7 wants both
   // bills at once. At the rent due, the phone, and the rent after that, 100
   // runs come back clean on every obligation.
+  // v1.33. The sixteenth strategy, and it exists because Dre's note had never
+  // been exercised once. settle() answered `dre_terms` with the last choice -
+  // "Leave it with him" - for every strategy on every seed since the harness
+  // was written, so the loan, the 8%-of-balance daily fee, the collector tier
+  // ladder, the dre_collector encounter and the `still_owing` ending were all
+  // unreachable. The third coverage hole of this shape after rent and rest.
+  //
+  // It borrows the thousand and trades on it, which is what the note is for,
+  // and repays through the PAY_DEBT branch the loop already had. Whether the
+  // compounding is survivable is the thing being measured, so nothing here
+  // tries to protect it from the fee schedule.
+  debtor:{caught:['run','surrender','fight'],products:['weed','shrooms'],areas:['north_star_lot','downtown'],profit:1.12,heatCap:5,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['talk','run','pay','surrender'],mode:'trader',takeLoan:true},
   worker:{caught:['surrender','run','fight'],products:[],areas:['north_star_lot'],profit:2,heatCap:2,plan:'escape',track:'storage',gear:'running_shoes',crew:'eli',encounter:['talk','run','pay','surrender'],mode:'legal',employment:true,payBills:true,market:true,marketMargin:12,marketFloat:C.WEEKLY_RENT*2+C.PHONE_BILL,marketQuick:true,marketRiskCap:0.14},
 };
 // v1.32. Health telemetry, and it exists because "killed" became the dominant
@@ -311,32 +340,46 @@ const strategies={
 // This wraps dispatch to attribute every health delta to the action that caused
 // it. Pure observation - it records and returns, changes no state and draws no
 // RNG - so it cannot move a hash by itself.
-function healthLedger(){
-  const lost={},healed={}; let dispatches=0;
+// v1.33 generalises it. Health was the first of a cluster - Heat and Dre's note
+// are the other two ratchets that were bounded only by the run ending, and all
+// three need the same treatment: attribute every point to the action that moved
+// it, so a balance pass tunes against a measurement instead of an intuition.
+function pressureLedger(){
+  const track=(key)=>({up:{},down:{},ups:0,downs:0});
+  const meters={health:track(),heat:track()};
   return {
-    lost,healed,
-    get healDispatches(){return dispatches},
-    record(action,before,after){
+    meters,
+    record(action,key,before,after){
+      const m=meters[key]; if(!m)return;
       const delta=after-before;
-      if(delta<0)lost[action]=(lost[action]||0)-delta;
-      else if(delta>0){healed[action]=(healed[action]||0)+delta;dispatches+=1}
+      if(delta>0){m.up[action]=(m.up[action]||0)+delta;m.ups+=1}
+      else if(delta<0){m.down[action]=(m.down[action]||0)-delta;m.downs+=1}
     },
     summary(){
       const total=(o)=>Object.values(o).reduce((n,v)=>n+v,0);
       const top=(o)=>Object.entries(o).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([k,v])=>k+':'+v).join(' ');
-      return {healthLost:total(lost),healthHealed:total(healed),healDispatches:dispatches,
-        healthLostBy:top(lost),healthHealedBy:top(healed)};
+      const h=meters.health,t=meters.heat;
+      return {
+        // Health: `up` is healing. v1.32 found it happens twice in ninety runs.
+        healthLost:total(h.down),healthHealed:total(h.up),healDispatches:h.ups,
+        healthLostBy:top(h.down),healthHealedBy:top(h.up),
+        // Heat: `down` is relief, and all of it is elective - there is no
+        // passive decay anywhere in the engine.
+        heatGained:total(t.up),heatShed:total(t.down),heatReliefDispatches:t.downs,
+        heatGainedBy:top(t.up),heatShedBy:top(t.down),
+      };
     },
   };
 }
-function settle(state,profile,beats){let s=state,guard=0;const note=(id)=>{if(beats&&(!beats.length||beats[beats.length-1].id!==id))beats.push({id,slot:(s.run.day-1)*4+s.run.slot})};while(guard++<20){if(s.run.openingPending){s=C.reduceGame(s,{type:'DISMISS_OPENING'});continue}if(s.run.daySummary){s=C.reduceGame(s,{type:'DISMISS_DAY_SUMMARY'});continue}if(s.run.pendingOperationResult){s=C.reduceGame(s,{type:'ACKNOWLEDGE_OPERATION_RESULT'});continue}if(s.run.pendingEncounter){note(s.run.pendingEncounter.id);const available=C.selectors.encounterChoices(s).map(c=>c.id);const posture=s.run.pendingEncounter.type==='boost_caught'?(profile.caught||[]):profile.encounter;const choice=posture.find(id=>available.includes(id))||profile.encounter.find(id=>available.includes(id))||available[0];s=C.reduceGame(s,{type:'RESOLVE_ENCOUNTER',choiceId:choice});continue}if(s.run.pendingEvent){note(s.run.pendingEvent.id);const choices=s.run.pendingEvent.choices;let index=s.run.pendingEvent.id==='dre_terms'?choices.length-1:choices.findIndex(c=>(c.effect?.cash||0)>=0);if(index<0)index=choices.findIndex(c=>Math.abs(c.effect?.cash||0)<=s.player.cash);s=C.reduceGame(s,{type:'RESOLVE_EVENT',choiceIndex:index<0?choices.length-1:index});continue}if(s.run.dayEndPending){s=C.reduceGame(s,{type:'CONFIRM_END_DAY'});continue}break}return s}
+function settle(state,profile,beats){let s=state,guard=0;const note=(id)=>{if(beats&&(!beats.length||beats[beats.length-1].id!==id))beats.push({id,slot:(s.run.day-1)*4+s.run.slot})};while(guard++<20){if(s.run.openingPending){s=C.reduceGame(s,{type:'DISMISS_OPENING'});continue}if(s.run.daySummary){s=C.reduceGame(s,{type:'DISMISS_DAY_SUMMARY'});continue}if(s.run.pendingOperationResult){s=C.reduceGame(s,{type:'ACKNOWLEDGE_OPERATION_RESULT'});continue}if(s.run.pendingEncounter){note(s.run.pendingEncounter.id);const available=C.selectors.encounterChoices(s).map(c=>c.id);const posture=s.run.pendingEncounter.type==='boost_caught'?(profile.caught||[]):profile.encounter;const choice=posture.find(id=>available.includes(id))||profile.encounter.find(id=>available.includes(id))||available[0];s=C.reduceGame(s,{type:'RESOLVE_ENCOUNTER',choiceId:choice});continue}if(s.run.pendingEvent){note(s.run.pendingEvent.id);const choices=s.run.pendingEvent.choices;let index=s.run.pendingEvent.id==='dre_terms'?(profile.takeLoan?0:choices.length-1):choices.findIndex(c=>(c.effect?.cash||0)>=0);if(index<0)index=choices.findIndex(c=>Math.abs(c.effect?.cash||0)<=s.player.cash);s=C.reduceGame(s,{type:'RESOLVE_EVENT',choiceIndex:index<0?choices.length-1:index});continue}if(s.run.dayEndPending){s=C.reduceGame(s,{type:'CONFIRM_END_DAY'});continue}break}return s}
 function play(seed,name){const p=strategies[name];
-  const health=healthLedger();
+  const health=pressureLedger();
   const rawReduce=C.reduceGame;
   // Swapped for the run and restored in the finally below. Every dispatch the
   // loop makes, including the ones inside settle(), is accounted.
-  C.reduceGame=(st,ac)=>{const before=st.player?.health;const next=rawReduce(st,ac);
-    if(typeof before==='number'&&typeof next.player?.health==='number')health.record(ac.type,before,next.player.health);
+  C.reduceGame=(st,ac)=>{const bh=st.player?.health,bt=st.player?.heat;const next=rawReduce(st,ac);
+    if(typeof bh==='number'&&typeof next.player?.health==='number')health.record(ac.type,'health',bh,next.player.health);
+    if(typeof bt==='number'&&typeof next.player?.heat==='number')health.record(ac.type,'heat',bt,next.player.heat);
     return next;};
   try{
   let s=C.reduceGame(C.createRun({seed}),{type:'START_RUN',streetName:`Sim ${seed}`}),guard=0;const beats=[];const marketSamples=[];let wages=0;
@@ -371,7 +414,17 @@ function play(seed,name){const p=strategies[name];
     // rather than "is rent affordable". This is pay-when-the-cash-is-there on
     // the due day, NOT a reserve: a profile whose money is in inventory or the
     // gym still misses, which is the honest reading.
-    if(!p.skipBills){const next=workerTurn(s,p,shift);if(next&&next!==s){s=next;continue}}
+    // The bot cashes out at its horizon, through the same voluntary ending a
+    // player uses. No special terminator, and no day the game imposes.
+    //
+    // v1.33 moved this to the top of the tick. Below the market turn it was
+    // advisory rather than binding: once v1.33's rest rule stopped the legal
+    // strategies dying at ~day 35, flipper and broker simply kept trading and
+    // ran to day 47 without ever reaching their own ending. A horizon that
+    // other business can outrank is not a horizon.
+    if(s.run.day>=maxDays&&!s.run.finalPlanPrepared){s=C.reduceGame(s,{type:'PREPARE_FINAL_PLAN',planId:p.plan});continue}
+    if(s.run.day>=maxDays&&s.run.finalPlan&&!s.run.pendingEncounter){s=C.reduceGame(s,{type:'EXECUTE_FINAL_PLAN'});continue}
+    if(!p.skipBills){const next=workerTurn(s,p,shift,maxDays);if(next&&next!==s){s=next;continue}}
     if(p.market){const next=marketTurn(s,p);if(next&&next!==s){s=next;continue}}
     if(s.run.phase==='week_zero'){
       if(s.run.slot>=2&&!s.nightOwl.boardViewedDays.includes(s.run.day)){s=C.reduceGame(s,{type:'VIEW_NIGHT_OWL_BOARD'});continue}
@@ -439,10 +492,6 @@ function play(seed,name){const p=strategies[name];
       if(actions.ask.available){s=C.reduceGame(s,{type:'ASK_DEALER',dealerId:p.dealer});continue}
     }
     if(['thief','stickup'].includes(p.mode)&&C.selectors.robAvailability(s).available){s=C.reduceGame(s,{type:'ROB'});continue}
-    // The bot cashes out at its horizon, through the same voluntary ending a
-    // player uses. No special terminator, and no day the game imposes.
-    if(s.run.day>=maxDays&&!s.run.finalPlanPrepared){s=C.reduceGame(s,{type:'PREPARE_FINAL_PLAN',planId:p.plan});continue}
-    if(s.run.day>=maxDays&&s.run.finalPlan&&!s.run.pendingEncounter){s=C.reduceGame(s,{type:'EXECUTE_FINAL_PLAN'});continue}
     if(s.lender.balance&&s.player.cash>=s.lender.balance+100&&s.run.day>=2){s=C.reduceGame(s,{type:'PAY_DEBT',amount:s.lender.balance});continue}
     if(s.player.heat>p.heatCap){s=C.reduceGame(s,{type:'LAY_LOW'});continue}
     const next=p.areas[(Math.max(0,p.areas.indexOf(area))+1)%p.areas.length],busCovered=s.world.transport.weekPass||s.world.transport.dayPassDay===s.run.day;s=next===area?C.reduceGame(s,{type:'END_MARKET'}):next==='north_star_lot'&&s.player.cash<5&&!busCovered?C.reduceGame(s,{type:'WALK_HOME'}):['downtown','north_star_lot'].includes(next)&&s.player.cash<5&&!busCovered?C.reduceGame(s,{type:'END_MARKET'}):['downtown','north_star_lot'].includes(next)?C.reduceGame(s,{type:'BUS_TRAVEL',neighborhoodId:next}):C.reduceGame(s,{type:'TRAVEL',neighborhoodId:next});
@@ -453,6 +502,12 @@ function play(seed,name){const p=strategies[name];
   // with them.
   summary.endDay=s.run.day;
   summary.endHealth=s.player.health;
+  summary.endHeat=s.player.heat;
+  // v1.33. The note is the third ratchet: an 8%-of-balance daily fee with a
+  // collector multiplier on top and no ceiling, which fired about three times
+  // inside a ten-day run and can fire thirty-odd now.
+  summary.debt={balance:s.lender.balance,principal:s.lender.principal,fees:s.lender.feesAdded||0,
+    missedDays:s.lender.missedDays||0,collectorTier:s.lender.collectorTier||0,status:s.lender.status};
   return summary}
   finally{C.reduceGame=rawReduce}}
 function summarize(name,count){const runs=Array.from({length:count},(_,i)=>play(1000+i,name)),endings={};for(const r of runs)endings[r.endingLabel]=(endings[r.endingLabel]||0)+1;const avg=k=>Math.round(runs.reduce((n,r)=>n+(r[k]||0),0)/count);const robbery=k=>runs.reduce((n,r)=>n+(r.robbery?.[k]||0),0);return{strategy:name,runs:count,completed:runs.filter(r=>r.completed).length,averageCash:avg('cash'),averageNetWorth:avg('netWorth'),averageOperationScore:avg('operationScore'),averageDebt:avg('debt'),averageHighestHeat:avg('highestHeat'),averageDecisions:avg('decisions'),averageEncounters:avg('encounters'),averageBaseValue:avg('baseValue'),averageCrew:avg('crew'),robAttempts:robbery('attempts'),robSuccesses:robbery('successes'),robFailures:robbery('failures'),robPayout:robbery('totalPayout'),territoryAttempts:runs.reduce((n,r)=>n+(r.takeovers?.attempts||0),0),arrests:runs.reduce((n,r)=>n+(r.arrests||0),0),crewJailedAtEnd:runs.reduce((n,r)=>n+(r.crewJailed||0),0),deadEnds:runs.filter(r=>!r.completed).length,

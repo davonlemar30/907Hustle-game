@@ -110,6 +110,43 @@ it. Two things this build surfaced and deliberately left:
 
 ---
 
+## Shipped — v1.33 Pressure and Attrition
+
+v1.32 left a four-item work list. **Measuring it first cut the list to one.**
+
+- **Heat is not a ratchet.** The strategies shed roughly what they gain through
+  `LAY_LOW`; the elective decay is real and used. No change.
+- **Health was not a one-way slide.** `SLEEP_HOME` heals 12 for one slot and the
+  harness had **never dispatched it once**. Runs ending `killed` went from ~50
+  in 90 to **1 in 96** on that one rule. The threshold was picked off a
+  sensitivity curve, not taste.
+- **Dre's note had never been borrowed** — `settle()` declined it on every seed
+  since the harness was written. Exercised for the first time by a sixteenth
+  strategy, it turned a $1,000 principal into a mean $12,700 by day 40. Capped
+  at twice the principal; the collector ladder deliberately untouched.
+- 945 tests. Both hashes moved.
+
+**Three systems in three builds where "the engine is broken" was really "the
+instrument never exercised it."** That is now the first thing to check.
+
+### Next
+
+**Evictions rose 20% -> 28%, concentrated entirely in the thin-margin trading
+profiles**, whose lose condition moved from death to eviction once they started
+resting. Whether a thin trading margin should survive rent plus recovery is the
+open balance question, and it is the natural v1.34: the first economy pass with
+an instrument that reaches employment, territory, obligations, attrition and
+debt. Everything it would tune is now measured.
+
+**5.2 Downtown stays behind it.** It raises wage and heat load, and wants an
+economy whose costs are known.
+
+Still on the inventory, unfixed: un-clamped `missed_obligation` observations,
+and story pacing that exhausts a seven-day registry by ~day 20 of a forty-day
+run.
+
+---
+
 ## Shipped — v1.32 Make the Obligations Real
 
 v1.31 let runs reach forty days. The first honest economic reading that produced

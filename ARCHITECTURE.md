@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.32**. This file
+How 907Hustle: One Good Run is put together, current as of **v1.33**. This file
 is meant to be the only thing you need to read before changing code; for *why*
 the game is designed the way it is, see the ClickUp docs at the bottom.
 
@@ -701,6 +701,28 @@ run ending became unbounded when v1.31 removed the cap. Deshawn's grace was the
 first one found and is unlikely to be the last; PROJECT_STATUS carries the
 v1.32 inventory of the others. When adding a per-period grant, ask what it costs
 over forty days, not seven.
+
+**And the hazard class that keeps hiding inside it: instrument coverage.** v1.33
+worked the v1.32 inventory and found that two of its four Tier-1 items were not
+engine problems at all. Heat is not a ratchet — the strategies shed roughly what
+they gain through `LAY_LOW`, so the elective decay is real and used. Health was
+not a one-way slide — `SLEEP_HOME` heals 12 for one slot and **the harness had
+never dispatched it once**, which is why v1.32 wrote in this file that recovery
+was "elective and mostly paid" and read the resulting deaths as an engine
+property. Dre's note had never been borrowed at all. **Three systems in three
+builds where "the engine is broken" turned out to be "the instrument never
+exercised it."** Before tuning a constant, check that something in the harness
+actually reaches the code that owns it.
+
+**Dre's note has a ceiling (v1.33).** `LOAN_MAX_BALANCE_MULTIPLIER = 2` — the
+balance stops at twice the principal. The late fee is 8% *of the balance* with a
+collector multiplier on top and compounded daily, which inside a seven-day run
+meant about three fees and a live decision; measured at forty days a $1,000
+principal reached a mean of $12,700 and a worst case of $22,629. A debt nobody
+can pay is not pressure, it is wallpaper. The cap is a ceiling and not a rate
+change: below it the arithmetic is untouched, and the collector ladder — tier
+escalation, the encounter, the daily Heat — is deliberately left alone, because
+that is where the pressure is supposed to come from.
 
 **`PAY_CREW` is not gated on the garage, and v1.30 removed the gate that said it
 was.** Tone, Pherris and Deshawn recruit through Exposure scenes rather than
@@ -1515,11 +1537,11 @@ before and after: a matching hash proves you changed nothing the player can see.
 Nothing in the run path may use `Math.random()` — only `makeRandom(seed)`, and
 not even that where a `stringHash` off the seed will do.
 
-**Current baselines, set at v1.32** — `--total 200`
-`dc1b7bd2b47489be3463b9c5692b7b28afd4305b76152199a35a933f29174662`, `--total 2000`
-`a56bc1f99d67166c8af0d98b1f9e87b9dd30b590c0869d5dde37560d0c1e54d2`. They moved because
-v1.32 made bill payment universal across the strategy table; the v1.31 pair was
-`c1469e6d…` / `6bc6eb31…`. **Everything moved, and no
+**Current baselines, set at v1.33** — `--total 200`
+`1f1e32b63829681efd120cbc108212b53fb9cfad781cb392a71c111334dfa27d`, `--total 2000`
+`d617a1b371f4ee76ec776825cfd5ad53c15621046ce7e35972d3e50ea2814d5d`. They moved because
+v1.33 added a sixteenth strategy (`debtor`), taught every profile to rest, and
+made the harness horizon binding; the v1.32 pair was `dc1b7bd2…` / `a56bc1f9…`. **Everything moved, and no
 per-strategy equivalence is claimed this time** — deliberately. v1.31 removed the
 day-count terminator, so all fifteen strategies now run to the harness's 40-day
 `maxDays` instead of stopping around day 10. There is no unchanged subset to

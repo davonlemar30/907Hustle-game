@@ -1,6 +1,6 @@
 # ARCHITECTURE
 
-How 907Hustle: One Good Run is put together, current as of **v1.31**. This file
+How 907Hustle: One Good Run is put together, current as of **v1.32**. This file
 is meant to be the only thing you need to read before changing code; for *why*
 the game is designed the way it is, see the ClickUp docs at the bottom.
 
@@ -679,6 +679,28 @@ least. A missed night accrues to `wageDue`; the first two are grace
 member departs: assignments and block manager slots clear, and the record stays
 (history matters) but stops counting toward capacity, power, wages, or presence
 effects. `PAY_CREW` clears arrears mid-run.
+
+**Deshawn's rent grace defers a miss by one day; it does not cancel the week
+(v1.32).** While he is recruited and active the grace re-arms once per rent
+period, which is what v1.15 designed and what his character is worth. What
+changed is the effect: it used to stamp `obligations.lastMissedDueDay` and
+cancel the whole period's miss, so one grace a week against one rent a week
+meant **rent was never missed at all**. Inside a run that ended at day 10 that
+was bounded — he ate at most one miss. v1.31 removed the day cap and the
+boundary went with it; a measurement across fifteen strategies found eviction
+unreachable in 100% of runs where Deshawn was active and reachable in 13–63%
+where he was not. Now the grace clears the stamp instead of setting it, so the
+nightly check re-fires the following night and the miss lands one day late —
+and paying inside that day rolls `rentDueDay` past today, which is the day he
+actually bought. **The deferral is derived from the absence of the stamp, so no
+field was added and the schema stays v11.** The log line, which has always read
+"the rent conversation waits one more day", is now accurate.
+
+**The hazard class this belongs to.** Any mechanic whose cost was bounded by the
+run ending became unbounded when v1.31 removed the cap. Deshawn's grace was the
+first one found and is unlikely to be the last; PROJECT_STATUS carries the
+v1.32 inventory of the others. When adding a per-period grant, ask what it costs
+over forty days, not seven.
 
 **`PAY_CREW` is not gated on the garage, and v1.30 removed the gate that said it
 was.** Tone, Pherris and Deshawn recruit through Exposure scenes rather than
@@ -1493,9 +1515,11 @@ before and after: a matching hash proves you changed nothing the player can see.
 Nothing in the run path may use `Math.random()` — only `makeRandom(seed)`, and
 not even that where a `stringHash` off the seed will do.
 
-**Current baselines, set at v1.31** — `--total 200`
-`c1469e6db3958e6bf439478cc05426829409cce6d66ec12c8c37df5332f2b5b7`, `--total 2000`
-`6bc6eb31cf360245f895290e292f75092a1a9e19405f12fda6534230999f4178`. **Everything moved, and no
+**Current baselines, set at v1.32** — `--total 200`
+`dc1b7bd2b47489be3463b9c5692b7b28afd4305b76152199a35a933f29174662`, `--total 2000`
+`a56bc1f99d67166c8af0d98b1f9e87b9dd30b590c0869d5dde37560d0c1e54d2`. They moved because
+v1.32 made bill payment universal across the strategy table; the v1.31 pair was
+`c1469e6d…` / `6bc6eb31…`. **Everything moved, and no
 per-strategy equivalence is claimed this time** — deliberately. v1.31 removed the
 day-count terminator, so all fifteen strategies now run to the harness's 40-day
 `maxDays` instead of stopping around day 10. There is no unchanged subset to

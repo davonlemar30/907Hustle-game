@@ -5514,6 +5514,20 @@
       // v1.15: while Deshawn is on the crew the grace re-arms once per rent
       // period - he will talk to Yalonda every week, but only once a week. If
       // he departs, whatever grace is banked is the last one.
+      //
+      // v1.32: the re-arm stays; what the grace DOES changed. It used to stamp
+      // `lastMissedDueDay` and cancel the whole period's miss, so one grace a
+      // week against one rent a week meant rent was never missed at all. Inside
+      // a run that ended at day 10 that was a bounded perk - Deshawn ate at most
+      // one miss. v1.31 removed the day cap and the boundary went with it: a
+      // measurement across 15 strategies found eviction, the game's primary lose
+      // condition, was unreachable in 100% of runs where Deshawn was active and
+      // reachable in 13-63% of runs where he was not. The mechanic never
+      // changed; the run length did.
+      //
+      // Now it defers by a day instead of cancelling a week, which is what the
+      // log line under it has always said. The miss lands tomorrow unless the
+      // rent is found today, and Deshawn is worth exactly the day he buys.
       {
         const deshawnCrew = state.people.crew.deshawn;
         if (deshawnCrew?.recruited && deshawnCrew.status === "active" && !state.flags.extraRentGraceAvailable
@@ -5523,12 +5537,19 @@
       }
       const missedThisDue = state.obligations.lastMissedDueDay === currentRentDue;
       if (state.run.day >= rentDue && !missedThisDue) {
-        state.obligations.lastMissedDueDay = currentRentDue;
         if (state.flags.extraRentGraceAvailable) {
           state.flags.extraRentGraceAvailable = false;
           state.flags.extraRentGraceUsedDueDay = currentRentDue;
+          // Deliberately does NOT stamp `lastMissedDueDay`. That is the whole
+          // deferral: the check re-fires tomorrow night, the grace is spent by
+          // then, and the miss lands one day late. Paying in the meantime rolls
+          // `rentDueDay` past today and the check goes quiet, which is the day
+          // Deshawn actually bought. No new field - the deferral is derived from
+          // the absence of the stamp, so the save schema does not move.
+          state.obligations.lastMissedDueDay = null;
           logEntry(state, "Deshawn talks to Yalonda before the envelope comes out. The rent conversation waits one more day.", "good");
         } else {
+          state.obligations.lastMissedDueDay = currentRentDue;
           state.npc.yalonda.rentMissed += 1;
           Exposure.recordObservation(state, "yalonda", { type: "financial", event: "missed_obligation", source: "household" });
           logEntry(state, "Yalonda leaves the rent envelope on the kitchen table, still empty.", "bad");

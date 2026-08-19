@@ -110,6 +110,42 @@ it. Two things this build surfaced and deliberately left:
 
 ---
 
+## Shipped — v1.32 Make the Obligations Real
+
+v1.31 let runs reach forty days. The first honest economic reading that produced
+showed that **rent was free**: Deshawn's grace re-armed once per rent period
+against a rent that fell due once per rent period, so eviction — the primary
+lose condition — was unreachable in 100% of runs where he was active.
+
+Not a v1.15 bug. That design was correct for a ten-day run where he ate at most
+one miss; **v1.31 removed the boundary and a bounded perk became an infinite
+subsidy.** The grace now defers a miss by a day instead of cancelling the week,
+which is what its own log line has always said. Schema stays v11 — the deferral
+is derived from the absence of the period stamp.
+
+- **Fourteen of fifteen strategies had never dispatched `PAY_RENT`.** Fixing the
+  grace alone would have evicted the `territory` strategy in 100% of runs and
+  re-broken the block layer v1.31 unlocked, so bills became universal with
+  `trainer` as the documented non-paying control. Result: 18% evictions,
+  territory still claiming, `worker` at 0.
+- **Health telemetry corrected the review's diagnosis.** The harness dispatches a
+  heal twice in 90 runs; the drain is broad (encounters 44%, events 19%,
+  `WORK_JOB` 16%) and nothing restores it. Measured, not fixed.
+- 934 tests. Both hashes moved.
+
+### Next
+
+**v1.33 is the pressure-and-attrition pass**, and it has a named work list
+rather than a hypothesis. Everything below was tuned against a ten-day run and
+is unbounded at forty: Dre's note compounding daily with no ceiling, Heat having
+no passive decay, health being strictly monotonic downward, and encounter volume
+scaling linearly with run length. They are one cluster and want the same
+measure-first treatment rent just got. **5.2 Downtown stays after that** — it
+raises wage and heat load, and should be tuned against an economy whose costs
+are bounded.
+
+---
+
 ## Shipped — v1.31 The Run Has No Fixed Length
 
 **The standing correction at the top of this file was aspirational until now.**

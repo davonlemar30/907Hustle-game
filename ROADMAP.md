@@ -145,11 +145,12 @@ instrument never exercised it."** Rent, rest, the note, and now the route.
 
 **`SELL` has no Heat term at all**, and `BUY`'s is
 `floor(product.heat * qty / 5)` against open-access products carrying `heat: 0`.
-Measured: **383 purchases, 521 units, exactly 0 Heat.** `hustler` peaks at 12.5
-Heat with 0.00 arrests against `legal_worker`'s 12.1 and 0.00 — couriering drugs
-for forty days reads like forty days at the Chevron. That is the whole reason the
-hybrid beats the job, and it is a mechanic rather than a number, which is why
-this build reported it instead of picking a rate.
+Measured: **383 purchases, 521 units, exactly 0 Heat.** Across a 40-day run
+`hustler` peaks at **3** Heat against `legal_worker`'s **2**, both with zero
+arrests, on a 0-15 scale where 15 ends the run — couriering drugs for forty days
+reads like forty days at the Chevron. That is the whole reason the hybrid beats
+the job, and it is a mechanic rather than a number, which is why this build
+reported it instead of picking a rate.
 
 Second, and separable: **the capital curve**. A courier who can only afford four
 units of a ten-unit load earns four units of profit, which is why pure crime

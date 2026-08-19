@@ -96,10 +96,11 @@ on carry `heat: 0` in `src/data/products.js`. Cocaine at `heat: 1` needs five
 units in a single purchase to score one point. Measured across four seeds of
 three trading profiles: **383 purchases, 521 units, exactly 0 Heat.**
 
-`hustler` peaks at 12.5 Heat with 0.00 arrests; `legal_worker` peaks at 12.1 with
-0.00. Forty days of couriering product across the city reads to the police like
-forty days at the Chevron. **The "riskier" half of "faster, riskier, worse in
-expectation" is not implemented on the trading path.**
+Across a 40-day run `hustler` peaks at **3** Heat and `legal_worker` at **2**,
+both with **zero arrests**, on a 0-15 scale where 15 ends the run. An entire
+criminal courier career adds about one point of peak Heat over a day job, and
+never once reaches the police. **The "riskier" half of "faster, riskier, worse
+in expectation" is not implemented on the trading path.**
 
 **No fix shipped, deliberately.** There is no measured basis for choosing a rate,
 and picking one would be the exact tuning-ahead-of-measurement the brief
